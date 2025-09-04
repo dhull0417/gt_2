@@ -27,6 +27,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/groups", groupsRoutes)
 
 // error handling middleware
 app.use((err, req, res, next) => {

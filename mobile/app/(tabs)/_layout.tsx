@@ -38,6 +38,13 @@ if (!isSignedIn) return <Redirect href="/(auth)" />;
             }}
         />
         <Tabs.Screen 
+            name='groups'
+            options={{
+                title:"",
+                tabBarIcon: ({color, size}) =>  <Feather name='dribbble' size={size} color={color}/>
+            }}
+        />
+        <Tabs.Screen 
             name='search'
             options={{
                 title:"",
