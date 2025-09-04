@@ -2,8 +2,6 @@ import asyncHandler from "express-async-handler";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import { getAuth } from "@clerk/express";
-import { clerkClient } from "@clerk/express";
-import expressAsyncHandler from "express-async-handler";
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
@@ -35,4 +33,21 @@ export const createGroup = asyncHandler(async (req, res) => {
   await owner.save();
 
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
+});
+
+// ADD THIS NEW CONTROLLER
+export const getGroups = asyncHandler(async (req, res) => {
+  const { userId } = getAuth(req);
+
+  const currentUser = await User.findOne({ clerkId: userId }).lean();
+
+  if (!currentUser) {
+    return res.status(404).json({ error: "User not found." });
+  }
+
+  const userGroups = await Group.find({ members: currentUser._id }).select(
+    "name _id"
+  );
+
+  res.status(200).json(userGroups);
 });
