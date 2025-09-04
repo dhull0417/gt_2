@@ -17,7 +17,7 @@ export const createGroup = asyncHandler(async (req, res) => {
   const owner = await User.findOne({ clerkId: userId });
 
   if (!owner) {
-    return res.status(404).json({ error: "User not found." });
+    return res.status(407).json({ error: "User not found." });
   }
 
   // Create the new group document
