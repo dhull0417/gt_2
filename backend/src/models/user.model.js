@@ -47,6 +47,13 @@ const userSchema = new mongoose.Schema(
             default: "",
         },
 
+        groups: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Group",
+            },
+        ],
+
         followers: [
             {
                 type: mongoose.Schema.Types.ObjectId,

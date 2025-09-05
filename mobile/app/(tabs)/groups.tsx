@@ -3,35 +3,50 @@ import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import SignOutButton from '@/components/SignOutButton';
 import CreateGroupPopup from '@/components/CreateGroupPopup';
-import { useGetGroups } from '@/hooks/useGetGroups'; 
+// 1. IMPORT THE GROUP TYPE AND ICONS
+import { useGetGroups, Group } from '@/hooks/useGetGroups'; 
+import { Feather } from '@expo/vector-icons';
 
 const GroupScreen = () => {
-    const [isModalVisible, setIsModalVisible] = useState(false);
+    // State for the "Create Group" popup
+    const [isCreateModalVisible, setCreateIsModalVisible] = useState(false);
 
-    // 2. Use the hook to fetch data
-    // We rename 'data' to 'groups' for better readability
+    // 2. ADD NEW STATE FOR THE GROUP DETAIL VIEW
+    const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+    const [isGroupDetailVisible, setIsGroupDetailVisible] = useState(false);
+
     const { data: groups, isLoading, isError, error } = useGetGroups();
 
-    // 2. Add a check for the error and log it
     if (error) {
         console.log("Error fetching groups:", JSON.stringify(error, null, 2));
     }
-    const handleOpenModal = () => {
-        setIsModalVisible(true);
+
+    const handleOpenCreateModal = () => {
+        setCreateIsModalVisible(true);
     };
 
-    const handleCloseModal = () => {
-        setIsModalVisible(false);
+    const handleCloseCreateModal = () => {
+        setCreateIsModalVisible(false);
     };
 
-    // 3. Create a helper function to render the list content
+    // 3. ADD NEW HANDLERS FOR OPENING/CLOSING THE GROUP DETAIL VIEW
+    const handleOpenGroupDetail = (group: Group) => {
+        setSelectedGroup(group);
+        setIsGroupDetailVisible(true);
+    };
+
+    const handleCloseGroupDetail = () => {
+        setIsGroupDetailVisible(false);
+        setSelectedGroup(null); // Clear the selected group
+    };
+
     const renderGroupList = () => {
         if (isLoading) {
             return <ActivityIndicator size="large" color="#0000ff" className="mt-8"/>;
         }
 
         if (isError) {
-            return <Text className="text-center text-red-500 mt-4">Failed to load</Text>;
+            return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
         }
         
         if (!groups || groups.length === 0) {
@@ -40,8 +55,10 @@ const GroupScreen = () => {
 
         return groups.map((group) => (
             <TouchableOpacity
-                key={group._id} // The unique key is essential for list rendering
+                key={group._id}
                 className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200"
+                // 4. ADD THE ONPRESS HANDLER HERE
+                onPress={() => handleOpenGroupDetail(group)}
             >
                 <Text className="text-lg font-semibold text-gray-800">{group.name}</Text>
             </TouchableOpacity>
@@ -59,7 +76,7 @@ const GroupScreen = () => {
                 <View className="my-4">
                     <TouchableOpacity
                         className="py-4 rounded-lg bg-blue-500 items-center shadow"
-                        onPress={handleOpenModal}
+                        onPress={handleOpenCreateModal}
                     >
                         <Text className="text-white text-lg font-bold">
                             Create Group
@@ -67,22 +84,57 @@ const GroupScreen = () => {
                     </TouchableOpacity>
                 </View>
 
-                {/* 4. This is where the list will be rendered */}
                 <View>
                     {renderGroupList()}
                 </View>
             </ScrollView>
 
+            {/* Modal for Creating a Group (unchanged) */}
+            
             <Modal
                 animationType="slide"
                 transparent={true}
-                visible={isModalVisible}
-                onRequestClose={handleCloseModal}
+                visible={isCreateModalVisible}
+                onRequestClose={handleCloseCreateModal}
             >
                 <View className="flex-1 justify-center items-center bg-black bg-opacity-50">
-                    <CreateGroupPopup onClose={handleCloseModal} />
+                    <CreateGroupPopup onClose={handleCloseCreateModal} />
                 </View>
             </Modal>
+
+            {/* 5. ADD THE NEW MODAL FOR THE GROUP DETAIL VIEW */}
+            <SafeAreaView>
+            <Modal
+                visible={isGroupDetailVisible}
+                animationType="slide"
+                onRequestClose={handleCloseGroupDetail} // For Android back button
+            >
+                {selectedGroup && (
+                    <SafeAreaView className="flex-1">
+                        {/* Custom Header for the Group Detail */}
+                        <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
+                            <TouchableOpacity onPress={handleCloseGroupDetail} className="mr-4">
+                                <Feather name="arrow-left" size={24} color="#3b82f6" />
+                            </TouchableOpacity>
+                            <Text className="text-xl font-bold text-gray-900">{selectedGroup.name}</Text>
+                        </View>
+
+                        {/* Content for the individual group page */}
+                        <View className="flex-1 p-4">
+                            <Text className="text-lg text-gray-700">
+                                Welcome to the {selectedGroup.name} group page!
+                            </Text>
+                            <Text className="mt-2 text-gray-500">
+                                Group ID: {selectedGroup._id}
+                            </Text>
+                            <Text className="mt-4 text-gray-600">
+                                More specific information about this group will be displayed here soon.
+                            </Text>
+                        </View>
+                    </SafeAreaView>
+                )}
+            </Modal>
+            </SafeAreaView>
         </SafeAreaView>
     );
 };

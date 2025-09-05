@@ -3,7 +3,7 @@ import { useApiClient } from "@/utils/api";
 import { groupApi } from "@/utils/api";
 
 // Define the shape of a single group object for TypeScript
-type Group = {
+export type Group = {
     _id: string;
     name: string;
 };
