@@ -61,7 +61,20 @@ const CreateGroupScreen = ({ onClose }: CreateGroupScreenProps) => {
         setRecurrence(prev => ({...prev, daysOfWeek: [dayIndex]}));
     };
 
-    const handleCreate = () => { /* ... unchanged ... */ };
+    const handleCreate = () => {
+        // 1. Add this log as the very first line.
+        console.log("Create button pressed. Group name is:", groupName);
+
+        if (!groupName.trim()) {
+            Alert.alert("Error", "Group name is required.");
+            return;
+        }
+        mutate({ name: groupName, eventStartDate: date, recurrence }, {
+            onSuccess: () => {
+                onClose();
+            },
+        });
+    };
     
     return (
         <SafeAreaView className="flex-1 bg-white">
