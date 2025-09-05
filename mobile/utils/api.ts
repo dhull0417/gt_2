@@ -51,7 +51,7 @@ export const userApi= {
 
 export const groupApi = {
     // API call to create a new group
-    createGroup: (api: AxiosInstance, data: CreateGroupPayload) => api.post("/api/groups/create", { name }),
+    createGroup: (api: AxiosInstance, data: CreateGroupPayload) => api.post("/api/groups/create", data),
     // Add other group-related API calls here (e.g., getGroup, addMember)
     getGroups: (api: AxiosInstance) => api.get("/api/groups"),
 };
