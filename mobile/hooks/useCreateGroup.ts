@@ -1,7 +1,6 @@
 // mobile/hooks/useCreateGroup.ts
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigation } from "@react-navigation/native";
 import { useApiClient, groupApi, CreateGroupPayload } from "../utils/api"; // 1. Import the new CreateGroupPayload type
 import { Alert } from "react-native";
 
@@ -9,7 +8,6 @@ import { Alert } from "react-native";
 // as we now use the more detailed 'CreateGroupPayload' from our api utils.
 
 export const useCreateGroup = () => {
-    const navigation = useNavigation();
     const api = useApiClient();
     const queryClient = useQueryClient();
 
@@ -29,20 +27,13 @@ export const useCreateGroup = () => {
         // 4. Your onSuccess and onError logic is already perfect for this flow.
         // It will now run correctly when the backend returns a successful response.
         onSuccess: (response) => {
-            console.log("New Group Created:", response.data);
-            Alert.alert("Success", "Group created successfully!");
-            
+            console.log("New Group Created:", response.data);            
             // This invalidates the query, causing the GroupScreen to refetch the list.
             queryClient.invalidateQueries({ queryKey: ['groups'] });
             
-            // This will take the user away from the create screen.
-            if (navigation.canGoBack()) {
-                navigation.goBack();
-            }
         },
         onError: (error) => {
             console.error("Error creating group:", error);
-            Alert.alert("Error", error.message || "Failed to create group.");
-        },
+            },
     });
 };
