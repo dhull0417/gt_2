@@ -1,39 +1,48 @@
+// mobile/hooks/useCreateGroup.ts
+
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
-import { useApiClient, groupApi } from "../utils/api";
+import { useApiClient, groupApi, CreateGroupPayload } from "../utils/api"; // 1. Import the new CreateGroupPayload type
 import { Alert } from "react-native";
 
-interface CreateGroupVariables {
-  name: string;
-}
+// The old 'CreateGroupVariables' interface is no longer needed
+// as we now use the more detailed 'CreateGroupPayload' from our api utils.
 
 export const useCreateGroup = () => {
-  const navigation = useNavigation();
-  const api = useApiClient();
-  const queryClient = useQueryClient();
+    const navigation = useNavigation();
+    const api = useApiClient();
+    const queryClient = useQueryClient();
 
-  const createGroupMutation = useMutation({
-    mutationFn: async (variables: CreateGroupVariables) => {
-      if (!variables.name) {
-        throw new Error("Group name cannot be empty.");
-      }
-      // This line has been updated to pass the group name directly as a string,
-      // which is the simplest fix to resolve the TypeScript error.
-      return await groupApi.createGroup(api, variables.name);
-    },
-    onSuccess: (response) => {
-      console.log("New Group Created:", response.data);
-      Alert.alert("Success", "Group created successfully!");
-      // Invalidate relevant queries to re-fetch the group list
-      queryClient.invalidateQueries({ queryKey: ['groups'] });
-      // Navigate back or close the modal
-      navigation.goBack();
-    },
-    onError: (error) => {
-      console.error("Error creating group:", error);
-      Alert.alert("Error", error.message || "Failed to create group.");
-    },
-  });
-
-  return createGroupMutation;
+    return useMutation({
+        // 2. The mutation function now expects the full 'CreateGroupPayload' object
+        mutationFn: async (variables: CreateGroupPayload) => {
+            // Your client-side validation is good practice
+            if (!variables.name || variables.name.trim().length === 0) {
+                throw new Error("Group name cannot be empty.");
+            }
+            
+            // 3. Pass the entire 'variables' object to the API call.
+            // This now includes name, eventStartDate, and the recurrence rule.
+            return await groupApi.createGroup(api, variables);
+        },
+        
+        // 4. Your onSuccess and onError logic is already perfect for this flow.
+        // It will now run correctly when the backend returns a successful response.
+        onSuccess: (response) => {
+            console.log("New Group Created:", response.data);
+            Alert.alert("Success", "Group created successfully!");
+            
+            // This invalidates the query, causing the GroupScreen to refetch the list.
+            queryClient.invalidateQueries({ queryKey: ['groups'] });
+            
+            // This will take the user away from the create screen.
+            if (navigation.canGoBack()) {
+                navigation.goBack();
+            }
+        },
+        onError: (error) => {
+            console.error("Error creating group:", error);
+            Alert.alert("Error", error.message || "Failed to create group.");
+        },
+    });
 };

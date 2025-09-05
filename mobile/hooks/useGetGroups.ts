@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/utils/api"; 
 import { groupApi } from "@/utils/api";
+import { RecurrenceRule } from "@/utils/api";
 
 // Define the shape of a single group object for TypeScript
 export type Group = {
     _id: string;
     name: string;
+    eventStartDate: string; // Dates are often serialized as strings
+    recurrence: RecurrenceRule;
 };
 
 export const useGetGroups = () => {

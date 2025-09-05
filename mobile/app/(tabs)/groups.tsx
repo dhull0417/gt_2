@@ -1,140 +1,115 @@
+// mobile/screens/GroupScreen.tsx
+
 import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import SignOutButton from '@/components/SignOutButton';
-import CreateGroupPopup from '@/components/CreateGroupPopup';
-// 1. IMPORT THE GROUP TYPE AND ICONS
-import { useGetGroups, Group } from '@/hooks/useGetGroups'; 
+import { useGetGroups, Group } from '@/hooks/useGetGroups';
 import { Feather } from '@expo/vector-icons';
 
-const GroupScreen = () => {
-    // State for the "Create Group" popup
-    const [isCreateModalVisible, setCreateIsModalVisible] = useState(false);
+// Import the new screen component
+import CreateGroupScreen from '@/components/CreateGroupScreen'; 
 
-    // 2. ADD NEW STATE FOR THE GROUP DETAIL VIEW
-    const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-    const [isGroupDetailVisible, setIsGroupDetailVisible] = useState(false);
-
-    const { data: groups, isLoading, isError, error } = useGetGroups();
-
-    if (error) {
-        console.log("Error fetching groups:", JSON.stringify(error, null, 2));
+// Helper function to format recurrence rules into readable strings
+const formatRecurrence = (group: Group): string => {
+    const { recurrence, eventStartDate } = group;
+    const startDate = new Date(eventStartDate); // Ensure it's a Date object
+    if (recurrence.frequency === 'weekly') {
+        const weekday = startDate.toLocaleDateString('en-US', { weekday: 'long' });
+        return `Repeats weekly on ${weekday}s`;
     }
+    if (recurrence.frequency === 'monthly' && recurrence.daysOfMonth) {
+        // Simple case for one day
+        if(recurrence.daysOfMonth.length === 1) {
+            return `Repeats monthly on day ${recurrence.daysOfMonth[0]}`;
+        }
+        return `Repeats monthly on multiple days`;
+    }
+    return 'Recurring event';
+};
 
-    const handleOpenCreateModal = () => {
-        setCreateIsModalVisible(true);
-    };
+const GroupScreen = () => {
+    // State is now for the full-screen modal
+    const [isCreateScreenVisible, setCreateScreenVisible] = useState(false);
+    const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
 
-    const handleCloseCreateModal = () => {
-        setCreateIsModalVisible(false);
-    };
-
-    // 3. ADD NEW HANDLERS FOR OPENING/CLOSING THE GROUP DETAIL VIEW
-    const handleOpenGroupDetail = (group: Group) => {
-        setSelectedGroup(group);
-        setIsGroupDetailVisible(true);
-    };
-
-    const handleCloseGroupDetail = () => {
-        setIsGroupDetailVisible(false);
-        setSelectedGroup(null); // Clear the selected group
-    };
+    const { data: groups, isLoading, isError } = useGetGroups();
+    
+    // Handlers for the detail modal
+    const handleOpenGroupDetail = (group: Group) => setSelectedGroup(group);
+    const handleCloseGroupDetail = () => setSelectedGroup(null);
 
     const renderGroupList = () => {
-        if (isLoading) {
-            return <ActivityIndicator size="large" color="#0000ff" className="mt-8"/>;
-        }
-
-        if (isError) {
-            return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
-        }
-        
-        if (!groups || groups.length === 0) {
-            return <Text className="text-center text-gray-500 mt-4">You are not in any groups yet.</Text>
-        }
+        if (isLoading) return <ActivityIndicator size="large" color="#0000ff" className="mt-8"/>;
+        if (isError) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
+        if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">No groups yet. Create one!</Text>;
 
         return groups.map((group) => (
             <TouchableOpacity
                 key={group._id}
                 className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200"
-                // 4. ADD THE ONPRESS HANDLER HERE
                 onPress={() => handleOpenGroupDetail(group)}
             >
-                <Text className="text-lg font-semibold text-gray-800">{group.name}</Text>
+                <Text className="text-xl font-semibold text-gray-800">{group.name}</Text>
+                {/* Display the formatted recurrence rule */}
+                <Text className="text-sm text-gray-500 mt-1">{formatRecurrence(group)}</Text>
             </TouchableOpacity>
         ));
     };
 
     return (
         <SafeAreaView className='flex-1 bg-gray-50'>
+            {/* Header */}
             <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
                 <Text className="text-xl font-bold text-gray-900">Groups</Text>
                 <SignOutButton />
             </View>
 
             <ScrollView className="px-4">
+                {/* Create Group Button */}
                 <View className="my-4">
                     <TouchableOpacity
                         className="py-4 rounded-lg bg-blue-500 items-center shadow"
-                        onPress={handleOpenCreateModal}
+                        onPress={() => setCreateScreenVisible(true)}
                     >
-                        <Text className="text-white text-lg font-bold">
-                            Create Group
-                        </Text>
+                        <Text className="text-white text-lg font-bold">Create Group</Text>
                     </TouchableOpacity>
                 </View>
-
-                <View>
-                    {renderGroupList()}
-                </View>
+                {/* Group List */}
+                <View>{renderGroupList()}</View>
             </ScrollView>
 
-            {/* Modal for Creating a Group (unchanged) */}
-            
+            {/* Modal for Creating a Group (NOW FULL SCREEN) */}
             <Modal
+                visible={isCreateScreenVisible}
                 animationType="slide"
-                transparent={true}
-                visible={isCreateModalVisible}
-                onRequestClose={handleCloseCreateModal}
+                onRequestClose={() => setCreateScreenVisible(false)}
             >
-                <View className="flex-1 justify-center items-center bg-black bg-opacity-50">
-                    <CreateGroupPopup onClose={handleCloseCreateModal} />
-                </View>
+                <CreateGroupScreen onClose={() => setCreateScreenVisible(false)} />
             </Modal>
 
-            {/* 5. ADD THE NEW MODAL FOR THE GROUP DETAIL VIEW */}
-            <SafeAreaView>
+            {/* Modal for Viewing Group Details */}
             <Modal
-                visible={isGroupDetailVisible}
+                visible={!!selectedGroup}
                 animationType="slide"
-                onRequestClose={handleCloseGroupDetail} // For Android back button
+                onRequestClose={handleCloseGroupDetail}
             >
                 {selectedGroup && (
                     <SafeAreaView className="flex-1">
-                        {/* Custom Header for the Group Detail */}
                         <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
                             <TouchableOpacity onPress={handleCloseGroupDetail} className="mr-4">
                                 <Feather name="arrow-left" size={24} color="#3b82f6" />
                             </TouchableOpacity>
                             <Text className="text-xl font-bold text-gray-900">{selectedGroup.name}</Text>
                         </View>
-
-                        {/* Content for the individual group page */}
                         <View className="flex-1 p-4">
-                            <Text className="text-lg text-gray-700">
-                                Welcome to the {selectedGroup.name} group page!
-                            </Text>
-                            <Text className="mt-2 text-gray-500">
-                                Group ID: {selectedGroup._id}
-                            </Text>
-                            <Text className="mt-4 text-gray-600">
-                                More specific information about this group will be displayed here soon.
-                            </Text>
+                            <Text className="text-lg font-semibold text-gray-700">Event Schedule</Text>
+                            {/* Display formatted recurrence in the detail view */}
+                            <Text className="mt-1 text-gray-600 text-base">{formatRecurrence(selectedGroup)}</Text>
                         </View>
                     </SafeAreaView>
                 )}
             </Modal>
-            </SafeAreaView>
         </SafeAreaView>
     );
 };

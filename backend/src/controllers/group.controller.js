@@ -22,7 +22,9 @@ export const createGroup = asyncHandler(async (req, res) => {
   const newGroup = await Group.create({
     name,
     owner: owner._id,
-    members: [owner._id], // Add the owner as the first member
+    members: [owner._id],
+    eventStartDate,
+    recurrence,
   });
 
   // The newGroup document now automatically has a unique `_id`
@@ -46,7 +48,7 @@ export const getGroups = asyncHandler(async (req, res) => {
   }
 
   const userGroups = await Group.find({ members: currentUser._id }).select(
-    "name _id"
+    "name _id eventStartDate recurrence"
   );
 
   res.status(200).json(userGroups);

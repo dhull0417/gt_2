@@ -30,15 +30,9 @@ export const useApiClient = (): AxiosInstance => {
     return createApiClient(getToken);
 };
 
-export const userApi= {
-    syncUser: (api:AxiosInstance) => api.post("/api/users/sync"),
-    getCurrentUser: (api: AxiosInstance) => api.get("/api/users/me"),
-    updateProfile:   (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
+export interface RecurrenceRule {
+    frequency: 'weekly' | 'monthly';
+    interval: number;
+    daysOfWeek?: number[];
+    daysOfMonth?: number[];
 }
-
-export const groupApi = {
-    // API call to create a new group
-    createGroup: (api: AxiosInstance, name: string) => api.post("/api/groups/create", { name }),
-    // Add other group-related API calls here (e.g., getGroup, addMember)
-    getGroups: (api: AxiosInstance) => api.get("/api/groups"),
-};
