@@ -5,7 +5,7 @@ import { getAuth } from "@clerk/express";
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
-  const { name } = req.body;
+  const { name, eventStartDate, recurrence } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: "Group name is required." });
