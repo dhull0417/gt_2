@@ -1,5 +1,3 @@
-// mobile/components/CreateGroupScreen.tsx
-
 import React, { useState } from 'react';
 import { View, Text, SafeAreaView, ScrollView, TextInput, TouchableOpacity, Alert, Platform } from 'react-native';
 import { useCreateGroup } from '@/hooks/useCreateGroup';
@@ -23,16 +21,14 @@ const CreateGroupScreen = ({ onClose }: CreateGroupScreenProps) => {
         daysOfWeek: [new Date().getDay()],
     });
 
+    console.log("--- CreateGroupScreen is about to call the useCreateGroup hook ---");
     const { mutate, isPending } = useCreateGroup();
 
-    // --- THIS IS THE FIX ---
-    // 1. Update the function signature to accept a second optional argument.
     const handleFrequencyChange = (newFrequency: Frequency, baseDate: Date = date) => {
         if (newFrequency === 'weekly') {
             setRecurrence({
                 frequency: 'weekly',
                 interval: 1,
-                // 2. Use 'baseDate' here instead of the stale 'date' from state.
                 daysOfWeek: [baseDate.getDay()], 
                 daysOfMonth: undefined,
             });
@@ -41,18 +37,22 @@ const CreateGroupScreen = ({ onClose }: CreateGroupScreenProps) => {
                 frequency: 'monthly',
                 interval: 1,
                 daysOfWeek: undefined,
-                // 3. Use 'baseDate' here as well.
                 daysOfMonth: [baseDate.getDate()],
             });
         }
     };
-    // --- END OF FIX ---
 
     const handleDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-        setShowDatePicker(Platform.OS === 'ios');
+        // On iOS, the user must dismiss the picker manually. On Android it's a modal.
+        if (Platform.OS === 'ios') {
+            // Keep the picker open until the user taps "Done"
+        } else {
+            setShowDatePicker(false);
+        }
+
         if (selectedDate) {
             setDate(selectedDate);
-            // Now this call correctly matches the updated function definition.
+            // Re-sync the recurrence rule with the newly selected date
             handleFrequencyChange(recurrence.frequency, selectedDate);
         }
     };
@@ -62,9 +62,6 @@ const CreateGroupScreen = ({ onClose }: CreateGroupScreenProps) => {
     };
 
     const handleCreate = () => {
-        // 1. Add this log as the very first line.
-        console.log("Create button pressed. Group name is:", groupName);
-
         if (!groupName.trim()) {
             Alert.alert("Error", "Group name is required.");
             return;
@@ -91,7 +88,6 @@ const CreateGroupScreen = ({ onClose }: CreateGroupScreenProps) => {
             </View>
 
             <ScrollView className="p-4" keyboardShouldPersistTaps="handled">
-                {/* ... The rest of your JSX is unchanged and correct ... */}
                 <Text className="font-semibold text-gray-600 mb-2">GROUP NAME</Text>
                 <TextInput
                     placeholder="e.g., Thursday Night Basketball"
@@ -112,7 +108,7 @@ const CreateGroupScreen = ({ onClose }: CreateGroupScreenProps) => {
                     <View className="bg-gray-50 rounded-lg my-2">
                         {Platform.OS === 'ios' && (
                             <TouchableOpacity onPress={() => setShowDatePicker(false)} className="items-end p-2">
-                                 <Text className="text-blue-500">Done</Text>
+                                 <Text className="text-blue-500 font-bold">Done</Text>
                             </TouchableOpacity>
                         )}
                         <DateTimePicker
