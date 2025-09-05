@@ -1,4 +1,4 @@
-// mobile/screens/GroupScreen.tsx
+// mobile/app/(tabs)/groups.tsx
 
 import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
 import React, { useState } from 'react';
@@ -6,20 +6,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import SignOutButton from '@/components/SignOutButton';
 import { useGetGroups, Group } from '@/hooks/useGetGroups';
 import { Feather } from '@expo/vector-icons';
-
-// Import the new screen component
-import CreateGroupScreen from '@/components/CreateGroupScreen'; 
+import { useRouter } from 'expo-router';
 
 // Helper function to format recurrence rules into readable strings
 const formatRecurrence = (group: Group): string => {
+    if (!group.recurrence) {
+        return 'Schedule not set';
+    }
     const { recurrence, eventStartDate } = group;
-    const startDate = new Date(eventStartDate); // Ensure it's a Date object
+    const startDate = new Date(eventStartDate);
     if (recurrence.frequency === 'weekly') {
         const weekday = startDate.toLocaleDateString('en-US', { weekday: 'long' });
         return `Repeats weekly on ${weekday}s`;
     }
     if (recurrence.frequency === 'monthly' && recurrence.daysOfMonth) {
-        // Simple case for one day
         if(recurrence.daysOfMonth.length === 1) {
             return `Repeats monthly on day ${recurrence.daysOfMonth[0]}`;
         }
@@ -29,13 +29,10 @@ const formatRecurrence = (group: Group): string => {
 };
 
 const GroupScreen = () => {
-    // State is now for the full-screen modal
-    const [isCreateScreenVisible, setCreateScreenVisible] = useState(false);
+    const router = useRouter();
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-
     const { data: groups, isLoading, isError } = useGetGroups();
     
-    // Handlers for the detail modal
     const handleOpenGroupDetail = (group: Group) => setSelectedGroup(group);
     const handleCloseGroupDetail = () => setSelectedGroup(null);
 
@@ -44,6 +41,7 @@ const GroupScreen = () => {
         if (isError) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
         if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">No groups yet. Create one!</Text>;
 
+        // Ensure this .map() uses parentheses for an implicit return
         return groups.map((group) => (
             <TouchableOpacity
                 key={group._id}
@@ -51,7 +49,6 @@ const GroupScreen = () => {
                 onPress={() => handleOpenGroupDetail(group)}
             >
                 <Text className="text-xl font-semibold text-gray-800">{group.name}</Text>
-                {/* Display the formatted recurrence rule */}
                 <Text className="text-sm text-gray-500 mt-1">{formatRecurrence(group)}</Text>
             </TouchableOpacity>
         ));
@@ -59,36 +56,23 @@ const GroupScreen = () => {
 
     return (
         <SafeAreaView className='flex-1 bg-gray-50'>
-            {/* Header */}
             <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
                 <Text className="text-xl font-bold text-gray-900">Groups</Text>
                 <SignOutButton />
             </View>
 
             <ScrollView className="px-4">
-                {/* Create Group Button */}
                 <View className="my-4">
                     <TouchableOpacity
                         className="py-4 rounded-lg bg-blue-500 items-center shadow"
-                        onPress={() => setCreateScreenVisible(true)}
+                        onPress={() => router.push('/create-group')}
                     >
                         <Text className="text-white text-lg font-bold">Create Group</Text>
                     </TouchableOpacity>
                 </View>
-                {/* Group List */}
                 <View>{renderGroupList()}</View>
             </ScrollView>
 
-            {/* Modal for Creating a Group (NOW FULL SCREEN) */}
-            <Modal
-                visible={isCreateScreenVisible}
-                animationType="slide"
-                onRequestClose={() => setCreateScreenVisible(false)}
-            >
-                <CreateGroupScreen onClose={() => setCreateScreenVisible(false)} />
-            </Modal>
-
-            {/* Modal for Viewing Group Details */}
             <Modal
                 visible={!!selectedGroup}
                 animationType="slide"
@@ -104,7 +88,6 @@ const GroupScreen = () => {
                         </View>
                         <View className="flex-1 p-4">
                             <Text className="text-lg font-semibold text-gray-700">Event Schedule</Text>
-                            {/* Display formatted recurrence in the detail view */}
                             <Text className="mt-1 text-gray-600 text-base">{formatRecurrence(selectedGroup)}</Text>
                         </View>
                     </SafeAreaView>

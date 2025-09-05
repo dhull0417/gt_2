@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useApiClient, groupApi, CreateGroupPayload } from "../utils/api";
+import { useApiClient, groupApi, CreateGroupPayload } from "@/utils/api";
 import { Alert } from "react-native";
 
 console.log("--- EXECUTING THE CORRECT useCreateGroup.ts file ---");
