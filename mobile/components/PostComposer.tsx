@@ -1,7 +1,7 @@
 import { useCreatePost } from "@/hooks/useCreatePost";
 import { useUser } from "@clerk/clerk-expo";
 import { Feather } from "@expo/vector-icons";
-import { View, Text, Image, TextInput, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, Image, TextInput, TouchableOpacity, ActivityIndicator, Alert} from "react-native";
 
 const PostComposer = () => {
   const {
