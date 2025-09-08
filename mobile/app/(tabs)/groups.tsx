@@ -1,142 +1,47 @@
-import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
 import React, { useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import SignOutButton from '@/components/SignOutButton';
-import CreateGroupPopup from '@/components/CreateGroupPopup';
-// 1. IMPORT THE GROUP TYPE AND ICONS
-import { useGetGroups, Group } from '@/hooks/useGetGroups'; 
-import { Feather } from '@expo/vector-icons';
+import { View, Text, TouchableOpacity, SafeAreaView } from 'react-native';
+import { CreateGroupModal, GroupScheduleData } from '../../components/createGroupModal';
+import { useCreateGroup } from '../../hooks/useCreateGroup';
+import { useGetGroups } from '../../hooks/useGetGroups'; // Import the new hook
+import { GroupList } from '../../components/GroupList'; // Import the new component
 
-const GroupScreen = () => {
-    // State for the "Create Group" popup
-    const [isCreateModalVisible, setCreateIsModalVisible] = useState(false);
+export default function GroupsScreen() {
+  const [isModalVisible, setModalVisible] = useState(false);
+  
+  // Mutations and Queries
+  const { mutate: createGroup, isPending: isCreating } = useCreateGroup();
+  const { data: groups, isLoading: isLoadingGroups } = useGetGroups();
 
-    // 2. ADD NEW STATE FOR THE GROUP DETAIL VIEW
-    const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-    const [isGroupDetailVisible, setIsGroupDetailVisible] = useState(false);
+  const handleCreateGroup = (data: GroupScheduleData) => {
+    createGroup(data, {
+      onSuccess: () => {
+        setModalVisible(false);
+      }
+    });
+  };
 
-    const { data: groups, isLoading, isError, error } = useGetGroups();
+  return (
+    <SafeAreaView className="flex-1 bg-gray-50">
+      <View className="flex-1 p-5">
+        <Text className="text-3xl font-bold text-gray-800 mb-5">My Groups</Text>
 
-    if (error) {
-        console.log("Error fetching groups:", JSON.stringify(error, null, 2));
-    }
+        <TouchableOpacity 
+          onPress={() => setModalVisible(true)} 
+          className="bg-blue-600 py-3 px-5 rounded-xl self-start" // changed to self-start
+        >
+          <Text className="text-white font-bold text-lg text-center">Create New Group</Text>
+        </TouchableOpacity>
 
-    const handleOpenCreateModal = () => {
-        setCreateIsModalVisible(true);
-    };
+        {/* Display the list of groups below the button */}
+        <GroupList groups={groups} isLoading={isLoadingGroups} />
 
-    const handleCloseCreateModal = () => {
-        setCreateIsModalVisible(false);
-    };
-
-    // 3. ADD NEW HANDLERS FOR OPENING/CLOSING THE GROUP DETAIL VIEW
-    const handleOpenGroupDetail = (group: Group) => {
-        setSelectedGroup(group);
-        setIsGroupDetailVisible(true);
-    };
-
-    const handleCloseGroupDetail = () => {
-        setIsGroupDetailVisible(false);
-        setSelectedGroup(null); // Clear the selected group
-    };
-
-    const renderGroupList = () => {
-        if (isLoading) {
-            return <ActivityIndicator size="large" color="#0000ff" className="mt-8"/>;
-        }
-
-        if (isError) {
-            return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
-        }
-        
-        if (!groups || groups.length === 0) {
-            return <Text className="text-center text-gray-500 mt-4">You are not in any groups yet.</Text>
-        }
-
-        return groups.map((group) => (
-            <TouchableOpacity
-                key={group._id}
-                className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200"
-                // 4. ADD THE ONPRESS HANDLER HERE
-                onPress={() => handleOpenGroupDetail(group)}
-            >
-                <Text className="text-lg font-semibold text-gray-800">{group.name}</Text>
-            </TouchableOpacity>
-        ));
-    };
-
-    return (
-        <SafeAreaView className='flex-1 bg-gray-50'>
-            <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
-                <Text className="text-xl font-bold text-gray-900">Groups</Text>
-                <SignOutButton />
-            </View>
-
-            <ScrollView className="px-4">
-                <View className="my-4">
-                    <TouchableOpacity
-                        className="py-4 rounded-lg bg-blue-500 items-center shadow"
-                        onPress={handleOpenCreateModal}
-                    >
-                        <Text className="text-white text-lg font-bold">
-                            Create Group
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-
-                <View>
-                    {renderGroupList()}
-                </View>
-            </ScrollView>
-
-            {/* Modal for Creating a Group (unchanged) */}
-            
-            <Modal
-                animationType="slide"
-                transparent={true}
-                visible={isCreateModalVisible}
-                onRequestClose={handleCloseCreateModal}
-            >
-                <View className="flex-1 justify-center items-center bg-black bg-opacity-50">
-                    <CreateGroupPopup onClose={handleCloseCreateModal} />
-                </View>
-            </Modal>
-
-            {/* 5. ADD THE NEW MODAL FOR THE GROUP DETAIL VIEW */}
-            <SafeAreaView>
-            <Modal
-                visible={isGroupDetailVisible}
-                animationType="slide"
-                onRequestClose={handleCloseGroupDetail} // For Android back button
-            >
-                {selectedGroup && (
-                    <SafeAreaView className="flex-1">
-                        {/* Custom Header for the Group Detail */}
-                        <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
-                            <TouchableOpacity onPress={handleCloseGroupDetail} className="mr-4">
-                                <Feather name="arrow-left" size={24} color="#3b82f6" />
-                            </TouchableOpacity>
-                            <Text className="text-xl font-bold text-gray-900">{selectedGroup.name}</Text>
-                        </View>
-
-                        {/* Content for the individual group page */}
-                        <View className="flex-1 p-4">
-                            <Text className="text-lg text-gray-700">
-                                Welcome to the {selectedGroup.name} group page!
-                            </Text>
-                            <Text className="mt-2 text-gray-500">
-                                Group ID: {selectedGroup._id}
-                            </Text>
-                            <Text className="mt-4 text-gray-600">
-                                More specific information about this group will be displayed here soon.
-                            </Text>
-                        </View>
-                    </SafeAreaView>
-                )}
-            </Modal>
-            </SafeAreaView>
-        </SafeAreaView>
-    );
-};
-
-export default GroupScreen;
+        <CreateGroupModal
+          isVisible={isModalVisible}
+          onClose={() => setModalVisible(false)}
+          onSubmit={handleCreateGroup}
+          isSubmitting={isCreating}
+        />
+      </View>
+    </SafeAreaView>
+  );
+}
