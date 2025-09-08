@@ -4,7 +4,6 @@ View,
 Text,
 TextInput,
 TouchableOpacity,
-Alert,
 } from "react-native";
 import { useCreateGroup } from "@/hooks/useCreateGroup";
 
@@ -12,7 +11,7 @@ import { useCreateGroup } from "@/hooks/useCreateGroup";
 // such as NativeWind. This allows you to use Tailwind classes directly.
 
 interface CreateGroupPopupProps {
-onClose: () => void;
+onClose: () => void; 
 }
 
 const CreateGroupPopup: React.FC<CreateGroupPopupProps> = ({ onClose }) => {
