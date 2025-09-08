@@ -3,31 +3,47 @@ import { useAuth } from "@clerk/clerk-expo";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
-// Defines the shape of the schedule object
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
   day: number;
 }
 
-// Defines the shape of a single group object
+export interface User {
+  _id: string;
+  clerkId: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  profilePicture?: string; // Added for displaying member images
+}
+
 export interface Group {
   _id: string;
   name: string;
   time: string;
-  schedule?: Schedule; // Schedule is optional here
+  schedule?: Schedule;
+  owner: string;
 }
 
-// Defines the payload for the create group request
+// --- ADDED: Interface for the detailed group response ---
+export interface GroupDetails extends Group {
+  members: User[]; // The members array is now populated with User objects
+}
+
 interface CreateGroupPayload {
   name: string;
   time: string;
-  schedule: Schedule | null; // Can be null
+  schedule: Schedule | null;
 }
 
-// Defines the shape of the data returned by the createGroup endpoint
+interface AddMemberPayload {
+  groupId: string;
+  userId: string;
+}
+
 interface CreateGroupResponse {
-    group: Group;
-    message: string;
+  group: Group;
+  message: string;
 }
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
@@ -52,15 +68,16 @@ export const useApiClient = (): AxiosInstance => {
   return createApiClient(getToken);
 };
 
-// Preserved user API calls
 export const userApi = {
   syncUser: (api: AxiosInstance) => api.post("/api/users/sync"),
-  getCurrentUser: (api: AxiosInstance) => api.get("/api/users/me"),
+  getCurrentUser: async (api: AxiosInstance): Promise<User> => {
+    const response = await api.get<User>("/api/users/me");
+    return response.data;
+  },
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
 };
 
 export const groupApi = {
-  // This function now handles the full payload including the optional schedule
   createGroup: async (api: AxiosInstance, payload: CreateGroupPayload): Promise<CreateGroupResponse> => {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);
     return response.data;
@@ -70,4 +87,15 @@ export const groupApi = {
     const response = await api.get<Group[]>("/api/groups");
     return response.data;
   },
+
+  addMember: async (api: AxiosInstance, { groupId, userId }: AddMemberPayload): Promise<{ message: string }> => {
+    const response = await api.post(`/api/groups/${groupId}/add-member`, { userId });
+    return response.data;
+  },
+
+  // --- ADDED: New function to get details for a single group ---
+  getGroupDetails: async (api: AxiosInstance, groupId: string): Promise<GroupDetails> => {
+    const response = await api.get<GroupDetails>(`/api/groups/${groupId}`);
+    return response.data;
+  }
 };
