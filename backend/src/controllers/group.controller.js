@@ -5,38 +5,38 @@ import { getAuth } from "@clerk/express";
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
-  // Destructure name and time from the request body
-  const { name, time } = req.body;
+  // Destructure name, time, and the new schedule from the request body
+  const { name, time, schedule } = req.body;
 
-  if (!name) {
-    return res.status(400).json({ error: "Group name is required." });
+  if (!name || !time) {
+    return res.status(400).json({ error: "Group name and time are required." });
   }
 
-  if (!time) {
-    return res.status(400).json({ error: "Meeting time is required." });
-  }
-
-  // Find the current user to set as the group owner
   const owner = await User.findOne({ clerkId: userId });
-
   if (!owner) {
-    // Corrected the status code to 404 for 'Not Found'
     return res.status(404).json({ error: "User not found." });
   }
 
-  // Create the new group document with the time
-  const newGroup = await Group.create({
+  // Create the group data object
+  const groupData = {
     name,
-    time, // Add the time here
+    time,
     owner: owner._id,
     members: [owner._id],
-  });
+  };
 
-  console.log("New group created with ID:", newGroup._id);
-  
-  // You can also add the new group to the user's list of groups
-  // Assuming the User model has a 'groups' array field.
-  // If not, you can remove these two lines.
+  // --- ADDED: Only include schedule if it's provided ---
+  if (schedule) {
+    // Basic validation for the schedule object
+    if (schedule.frequency && typeof schedule.day === 'number') {
+      groupData.schedule = schedule;
+    } else {
+      console.warn("Received invalid schedule object:", schedule);
+    }
+  }
+
+  const newGroup = await Group.create(groupData);
+
   owner.groups.push(newGroup._id);
   await owner.save();
 
@@ -45,16 +45,14 @@ export const createGroup = asyncHandler(async (req, res) => {
 
 export const getGroups = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
-
   const currentUser = await User.findOne({ clerkId: userId }).lean();
-
   if (!currentUser) {
     return res.status(404).json({ error: "User not found." });
   }
 
-  const userGroups = await Group.find({ members: currentUser._id }).select(
-    "name _id time" // Add 'time' so it's fetched from the DB
-  );
+  // Ensure 'schedule' is selected so it's returned to the frontend
+  const userGroups = await Group.find({ members: currentUser._id })
+    .select("name _id time schedule");
 
   res.status(200).json(userGroups);
 });

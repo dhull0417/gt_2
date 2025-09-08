@@ -1,17 +1,18 @@
-import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import SignOutButton from '@/components/SignOutButton';
 import CreateGroupPopup from '@/components/CreateGroupPopup';
-// 1. IMPORT THE GROUP TYPE AND ICONS
-import { useGetGroups, Group } from '@/hooks/useGetGroups'; 
+// --- IMPORT CHANGE IS HERE ---
+import { useGetGroups } from '@/hooks/useGetGroups'; 
+import { Group } from '@/utils/api'; // Import Group type from its source
 import { Feather } from '@expo/vector-icons';
 
 const GroupScreen = () => {
     // State for the "Create Group" popup
     const [isCreateModalVisible, setCreateIsModalVisible] = useState(false);
 
-    // 2. ADD NEW STATE FOR THE GROUP DETAIL VIEW
+    // State for the group detail view
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [isGroupDetailVisible, setIsGroupDetailVisible] = useState(false);
 
@@ -29,7 +30,6 @@ const GroupScreen = () => {
         setCreateIsModalVisible(false);
     };
 
-    // 3. ADD NEW HANDLERS FOR OPENING/CLOSING THE GROUP DETAIL VIEW
     const handleOpenGroupDetail = (group: Group) => {
         setSelectedGroup(group);
         setIsGroupDetailVisible(true);
@@ -57,7 +57,6 @@ const GroupScreen = () => {
             <TouchableOpacity
                 key={group._id}
                 className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200"
-                // 4. ADD THE ONPRESS HANDLER HERE
                 onPress={() => handleOpenGroupDetail(group)}
             >
                 <Text className="text-lg font-semibold text-gray-800">{group.name}</Text>
@@ -89,8 +88,7 @@ const GroupScreen = () => {
                 </View>
             </ScrollView>
 
-            {/* Modal for Creating a Group (unchanged) */}
-            
+            {/* Modal for Creating a Group */}
             <Modal
                 animationType="slide"
                 transparent={true}
@@ -102,12 +100,12 @@ const GroupScreen = () => {
                 </View>
             </Modal>
 
-            {/* 5. ADD THE NEW MODAL FOR THE GROUP DETAIL VIEW */}
+            {/* Modal for the Group Detail View */}
             <SafeAreaView>
             <Modal
                 visible={isGroupDetailVisible}
                 animationType="slide"
-                onRequestClose={handleCloseGroupDetail} // For Android back button
+                onRequestClose={handleCloseGroupDetail}
             >
                 {selectedGroup && (
                     <SafeAreaView className="flex-1">
@@ -126,6 +124,9 @@ const GroupScreen = () => {
                             </Text>
                             <Text className="mt-2 text-gray-500">
                                 Group ID: {selectedGroup._id}
+                            </Text>
+                             <Text className="mt-2 text-gray-500">
+                                Meeting Time: {selectedGroup.time}
                             </Text>
                             <Text className="mt-4 text-gray-600">
                                 More specific information about this group will be displayed here soon.

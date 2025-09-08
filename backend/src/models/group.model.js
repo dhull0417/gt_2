@@ -1,10 +1,17 @@
 import mongoose from "mongoose";
 
-// The scheduleSchema is not currently used by groupSchema, but is kept for future reference.
+// A schema for the recurring schedule, matching the frontend.
 const scheduleSchema = new mongoose.Schema({
-    frequency: { type: String, required: true, enum: ['weekly', 'monthly'] },
-    day: { type: Number, required: true }, 
-    time: { type: String, required: true }, 
+  frequency: { 
+    type: String, 
+    required: true, 
+    enum: ['weekly', 'monthly'] 
+  },
+  // A number: 0-6 for weekly, 1-31 for monthly
+  day: { 
+    type: Number, 
+    required: true 
+  }, 
 }, { _id: false });
 
 const groupSchema = new mongoose.Schema({
@@ -13,9 +20,14 @@ const groupSchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
-  // Add the new time field
   time: {
     type: String,
+    required: true,
+  },
+  // --- ADDED: Optional schedule field ---
+  schedule: {
+    type: scheduleSchema,
+    required: false, // This makes the field optional
   },
   members: [
     {
@@ -28,11 +40,7 @@ const groupSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+}, { timestamps: true }); // Using timestamps is a good practice
 
 const Group = mongoose.model("Group", groupSchema);
 
