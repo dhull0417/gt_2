@@ -30,11 +30,6 @@ const groupSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-  // We replace 'recurrence' and 'eventStartDate' with our new 'schedule' object
-  schedule: {
-    type: scheduleSchema,
-    required: true, 
-  },
 });
 
 const Group = mongoose.model("Group", groupSchema);
