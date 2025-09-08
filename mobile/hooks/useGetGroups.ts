@@ -1,24 +1,28 @@
-import { useQuery } from "@tanstack/react-query";
-import { useApiClient } from "@/utils/api"; 
-import { groupApi } from "@/utils/api";
+import { useQuery } from '@tanstack/react-query';
+import { useApiClient, groupApi } from '../utils/api';
+import { AxiosResponse } from 'axios';
 
-// Define the shape of a single group object for TypeScript
-export type Group = {
+// Define the Group type, matching the one in api.ts and the backend model
+export interface Group {
     _id: string;
     name: string;
-};
+    time: string;
+}
 
 export const useGetGroups = () => {
     const api = useApiClient();
 
-    return useQuery<Group[]>({
-        // queryKey is used by Tanstack Query to cache and manage this data
-        queryKey: ["groups"],
+    // This function now correctly returns a promise that resolves to Group[]
+    const fetchGroups = async (): Promise<Group[]> => {
+        // The API call returns a full AxiosResponse object
+        const response: AxiosResponse<Group[]> = await groupApi.getGroups(api);
+        // We must return the 'data' property, which contains our array of groups
+        return response.data;
+    }
 
-        // queryFn is the async function that fetches the data
-        queryFn: async () => {
-            const { data } = await groupApi.getGroups(api);
-            return data;
-        },
+    // Explicitly tell useQuery the expected types for data and error
+    return useQuery<Group[], Error>({
+        queryKey: ['groups'],
+        queryFn: fetchGroups, // Use our correctly typed fetch function
     });
 };

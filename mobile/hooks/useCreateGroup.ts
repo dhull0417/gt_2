@@ -5,6 +5,7 @@ import { Alert } from "react-native";
 
 interface CreateGroupVariables {
   name: string;
+  time: string; // Add the time property
 }
 
 export const useCreateGroup = () => {
@@ -17,9 +18,11 @@ export const useCreateGroup = () => {
       if (!variables.name) {
         throw new Error("Group name cannot be empty.");
       }
-      // This line has been updated to pass the group name directly as a string,
-      // which is the simplest fix to resolve the TypeScript error.
-      return await groupApi.createGroup(api, variables.name);
+      if (!variables.time) {
+        throw new Error("Meeting time must be set.");
+      }
+      // Pass the entire variables object to the API function
+      return await groupApi.createGroup(api, variables);
     },
     onSuccess: (response) => {
       console.log("New Group Created:", response.data);

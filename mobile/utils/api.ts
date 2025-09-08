@@ -1,44 +1,74 @@
-import axios, { AxiosInstance } from "axios";
-import { useAuth } from "@clerk/clerk-expo";
+import axios, { AxiosInstance, AxiosResponse } from "axios";
+import * as SecureStore from 'expo-secure-store';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL
+// Define the shape of a single group object
+// This can be shared between the frontend and backend
+export interface Group {
+  _id: string;
+  name: string;
+  time: string;
+}
 
-export const createApiClient = (getToken:() => Promise<string|null>):AxiosInstance => {
-    const api = axios.create({baseURL:API_BASE_URL});
+// This is the type for the object you are sending when creating a group
+interface CreateGroupPayload {
+  name: string;
+  time: string;
+}
 
-    api.interceptors.request.use(async (config) => {
-        const token = await getToken();
+export class ApiClient {
+  private client: AxiosInstance;
 
-        // LOGGING RECOMMENDATION: Check if a token was retrieved
-        console.log("Retrieved token:", token ? "Token retrieved" : "No token found");
-
-        if(token) {
-            config.headers.Authorization = `Bearer ${token}`
-        }
-        
-        // LOGGING RECOMMENDATION: Check the headers just before the request is sent
-        console.log("Request headers:", config.headers);
-
-        return config;
+  constructor(baseURL: string) {
+    this.client = axios.create({
+      baseURL,
+      headers: {
+        "Content-Type": "application/json",
+      },
     });
 
-    return api;
-};
+    this.client.interceptors.request.use(
+      async (config) => {
+        const token = await SecureStore.getItemAsync('clerk-token');
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
+      }
+    );
+  }
 
-export const useApiClient = (): AxiosInstance => {
-    const {getToken}= useAuth();
-    return createApiClient(getToken);
-};
+  // Ensure the generic type T is used for the response data
+  async get<T>(url: string, params?: object): Promise<AxiosResponse<T>> {
+    return this.client.get<T>(url, { params });
+  }
 
-export const userApi= {
-    syncUser: (api:AxiosInstance) => api.post("/api/users/sync"),
-    getCurrentUser: (api: AxiosInstance) => api.get("/api/users/me"),
-    updateProfile:   (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
+  async post<T>(url:string, data: object): Promise<AxiosResponse<T>> {
+    return this.client.post<T>(url, data);
+  }
 }
 
 export const groupApi = {
-    // API call to create a new group
-    createGroup: (api: AxiosInstance, name: string) => api.post("/api/groups/create", { name }),
-    // Add other group-related API calls here (e.g., getGroup, addMember)
-    getGroups: (api: AxiosInstance) => api.get("/api/groups"),
+  // --- THIS IS THE FUNCTION TO CHANGE ---
+  // We specify that the 'get' call will return a response containing an array of Group objects.
+  getGroups: async(api: ApiClient) => {
+    return api.get<Group[]>("/groups");
+  },
+ 
+  createGroup: async (api: ApiClient, payload: CreateGroupPayload) => {
+    return api.post('/groups/create', payload);
+  },
 };
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+if (!API_URL) {
+    throw new Error("Missing EXPO_PUBLIC_API_URL environment variable");
+}
+
+const api = new ApiClient(API_URL);
+
+export const useApiClient = () => {
+    return api;
+}
