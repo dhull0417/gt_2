@@ -5,7 +5,7 @@ import { getAuth } from "@clerk/express";
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
-  const { name, eventStartDate, recurrence } = req.body;
+  const { name, schedule } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: "Group name is required." });
@@ -19,13 +19,12 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
 
   // Create the new group document
-  const newGroup = await Group.create({
-    name,
-    owner: owner._id,
-    members: [owner._id],
-    eventStartDate,
-    recurrence,
-  });
+  const newGroup = await Group.create({ // Change this part
+  name,
+  owner: owner._id,
+  members: [owner._id],
+  schedule, // Use the schedule object directly
+});
 
   // The newGroup document now automatically has a unique `_id`
   console.log("New group created with ID:", newGroup._id);

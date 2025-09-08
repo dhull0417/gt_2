@@ -13,12 +13,6 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <Stack screenOptions={{headerShown: false}}>
           <Stack.Screen name="(auth)" options={{headerShown: false}}/>
-          <Stack.Screen 
-            name="create-group" 
-            options={{ 
-              presentation: 'modal', // This is the magic property!
-            }} 
-          />
         </Stack>
       </QueryClientProvider>
     </ClerkProvider>

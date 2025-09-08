@@ -1,27 +1,29 @@
-import { useQuery } from "@tanstack/react-query";
-import { useApiClient } from "@/utils/api"; 
-import { groupApi } from "@/utils/api";
-import { RecurrenceRule } from "@/utils/api";
+// mobile/hooks/useGetGroups.ts
+import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 
-// Define the shape of a single group object for TypeScript
-export type Group = {
+// Define the shape of a single group object we expect from the API
+export interface Group {
     _id: string;
     name: string;
-    eventStartDate: string; // Dates are often serialized as strings
-    recurrence: RecurrenceRule;
+    schedule: {
+        frequency: 'weekly' | 'monthly';
+        day: number;
+        time: string;
+    };
+}
+
+const getGroupsAPI = async (): Promise<Group[]> => {
+    const { data } = await axios.get(`${process.env.EXPO_PUBLIC_API_URL}/api/groups`);
+    return data;
 };
 
 export const useGetGroups = () => {
-    const api = useApiClient();
-
-    return useQuery<Group[]>({
-        // queryKey is used by Tanstack Query to cache and manage this data
-        queryKey: ["groups"],
-
-        // queryFn is the async function that fetches the data
-        queryFn: async () => {
-            const { data } = await groupApi.getGroups(api);
-            return data;
-        },
+    return useQuery<Group[], Error>({
+        // This queryKey is crucial!
+        // It's the same key we invalidate in `useCreateGroup`,
+        // which gives us automatic refetching after a new group is created.
+        queryKey: ['groups'],
+        queryFn: getGroupsAPI,
     });
 };

@@ -1,10 +1,12 @@
 import mongoose from "mongoose";
 
-const recurrenceSchema = new mongoose.Schema({
+// A simpler schema that directly matches our frontend data
+const scheduleSchema = new mongoose.Schema({
     frequency: { type: String, required: true, enum: ['weekly', 'monthly'] },
-    interval: { type: Number, required: true, default: 1 },
-    daysOfWeek: { type: [Number] }, // e.g., [4] for Thursday (Sun=0, Mon=1...)
-    daysOfMonth: { type: [Number] }, // e.g., [7, 15, 26]
+    // A single number: 0-6 for weekly, 1-31 for monthly
+    day: { type: Number, required: true }, 
+    // The time of the meeting, e.g., "14:30"
+    time: { type: String, required: true }, 
 }, { _id: false });
 
 const groupSchema = new mongoose.Schema({
@@ -16,7 +18,7 @@ const groupSchema = new mongoose.Schema({
   members: [
     {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User", // This references your User model
+      ref: "User",
     },
   ],
   owner: {
@@ -28,12 +30,9 @@ const groupSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-  eventStartDate: {
-    type: Date,
-    required: true,
-  },
-  recurrence: {
-    type: recurrenceSchema,
+  // We replace 'recurrence' and 'eventStartDate' with our new 'schedule' object
+  schedule: {
+    type: scheduleSchema,
     required: true, 
   },
 });
