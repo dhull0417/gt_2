@@ -1,31 +1,30 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigation } from "@react-navigation/native";
-// Import the Schedule type from your api utility file
+// REMOVED: useNavigation is no longer needed here
 import { useApiClient, groupApi, Schedule } from "../utils/api";
 import { Alert } from "react-native";
 
 interface CreateGroupVariables {
   name: string;
   time: string;
-  schedule: Schedule | null; // Add the optional schedule property
+  schedule: Schedule | null;
 }
 
 export const useCreateGroup = () => {
-  const navigation = useNavigation();
+  // REMOVED: The navigation constant is gone
   const api = useApiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
-    // The mutation function now passes the entire variables object
     mutationFn: (variables: CreateGroupVariables) => 
       groupApi.createGroup(api, variables),
     
+    // MODIFIED: The onSuccess logic is now simpler
     onSuccess: (data) => {
       console.log("New Group Created:", data.group);
       Alert.alert("Success", data.message);
-      // Re-fetch the groups list to show the new group
+      // This part is still crucial for updating the group list
       queryClient.invalidateQueries({ queryKey: ['groups'] });
-      navigation.goBack(); 
+      // REMOVED: navigation.goBack() has been removed
     },
     onError: (error) => {
       console.error("Error creating group:", error);

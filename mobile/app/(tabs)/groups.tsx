@@ -5,7 +5,7 @@ import SignOutButton from '@/components/SignOutButton';
 import CreateGroupPopup from '@/components/CreateGroupPopup';
 // --- IMPORT CHANGE IS HERE ---
 import { useGetGroups } from '@/hooks/useGetGroups'; 
-import { Group } from '@/utils/api'; // Import Group type from its source
+import { Group, Schedule } from '@/utils/api'; // Import Group type from its source
 import { Feather } from '@expo/vector-icons';
 
 const GroupScreen = () => {
@@ -21,6 +21,22 @@ const GroupScreen = () => {
     if (error) {
         console.log("Error fetching groups:", JSON.stringify(error, null, 2));
     }
+
+    const formatSchedule = (schedule: Schedule): string => {
+        if (schedule.frequency === 'weekly') {
+            const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            return `Weekly on ${daysOfWeek[schedule.day]}`;
+        }
+        if (schedule.frequency === 'monthly') {
+            const day = schedule.day;
+            let suffix = 'th';
+            if (day === 1 || day === 21 || day === 31) suffix = 'st';
+            else if (day === 2 || day === 22) suffix = 'nd';
+            else if (day === 3 || day === 23) suffix = 'rd';
+            return `Monthly on the ${day}${suffix}`;
+        }
+        return 'No schedule set';
+    };
 
     const handleOpenCreateModal = () => {
         setCreateIsModalVisible(true);
@@ -128,6 +144,11 @@ const GroupScreen = () => {
                              <Text className="mt-2 text-gray-500">
                                 Meeting Time: {selectedGroup.time}
                             </Text>
+                            {selectedGroup.schedule && (
+                                <Text className="text-base text-gray-600">
+                                    Recurring: {formatSchedule(selectedGroup.schedule)}
+                                </Text>
+                            )}
                             <Text className="mt-4 text-gray-600">
                                 More specific information about this group will be displayed here soon.
                             </Text>

@@ -1,50 +1,53 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import React, { useState, forwardRef, useImperativeHandle, useMemo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 
-// Define the shape of the schedule object
+// The types we export remain the same, so the parent component won't break.
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
-  day: number; // 0-6 for weekly (Sun-Sat), 1-31 for monthly
+  day: number;
+}
+export interface SchedulePickerRef {
+  getSchedule: () => Schedule | null;
 }
 
-interface SchedulePickerProps {
-  schedule: Schedule | null;
-  onScheduleChange: (schedule: Schedule | null) => void;
-}
+const daysOfWeek = [
+    { label: 'Sunday', value: 0 }, { label: 'Monday', value: 1 },
+    { label: 'Tuesday', value: 2 }, { label: 'Wednesday', value: 3 },
+    { label: 'Thursday', value: 4 }, { label: 'Friday', value: 5 },
+    { label: 'Saturday', value: 6 }
+];
+const daysOfMonth = Array.from({ length: 31 }, (_, i) => ({ label: `${i + 1}`, value: i + 1 }));
 
-const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const daysOfMonth = Array.from({ length: 31 }, (_, i) => i + 1);
+const SchedulePicker = forwardRef<SchedulePickerRef, {}>((props, ref) => {
+  const [isActive, setIsActive] = useState(false);
+  const [frequency, setFrequency] = useState<'weekly' | 'monthly'>('weekly');
+  const [day, setDay] = useState<number>(1); // Default to Monday
 
-const SchedulePicker: React.FC<SchedulePickerProps> = ({ schedule, onScheduleChange }) => {
-  const isActive = !!schedule;
+  useImperativeHandle(ref, () => ({
+    getSchedule: () => {
+      if (!isActive) {
+        return null;
+      }
+      return { frequency, day };
+    },
+  }));
 
-  const handleToggleActive = () => {
-    if (isActive) {
-      onScheduleChange(null); // Deactivate
-    } else {
-      // Activate with default values
-      onScheduleChange({ frequency: 'weekly', day: 1 }); 
-    }
+  const onFrequencyChange = (newFrequency: 'weekly' | 'monthly') => {
+    setFrequency(newFrequency);
+    // Reset day to a sensible default when frequency changes
+    setDay(newFrequency === 'weekly' ? 1 : 15);
   };
 
-  const setFrequency = (frequency: 'weekly' | 'monthly') => {
-    // Reset day when frequency changes to avoid invalid states
-    const newDay = frequency === 'weekly' ? 1 : 15;
-    onScheduleChange({ frequency, day: newDay });
-  };
-
-  const setDay = (day: number) => {
-    if (schedule) {
-      onScheduleChange({ ...schedule, day });
-    }
-  };
+  const dayOptions = useMemo(() => {
+    return frequency === 'weekly' ? daysOfWeek : daysOfMonth;
+  }, [frequency]);
 
   return (
     <View className="w-full my-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-      <View className="flex-row justify-between items-center mb-4">
+      <View className="flex-row justify-between items-center mb-2">
         <Text className="text-lg font-semibold text-gray-700">Set Recurring Schedule</Text>
-        <TouchableOpacity onPress={handleToggleActive} className="flex-row items-center">
+        <TouchableOpacity onPress={() => setIsActive(!isActive)} className="flex-row items-center">
           <Text className="text-base text-indigo-600 mr-2 font-semibold">{isActive ? 'Disable' : 'Enable'}</Text>
           <View className={`w-12 h-7 rounded-full p-1 ${isActive ? 'bg-indigo-600' : 'bg-gray-300'}`}>
             <View className={`w-5 h-5 bg-white rounded-full shadow-md transform ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -52,44 +55,64 @@ const SchedulePicker: React.FC<SchedulePickerProps> = ({ schedule, onScheduleCha
         </TouchableOpacity>
       </View>
 
-      {isActive && schedule && (
+      {isActive && (
         <View>
-          {/* Frequency Selector */}
-          <View className="flex-row justify-center bg-gray-200 rounded-lg p-1 mb-4">
-            <TouchableOpacity 
-              onPress={() => setFrequency('weekly')}
-              className={`flex-1 py-2 rounded-md items-center ${schedule.frequency === 'weekly' ? 'bg-white shadow' : ''}`}
+          {/* Frequency Picker */}
+          <View style={styles.pickerWrapper}>
+            <Picker
+              selectedValue={frequency}
+              onValueChange={(itemValue) => onFrequencyChange(itemValue)}
+              style={styles.picker}
+              // This is an iOS-only prop to style the text of each item
+              itemStyle={styles.pickerItem}
             >
-              <Text className={`font-semibold ${schedule.frequency === 'weekly' ? 'text-indigo-600' : 'text-gray-600'}`}>Weekly</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={() => setFrequency('monthly')}
-              className={`flex-1 py-2 rounded-md items-center ${schedule.frequency === 'monthly' ? 'bg-white shadow' : ''}`}
-            >
-              <Text className={`font-semibold ${schedule.frequency === 'monthly' ? 'text-indigo-600' : 'text-gray-600'}`}>Monthly</Text>
-            </TouchableOpacity>
+              <Picker.Item label="Weekly" value="weekly" />
+              <Picker.Item label="Monthly" value="monthly" />
+            </Picker>
           </View>
 
-          {/* Day Selector */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {(schedule.frequency === 'weekly' ? daysOfWeek : daysOfMonth).map((dayLabel, index) => {
-              const dayValue = schedule.frequency === 'weekly' ? index : (dayLabel as number);
-              const isSelected = schedule.day === dayValue;
-              return (
-                <TouchableOpacity
-                  key={dayValue}
-                  onPress={() => setDay(dayValue)}
-                  className={`h-12 w-12 rounded-full items-center justify-center mr-2 ${isSelected ? 'bg-indigo-600' : 'bg-white border border-gray-300'}`}
-                >
-                  <Text className={`font-bold text-sm ${isSelected ? 'text-white' : 'text-gray-700'}`}>{dayLabel}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          {/* Day Picker */}
+          <View style={styles.pickerWrapper}>
+            <Picker
+              selectedValue={day}
+              onValueChange={(itemValue) => setDay(itemValue)}
+              style={styles.picker}
+              // This is an iOS-only prop to style the text of each item
+              itemStyle={styles.pickerItem}
+            >
+              {dayOptions.map(option => (
+                <Picker.Item key={option.value} label={option.label.toString()} value={option.value} />
+              ))}
+            </Picker>
+          </View>
         </View>
       )}
     </View>
   );
-};
+});
+
+// Using a dedicated StyleSheet for more control over the Picker component
+const styles = StyleSheet.create({
+    pickerWrapper: {
+        marginTop: 10,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#D1D5DB',
+        // This helps contain the picker view on both platforms
+        overflow: 'hidden',
+        backgroundColor: 'white',
+    },
+    picker: {
+        width: '100%',
+        // On Android, height is determined by the component itself.
+        // On iOS, we must provide an explicit height for it to be visible.
+        height: Platform.OS === 'ios' ? 150 : 'auto',
+    },
+    // This style is only applied on iOS to ensure the text is visible
+    pickerItem: {
+        color: 'black',
+        height: 150,
+    }
+});
 
 export default SchedulePicker;
