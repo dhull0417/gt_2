@@ -1,6 +1,7 @@
 import asyncHandler from "express-async-handler";
 
 export const protectCron = asyncHandler(async (req, res, next) => {
+  const vercelCronSecret = req.headers['x-vercel-cron-secret'];
   const cronSecret = process.env.CRON_SECRET;
 
   if (!cronSecret) {
@@ -8,12 +9,11 @@ export const protectCron = asyncHandler(async (req, res, next) => {
     return res.status(500).json({ error: "Internal server configuration error." });
   }
 
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(" ")[1];
-
-  if (token === cronSecret) {
+  // Check if the secret from the Vercel header matches your environment variable
+  if (vercelCronSecret === cronSecret) {
     next(); // Secret matches, proceed to the controller
   } else {
-    res.status(401).json({ error: "Unauthorized: Invalid cron secret." });
+    console.warn("Unauthorized cron job attempt detected.");
+    res.status(401).json({ error: "Unauthorized." });
   }
 });
