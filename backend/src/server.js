@@ -7,7 +7,6 @@ import postRoutes from "./routes/post.route.js";
 import commentRoutes from "./routes/comment.route.js";
 import notificationRoutes from "./routes/notification.route.js";
 import groupRoutes from "./routes/group.route.js";
-console.log("Imported groupRoutes:", groupRoutes);
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";

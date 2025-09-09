@@ -53,7 +53,6 @@ export const getGroups = asyncHandler(async (req, res) => {
   res.status(200).json(userGroups);
 });
 
-// --- THIS IS THE MISSING FUNCTION ---
 export const getGroupDetails = asyncHandler(async (req, res) => {
   const { groupId } = req.params;
 
@@ -61,13 +60,12 @@ export const getGroupDetails = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "Invalid Group ID format." });
   }
 
-  // Find the group and use .populate() to replace member IDs with actual user documents
   const group = await Group.findById(groupId)
     .populate({
-      path: "members", // The field to populate
-      select: "firstName lastName _id profilePicture", // The fields to include from the User model
+      path: "members",
+      select: "firstName lastName _id profilePicture",
     })
-    .lean(); // .lean() returns a plain JS object for performance
+    .lean();
 
   if (!group) {
     return res.status(404).json({ error: "Group not found." });
@@ -80,6 +78,14 @@ export const addMember = asyncHandler(async (req, res) => {
   const { userId: requesterClerkId } = getAuth(req);
   const { groupId } = req.params;
   const { userId: userIdToAdd } = req.body;
+
+  // --- ADDED: Debugging logs to inspect the incoming data ---
+  console.log("--- DEBUGGING addMember ---");
+  console.log("Received Request Body:", req.body);
+  console.log("Extracted User ID to Add:", userIdToAdd);
+  console.log("Type of userIdToAdd:", typeof userIdToAdd);
+  console.log("Is ID valid according to Mongoose?:", mongoose.Types.ObjectId.isValid(userIdToAdd));
+  console.log("-------------------------");
 
   if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(userIdToAdd)) {
     return res.status(400).json({ error: "Invalid ID format provided." });
