@@ -29,7 +29,7 @@ app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
 app.use("/api/groups", groupRoutes)
 app.use("/api/events", eventRoutes)
-app.use("/api/job", jobRoutes)
+app.use("/api/jobs", jobRoutes)
 
 // error handling middleware
 app.use((err, req, res, next) => {
