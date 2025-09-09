@@ -8,6 +8,7 @@ export interface Schedule {
   frequency: 'weekly' | 'monthly';
   day: number;
 }
+
 export interface User {
   _id: string;
   clerkId: string;
@@ -16,6 +17,7 @@ export interface User {
   lastName?: string;
   profilePicture?: string;
 }
+
 export interface Group {
   _id: string;
   name: string;
@@ -23,18 +25,35 @@ export interface Group {
   schedule?: Schedule;
   owner: string;
 }
+
 export interface GroupDetails extends Group {
   members: User[];
 }
+
+// 1. --- ADDED: Interface for a single Event ---
+export interface Event {
+  _id: string;
+  group: string; // The ID of the parent group
+  name: string;
+  date: string; // Dates are typically strings in JSON
+  time: string;
+  members: string[];
+  undecided: string[];
+  in: string[];
+  out: string[];
+}
+
 interface CreateGroupPayload {
   name: string;
   time: string;
   schedule: Schedule | null;
 }
+
 interface AddMemberPayload {
   groupId: string;
   userId: string;
 }
+
 interface CreateGroupResponse {
   group: Group;
   message: string;
@@ -64,9 +83,9 @@ export const useApiClient = (): AxiosInstance => {
 
 export const userApi = {
   syncUser: (api: AxiosInstance) => api.post("/api/users/sync"),
-  getCurrentUser: async (api: AxiosInstance): Promise<User> => {
+  getCurrentUser: async (api: AxiosInstance): Promise<{ user: User }> => {
     const response = await api.get<{ user: User }>("/api/users/me");
-    return response.data.user;
+    return response.data;
   },
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
 };
@@ -80,18 +99,20 @@ export const groupApi = {
     const response = await api.get<Group[]>("/api/groups");
     return response.data;
   },
-
   addMember: async (api: AxiosInstance, { groupId, userId }: AddMemberPayload): Promise<{ message: string }> => {
-    // --- ADDED: Log the exact body being sent ---
-    console.log(`--- Sending POST to /api/groups/${groupId}/add-member ---`);
-    console.log("Request body:", { userId });
-    
     const response = await api.post(`/api/groups/${groupId}/add-member`, { userId });
     return response.data;
   },
-  
   getGroupDetails: async (api: AxiosInstance, groupId: string): Promise<GroupDetails> => {
     const response = await api.get<GroupDetails>(`/api/groups/${groupId}`);
+    return response.data;
+  }
+};
+
+// 2. --- ADDED: A new API object for events ---
+export const eventApi = {
+  getEvents: async (api: AxiosInstance): Promise<Event[]> => {
+    const response = await api.get<Event[]>("/api/events");
     return response.data;
   }
 };

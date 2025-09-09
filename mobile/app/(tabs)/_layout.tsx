@@ -52,13 +52,6 @@ if (!isSignedIn) return <Redirect href="/(auth)" />;
             }}
         />
         <Tabs.Screen 
-            name='notifications'
-            options={{
-                title:"",
-                tabBarIcon: ({color, size}) =>  <Feather name='bell' size={size} color={color}/>
-            }}
-        />
-        <Tabs.Screen 
             name='messages'
             options={{
                 title:"",
@@ -72,6 +65,13 @@ if (!isSignedIn) return <Redirect href="/(auth)" />;
                 tabBarIcon: ({color, size}) =>  <Feather name='user' size={size} color={color}/>
             }}
         />
+        <Tabs.Screen
+            name="events"
+            options={{
+                title: 'Events',
+                tabBarIcon: ({color, size}) =>  <Feather name="calendar" size={size} color={color} />
+            }}
+      />
 
     </Tabs>
   )
