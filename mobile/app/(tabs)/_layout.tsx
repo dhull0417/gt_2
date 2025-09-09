@@ -45,20 +45,6 @@ if (!isSignedIn) return <Redirect href="/(auth)" />;
             }}
         />
         <Tabs.Screen 
-            name='search'
-            options={{
-                title:"",
-                tabBarIcon: ({color, size}) =>  <Feather name='search' size={size} color={color}/>
-            }}
-        />
-        <Tabs.Screen 
-            name='messages'
-            options={{
-                title:"",
-                tabBarIcon: ({color, size}) =>  <Feather name='mail' size={size} color={color}/>
-            }}
-        />
-        <Tabs.Screen 
             name='profile'
             options={{
                 title:"",

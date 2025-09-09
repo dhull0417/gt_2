@@ -8,11 +8,15 @@ const EventsScreen = () => {
     const { data: events, isLoading, isError } = useGetEvents();
 
     const formatDate = (dateString: string) => {
+        // --- THIS IS THE FIX ---
+        // We add timeZone: 'UTC' to the options. This tells the formatter
+        // to ignore the user's local timezone and format the date as UTC.
         const options: Intl.DateTimeFormatOptions = {
             weekday: 'long',
             year: 'numeric',
             month: 'long',
-            day: 'numeric'
+            day: 'numeric',
+            timeZone: 'UTC', 
         };
         return new Date(dateString).toLocaleDateString(undefined, options);
     };
