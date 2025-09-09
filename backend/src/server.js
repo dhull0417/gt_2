@@ -27,10 +27,9 @@ app.get("/", (req, res) => res.send("Hello from server"));
 app.use("/api/users", userRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
-app.use("/api/notifications", notificationRoutes);
 app.use("/api/groups", groupRoutes)
 app.use("/api/events", eventRoutes)
-app.use("/api/jobs", jobRoutes)
+app.use("/api/job", jobRoutes)
 
 // error handling middleware
 app.use((err, req, res, next) => {
