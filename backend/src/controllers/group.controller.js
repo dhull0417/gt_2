@@ -1,39 +1,42 @@
 import asyncHandler from "express-async-handler";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
-import Event from "../models/event.model.js"; // 1. Import the new Event model
+import Event from "../models/event.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 
-// Helper function to calculate the next event date
+// --- THIS FUNCTION HAS BEEN UPDATED TO USE UTC ---
 const calculateNextEventDate = (schedule) => {
   const now = new Date();
-  let eventDate = new Date(now);
+
+  // Create a new date object to avoid modifying the original 'now'
+  let eventDate = new Date(now.getTime());
 
   if (schedule.frequency === 'weekly') {
-    const currentDay = now.getDay(); // Sunday = 0, Monday = 1, ...
+    const currentDay = now.getUTCDay(); // Sunday = 0, Monday = 1... in UTC
     const targetDay = schedule.day;
     let dayDifference = targetDay - currentDay;
 
     if (dayDifference < 0) {
-      // If the target day has already passed this week, schedule for next week
+      // If the target day has passed this week, schedule for next week
       dayDifference += 7;
     }
-    eventDate.setDate(now.getDate() + dayDifference);
+    // Set the date using UTC methods
+    eventDate.setUTCDate(now.getUTCDate() + dayDifference);
   } else if (schedule.frequency === 'monthly') {
-    const currentMonthDate = now.getDate();
+    const currentMonthDate = now.getUTCDate(); // Get day of month in UTC
     const targetMonthDate = schedule.day;
 
-    eventDate.setDate(targetMonthDate); // Set the day of the month
+    eventDate.setUTCDate(targetMonthDate); // Set the day of the month in UTC
 
     if (targetMonthDate <= currentMonthDate) {
-      // If the target date has already passed this month, schedule for next month
-      eventDate.setMonth(now.getMonth() + 1);
+      // If the target date has passed, schedule for the next month
+      eventDate.setUTCMonth(now.getUTCMonth() + 1);
     }
   }
 
-  // Set time to midnight to only store the date part
-  eventDate.setHours(0, 0, 0, 0);
+  // Set time to midnight UTC to ensure the date is the primary value
+  eventDate.setUTCHours(0, 0, 0, 0);
   return eventDate;
 };
 
@@ -69,7 +72,6 @@ export const createGroup = asyncHandler(async (req, res) => {
   const newGroup = await Group.create(groupData);
   await owner.updateOne({ $addToSet: { groups: newGroup._id } });
 
-  // Auto-generate the first event if a schedule exists
   if (newGroup.schedule) {
     try {
       const eventDate = calculateNextEventDate(newGroup.schedule);
@@ -80,11 +82,10 @@ export const createGroup = asyncHandler(async (req, res) => {
         date: eventDate,
         time: newGroup.time,
         members: newGroup.members,
-        undecided: newGroup.members, // Initially, all members are undecided
+        undecided: newGroup.members,
       });
       console.log(`First event for group '${newGroup.name}' created for ${eventDate.toDateString()}`);
     } catch (eventError) {
-      // Log an error if event creation fails, but don't fail the whole group creation
       console.error("Failed to create the first event for the new group:", eventError);
     }
   }
@@ -130,9 +131,8 @@ export const getGroupDetails = asyncHandler(async (req, res) => {
 export const addMember = asyncHandler(async (req, res) => {
   const { userId: requesterClerkId } = getAuth(req);
   const { groupId } = req.params;
-  // --- THIS IS THE FIX ---
   const { userId: userIdToAdd } = req.body;
-
+  
   const sanitizedUserId = String(userIdToAdd || '').replace(/[^a-f0-9]/gi, '');
 
   if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(sanitizedUserId)) {

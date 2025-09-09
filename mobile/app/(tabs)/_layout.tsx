@@ -68,7 +68,7 @@ if (!isSignedIn) return <Redirect href="/(auth)" />;
         <Tabs.Screen
             name="events"
             options={{
-                title: 'Events',
+                title: "",
                 tabBarIcon: ({color, size}) =>  <Feather name="calendar" size={size} color={color} />
             }}
       />
