@@ -79,21 +79,18 @@ export const addMember = asyncHandler(async (req, res) => {
   const { groupId } = req.params;
   const { userId: userIdToAdd } = req.body;
 
-  // --- ADDED: Debugging logs to inspect the incoming data ---
-  console.log("--- DEBUGGING addMember ---");
-  console.log("Received Request Body:", req.body);
-  console.log("Extracted User ID to Add:", userIdToAdd);
-  console.log("Type of userIdToAdd:", typeof userIdToAdd);
-  console.log("Is ID valid according to Mongoose?:", mongoose.Types.ObjectId.isValid(userIdToAdd));
-  console.log("-------------------------");
+  // Sanitize the input string to remove any non-hexadecimal characters
+  const sanitizedUserId = String(userIdToAdd || '').replace(/[^a-f0-9]/gi, '');
 
-  if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(userIdToAdd)) {
+  // Validate the cleaned ID
+  if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(sanitizedUserId)) {
     return res.status(400).json({ error: "Invalid ID format provided." });
   }
 
   const group = await Group.findById(groupId);
   const requester = await User.findOne({ clerkId: requesterClerkId });
-  const userToAdd = await User.findById(userIdToAdd);
+  // Use the cleaned ID for all database lookups
+  const userToAdd = await User.findById(sanitizedUserId);
 
   if (!group) return res.status(404).json({ error: "Group not found." });
   if (!requester) return res.status(404).json({ error: "Requesting user not found." });

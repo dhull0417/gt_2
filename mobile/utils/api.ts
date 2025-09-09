@@ -1,10 +1,9 @@
 import axios, { AxiosInstance } from "axios";
 import { useAuth } from "@clerk/clerk-expo";
-import { useMemo } from "react"; // Import useMemo
+import { useMemo } from "react";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
-// --- Interfaces remain the same ---
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
   day: number;
@@ -58,25 +57,17 @@ export const createApiClient = (getToken: () => Promise<string | null>): AxiosIn
   return api;
 };
 
-// --- FIX: Create a single, stable API client instance ---
 export const useApiClient = (): AxiosInstance => {
   const { getToken } = useAuth();
-  // useMemo ensures that createApiClient is only called once, creating a single,
-  // stable instance of the Axios client that is reused across all re-renders.
   return useMemo(() => createApiClient(getToken), [getToken]);
 };
 
 export const userApi = {
   syncUser: (api: AxiosInstance) => api.post("/api/users/sync"),
-
-  // FIX: This function will now "unwrap" the user object from the response
   getCurrentUser: async (api: AxiosInstance): Promise<User> => {
-    // The backend now consistently returns { user: User }, so we expect that shape.
     const response = await api.get<{ user: User }>("/api/users/me");
-    // We return the nested user object so the rest of the app doesn't need to know.
     return response.data.user;
   },
-
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
 };
 
@@ -89,10 +80,16 @@ export const groupApi = {
     const response = await api.get<Group[]>("/api/groups");
     return response.data;
   },
+
   addMember: async (api: AxiosInstance, { groupId, userId }: AddMemberPayload): Promise<{ message: string }> => {
+    // --- ADDED: Log the exact body being sent ---
+    console.log(`--- Sending POST to /api/groups/${groupId}/add-member ---`);
+    console.log("Request body:", { userId });
+    
     const response = await api.post(`/api/groups/${groupId}/add-member`, { userId });
     return response.data;
   },
+  
   getGroupDetails: async (api: AxiosInstance, groupId: string): Promise<GroupDetails> => {
     const response = await api.get<GroupDetails>(`/api/groups/${groupId}`);
     return response.data;
