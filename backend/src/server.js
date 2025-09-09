@@ -5,9 +5,9 @@ import { clerkMiddleware } from "@clerk/express";
 import userRoutes from "./routes/user.route.js";
 import postRoutes from "./routes/post.route.js";
 import commentRoutes from "./routes/comment.route.js";
-import notificationRoutes from "./routes/notification.route.js";
 import groupRoutes from "./routes/group.route.js";
 import eventRoutes from "./routes/event.route.js"
+import jobRoutes from "./routes/job.route.js"
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
@@ -29,6 +29,7 @@ app.use("/api/comments", commentRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/groups", groupRoutes)
 app.use("/api/events", eventRoutes)
+app.use("/api/jobs", jobRoutes)
 
 // error handling middleware
 app.use((err, req, res, next) => {
