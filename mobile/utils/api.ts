@@ -4,11 +4,11 @@ import { useMemo } from "react";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
+// Interfaces remain the same
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
   day: number;
 }
-
 export interface User {
   _id: string;
   clerkId: string;
@@ -17,7 +17,6 @@ export interface User {
   lastName?: string;
   profilePicture?: string;
 }
-
 export interface Group {
   _id: string;
   name: string;
@@ -25,35 +24,33 @@ export interface Group {
   schedule?: Schedule;
   owner: string;
 }
-
 export interface GroupDetails extends Group {
   members: User[];
 }
-
-// 1. --- ADDED: Interface for a single Event ---
 export interface Event {
   _id: string;
-  group: string; // The ID of the parent group
+  group: string;
   name: string;
-  date: string; // Dates are typically strings in JSON
+  date: string;
   time: string;
-  members: string[];
+  members: User[];
   undecided: string[];
   in: string[];
   out: string[];
 }
-
 interface CreateGroupPayload {
   name: string;
   time: string;
   schedule: Schedule | null;
 }
-
 interface AddMemberPayload {
   groupId: string;
   userId: string;
 }
-
+interface RsvpPayload {
+  eventId: string;
+  status: 'in' | 'out';
+}
 interface CreateGroupResponse {
   group: Group;
   message: string;
@@ -64,7 +61,6 @@ export const createApiClient = (getToken: () => Promise<string | null>): AxiosIn
     baseURL: API_BASE_URL,
     headers: { "User-Agent": "GT2MobileApp/1.0" }
   });
-
   api.interceptors.request.use(async (config) => {
     const token = await getToken();
     if (token) {
@@ -72,7 +68,6 @@ export const createApiClient = (getToken: () => Promise<string | null>): AxiosIn
     }
     return config;
   });
-
   return api;
 };
 
@@ -83,10 +78,15 @@ export const useApiClient = (): AxiosInstance => {
 
 export const userApi = {
   syncUser: (api: AxiosInstance) => api.post("/api/users/sync"),
-  getCurrentUser: async (api: AxiosInstance): Promise<{ user: User }> => {
+  
+  // --- THIS IS THE FIX ---
+  // This function now expects a nested { user: User } object from the backend
+  // but returns only the clean, unwrapped User object.
+  getCurrentUser: async (api: AxiosInstance): Promise<User> => {
     const response = await api.get<{ user: User }>("/api/users/me");
-    return response.data;
+    return response.data.user;
   },
+
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
 };
 
@@ -109,10 +109,13 @@ export const groupApi = {
   }
 };
 
-// 2. --- ADDED: A new API object for events ---
 export const eventApi = {
   getEvents: async (api: AxiosInstance): Promise<Event[]> => {
     const response = await api.get<Event[]>("/api/events");
+    return response.data;
+  },
+  handleRsvp: async (api: AxiosInstance, { eventId, status }: RsvpPayload): Promise<{ message: string }> => {
+    const response = await api.post(`/api/events/${eventId}/rsvp`, { status });
     return response.data;
   }
 };

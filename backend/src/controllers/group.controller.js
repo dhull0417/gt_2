@@ -5,42 +5,33 @@ import Event from "../models/event.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 
-// --- THIS FUNCTION HAS BEEN UPDATED TO USE UTC ---
+// Helper function to calculate the next event date
 const calculateNextEventDate = (schedule) => {
   const now = new Date();
-
-  // Create a new date object to avoid modifying the original 'now'
   let eventDate = new Date(now.getTime());
 
   if (schedule.frequency === 'weekly') {
-    const currentDay = now.getUTCDay(); // Sunday = 0, Monday = 1... in UTC
+    const currentDay = now.getUTCDay();
     const targetDay = schedule.day;
     let dayDifference = targetDay - currentDay;
-
     if (dayDifference < 0) {
-      // If the target day has passed this week, schedule for next week
       dayDifference += 7;
     }
-    // Set the date using UTC methods
     eventDate.setUTCDate(now.getUTCDate() + dayDifference);
   } else if (schedule.frequency === 'monthly') {
-    const currentMonthDate = now.getUTCDate(); // Get day of month in UTC
+    const currentMonthDate = now.getUTCDate();
     const targetMonthDate = schedule.day;
-
-    eventDate.setUTCDate(targetMonthDate); // Set the day of the month in UTC
-
+    eventDate.setUTCDate(targetMonthDate);
     if (targetMonthDate <= currentMonthDate) {
-      // If the target date has passed, schedule for the next month
       eventDate.setUTCMonth(now.getUTCMonth() + 1);
     }
   }
 
-  // Set time to midnight UTC to ensure the date is the primary value
   eventDate.setUTCHours(0, 0, 0, 0);
   return eventDate;
 };
 
-
+// ... createGroup, getGroups, and getGroupDetails are unchanged ...
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   const { name, time, schedule } = req.body;
@@ -54,13 +45,7 @@ export const createGroup = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "User not found." });
   }
 
-  const groupData = {
-    name,
-    time,
-    owner: owner._id,
-    members: [owner._id],
-  };
-
+  const groupData = { name, time, owner: owner._id, members: [owner._id] };
   if (schedule) {
     if (schedule.frequency && typeof schedule.day === 'number') {
       groupData.schedule = schedule;
@@ -75,7 +60,6 @@ export const createGroup = asyncHandler(async (req, res) => {
   if (newGroup.schedule) {
     try {
       const eventDate = calculateNextEventDate(newGroup.schedule);
-
       await Event.create({
         group: newGroup._id,
         name: newGroup.name,
@@ -89,10 +73,8 @@ export const createGroup = asyncHandler(async (req, res) => {
       console.error("Failed to create the first event for the new group:", eventError);
     }
   }
-
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
 });
-
 
 export const getGroups = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
@@ -100,39 +82,28 @@ export const getGroups = asyncHandler(async (req, res) => {
   if (!currentUser) {
     return res.status(404).json({ error: "User not found." });
   }
-
-  const userGroups = await Group.find({ members: currentUser._id })
-    .select("name _id time schedule owner");
-
+  const userGroups = await Group.find({ members: currentUser._id }).select("name _id time schedule owner");
   res.status(200).json(userGroups);
 });
 
 export const getGroupDetails = asyncHandler(async (req, res) => {
   const { groupId } = req.params;
-
   if (!mongoose.Types.ObjectId.isValid(groupId)) {
     return res.status(400).json({ error: "Invalid Group ID format." });
   }
-
-  const group = await Group.findById(groupId)
-    .populate({
-      path: "members",
-      select: "firstName lastName _id profilePicture",
-    })
-    .lean();
-
+  const group = await Group.findById(groupId).populate({ path: "members", select: "firstName lastName _id profilePicture" }).lean();
   if (!group) {
     return res.status(404).json({ error: "Group not found." });
   }
-
   res.status(200).json(group);
 });
+
 
 export const addMember = asyncHandler(async (req, res) => {
   const { userId: requesterClerkId } = getAuth(req);
   const { groupId } = req.params;
   const { userId: userIdToAdd } = req.body;
-  
+
   const sanitizedUserId = String(userIdToAdd || '').replace(/[^a-f0-9]/gi, '');
 
   if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(sanitizedUserId)) {
@@ -155,8 +126,35 @@ export const addMember = asyncHandler(async (req, res) => {
     return res.status(409).json({ message: "User is already a member of this group." });
   }
 
+  // Add user to the group and the group to the user's list
   await group.updateOne({ $addToSet: { members: userToAdd._id } });
   await userToAdd.updateOne({ $addToSet: { groups: group._id } });
+  
+  // --- THIS IS THE FIX ---
+  // Now, find all upcoming events for this group and add the new member.
+  try {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    // Find all events for this group that are scheduled for today or later
+    await Event.updateMany(
+      {
+        group: group._id,
+        date: { $gte: today },
+      },
+      {
+        // Add the new user to both the main members list and the undecided RSVP list
+        $addToSet: {
+          members: userToAdd._id,
+          undecided: userToAdd._id,
+        },
+      }
+    );
+    console.log(`Added new member ${userToAdd._id} to all upcoming events for group ${group._id}`);
+  } catch (eventError) {
+    // We log the error but don't stop the request, as the main goal (adding to the group) succeeded.
+    console.error("Could not update upcoming events with new member:", eventError);
+  }
   
   res.status(200).json({ message: "User added to group successfully." });
 });
