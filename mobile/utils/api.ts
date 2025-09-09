@@ -1,22 +1,22 @@
 import axios, { AxiosInstance } from "axios";
 import { useAuth } from "@clerk/clerk-expo";
+import { useMemo } from "react"; // Import useMemo
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
+// --- Interfaces remain the same ---
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
   day: number;
 }
-
 export interface User {
   _id: string;
   clerkId: string;
   email: string;
   firstName?: string;
   lastName?: string;
-  profilePicture?: string; // Added for displaying member images
+  profilePicture?: string;
 }
-
 export interface Group {
   _id: string;
   name: string;
@@ -24,23 +24,18 @@ export interface Group {
   schedule?: Schedule;
   owner: string;
 }
-
-// --- ADDED: Interface for the detailed group response ---
 export interface GroupDetails extends Group {
-  members: User[]; // The members array is now populated with User objects
+  members: User[];
 }
-
 interface CreateGroupPayload {
   name: string;
   time: string;
   schedule: Schedule | null;
 }
-
 interface AddMemberPayload {
   groupId: string;
   userId: string;
 }
-
 interface CreateGroupResponse {
   group: Group;
   message: string;
@@ -63,17 +58,25 @@ export const createApiClient = (getToken: () => Promise<string | null>): AxiosIn
   return api;
 };
 
+// --- FIX: Create a single, stable API client instance ---
 export const useApiClient = (): AxiosInstance => {
   const { getToken } = useAuth();
-  return createApiClient(getToken);
+  // useMemo ensures that createApiClient is only called once, creating a single,
+  // stable instance of the Axios client that is reused across all re-renders.
+  return useMemo(() => createApiClient(getToken), [getToken]);
 };
 
 export const userApi = {
   syncUser: (api: AxiosInstance) => api.post("/api/users/sync"),
+
+  // FIX: This function will now "unwrap" the user object from the response
   getCurrentUser: async (api: AxiosInstance): Promise<User> => {
-    const response = await api.get<User>("/api/users/me");
-    return response.data;
+    // The backend now consistently returns { user: User }, so we expect that shape.
+    const response = await api.get<{ user: User }>("/api/users/me");
+    // We return the nested user object so the rest of the app doesn't need to know.
+    return response.data.user;
   },
+
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
 };
 
@@ -82,18 +85,14 @@ export const groupApi = {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);
     return response.data;
   },
-  
   getGroups: async (api: AxiosInstance): Promise<Group[]> => {
     const response = await api.get<Group[]>("/api/groups");
     return response.data;
   },
-
   addMember: async (api: AxiosInstance, { groupId, userId }: AddMemberPayload): Promise<{ message: string }> => {
     const response = await api.post(`/api/groups/${groupId}/add-member`, { userId });
     return response.data;
   },
-
-  // --- ADDED: New function to get details for a single group ---
   getGroupDetails: async (api: AxiosInstance, groupId: string): Promise<GroupDetails> => {
     const response = await api.get<GroupDetails>(`/api/groups/${groupId}`);
     return response.data;

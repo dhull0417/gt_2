@@ -1,10 +1,8 @@
 import asyncHandler from "express-async-handler";
 import User from "../models/user.model.js";
 import Notification from "../models/notification.model.js";
-
 import { getAuth } from "@clerk/express";
 import { clerkClient } from "@clerk/express";
-import expressAsyncHandler from "express-async-handler";
 
 export const getUserProfile = asyncHandler(async (req, res) => {
   const { username } = req.params;
@@ -27,13 +25,11 @@ export const updateProfile = asyncHandler(async (req, res) => {
 export const syncUser = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
 
-  // check if user already exists in mongodb
   const existingUser = await User.findOne({ clerkId: userId });
   if (existingUser) {
     return res.status(200).json({ user: existingUser, message: "User already exists" });
   }
 
-  // create new user from Clerk data
   const clerkUser = await clerkClient.users.getUser(userId);
 
   const userData = {
@@ -51,11 +47,14 @@ export const syncUser = asyncHandler(async (req, res) => {
 });
 
 export const getCurrentUser = asyncHandler(async (req, res) => {
-  const { userId } = getAuth(req);
-  const user = await User.findOne({ clerkId: userId });
+  const { userId: clerkId } = getAuth(req);
+  const user = await User.findOne({ clerkId: clerkId }).lean();
 
-  if (!user) return res.status(404).json({ error: "User not found" });
-
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+  
+  // FIX: Return the user object in a nested { user } object for consistency.
   res.status(200).json({ user });
 });
 
@@ -73,7 +72,6 @@ export const followUser = asyncHandler(async (req, res) => {
   const isFollowing = currentUser.following.includes(targetUserId);
 
   if (isFollowing) {
-    // unfollow
     await User.findByIdAndUpdate(currentUser._id, {
       $pull: { following: targetUserId },
     });
@@ -81,7 +79,6 @@ export const followUser = asyncHandler(async (req, res) => {
       $pull: { followers: currentUser._id },
     });
   } else {
-    // follow
     await User.findByIdAndUpdate(currentUser._id, {
       $push: { following: targetUserId },
     });
@@ -89,7 +86,6 @@ export const followUser = asyncHandler(async (req, res) => {
       $push: { followers: currentUser._id },
     });
 
-    // create notification
     await Notification.create({
       from: currentUser._id,
       to: targetUserId,
