@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator, Image } from 'react-native';
 import React, { useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+// 1. Import useSafeAreaInsets
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useGetEvents } from '@/hooks/useGetEvents';
 import { useRsvp } from '@/hooks/useRsvp';
@@ -11,12 +12,14 @@ const EventsScreen = () => {
     const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
     const [isModalVisible, setIsModalVisible] = useState(false);
 
+    // 2. Get the inset values
+    const insets = useSafeAreaInsets();
+
     const api = useApiClient();
     const queryClient = useQueryClient();
     const { data: events, isLoading, isError } = useGetEvents();
     const { mutate: rsvp, isPending: isRsvping } = useRsvp();
     
-    // This now correctly receives the unwrapped User object
     const { data: currentUser } = useQuery<User, Error>({
         queryKey: ['currentUser'],
         queryFn: () => userApi.getCurrentUser(api),
@@ -48,14 +51,11 @@ const EventsScreen = () => {
                         if (event._id === selectedEvent._id) {
                             const newEvent = { ...event };
                             const userId = currentUser._id;
-
                             newEvent.in = newEvent.in.filter(id => id !== userId);
                             newEvent.out = newEvent.out.filter(id => id !== userId);
                             newEvent.undecided = newEvent.undecided.filter(id => id !== userId);
-
                             if (status === 'in') newEvent.in.push(userId);
                             if (status === 'out') newEvent.out.push(userId);
-                            
                             setSelectedEvent(newEvent);
                             return newEvent;
                         }
@@ -97,8 +97,13 @@ const EventsScreen = () => {
 
             <Modal visible={isModalVisible} animationType="slide" onRequestClose={handleCloseModal}>
                 {selectedEvent && (
-                    <SafeAreaView className="flex-1 bg-white">
-                        <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
+                    // Use a regular View as the main container
+                    <View className="flex-1 bg-white">
+                        {/* 3. Manually apply the top padding to the header View */}
+                        <View 
+                            className="flex-row items-center px-4 py-3 border-b border-gray-200"
+                            style={{ paddingTop: insets.top + 12, paddingBottom: 12 }}
+                        >
                             <TouchableOpacity onPress={handleCloseModal} className="mr-4">
                                 <Feather name="arrow-left" size={24} color="#4f46e5" />
                             </TouchableOpacity>
@@ -147,7 +152,7 @@ const EventsScreen = () => {
                                 )
                             })}
                         </ScrollView>
-                    </SafeAreaView>
+                    </View>
                 )}
             </Modal>
         </SafeAreaView>

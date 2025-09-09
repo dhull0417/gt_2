@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator, Image, TextInput, Keyboard } from 'react-native';
-import React, {useState, useEffect } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState } from 'react';
+// 1. Import useSafeAreaInsets
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import SignOutButton from '@/components/SignOutButton';
 import CreateGroupPopup from '@/components/CreateGroupPopup';
@@ -15,6 +16,9 @@ const GroupScreen = () => {
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [isGroupDetailVisible, setIsGroupDetailVisible] = useState(false);
     const [userIdToAdd, setUserIdToAdd] = useState('');
+
+    // 2. Get the inset values
+    const insets = useSafeAreaInsets();
 
     const api = useApiClient();
     const queryClient = useQueryClient();
@@ -114,16 +118,19 @@ const GroupScreen = () => {
 
             <Modal visible={isGroupDetailVisible} animationType="slide" onRequestClose={handleCloseGroupDetail}>
                 {selectedGroup && (
-                    // --- FIX 1: Set the SafeAreaView background to white to match the header ---
-                    <SafeAreaView className="flex-1 bg-white">
-                        <View className="flex-row items-center px-4 py-3 border-b border-gray-200 bg-white">
+                    // Use a regular View as the main container for the modal
+                    <View className="flex-1 bg-white">
+                        {/* 3. Manually apply the top padding to the header View */}
+                        <View 
+                            className="flex-row items-center px-4 py-3 border-b border-gray-200 bg-white"
+                            style={{ paddingTop: insets.top + 12, paddingBottom: 12 }} // +12 for extra space
+                        >
                             <TouchableOpacity onPress={handleCloseGroupDetail} className="mr-4">
                                 <Feather name="arrow-left" size={24} color="#4f46e5" />
                             </TouchableOpacity>
                             <Text className="text-xl font-bold text-gray-900">{selectedGroup.name}</Text>
                         </View>
 
-                        {/* --- FIX 2: Apply the gray background to the ScrollView for the content area --- */}
                         <ScrollView className="flex-1 p-6 bg-gray-50" keyboardShouldPersistTaps="handled">
                             <View className="space-y-2 mb-8">
                                 <Text className="text-lg text-gray-800 font-semibold">Group Details</Text>
@@ -177,7 +184,7 @@ const GroupScreen = () => {
                                 </View>
                             )}
                         </ScrollView>
-                    </SafeAreaView>
+                    </View>
                 )}
             </Modal>
         </SafeAreaView>
