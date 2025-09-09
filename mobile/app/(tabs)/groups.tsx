@@ -1,5 +1,5 @@
 import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator, Image, TextInput, Keyboard } from 'react-native';
-import React, { useState } from 'react';
+import React, {useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import SignOutButton from '@/components/SignOutButton';
@@ -56,11 +56,6 @@ const GroupScreen = () => {
     };
     
     const handleOpenGroupDetail = (group: Group) => {
-        console.log("--- Checking Ownership on Tap ---");
-        console.log("Current User ID:", currentUser?._id);
-        console.log("Group Owner ID: ", group.owner);
-        console.log("-------------------------------");
-
         setSelectedGroup(group);
         setIsGroupDetailVisible(true);
     };
@@ -119,7 +114,8 @@ const GroupScreen = () => {
 
             <Modal visible={isGroupDetailVisible} animationType="slide" onRequestClose={handleCloseGroupDetail}>
                 {selectedGroup && (
-                    <SafeAreaView className="flex-1 bg-gray-50">
+                    // --- FIX 1: Set the SafeAreaView background to white to match the header ---
+                    <SafeAreaView className="flex-1 bg-white">
                         <View className="flex-row items-center px-4 py-3 border-b border-gray-200 bg-white">
                             <TouchableOpacity onPress={handleCloseGroupDetail} className="mr-4">
                                 <Feather name="arrow-left" size={24} color="#4f46e5" />
@@ -127,7 +123,8 @@ const GroupScreen = () => {
                             <Text className="text-xl font-bold text-gray-900">{selectedGroup.name}</Text>
                         </View>
 
-                        <ScrollView className="flex-1 p-6" keyboardShouldPersistTaps="handled">
+                        {/* --- FIX 2: Apply the gray background to the ScrollView for the content area --- */}
+                        <ScrollView className="flex-1 p-6 bg-gray-50" keyboardShouldPersistTaps="handled">
                             <View className="space-y-2 mb-8">
                                 <Text className="text-lg text-gray-800 font-semibold">Group Details</Text>
                                 <Text className="text-base text-gray-600">ID: {selectedGroup._id}</Text>
