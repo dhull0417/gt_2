@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-// REMOVED: useNavigation is no longer needed here
 import { useApiClient, groupApi, Schedule } from "../utils/api";
 import { Alert } from "react-native";
 
