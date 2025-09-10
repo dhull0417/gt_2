@@ -6,6 +6,7 @@ interface CreateGroupVariables {
   name: string;
   time: string;
   schedule: Schedule | null;
+  timezone: string;
 }
 
 export const useCreateGroup = () => {

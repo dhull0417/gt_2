@@ -23,6 +23,7 @@ export interface Group {
   time: string;
   schedule?: Schedule;
   owner: string;
+  timezone: string;
 }
 export interface GroupDetails extends Group {
   members: User[];
@@ -42,6 +43,7 @@ interface CreateGroupPayload {
   name: string;
   time: string;
   schedule: Schedule | null;
+  timezone: string;
 }
 interface AddMemberPayload {
   groupId: string;
