@@ -8,8 +8,6 @@ import PostComposer from '@/components/PostComposer'
 
 const HomeScreen = () => {
 
-  useUserSync();
-
   return (
     <SafeAreaView className='flex-1'>
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-100">

@@ -4,7 +4,7 @@ import { useMemo } from "react";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
-// Interfaces remain the same
+// ... other interfaces are unchanged ...
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
   day: number;
@@ -56,6 +56,7 @@ interface CreateGroupResponse {
   message: string;
 }
 
+
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
   const api = axios.create({
     baseURL: API_BASE_URL,
@@ -78,15 +79,10 @@ export const useApiClient = (): AxiosInstance => {
 
 export const userApi = {
   syncUser: (api: AxiosInstance) => api.post("/api/users/sync"),
-  
-  // --- THIS IS THE FIX ---
-  // This function now expects a nested { user: User } object from the backend
-  // but returns only the clean, unwrapped User object.
   getCurrentUser: async (api: AxiosInstance): Promise<User> => {
     const response = await api.get<{ user: User }>("/api/users/me");
     return response.data.user;
   },
-
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
 };
 
@@ -105,6 +101,11 @@ export const groupApi = {
   },
   getGroupDetails: async (api: AxiosInstance, groupId: string): Promise<GroupDetails> => {
     const response = await api.get<GroupDetails>(`/api/groups/${groupId}`);
+    return response.data;
+  },
+  // --- ADDED: New function to delete a group ---
+  deleteGroup: async (api: AxiosInstance, groupId: string): Promise<{ message: string }> => {
+    const response = await api.delete(`/api/groups/${groupId}`);
     return response.data;
   }
 };
