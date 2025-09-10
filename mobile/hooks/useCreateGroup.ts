@@ -9,7 +9,6 @@ interface CreateGroupVariables {
 }
 
 export const useCreateGroup = () => {
-  // REMOVED: The navigation constant is gone
   const api = useApiClient();
   const queryClient = useQueryClient();
 
@@ -17,13 +16,15 @@ export const useCreateGroup = () => {
     mutationFn: (variables: CreateGroupVariables) => 
       groupApi.createGroup(api, variables),
     
-    // MODIFIED: The onSuccess logic is now simpler
     onSuccess: (data) => {
       console.log("New Group Created:", data.group);
       Alert.alert("Success", data.message);
-      // This part is still crucial for updating the group list
+      
+      // Invalidate the groups query to refresh the groups list
       queryClient.invalidateQueries({ queryKey: ['groups'] });
-      // REMOVED: navigation.goBack() has been removed
+
+      // Also invalidate the events query to refresh the events list
+      queryClient.invalidateQueries({ queryKey: ['events'] });
     },
     onError: (error) => {
       console.error("Error creating group:", error);
