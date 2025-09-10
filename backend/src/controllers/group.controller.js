@@ -5,95 +5,63 @@ import Event from "../models/event.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 
-// --- NEW: Helper to parse "HH:MM AM/PM" time strings into UTC hours/minutes ---
+// The parseTime and calculateNextEventDate helpers are unchanged
 const parseTime = (timeString) => {
     const [time, period] = timeString.split(' ');
     let [hours, minutes] = time.split(':').map(Number);
-    if (period === 'PM' && hours !== 12) {
+    if (period.toUpperCase() === 'PM' && hours !== 12) {
         hours += 12;
     }
-    if (period === 'AM' && hours === 12) {
+    if (period.toUpperCase() === 'AM' && hours === 12) {
         hours = 0;
     }
     return { hours, minutes };
 };
 
-// --- MODIFIED: The date calculation is now time-aware ---
 const calculateNextEventDate = (schedule, groupTime) => {
   const now = new Date();
-  let eventDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-
   const { hours: eventHours, minutes: eventMinutes } = parseTime(groupTime);
-
+  let eventDate = new Date(now);
   if (schedule.frequency === 'weekly') {
-    const currentDay = now.getUTCDay();
+    const currentDay = now.getDay();
     const targetDay = schedule.day;
-    let dayDifference = targetDay - currentDay;
-
-    if (dayDifference < 0) {
-      dayDifference += 7;
-    } else if (dayDifference === 0) {
-      // It's today. Check if the time has already passed.
-      const currentUTCHours = now.getUTCHours();
-      const currentUTCMinutes = now.getUTCMinutes();
-      if (currentUTCHours > eventHours || (currentUTCHours === eventHours && currentUTCMinutes >= eventMinutes)) {
-        // Time has passed for today, schedule for next week
-        dayDifference += 7;
-      }
-    }
-    eventDate.setUTCDate(eventDate.getUTCDate() + dayDifference);
+    const dayDifference = (targetDay - currentDay + 7) % 7;
+    eventDate.setDate(now.getDate() + dayDifference);
   } else if (schedule.frequency === 'monthly') {
-    const currentMonthDate = now.getUTCDate();
+    const currentMonthDate = now.getDate();
     const targetMonthDate = schedule.day;
-    eventDate.setUTCDate(targetMonthDate);
-
+    eventDate.setDate(targetMonthDate);
     if (targetMonthDate < currentMonthDate) {
-      // Date has passed this month, schedule for next month
-      eventDate.setUTCMonth(eventDate.getUTCMonth() + 1);
-    } else if (targetMonthDate === currentMonthDate) {
-       // It's today. Check if the time has already passed.
-       const currentUTCHours = now.getUTCHours();
-       const currentUTCMinutes = now.getUTCMinutes();
-       if (currentUTCHours > eventHours || (currentUTCHours === eventHours && currentUTCMinutes >= eventMinutes)) {
-         // Time has passed, schedule for next month
-         eventDate.setUTCMonth(eventDate.getUTCMonth() + 1);
-       }
+      eventDate.setMonth(now.getMonth() + 1);
     }
   }
+  eventDate.setHours(eventHours, eventMinutes, 0, 0);
+  if (eventDate < now) {
+    if (schedule.frequency === 'weekly') {
+      eventDate.setDate(eventDate.getDate() + 7);
+    } else {
+      eventDate.setMonth(eventDate.getMonth() + 1);
+    }
+  }
+  eventDate.setUTCHours(0, 0, 0, 0);
   return eventDate;
 };
 
-
+// ... createGroup, getGroups, getGroupDetails, addMember are unchanged ...
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   const { name, time, schedule } = req.body;
-  if (!name || !time) {
-    return res.status(400).json({ error: "Group name and time are required." });
-  }
+  if (!name || !time) return res.status(400).json({ error: "Group name and time are required." });
   const owner = await User.findOne({ clerkId: userId });
-  if (!owner) {
-    return res.status(404).json({ error: "User not found." });
-  }
+  if (!owner) return res.status(404).json({ error: "User not found." });
   const groupData = { name, time, owner: owner._id, members: [owner._id] };
-  if (schedule) {
-    groupData.schedule = schedule;
-  }
+  if (schedule) groupData.schedule = schedule;
   const newGroup = await Group.create(groupData);
   await owner.updateOne({ $addToSet: { groups: newGroup._id } });
-
   if (newGroup.schedule) {
     try {
-      // Pass the group's time to the calculation function
       const eventDate = calculateNextEventDate(newGroup.schedule, newGroup.time);
-
-      await Event.create({
-        group: newGroup._id,
-        name: newGroup.name,
-        date: eventDate,
-        time: newGroup.time,
-        members: newGroup.members,
-        undecided: newGroup.members,
-      });
+      await Event.create({ group: newGroup._id, name: newGroup.name, date: eventDate, time: newGroup.time, members: newGroup.members, undecided: newGroup.members });
       console.log(`First event for group '${newGroup.name}' created for ${eventDate.toDateString()}`);
     } catch (eventError) {
       console.error("Failed to create the first event for the new group:", eventError);
@@ -101,8 +69,6 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
 });
-
-// ... getGroups, getGroupDetails, and addMember functions are unchanged ...
 export const getGroups = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   const currentUser = await User.findOne({ clerkId: userId }).lean();
@@ -110,7 +76,6 @@ export const getGroups = asyncHandler(async (req, res) => {
   const userGroups = await Group.find({ members: currentUser._id }).select("name _id time schedule owner");
   res.status(200).json(userGroups);
 });
-
 export const getGroupDetails = asyncHandler(async (req, res) => {
   const { groupId } = req.params;
   if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid Group ID format." });
@@ -118,7 +83,6 @@ export const getGroupDetails = asyncHandler(async (req, res) => {
   if (!group) return res.status(404).json({ error: "Group not found." });
   res.status(200).json(group);
 });
-
 export const addMember = asyncHandler(async (req, res) => {
   const { userId: requesterClerkId } = getAuth(req);
   const { groupId } = req.params;
@@ -130,9 +94,7 @@ export const addMember = asyncHandler(async (req, res) => {
   const group = await Group.findById(groupId);
   const requester = await User.findOne({ clerkId: requesterClerkId });
   const userToAdd = await User.findById(sanitizedUserId);
-  if (!group) return res.status(404).json({ error: "Group not found." });
-  if (!requester) return res.status(404).json({ error: "Requesting user not found." });
-  if (!userToAdd) return res.status(404).json({ error: "User to add not found." });
+  if (!group || !requester || !userToAdd) return res.status(404).json({ error: "Resource not found." });
   if (group.owner.toString() !== requester._id.toString()) {
     return res.status(403).json({ error: "Only the group owner can add new members." });
   }
@@ -150,4 +112,43 @@ export const addMember = asyncHandler(async (req, res) => {
     console.error("Could not update upcoming events with new member:", eventError);
   }
   res.status(200).json({ message: "User added to group successfully." });
+});
+
+// --- ADD THIS NEW CONTROLLER FUNCTION ---
+export const deleteGroup = asyncHandler(async (req, res) => {
+  const { userId: clerkId } = getAuth(req);
+  const { groupId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(groupId)) {
+    return res.status(400).json({ error: "Invalid Group ID." });
+  }
+
+  // Find the group and the user requesting deletion
+  const group = await Group.findById(groupId);
+  const requester = await User.findOne({ clerkId }).lean();
+
+  if (!group) return res.status(404).json({ error: "Group not found." });
+  if (!requester) return res.status(404).json({ error: "User not found." });
+
+  // Authorization: Check if the requester is the group owner
+  if (group.owner.toString() !== requester._id.toString()) {
+    return res.status(403).json({ error: "Only the group owner can delete the group." });
+  }
+
+  // 1. Delete all events associated with this group
+  await Event.deleteMany({ group: groupId });
+  console.log(`Deleted all events for group ${groupId}`);
+
+  // 2. Remove this group's ID from the 'groups' array of all its members
+  await User.updateMany(
+    { _id: { $in: group.members } }, // Find all users who are members
+    { $pull: { groups: groupId } } // Pull the group ID from their 'groups' array
+  );
+  console.log(`Removed group ${groupId} from all members' user profiles`);
+
+  // 3. Delete the group itself
+  await Group.findByIdAndDelete(groupId);
+  console.log(`Deleted group ${groupId}`);
+
+  res.status(200).json({ message: "Group and all associated events have been deleted." });
 });

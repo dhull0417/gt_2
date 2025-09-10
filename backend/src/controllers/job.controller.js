@@ -2,66 +2,65 @@ import asyncHandler from "express-async-handler";
 import Event from "../models/event.model.js";
 import Group from "../models/group.model.js";
 
-// --- NEW: Helper to parse "HH:MM AM/PM" time strings into UTC hours/minutes ---
 const parseTime = (timeString) => {
     const [time, period] = timeString.split(' ');
     let [hours, minutes] = time.split(':').map(Number);
-    if (period === 'PM' && hours !== 12) {
+    if (period.toUpperCase() === 'PM' && hours !== 12) {
         hours += 12;
     }
-    if (period === 'AM' && hours === 12) {
+    if (period.toUpperCase() === 'AM' && hours === 12) {
         hours = 0;
     }
     return { hours, minutes };
 };
 
-// --- MODIFIED: The date calculation is now time-aware ---
+// --- USING THE SAME ROBUST DATE CALCULATION LOGIC ---
 const calculateNextEventDate = (schedule, groupTime) => {
   const now = new Date();
-  let eventDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-
   const { hours: eventHours, minutes: eventMinutes } = parseTime(groupTime);
 
+  console.log(`--- DIAGNOSTICS (CRON): Calculating Next Event Date ---`);
+  console.log(`Current Server Time (UTC): ${now.toISOString()}`);
+  console.log(`Input Schedule: freq=${schedule.frequency}, day=${schedule.day}`);
+  console.log(`Input Time: ${groupTime} (Parsed as H:${eventHours} M:${eventMinutes})`);
+  
+  let eventDate = new Date(now);
+
   if (schedule.frequency === 'weekly') {
-    const currentDay = now.getUTCDay();
+    const currentDay = now.getDay();
     const targetDay = schedule.day;
-    let dayDifference = targetDay - currentDay;
-
-    if (dayDifference < 0) {
-      dayDifference += 7;
-    } else if (dayDifference === 0) {
-      // It's today. Check if the time has already passed.
-      const currentUTCHours = now.getUTCHours();
-      const currentUTCMinutes = now.getUTCMinutes();
-      if (currentUTCHours > eventHours || (currentUTCHours === eventHours && currentUTCMinutes >= eventMinutes)) {
-        // Time has passed for today, schedule for next week
-        dayDifference += 7;
-      }
-    }
-    eventDate.setUTCDate(eventDate.getUTCDate() + dayDifference);
+    const dayDifference = (targetDay - currentDay + 7) % 7;
+    eventDate.setDate(now.getDate() + dayDifference);
+    console.log(`Day difference is ${dayDifference}. Initial date set to: ${eventDate.toDateString()}`);
   } else if (schedule.frequency === 'monthly') {
-    const currentMonthDate = now.getUTCDate();
+    const currentMonthDate = now.getDate();
     const targetMonthDate = schedule.day;
-    eventDate.setUTCDate(targetMonthDate);
-
+    eventDate.setDate(targetMonthDate);
     if (targetMonthDate < currentMonthDate) {
-      // Date has passed this month, schedule for next month
-      eventDate.setUTCMonth(eventDate.getUTCMonth() + 1);
-    } else if (targetMonthDate === currentMonthDate) {
-       // It's today. Check if the time has already passed.
-       const currentUTCHours = now.getUTCHours();
-       const currentUTCMinutes = now.getUTCMinutes();
-       if (currentUTCHours > eventHours || (currentUTCHours === eventHours && currentUTCMinutes >= eventMinutes)) {
-         // Time has passed, schedule for next month
-         eventDate.setUTCMonth(eventDate.getUTCMonth() + 1);
-       }
+      eventDate.setMonth(now.getMonth() + 1);
+    }
+    console.log(`Initial date set to: ${eventDate.toDateString()}`);
+  }
+  
+  eventDate.setHours(eventHours, eventMinutes, 0, 0);
+  console.log(`Date with event time set: ${eventDate.toString()}`);
+  
+  if (eventDate < now) {
+    console.log("Calculated time is in the past, advancing to the next cycle.");
+    if (schedule.frequency === 'weekly') {
+      eventDate.setDate(eventDate.getDate() + 7);
+    } else {
+      eventDate.setMonth(eventDate.getMonth() + 1);
     }
   }
+
+  eventDate.setUTCHours(0, 0, 0, 0);
+  console.log(`Final event date for DB (UTC): ${eventDate.toISOString()}`);
+  console.log(`------------------------------------------`);
   return eventDate;
 };
 
 
-// The main function for our cron job
 export const regenerateEvents = asyncHandler(async (req, res) => {
   console.log("Cron job started: Regenerating events...");
   const now = new Date();
@@ -90,7 +89,6 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
   for (const group of groups) {
     if (group.schedule) {
-      // Pass the group's time to the calculation function
       const nextEventDate = calculateNextEventDate(group.schedule, group.time);
       await Event.create({
         group: group._id,
