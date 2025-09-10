@@ -1,6 +1,40 @@
 import asyncHandler from "express-async-handler";
 import Event from "../models/event.model.js";
 import Group from "../models/group.model.js";
+// --- THIS IS THE FIX: Correctly split imports between the two libraries ---
+import { zonedTimeToUtc, utcToZonedTime, nextDay } from 'date-fns-tz';
+import { setHours, setMinutes, setSeconds, setMilliseconds, isBefore, addWeeks, addMonths, setDate } from 'date-fns';
+
+const calculateNextEventDate = (schedule, groupTime, timezone) => {
+  const nowInUserTimezone = utcToZonedTime(new Date(), timezone);
+  const [time, period] = groupTime.split(' ');
+  let [hours, minutes] = time.split(':').map(Number);
+  if (period.toUpperCase() === 'PM' && hours !== 12) hours += 12;
+  if (period.toUpperCase() === 'AM' && hours === 12) hours = 0;
+  let eventDate;
+  if (schedule.frequency === 'weekly') {
+    const targetDay = schedule.day;
+    eventDate = nextDay(nowInUserTimezone, targetDay);
+  } else {
+    const targetDate = schedule.day;
+    eventDate = setDate(nowInUserTimezone, targetDate);
+    if (isBefore(eventDate, nowInUserTimezone)) {
+      eventDate = addMonths(eventDate, 1);
+    }
+  }
+  eventDate = setHours(eventDate, hours);
+  eventDate = setMinutes(eventDate, minutes);
+  eventDate = setSeconds(eventDate, 0);
+  eventDate = setMilliseconds(eventDate, 0);
+  if (isBefore(eventDate, nowInUserTimezone)) {
+    if (schedule.frequency === 'weekly') {
+      eventDate = addWeeks(eventDate, 1);
+    } else {
+      eventDate = addMonths(eventDate, 1);
+    }
+  }
+  return zonedTimeToUtc(eventDate, timezone);
+};
 
 const parseTime = (timeString) => {
     const [time, period] = timeString.split(' ');
@@ -14,57 +48,9 @@ const parseTime = (timeString) => {
     return { hours, minutes };
 };
 
-// --- USING THE SAME ROBUST DATE CALCULATION LOGIC ---
-const calculateNextEventDate = (schedule, groupTime) => {
-  const now = new Date();
-  const { hours: eventHours, minutes: eventMinutes } = parseTime(groupTime);
-
-  console.log(`--- DIAGNOSTICS (CRON): Calculating Next Event Date ---`);
-  console.log(`Current Server Time (UTC): ${now.toISOString()}`);
-  console.log(`Input Schedule: freq=${schedule.frequency}, day=${schedule.day}`);
-  console.log(`Input Time: ${groupTime} (Parsed as H:${eventHours} M:${eventMinutes})`);
-  
-  let eventDate = new Date(now);
-
-  if (schedule.frequency === 'weekly') {
-    const currentDay = now.getDay();
-    const targetDay = schedule.day;
-    const dayDifference = (targetDay - currentDay + 7) % 7;
-    eventDate.setDate(now.getDate() + dayDifference);
-    console.log(`Day difference is ${dayDifference}. Initial date set to: ${eventDate.toDateString()}`);
-  } else if (schedule.frequency === 'monthly') {
-    const currentMonthDate = now.getDate();
-    const targetMonthDate = schedule.day;
-    eventDate.setDate(targetMonthDate);
-    if (targetMonthDate < currentMonthDate) {
-      eventDate.setMonth(now.getMonth() + 1);
-    }
-    console.log(`Initial date set to: ${eventDate.toDateString()}`);
-  }
-  
-  eventDate.setHours(eventHours, eventMinutes, 0, 0);
-  console.log(`Date with event time set: ${eventDate.toString()}`);
-  
-  if (eventDate < now) {
-    console.log("Calculated time is in the past, advancing to the next cycle.");
-    if (schedule.frequency === 'weekly') {
-      eventDate.setDate(eventDate.getDate() + 7);
-    } else {
-      eventDate.setMonth(eventDate.getMonth() + 1);
-    }
-  }
-
-  eventDate.setUTCHours(0, 0, 0, 0);
-  console.log(`Final event date for DB (UTC): ${eventDate.toISOString()}`);
-  console.log(`------------------------------------------`);
-  return eventDate;
-};
-
-
 export const regenerateEvents = asyncHandler(async (req, res) => {
   console.log("Cron job started: Regenerating events...");
   const now = new Date();
-
   const allEvents = await Event.find().lean();
   
   const expiredEvents = allEvents.filter(event => {
@@ -89,7 +75,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
   for (const group of groups) {
     if (group.schedule) {
-      const nextEventDate = calculateNextEventDate(group.schedule, group.time);
+      const nextEventDate = calculateNextEventDate(group.schedule, group.time, group.timezone);
       await Event.create({
         group: group._id,
         name: group.name,
