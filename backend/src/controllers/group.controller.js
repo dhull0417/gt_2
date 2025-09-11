@@ -4,12 +4,12 @@ import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
-// --- THIS IS THE FIX: 'nextDay' has been moved to the 'date-fns' import ---
-import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz';
-import { setHours, setMinutes, setSeconds, setMilliseconds, isBefore, addWeeks, addMonths, setDate, nextDay } from 'date-fns';
+// --- THIS IS THE FIX: Using a more robust import style ---
+import * as zoned from 'date-fns-tz';
+import * as dateFns from 'date-fns';
 
 const calculateNextEventDate = (schedule, groupTime, timezone) => {
-  const nowInUserTimezone = utcToZonedTime(new Date(), timezone);
+  const nowInUserTimezone = zoned.utcToZonedTime(new Date(), timezone);
   const [time, period] = groupTime.split(' ');
   let [hours, minutes] = time.split(':').map(Number);
   if (period.toUpperCase() === 'PM' && hours !== 12) hours += 12;
@@ -17,26 +17,26 @@ const calculateNextEventDate = (schedule, groupTime, timezone) => {
   let eventDate;
   if (schedule.frequency === 'weekly') {
     const targetDay = schedule.day;
-    eventDate = nextDay(nowInUserTimezone, targetDay);
+    eventDate = dateFns.nextDay(nowInUserTimezone, targetDay);
   } else {
     const targetDate = schedule.day;
-    eventDate = setDate(nowInUserTimezone, targetDate);
-    if (isBefore(eventDate, nowInUserTimezone)) {
-      eventDate = addMonths(eventDate, 1);
+    eventDate = dateFns.setDate(nowInUserTimezone, targetDate);
+    if (dateFns.isBefore(eventDate, nowInUserTimezone)) {
+      eventDate = dateFns.addMonths(eventDate, 1);
     }
   }
-  eventDate = setHours(eventDate, hours);
-  eventDate = setMinutes(eventDate, minutes);
-  eventDate = setSeconds(eventDate, 0);
-  eventDate = setMilliseconds(eventDate, 0);
-  if (isBefore(eventDate, nowInUserTimezone)) {
+  eventDate = dateFns.setHours(eventDate, hours);
+  eventDate = dateFns.setMinutes(eventDate, minutes);
+  eventDate = dateFns.setSeconds(eventDate, 0);
+  eventDate = dateFns.setMilliseconds(eventDate, 0);
+  if (dateFns.isBefore(eventDate, nowInUserTimezone)) {
     if (schedule.frequency === 'weekly') {
-      eventDate = addWeeks(eventDate, 1);
+      eventDate = dateFns.addWeeks(eventDate, 1);
     } else {
-      eventDate = addMonths(eventDate, 1);
+      eventDate = dateFns.addMonths(eventDate, 1);
     }
   }
-  return zonedTimeToUtc(eventDate, timezone);
+  return zoned.zonedTimeToUtc(eventDate, timezone);
 };
 
 export const createGroup = asyncHandler(async (req, res) => {
