@@ -4,9 +4,9 @@ import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
-// --- THIS IS THE FIX: Correctly split imports between the two libraries ---
-import { zonedTimeToUtc, utcToZonedTime, nextDay } from 'date-fns-tz';
-import { setHours, setMinutes, setSeconds, setMilliseconds, isBefore, addWeeks, addMonths, setDate } from 'date-fns';
+// --- THIS IS THE FIX: 'nextDay' has been moved to the 'date-fns' import ---
+import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz';
+import { setHours, setMinutes, setSeconds, setMilliseconds, isBefore, addWeeks, addMonths, setDate, nextDay } from 'date-fns';
 
 const calculateNextEventDate = (schedule, groupTime, timezone) => {
   const nowInUserTimezone = utcToZonedTime(new Date(), timezone);
