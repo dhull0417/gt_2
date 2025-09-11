@@ -4,7 +4,6 @@ import { useMemo } from "react";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
-// ... other interfaces are unchanged ...
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
   day: number;
@@ -23,7 +22,7 @@ export interface Group {
   time: string;
   schedule?: Schedule;
   owner: string;
-  timezone: string;
+  timezone: string; // Ensure timezone is part of the Group type
 }
 export interface GroupDetails extends Group {
   members: User[];
@@ -43,7 +42,7 @@ interface CreateGroupPayload {
   name: string;
   time: string;
   schedule: Schedule | null;
-  timezone: string;
+  timezone: string; // Ensure timezone is part of the Payload type
 }
 interface AddMemberPayload {
   groupId: string;
@@ -57,7 +56,6 @@ interface CreateGroupResponse {
   group: Group;
   message: string;
 }
-
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
   const api = axios.create({
@@ -73,12 +71,10 @@ export const createApiClient = (getToken: () => Promise<string | null>): AxiosIn
   });
   return api;
 };
-
 export const useApiClient = (): AxiosInstance => {
   const { getToken } = useAuth();
   return useMemo(() => createApiClient(getToken), [getToken]);
 };
-
 export const userApi = {
   syncUser: (api: AxiosInstance) => api.post("/api/users/sync"),
   getCurrentUser: async (api: AxiosInstance): Promise<User> => {
@@ -87,7 +83,6 @@ export const userApi = {
   },
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
 };
-
 export const groupApi = {
   createGroup: async (api: AxiosInstance, payload: CreateGroupPayload): Promise<CreateGroupResponse> => {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);
@@ -105,13 +100,11 @@ export const groupApi = {
     const response = await api.get<GroupDetails>(`/api/groups/${groupId}`);
     return response.data;
   },
-  // --- ADDED: New function to delete a group ---
   deleteGroup: async (api: AxiosInstance, groupId: string): Promise<{ message: string }> => {
     const response = await api.delete(`/api/groups/${groupId}`);
     return response.data;
   }
 };
-
 export const eventApi = {
   getEvents: async (api: AxiosInstance): Promise<Event[]> => {
     const response = await api.get<Event[]>("/api/events");

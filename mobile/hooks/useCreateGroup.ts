@@ -6,7 +6,7 @@ interface CreateGroupVariables {
   name: string;
   time: string;
   schedule: Schedule | null;
-  timezone: string;
+  timezone: string; // Add the required timezone property
 }
 
 export const useCreateGroup = () => {
@@ -20,11 +20,7 @@ export const useCreateGroup = () => {
     onSuccess: (data) => {
       console.log("New Group Created:", data.group);
       Alert.alert("Success", data.message);
-      
-      // Invalidate the groups query to refresh the groups list
       queryClient.invalidateQueries({ queryKey: ['groups'] });
-
-      // Also invalidate the events query to refresh the events list
       queryClient.invalidateQueries({ queryKey: ['events'] });
     },
     onError: (error) => {
