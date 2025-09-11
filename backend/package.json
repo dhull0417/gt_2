@@ -19,13 +19,15 @@
     "@clerk/express": "^1.7.3",
     "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
-    "date-fns": "^4.1.0",
-    "date-fns-tz": "^3.2.0",
     "dotenv": "^17.0.1",
     "express": "^5.1.0",
     "express-async-handler": "^1.2.0",
+    "luxon": "^3.7.2",
     "mongoose": "^8.16.1",
     "multer": "^2.0.1",
     "prettier": "3.6.2"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.1"
   }
 }

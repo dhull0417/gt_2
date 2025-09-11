@@ -4,39 +4,48 @@ import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
-// --- THIS IS THE FIX: Using standard, corrected named imports ---
-import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz';
-import { setHours, setMinutes, setSeconds, setMilliseconds, isBefore, addWeeks, addMonths, setDate, nextDay } from 'date-fns';
+// --- THIS IS THE FIX: Using the Luxon library for all date/time logic ---
+import { DateTime } from "luxon";
 
 const calculateNextEventDate = (schedule, groupTime, timezone) => {
-  const nowInUserTimezone = utcToZonedTime(new Date(), timezone);
+  // Get the current moment in the user's specified timezone
+  const now = DateTime.now().setZone(timezone);
+
   const [time, period] = groupTime.split(' ');
-  let [hours, minutes] = time.split(':').map(Number);
-  if (period.toUpperCase() === 'PM' && hours !== 12) hours += 12;
-  if (period.toUpperCase() === 'AM' && hours === 12) hours = 0;
+  let [hour, minute] = time.split(':').map(Number);
+  if (period.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+  if (period.toUpperCase() === 'AM' && hour === 12) hour = 0;
+
   let eventDate;
+
   if (schedule.frequency === 'weekly') {
-    const targetDay = schedule.day;
-    eventDate = nextDay(nowInUserTimezone, targetDay);
-  } else {
-    const targetDate = schedule.day;
-    eventDate = setDate(nowInUserTimezone, targetDate);
-    if (isBefore(eventDate, nowInUserTimezone)) {
-      eventDate = addMonths(eventDate, 1);
-    }
-  }
-  eventDate = setHours(eventDate, hours);
-  eventDate = setMinutes(eventDate, minutes);
-  eventDate = setSeconds(eventDate, 0);
-  eventDate = setMilliseconds(eventDate, 0);
-  if (isBefore(eventDate, nowInUserTimezone)) {
-    if (schedule.frequency === 'weekly') {
-      eventDate = addWeeks(eventDate, 1);
+    const targetWeekday = schedule.day === 0 ? 7 : schedule.day; // Luxon uses 1-7 for Mon-Sun
+    
+    // Set the target time on today's date
+    let eventDateTime = now.set({ hour: hour, minute: minute, second: 0, millisecond: 0 });
+    
+    // If the target day is later in the week OR is today and the time has not passed
+    if (targetWeekday > now.weekday || (targetWeekday === now.weekday && eventDateTime > now)) {
+        eventDate = eventDateTime.set({ weekday: targetWeekday });
     } else {
-      eventDate = addMonths(eventDate, 1);
+        // Otherwise, it's for next week
+        eventDate = eventDateTime.plus({ weeks: 1 }).set({ weekday: targetWeekday });
+    }
+
+  } else { // monthly
+    const targetDayOfMonth = schedule.day;
+    let eventDateTime = now.set({ day: targetDayOfMonth, hour: hour, minute: minute, second: 0, millisecond: 0 });
+    
+    // If that date/time is in the past, schedule for next month
+    if (eventDateTime < now) {
+      eventDate = eventDateTime.plus({ months: 1 });
+    } else {
+      eventDate = eventDateTime;
     }
   }
-  return zonedTimeToUtc(eventDate, timezone);
+
+  // Convert the final Luxon DateTime object back to a standard JS Date for Mongoose
+  return eventDate.toJSDate();
 };
 
 export const createGroup = asyncHandler(async (req, res) => {
