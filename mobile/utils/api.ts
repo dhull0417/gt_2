@@ -20,9 +20,9 @@ export interface Group {
   _id: string;
   name: string;
   time: string;
-  schedule?: Schedule;
+  schedule: Schedule;
   owner: string;
-  timezone: string; // Ensure timezone is part of the Group type
+  timezone: string;
 }
 export interface GroupDetails extends Group {
   members: User[];
@@ -41,8 +41,8 @@ export interface Event {
 interface CreateGroupPayload {
   name: string;
   time: string;
-  schedule: Schedule | null;
-  timezone: string; // Ensure timezone is part of the Payload type
+  schedule: Schedule;
+  timezone: string;
 }
 interface AddMemberPayload {
   groupId: string;
@@ -58,15 +58,10 @@ interface CreateGroupResponse {
 }
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
-  const api = axios.create({
-    baseURL: API_BASE_URL,
-    headers: { "User-Agent": "GT2MobileApp/1.0" }
-  });
+  const api = axios.create({ baseURL: API_BASE_URL, headers: { "User-Agent": "GT2MobileApp/1.0" } });
   api.interceptors.request.use(async (config) => {
     const token = await getToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   });
   return api;

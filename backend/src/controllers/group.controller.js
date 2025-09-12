@@ -4,73 +4,56 @@ import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
-// --- THIS IS THE FIX: Using the Luxon library for all date/time logic ---
 import { DateTime } from "luxon";
 
 const calculateNextEventDate = (schedule, groupTime, timezone) => {
-  // Get the current moment in the user's specified timezone
   const now = DateTime.now().setZone(timezone);
-
   const [time, period] = groupTime.split(' ');
   let [hour, minute] = time.split(':').map(Number);
   if (period.toUpperCase() === 'PM' && hour !== 12) hour += 12;
   if (period.toUpperCase() === 'AM' && hour === 12) hour = 0;
-
   let eventDate;
-
   if (schedule.frequency === 'weekly') {
-    const targetWeekday = schedule.day === 0 ? 7 : schedule.day; // Luxon uses 1-7 for Mon-Sun
-    
-    // Set the target time on today's date
+    const targetWeekday = schedule.day === 0 ? 7 : schedule.day;
     let eventDateTime = now.set({ hour: hour, minute: minute, second: 0, millisecond: 0 });
-    
-    // If the target day is later in the week OR is today and the time has not passed
     if (targetWeekday > now.weekday || (targetWeekday === now.weekday && eventDateTime > now)) {
         eventDate = eventDateTime.set({ weekday: targetWeekday });
     } else {
-        // Otherwise, it's for next week
         eventDate = eventDateTime.plus({ weeks: 1 }).set({ weekday: targetWeekday });
     }
-
-  } else { // monthly
+  } else {
     const targetDayOfMonth = schedule.day;
     let eventDateTime = now.set({ day: targetDayOfMonth, hour: hour, minute: minute, second: 0, millisecond: 0 });
-    
-    // If that date/time is in the past, schedule for next month
     if (eventDateTime < now) {
       eventDate = eventDateTime.plus({ months: 1 });
     } else {
       eventDate = eventDateTime;
     }
   }
-
-  // Convert the final Luxon DateTime object back to a standard JS Date for Mongoose
   return eventDate.toJSDate();
 };
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   const { name, time, schedule, timezone } = req.body;
-  if (!name || !time || !timezone) {
-    return res.status(400).json({ error: "Group name, time, and timezone are required." });
+  if (!name || !time || !schedule || !timezone) {
+    return res.status(400).json({ error: "All group details are required." });
   }
   const owner = await User.findOne({ clerkId: userId });
   if (!owner) return res.status(404).json({ error: "User not found." });
-  const groupData = { name, time, owner: owner._id, members: [owner._id], timezone };
-  if (schedule) groupData.schedule = schedule;
+  const groupData = { name, time, schedule, timezone, owner: owner._id, members: [owner._id] };
   const newGroup = await Group.create(groupData);
   await owner.updateOne({ $addToSet: { groups: newGroup._id } });
-  if (newGroup.schedule) {
-    try {
-      const eventDate = calculateNextEventDate(newGroup.schedule, newGroup.time, newGroup.timezone);
-      await Event.create({
-        group: newGroup._id, name: newGroup.name, date: eventDate, time: newGroup.time,
-        members: newGroup.members, undecided: newGroup.members,
-      });
-      console.log(`First event for group '${newGroup.name}' created for ${eventDate.toDateString()}`);
-    } catch (eventError) {
-      console.error("Failed to create the first event for the new group:", eventError);
-    }
+
+  try {
+    const eventDate = calculateNextEventDate(newGroup.schedule, newGroup.time, newGroup.timezone);
+    await Event.create({
+      group: newGroup._id, name: newGroup.name, date: eventDate, time: newGroup.time,
+      members: newGroup.members, undecided: newGroup.members,
+    });
+    console.log(`First event for group '${newGroup.name}' created for ${eventDate.toDateString()}`);
+  } catch (eventError) {
+    console.error("Failed to create the first event for the new group:", eventError);
   }
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
 });

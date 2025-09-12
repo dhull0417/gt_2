@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator, Image, TextInput, Keyboard, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, TextInput, Keyboard, Alert, Platform } from 'react-native';
 import React, { useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,7 +7,7 @@ import CreateGroupPopup from '@/components/CreateGroupPopup';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useAddMember } from '@/hooks/useAddMember';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
-import { useDeleteGroup } from '@/hooks/useDeleteGroup'; // 1. Import the new hook
+import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { Group, Schedule, User, useApiClient, userApi } from '@/utils/api'; 
 import { Feather } from '@expo/vector-icons';
 
@@ -22,7 +22,7 @@ const GroupScreen = () => {
     const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, error: groupsError } = useGetGroups();
     const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(selectedGroup?._id || null);
     const { mutate: addMember, isPending: isAddingMember } = useAddMember();
-    const { mutate: deleteGroup, isPending: isDeletingGroup } = useDeleteGroup(); // 2. Instantiate the hook
+    const { mutate: deleteGroup, isPending: isDeletingGroup } = useDeleteGroup();
     const { data: currentUser } = useQuery<User, Error>({
         queryKey: ['currentUser'],
         queryFn: () => userApi.getCurrentUser(api),
@@ -54,27 +54,16 @@ const GroupScreen = () => {
         });
     };
     
-    // 3. Create a handler for the delete action with confirmation
     const handleDeleteGroup = () => {
         if (!selectedGroup) return;
-
-        Alert.alert(
-            "Delete Group",
-            `Are you sure you want to permanently delete the group "${selectedGroup.name}"? This action cannot be undone.`,
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Delete",
-                    style: "destructive",
-                    onPress: () => {
-                        deleteGroup({ groupId: selectedGroup._id }, {
-                            onSuccess: () => {
-                                handleCloseGroupDetail(); // Close the modal on success
-                            }
-                        });
-                    },
+        Alert.alert( "Delete Group", `Are you sure you want to permanently delete "${selectedGroup.name}"?`,
+            [{ text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive",
+                onPress: () => {
+                    deleteGroup({ groupId: selectedGroup._id }, {
+                        onSuccess: () => handleCloseGroupDetail()
+                    });
                 },
-            ]
+            }]
         );
     };
 
@@ -91,18 +80,11 @@ const GroupScreen = () => {
     const handleCloseCreateModal = () => setCreateIsModalVisible(false);
 
     const renderGroupList = () => {
-        if (isLoadingGroups || !currentUser) {
-            return <ActivityIndicator size="large" color="#4f46e5" className="mt-8"/>;
-        }
+        if (isLoadingGroups || !currentUser) return <ActivityIndicator size="large" color="#4f46e5" className="mt-8"/>;
         if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
         if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You are not in any groups yet.</Text>;
-
         return groups.map((group) => (
-            <TouchableOpacity 
-                key={group._id} 
-                className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200" 
-                onPress={() => handleOpenGroupDetail(group)}
-            >
+            <TouchableOpacity key={group._id} className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200" onPress={() => handleOpenGroupDetail(group)}>
                 <Text className="text-lg font-semibold text-gray-800">{group.name}</Text>
             </TouchableOpacity>
         ));
@@ -126,85 +108,75 @@ const GroupScreen = () => {
                 </View>
                 <View>{renderGroupList()}</View>
             </ScrollView>
-            <Modal animationType="slide" transparent={true} visible={isCreateModalVisible} onRequestClose={handleCloseCreateModal}>
-                <View className="flex-1 justify-center items-center bg-black bg-opacity-50">
+
+            {isCreateModalVisible && (
+                <View className="absolute top-0 bottom-0 left-0 right-0 bg-black/50 justify-center items-center">
                     <CreateGroupPopup onClose={handleCloseCreateModal} />
                 </View>
-            </Modal>
+            )}
 
-            <Modal visible={isGroupDetailVisible} animationType="slide" onRequestClose={handleCloseGroupDetail}>
-                {selectedGroup && (
-                    <View className="flex-1 bg-white">
-                        <View 
-                            className="flex-row items-center px-4 py-3 border-b border-gray-200 bg-white"
-                            style={{ paddingTop: insets.top + 12, paddingBottom: 12 }}
-                        >
-                            <TouchableOpacity onPress={handleCloseGroupDetail} className="mr-4">
-                                <Feather name="arrow-left" size={24} color="#4f46e5" />
-                            </TouchableOpacity>
-                            <Text className="text-xl font-bold text-gray-900">{selectedGroup.name}</Text>
-                        </View>
-
-                        <ScrollView className="flex-1 p-6 bg-gray-50" keyboardShouldPersistTaps="handled">
-                            <View className="space-y-2 mb-8">
-                                <Text className="text-lg text-gray-800 font-semibold">Group Details</Text>
-                                <Text className="text-base text-gray-600">ID: {selectedGroup._id}</Text>
-                                <Text className="text-base text-gray-600">Meeting Time: {selectedGroup.time}</Text>
-                                {selectedGroup.schedule && (
-                                    <Text className="text-base text-gray-600">Recurring: {formatSchedule(selectedGroup.schedule)}</Text>
-                                )}
-                            </View>
-
-                            <View className="mb-8">
-                                <Text className="text-lg text-gray-800 font-semibold mb-2">Members</Text>
-                                {isLoadingDetails ? <ActivityIndicator color="#4f46e5" /> : isErrorDetails ? <Text className="text-red-500">Could not load members.</Text> : 
-                                    (groupDetails?.members.map(member => (
-                                        <View key={member._id} className="flex-row items-center bg-white p-3 rounded-lg mb-2 shadow-sm">
-                                            <Image source={{ uri: member.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} className="w-10 h-10 rounded-full mr-4" />
-                                            <Text className="text-base text-gray-700">{member.firstName} {member.lastName}</Text>
-                                        </View>
-                                    )))
-                                }
-                            </View>
-
-                            {currentUser && currentUser._id === selectedGroup.owner && (
-                                <View className="mb-8">
-                                    <Text className="text-lg text-gray-800 font-semibold mb-2">Add New Member</Text>
-                                    <TextInput
-                                        className="w-full p-4 border border-gray-300 rounded-lg bg-white text-base text-gray-800"
-                                        placeholder="Enter User ID to add"
-                                        placeholderTextColor="#999"
-                                        value={userIdToAdd}
-                                        onChangeText={setUserIdToAdd}
-                                    />
-                                    <TouchableOpacity
-                                        onPress={handleAddMember}
-                                        disabled={isAddingMember || !userIdToAdd.trim()}
-                                        className={`py-4 mt-4 rounded-lg items-center shadow ${isAddingMember || !userIdToAdd.trim() ? 'bg-indigo-300' : 'bg-indigo-600'}`}
-                                    >
-                                        {isAddingMember ? <ActivityIndicator color="#fff" /> : <Text className="text-white text-lg font-bold">Add Member</Text>}
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-
-                            {/* --- 4. ADD THE DELETE BUTTON FOR THE OWNER --- */}
-                            {currentUser && currentUser._id === selectedGroup.owner && (
-                                <View className="mt-4 pt-4 border-t border-gray-300">
-                                    <TouchableOpacity
-                                        onPress={handleDeleteGroup}
-                                        disabled={isDeletingGroup}
-                                        className={`py-4 rounded-lg items-center shadow ${isDeletingGroup ? 'bg-red-300' : 'bg-red-600'}`}
-                                    >
-                                        {isDeletingGroup ? <ActivityIndicator color="#fff" /> : <Text className="text-white text-lg font-bold">Delete Group</Text>}
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-                        </ScrollView>
+            {isGroupDetailVisible && selectedGroup && (
+                 <View className="absolute top-0 bottom-0 left-0 right-0 bg-white" style={{ paddingTop: insets.top }}>
+                    <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
+                        <TouchableOpacity onPress={handleCloseGroupDetail} className="mr-4">
+                            <Feather name="arrow-left" size={24} color="#4f46e5" />
+                        </TouchableOpacity>
+                        <Text className="text-xl font-bold text-gray-900">{selectedGroup.name}</Text>
                     </View>
-                )}
-            </Modal>
+                    <ScrollView className="flex-1 p-6 bg-gray-50" keyboardShouldPersistTaps="handled">
+                        <View className="space-y-2 mb-8">
+                            <Text className="text-lg text-gray-800 font-semibold">Group Details</Text>
+                            <Text className="text-base text-gray-600">ID: {selectedGroup._id}</Text>
+                            <Text className="text-base text-gray-600">Meeting Time: {selectedGroup.time}</Text>
+                            {selectedGroup.schedule && (
+                                <Text className="text-base text-gray-600">Recurring: {formatSchedule(selectedGroup.schedule)}</Text>
+                            )}
+                        </View>
+                        <View className="mb-8">
+                            <Text className="text-lg text-gray-800 font-semibold mb-2">Members</Text>
+                            {isLoadingDetails ? <ActivityIndicator color="#4f46e5" /> : isErrorDetails ? <Text className="text-red-500">Could not load members.</Text> : 
+                                (groupDetails?.members.map(member => (
+                                    <View key={member._id} className="flex-row items-center bg-white p-3 rounded-lg mb-2 shadow-sm">
+                                        <Image source={{ uri: member.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} className="w-10 h-10 rounded-full mr-4" />
+                                        <Text className="text-base text-gray-700">{member.firstName} {member.lastName}</Text>
+                                    </View>
+                                )))
+                            }
+                        </View>
+                        {currentUser && currentUser._id === selectedGroup.owner && (
+                            <View className="mb-8">
+                                <Text className="text-lg text-gray-800 font-semibold mb-2">Add New Member</Text>
+                                <TextInput
+                                    className="w-full p-4 border border-gray-300 rounded-lg bg-white text-base text-gray-800"
+                                    placeholder="Enter User ID to add"
+                                    placeholderTextColor="#999"
+                                    value={userIdToAdd}
+                                    onChangeText={setUserIdToAdd}
+                                />
+                                <TouchableOpacity
+                                    onPress={handleAddMember}
+                                    disabled={isAddingMember || !userIdToAdd.trim()}
+                                    className={`py-4 mt-4 rounded-lg items-center shadow ${isAddingMember || !userIdToAdd.trim() ? 'bg-indigo-300' : 'bg-indigo-600'}`}
+                                >
+                                    {isAddingMember ? <ActivityIndicator color="#fff" /> : <Text className="text-white text-lg font-bold">Add Member</Text>}
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                        {currentUser && currentUser._id === selectedGroup.owner && (
+                            <View className="mt-4 pt-4 border-t border-gray-300">
+                                <TouchableOpacity
+                                    onPress={handleDeleteGroup}
+                                    disabled={isDeletingGroup}
+                                    className={`py-4 rounded-lg items-center shadow ${isDeletingGroup ? 'bg-red-300' : 'bg-red-600'}`}
+                                >
+                                    {isDeletingGroup ? <ActivityIndicator color="#fff" /> : <Text className="text-white text-lg font-bold">Delete Group</Text>}
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                    </ScrollView>
+                </View>
+            )}
         </SafeAreaView>
     );
 };
-
 export default GroupScreen;

@@ -5,8 +5,8 @@ import { Alert } from "react-native";
 interface CreateGroupVariables {
   name: string;
   time: string;
-  schedule: Schedule | null;
-  timezone: string; // Add the required timezone property
+  schedule: Schedule;
+  timezone: string;
 }
 
 export const useCreateGroup = () => {
@@ -18,14 +18,13 @@ export const useCreateGroup = () => {
       groupApi.createGroup(api, variables),
     
     onSuccess: (data) => {
-      console.log("New Group Created:", data.group);
-      Alert.alert("Success", data.message);
+      Alert.alert("Success", "Group created successfully!");
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
     },
-    onError: (error) => {
-      console.error("Error creating group:", error);
-      Alert.alert("Error", error.message || "Failed to create group.");
+    onError: (error: any) => {
+      const errorMessage = error.response?.data?.error || "Failed to create group.";
+      Alert.alert("Error", errorMessage);
     },
   });
 };
