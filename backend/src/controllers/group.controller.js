@@ -15,7 +15,7 @@ const calculateNextEventDate = (schedule, groupTime, timezone) => {
   let eventDate;
   if (schedule.frequency === 'weekly') {
     const targetWeekday = schedule.day === 0 ? 7 : schedule.day;
-    let eventDateTime = now.set({ hour: hour, minute: minute, second: 0, millisecond: 0 });
+    let eventDateTime = now.set({ hour, minute, second: 0, millisecond: 0 });
     if (targetWeekday > now.weekday || (targetWeekday === now.weekday && eventDateTime > now)) {
         eventDate = eventDateTime.set({ weekday: targetWeekday });
     } else {
@@ -23,7 +23,7 @@ const calculateNextEventDate = (schedule, groupTime, timezone) => {
     }
   } else {
     const targetDayOfMonth = schedule.day;
-    let eventDateTime = now.set({ day: targetDayOfMonth, hour: hour, minute: minute, second: 0, millisecond: 0 });
+    let eventDateTime = now.set({ day: targetDayOfMonth, hour, minute, second: 0, millisecond: 0 });
     if (eventDateTime < now) {
       eventDate = eventDateTime.plus({ months: 1 });
     } else {
@@ -35,27 +35,43 @@ const calculateNextEventDate = (schedule, groupTime, timezone) => {
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
-  const { name, time, schedule, timezone } = req.body;
-  if (!name || !time || !schedule || !timezone) {
-    return res.status(400).json({ error: "All group details are required." });
-  }
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: "Group name is required." });
   const owner = await User.findOne({ clerkId: userId });
   if (!owner) return res.status(404).json({ error: "User not found." });
-  const groupData = { name, time, schedule, timezone, owner: owner._id, members: [owner._id] };
+  const groupData = { name, owner: owner._id, members: [owner._id] };
   const newGroup = await Group.create(groupData);
   await owner.updateOne({ $addToSet: { groups: newGroup._id } });
-
-  try {
-    const eventDate = calculateNextEventDate(newGroup.schedule, newGroup.time, newGroup.timezone);
-    await Event.create({
-      group: newGroup._id, name: newGroup.name, date: eventDate, time: newGroup.time,
-      members: newGroup.members, undecided: newGroup.members,
-    });
-    console.log(`First event for group '${newGroup.name}' created for ${eventDate.toDateString()}`);
-  } catch (eventError) {
-    console.error("Failed to create the first event for the new group:", eventError);
-  }
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
+});
+
+export const updateGroupDetails = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+    const { time, schedule, timezone } = req.body;
+    if (!time || !schedule || !timezone) {
+        return res.status(400).json({ error: "Time, schedule, and timezone are required." });
+    }
+    const group = await Group.findById(groupId);
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
+    if (group.owner.toString() !== requester._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can update its details." });
+    }
+    group.time = time;
+    group.schedule = schedule;
+    group.timezone = timezone;
+    await group.save();
+    try {
+        const eventDate = calculateNextEventDate(group.schedule, group.time, group.timezone);
+        await Event.create({
+            group: group._id, name: group.name, date: eventDate, time: group.time,
+            members: group.members, undecided: group.members,
+        });
+    } catch (eventError) {
+        console.error("Failed to create the first event for the group:", eventError);
+    }
+    res.status(200).json({ group, message: "Group details updated successfully." });
 });
 
 export const getGroups = asyncHandler(async (req, res) => {
@@ -98,7 +114,6 @@ export const addMember = asyncHandler(async (req, res) => {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     await Event.updateMany({ group: group._id, date: { $gte: today } }, { $addToSet: { members: userToAdd._id, undecided: userToAdd._id } });
-    console.log(`Added new member ${userToAdd._id} to all upcoming events for group ${group._id}`);
   } catch (eventError) {
     console.error("Could not update upcoming events with new member:", eventError);
   }
@@ -106,18 +121,17 @@ export const addMember = asyncHandler(async (req, res) => {
 });
 
 export const deleteGroup = asyncHandler(async (req, res) => {
-    const { userId: clerkId } = getAuth(req);
-    const { groupId } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid Group ID." });
-    const group = await Group.findById(groupId);
-    const requester = await User.findOne({ clerkId }).lean();
-    if (!group) return res.status(404).json({ error: "Group not found." });
-    if (!requester) return res.status(404).json({ error: "User not found." });
-    if (group.owner.toString() !== requester._id.toString()) {
-        return res.status(403).json({ error: "Only the group owner can delete the group." });
-    }
-    await Event.deleteMany({ group: groupId });
-    await User.updateMany({ _id: { $in: group.members } }, { $pull: { groups: groupId } });
-    await Group.findByIdAndDelete(groupId);
-    res.status(200).json({ message: "Group and all associated events have been deleted." });
+  const { userId: clerkId } = getAuth(req);
+  const { groupId } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid Group ID." });
+  const group = await Group.findById(groupId);
+  const requester = await User.findOne({ clerkId }).lean();
+  if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
+  if (group.owner.toString() !== requester._id.toString()) {
+    return res.status(403).json({ error: "Only the group owner can delete the group." });
+  }
+  await Event.deleteMany({ group: groupId });
+  await User.updateMany({ _id: { $in: group.members } }, { $pull: { groups: groupId } });
+  await Group.findByIdAndDelete(groupId);
+  res.status(200).json({ message: "Group and all associated events have been deleted." });
 });
