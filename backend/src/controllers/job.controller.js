@@ -1,7 +1,6 @@
 import asyncHandler from "express-async-handler";
 import Event from "../models/event.model.js";
 import Group from "../models/group.model.js";
-// --- THIS IS THE FIX: Using the Luxon library for all date/time logic ---
 import { DateTime } from "luxon";
 
 const calculateNextEventDate = (schedule, groupTime, timezone) => {
@@ -76,6 +75,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
         name: group.name,
         date: nextEventDate,
         time: group.time,
+        timezone: group.timezone,
         members: group.members,
         undecided: group.members,
       });

@@ -19,10 +19,10 @@ export interface User {
 export interface Group {
   _id: string;
   name: string;
-  time?: string;
-  schedule?: Schedule;
+  time: string;
+  schedule: Schedule;
   owner: string;
-  timezone?: string;
+  timezone: string;
 }
 export interface GroupDetails extends Group {
   members: User[];
@@ -33,19 +33,18 @@ export interface Event {
   name: string;
   date: string;
   time: string;
+  timezone: string;
   members: User[];
   undecided: string[];
   in: string[];
   out: string[];
 }
+// This payload now correctly contains all fields for the single-step creation
 interface CreateGroupPayload {
   name: string;
-}
-export interface UpdateGroupDetailsPayload {
-    groupId: string;
-    time: string;
-    schedule: Schedule;
-    timezone: string;
+  time: string;
+  schedule: Schedule;
+  timezone: string;
 }
 interface AddMemberPayload {
   groupId: string;
@@ -86,12 +85,8 @@ export const groupApi = {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);
     return response.data;
   },
-  updateGroupDetails: async (api: AxiosInstance, { groupId, ...details }: UpdateGroupDetailsPayload): Promise<{ group: Group }> => {
-      const response = await api.put<{ group: Group }>(`/api/groups/${groupId}/details`, details);
-      return response.data;
-  },
   getGroups: async (api: AxiosInstance): Promise<Group[]> => {
-    const response = await api.get<Group[]>("/api/groups");
+    const response = await api.get<Group[]>(`/api/groups`);
     return response.data;
   },
   addMember: async (api: AxiosInstance, { groupId, userId }: AddMemberPayload): Promise<{ message: string }> => {

@@ -179,4 +179,5 @@ const GroupScreen = () => {
         </SafeAreaView>
     );
 };
+
 export default GroupScreen;

@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 interface TimePickerProps {
-  // Callback to send the formatted time string to the parent
   onTimeChange: (time: string) => void;
 }
 
@@ -12,12 +11,9 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange }) => {
   const [minute, setMinute] = useState(0);
   const [period, setPeriod] = useState<'AM' | 'PM'>('PM');
 
-  // Notify the parent component whenever the time changes
   useEffect(() => {
-    // Format minute with a leading zero if needed
     const formattedMinute = minute.toString().padStart(2, '0');
-    const formattedTime = `${hour}:${formattedMinute} ${period}`;
-    onTimeChange(formattedTime);
+    onTimeChange(`${hour}:${formattedMinute} ${period}`);
   }, [hour, minute, period, onTimeChange]);
 
   const handleHourChange = (amount: number) => {
@@ -37,50 +33,39 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange }) => {
   const togglePeriod = () => {
     setPeriod(current => (current === 'AM' ? 'PM' : 'AM'));
   };
-
-  // Helper component for the picker controls
+  
   const PickerControl: React.FC<{ value: string | number, onIncrease: () => void, onDecrease: () => void }> = ({ value, onIncrease, onDecrease }) => (
-    <View className="items-center bg-gray-100 p-2 rounded-lg">
-      <TouchableOpacity onPress={onIncrease}>
-        <Feather name="chevron-up" size={28} color="#4f46e5" />
-      </TouchableOpacity>
-      <Text className="text-3xl font-bold text-gray-800 my-2 w-16 text-center">{value.toString().padStart(2, '0')}</Text>
-      <TouchableOpacity onPress={onDecrease}>
-        <Feather name="chevron-down" size={28} color="#4f46e5" />
-      </TouchableOpacity>
+    <View style={styles.pickerControl}>
+      <TouchableOpacity onPress={onIncrease}><Feather name="chevron-up" size={28} color="#4f46e5" /></TouchableOpacity>
+      <Text style={styles.pickerText}>{String(value).padStart(2, '0')}</Text>
+      <TouchableOpacity onPress={onDecrease}><Feather name="chevron-down" size={28} color="#4f46e5" /></TouchableOpacity>
     </View>
   );
 
   return (
-    <View className="w-full my-4">
-        <Text className="text-lg font-semibold text-gray-700 mb-2 text-center">Set Meeting Time</Text>
-        <View className="flex-row justify-center items-center space-x-2">
-            {/* Hour Picker */}
-            <PickerControl 
-                value={hour} 
-                onIncrease={() => handleHourChange(1)} 
-                onDecrease={() => handleHourChange(-1)} 
-            />
-
-            <Text className="text-3xl font-bold text-gray-800 pb-6">:</Text>
-
-            {/* Minute Picker */}
-            <PickerControl 
-                value={minute} 
-                onIncrease={() => handleMinuteChange(1)} 
-                onDecrease={() => handleMinuteChange(-1)} 
-            />
-
-            {/* AM/PM Toggle */}
-            <TouchableOpacity 
-                onPress={togglePeriod} 
-                className="bg-gray-100 p-2 rounded-lg ml-2 items-center justify-center self-stretch"
-            >
-                <Text className="text-3xl font-bold text-gray-800 px-2">{period}</Text>
+    <View style={styles.container}>
+        <Text style={styles.title}>Set Meeting Time</Text>
+        <View style={styles.pickersContainer}>
+            <PickerControl value={hour} onIncrease={() => handleHourChange(1)} onDecrease={() => handleHourChange(-1)} />
+            <Text style={styles.separator}>:</Text>
+            <PickerControl value={minute} onIncrease={() => handleMinuteChange(1)} onDecrease={() => handleMinuteChange(-1)} />
+            <TouchableOpacity onPress={togglePeriod} style={styles.periodControl}>
+                <Text style={styles.pickerPeriodText}>{period}</Text>
             </TouchableOpacity>
         </View>
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: { width: '100%', marginVertical: 16 },
+  title: { fontSize: 18, lineHeight: 28, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
+  pickersContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  pickerControl: { alignItems: 'center', backgroundColor: '#F3F4F6', paddingVertical: 8, paddingHorizontal: 4, borderRadius: 8 },
+  pickerText: { fontSize: 30, lineHeight: 36, fontWeight: 'bold', color: '#1F2937', marginVertical: 8, width: 64, textAlign: 'center' },
+  pickerPeriodText: { fontSize: 30, lineHeight: 36, fontWeight: 'bold', color: '#1F2937', paddingHorizontal: 8 },
+  separator: { fontSize: 30, lineHeight: 36, fontWeight: 'bold', color: '#1F2937', paddingBottom: 24 },
+  periodControl: { backgroundColor: '#F3F4F6', padding: 8, borderRadius: 8, marginLeft: 8, alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch' },
+});
 
 export default TimePicker;

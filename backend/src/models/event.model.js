@@ -23,6 +23,11 @@ const eventSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
+    timezone: { 
+      type: String,
+      required: true,
+     },
     // A list of users who are invited to this event (copied from the group members)
     members: [
       {
