@@ -1,71 +1,178 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, FlatList, StyleSheet, ViewToken } from 'react-native';
 
 interface TimePickerProps {
   onTimeChange: (time: string) => void;
 }
 
+const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);
+const MINUTES = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
+const PERIODS = ['AM', 'PM'];
+
+const ITEM_HEIGHT = 50;
+const VISIBLE_ITEMS = 3;
+const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
+
 const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange }) => {
   const [hour, setHour] = useState(5);
-  const [minute, setMinute] = useState(0);
-  const [period, setPeriod] = useState<'AM' | 'PM'>('PM');
+  const [minute, setMinute] = useState('00');
+  const [period, setPeriod] = useState('PM');
+
+  const hourRef = useRef<FlatList>(null);
+  const minuteRef = useRef<FlatList>(null);
+  const periodRef = useRef<FlatList>(null);
 
   useEffect(() => {
-    const formattedMinute = minute.toString().padStart(2, '0');
-    onTimeChange(`${hour}:${formattedMinute} ${period}`);
+    setTimeout(() => {
+        hourRef.current?.scrollToIndex({ index: HOURS.indexOf(hour), animated: false });
+        minuteRef.current?.scrollToIndex({ index: MINUTES.indexOf(minute), animated: false });
+        periodRef.current?.scrollToIndex({ index: PERIODS.indexOf(period), animated: false });
+    }, 100);
+  }, []);
+
+  useEffect(() => {
+    onTimeChange(`${hour}:${minute} ${period}`);
   }, [hour, minute, period, onTimeChange]);
 
-  const handleHourChange = (amount: number) => {
-    let newHour = hour + amount;
-    if (newHour > 12) newHour = 1;
-    if (newHour < 1) newHour = 12;
-    setHour(newHour);
-  };
-
-  const handleMinuteChange = (amount: number) => {
-    let newMinute = minute + amount;
-    if (newMinute > 59) newMinute = 0;
-    if (newMinute < 0) newMinute = 59;
-    setMinute(newMinute);
-  };
-
-  const togglePeriod = () => {
-    setPeriod(current => (current === 'AM' ? 'PM' : 'AM'));
+  // --- THIS IS THE FIX: Simplified and type-safe logic ---
+  const handleViewableItemsChanged = (
+    viewableItems: Array<ViewToken>, 
+    setState: React.Dispatch<React.SetStateAction<any>>
+  ) => {
+    // Find the first item that FlatList has marked as "viewable"
+    const centralItem = viewableItems.find(item => item.isViewable);
+    
+    // If a viewable item is found, update the state with its value
+    if (centralItem && typeof centralItem.item !== 'undefined') {
+        setState(centralItem.item);
+    }
   };
   
-  const PickerControl: React.FC<{ value: string | number, onIncrease: () => void, onDecrease: () => void }> = ({ value, onIncrease, onDecrease }) => (
-    <View style={styles.pickerControl}>
-      <TouchableOpacity onPress={onIncrease}><Feather name="chevron-up" size={28} color="#4f46e5" /></TouchableOpacity>
-      <Text style={styles.pickerText}>{String(value).padStart(2, '0')}</Text>
-      <TouchableOpacity onPress={onDecrease}><Feather name="chevron-down" size={28} color="#4f46e5" /></TouchableOpacity>
+  const onViewableHourChanged = useCallback(({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
+    handleViewableItemsChanged(viewableItems, setHour);
+  }, []);
+  const onViewableMinuteChanged = useCallback(({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
+    handleViewableItemsChanged(viewableItems, setMinute);
+  }, []);
+  const onViewablePeriodChanged = useCallback(({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
+    handleViewableItemsChanged(viewableItems, setPeriod);
+  }, []);
+
+  const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
+  
+  const renderItem = (item: string | number, selectedValue: string | number) => (
+    <View style={styles.itemWrapper}>
+      <Text style={[styles.itemText, item === selectedValue && styles.selectedItemText]}>
+        {item}
+      </Text>
     </View>
   );
 
   return (
     <View style={styles.container}>
-        <Text style={styles.title}>Set Meeting Time</Text>
-        <View style={styles.pickersContainer}>
-            <PickerControl value={hour} onIncrease={() => handleHourChange(1)} onDecrease={() => handleHourChange(-1)} />
-            <Text style={styles.separator}>:</Text>
-            <PickerControl value={minute} onIncrease={() => handleMinuteChange(1)} onDecrease={() => handleMinuteChange(-1)} />
-            <TouchableOpacity onPress={togglePeriod} style={styles.periodControl}>
-                <Text style={styles.pickerPeriodText}>{period}</Text>
-            </TouchableOpacity>
-        </View>
+      <Text style={styles.title}>Set Meeting Time</Text>
+      <View style={styles.pickersContainer}>
+        <FlatList
+          ref={hourRef}
+          data={HOURS}
+          renderItem={({ item }) => renderItem(item, hour)}
+          keyExtractor={(item) => `h-${item}`}
+          showsVerticalScrollIndicator={false}
+          snapToInterval={ITEM_HEIGHT}
+          decelerationRate="fast"
+          style={styles.picker}
+          contentContainerStyle={styles.listContentContainer}
+          onViewableItemsChanged={onViewableHourChanged}
+          viewabilityConfig={viewabilityConfig}
+          getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
+        />
+        <FlatList
+          ref={minuteRef}
+          data={MINUTES}
+          renderItem={({ item }) => renderItem(item, minute)}
+          keyExtractor={(item) => `m-${item}`}
+          showsVerticalScrollIndicator={false}
+          snapToInterval={ITEM_HEIGHT}
+          decelerationRate="fast"
+          style={styles.picker}
+          contentContainerStyle={styles.listContentContainer}
+          onViewableItemsChanged={onViewableMinuteChanged}
+          viewabilityConfig={viewabilityConfig}
+          getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
+        />
+        <FlatList
+          ref={periodRef}
+          data={PERIODS}
+          renderItem={({ item }) => renderItem(item, period)}
+          keyExtractor={(item) => `p-${item}`}
+          showsVerticalScrollIndicator={false}
+          snapToInterval={ITEM_HEIGHT}
+          decelerationRate="fast"
+          style={styles.picker}
+          contentContainerStyle={styles.listContentContainer}
+          onViewableItemsChanged={onViewablePeriodChanged}
+          viewabilityConfig={viewabilityConfig}
+          getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
+        />
+        <View style={styles.highlightView} pointerEvents="none" />
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { width: '100%', marginVertical: 16 },
-  title: { fontSize: 18, lineHeight: 28, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
-  pickersContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  pickerControl: { alignItems: 'center', backgroundColor: '#F3F4F6', paddingVertical: 8, paddingHorizontal: 4, borderRadius: 8 },
-  pickerText: { fontSize: 30, lineHeight: 36, fontWeight: 'bold', color: '#1F2937', marginVertical: 8, width: 64, textAlign: 'center' },
-  pickerPeriodText: { fontSize: 30, lineHeight: 36, fontWeight: 'bold', color: '#1F2937', paddingHorizontal: 8 },
-  separator: { fontSize: 30, lineHeight: 36, fontWeight: 'bold', color: '#1F2937', paddingBottom: 24 },
-  periodControl: { backgroundColor: '#F3F4F6', padding: 8, borderRadius: 8, marginLeft: 8, alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch' },
+  container: {
+    width: '100%',
+    marginVertical: 16,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 18,
+    lineHeight: 28,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  pickersContainer: {
+    flexDirection: 'row',
+    height: PICKER_HEIGHT,
+    width: '90%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+  },
+  picker: {
+    flex: 1,
+    height: PICKER_HEIGHT,
+  },
+  listContentContainer: {
+    paddingVertical: ITEM_HEIGHT * Math.floor(VISIBLE_ITEMS / 2),
+  },
+  itemWrapper: {
+    height: ITEM_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemText: {
+    fontSize: 24,
+    color: '#6B7280',
+  },
+  selectedItemText: {
+    fontSize: 30,
+    color: '#1F2937',
+    fontWeight: 'bold',
+  },
+  highlightView: {
+    position: 'absolute',
+    top: ITEM_HEIGHT,
+    height: ITEM_HEIGHT,
+    width: '100%',
+    borderTopWidth: 2,
+    borderBottomWidth: 2,
+    borderColor: '#D1D5DB',
+  },
 });
 
 export default TimePicker;

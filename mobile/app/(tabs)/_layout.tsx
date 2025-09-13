@@ -34,7 +34,7 @@ if (!isSignedIn) return <Redirect href="/(auth)" />;
             name='index'
             options={{
                 title:"",
-                tabBarIcon: ({color, size}) =>  <Feather name='home' size={size} color={color}/>
+                tabBarIcon: ({color, size}) =>  <Feather name='user' size={size} color={color}/>
             }}
         />
         <Tabs.Screen 
@@ -42,13 +42,6 @@ if (!isSignedIn) return <Redirect href="/(auth)" />;
             options={{
                 title:"",
                 tabBarIcon: ({color, size}) =>  <Feather name='dribbble' size={size} color={color}/>
-            }}
-        />
-        <Tabs.Screen 
-            name='profile'
-            options={{
-                title:"",
-                tabBarIcon: ({color, size}) =>  <Feather name='user' size={size} color={color}/>
             }}
         />
         <Tabs.Screen
