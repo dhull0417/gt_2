@@ -5,8 +5,7 @@ import {
   getGroupDetails,
   addMember,
   deleteGroup,
-  updateGroupDetails,
-  removeMember, // 1. Import the new functions
+  removeMember,
   leaveGroup,
 } from "../controllers/group.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
