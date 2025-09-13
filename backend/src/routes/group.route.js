@@ -5,6 +5,7 @@ import {
   getGroupDetails,
   addMember,
   deleteGroup,
+  updateGroupDetails,
   removeMember,
   leaveGroup,
 } from "../controllers/group.controller.js";
