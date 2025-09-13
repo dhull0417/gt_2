@@ -9,17 +9,23 @@ export const useUserSync = () => {
 
   const syncUserMutation = useMutation({
     mutationFn: () => userApi.syncUser(api),
-    onSuccess: (response: any) => console.log("User synced successfully:", response.data.user),
+    onSuccess: (response: any) => {
+      if (response.data?.user) {
+        console.log("User sync successful for:", response.data.user._id);
+      } else {
+        console.log("User sync check complete:", response.data);
+      }
+    },
     onError: (error) => console.error("User sync failed:", error),
   });
 
-  // auto-sync user when signed in
   useEffect(() => {
-    // if user is signed in and user is not synced yet, sync user
-    if (isSignedIn && !syncUserMutation.data) {
+    // This effect will attempt to sync the user as soon as they are signed in.
+    if (isSignedIn) {
       syncUserMutation.mutate();
     }
   }, [isSignedIn]);
 
-  return null;
+  // Return the entire mutation object so the caller can check its status (isSuccess, isPending, etc.)
+  return syncUserMutation;
 };

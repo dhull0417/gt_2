@@ -1,7 +1,18 @@
-import { Stack } from 'expo-router';
-import React from 'react';
+import { Redirect, Stack } from 'expo-router';
+import { useAuth } from '@clerk/clerk-expo';
 
-// This layout is now "dumb". It only provides the navigation stack.
 export default function AuthRoutesLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  const { isSignedIn, isLoaded } = useAuth();
+
+  if (!isLoaded) {
+    return null; // or a loading spinner
+  }
+
+  // If the user is signed in, redirect them away from the auth screens.
+  if (isSignedIn) {
+    return <Redirect href={"/(tabs)"} />
+  }
+
+  // If the user is not signed in, show the auth screens.
+  return <Stack screenOptions={{headerShown: false}}/>
 }

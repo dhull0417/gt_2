@@ -2,7 +2,6 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Tex
 import React, { useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import SignOutButton from '@/components/SignOutButton';
 import CreateGroupPopup from '@/components/CreateGroupPopup';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useAddMember } from '@/hooks/useAddMember';
@@ -94,7 +93,6 @@ const GroupScreen = () => {
         <SafeAreaView className='flex-1 bg-gray-50'>
             <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
                 <Text className="text-xl font-bold text-gray-900">Groups</Text>
-                <SignOutButton />
             </View>
             <ScrollView className="px-4">
                 <View className="my-4">

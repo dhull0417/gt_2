@@ -120,3 +120,63 @@ export const deleteGroup = asyncHandler(async (req, res) => {
   await Group.findByIdAndDelete(groupId);
   res.status(200).json({ message: "Group and all associated events have been deleted." });
 });
+
+export const leaveGroup = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(groupId)) {
+        return res.status(400).json({ error: "Invalid Group ID." });
+    }
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId }).lean();
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+
+    if (group.owner.toString() === user._id.toString()) {
+        return res.status(403).json({ error: "Owner cannot leave the group. Please delete the group instead." });
+    }
+
+    await group.updateOne({ $pull: { members: user._id } });
+    await User.updateOne({ _id: user._id }, { $pull: { groups: group._id } });
+
+    await Event.updateMany(
+        { group: group._id, date: { $gte: new Date() } },
+        { $pull: { members: user._id, in: user._id, out: user._id, undecided: user._id } }
+    );
+    
+    res.status(200).json({ message: "You have successfully left the group." });
+});
+
+export const removeMember = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+    const { memberIdToRemove } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(memberIdToRemove)) {
+        return res.status(400).json({ error: "Invalid ID format provided." });
+    }
+
+    const group = await Group.findById(groupId);
+    const requester = await User.findOne({ clerkId }).lean();
+    const memberToRemove = await User.findById(memberIdToRemove);
+    if (!group || !requester || !memberToRemove) return res.status(404).json({ error: "Resource not found." });
+    
+    if (group.owner.toString() !== requester._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can remove members." });
+    }
+
+    if (group.owner.toString() === memberToRemove._id.toString()) {
+        return res.status(400).json({ error: "Owner cannot be removed from their own group." });
+    }
+
+    await group.updateOne({ $pull: { members: memberToRemove._id } });
+    await memberToRemove.updateOne({ $pull: { groups: group._id } });
+
+    await Event.updateMany(
+        { group: group._id, date: { $gte: new Date() } },
+        { $pull: { members: memberToRemove._id, in: memberToRemove._id, out: memberToRemove._id, undecided: memberToRemove._id } }
+    );
+    
+    res.status(200).json({ message: "Member successfully removed from the group." });
+});

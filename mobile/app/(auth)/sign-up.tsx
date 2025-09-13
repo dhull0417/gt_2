@@ -1,34 +1,34 @@
-import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import React, { useState } from 'react';
 import { useSignUp } from '@clerk/clerk-expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import * as Updates from 'expo-updates';
 
 const SignUpScreen = () => {
   const router = useRouter();
-  const { isLoaded, signUp } = useSignUp();
+  const { isLoaded, signUp, setActive } = useSignUp();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [pendingVerification, setPendingVerification] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // --- Start the sign-up flow ---
   const onSignUpPress = async () => {
     if (!isLoaded) return;
     setIsLoading(true);
     try {
       // Create the user
-      await signUp.create({ username, emailAddress: email, password });
+      const signUpAttempt = await signUp.create({ username, emailAddress: email, password });
       
-      // Send the verification email
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-      
-      // Navigate to the verification screen
-      router.push('/(auth)/verify-code');
+      // If the sign up is complete, set the session active and navigate
+      if (signUpAttempt.status === 'complete') {
+        await setActive({ session: signUpAttempt.createdSessionId });
+        // Replace the current screen with the main app tabs
+        router.replace('/(tabs)');
+      } else {
+        // This may happen if you have other sign-up requirements in Clerk
+        console.error(JSON.stringify(signUpAttempt, null, 2));
+      }
     } catch (err: any) {
       Alert.alert('Error', err.errors?.[0]?.longMessage || 'An error occurred during sign up.');
     } finally {
@@ -38,12 +38,20 @@ const SignUpScreen = () => {
 
   return (
     <SafeAreaView className="flex-1 bg-white">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        className="flex-1"
+      >
         <View className="flex-row items-center px-4 pt-2">
             <TouchableOpacity onPress={() => router.back()}>
               <Feather name="arrow-left" size={28} color="#4f46e5" />
             </TouchableOpacity>
         </View>
-        <View className="flex-1 justify-center p-8">
+        <ScrollView
+            contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
+            className="p-8"
+            keyboardShouldPersistTaps="handled"
+        >
             <Text className="text-3xl font-bold text-gray-800 mb-8">Create Account</Text>
             <TextInput
                 autoCapitalize="none"
@@ -83,7 +91,8 @@ const SignUpScreen = () => {
                     <Text className="text-base text-indigo-600 font-bold">Sign In</Text>
                 </Link>
             </View>
-        </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };

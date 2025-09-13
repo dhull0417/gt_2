@@ -4,18 +4,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard'; // 1. Import the clipboard library
+import * as Clipboard from 'expo-clipboard';
+import { useAuth } from '@clerk/clerk-expo'; // 1. Import useAuth
 
 const ProfileScreen = () => {
     const api = useApiClient();
+    const { signOut } = useAuth(); // 2. Get the signOut function
 
-    // 2. Fetch the current user's data, just like in the other screens
     const { data: currentUser, isLoading, isError } = useQuery<User, Error>({
         queryKey: ['currentUser'],
         queryFn: () => userApi.getCurrentUser(api),
     });
 
-    // 3. Create a function to handle copying the ID
     const handleCopyId = async () => {
         if (currentUser?._id) {
             await Clipboard.setStringAsync(currentUser._id);
@@ -34,13 +34,11 @@ const ProfileScreen = () => {
 
         return (
             <View className="items-center p-6">
-                {/* 4. Display the user's image, centered */}
                 <Image
                     source={{ uri: currentUser.profilePicture || 'https://placehold.co/200x200/EEE/31343C?text=?' }}
                     className="w-32 h-32 rounded-full border-4 border-white shadow-lg"
                 />
                 
-                {/* Display First and Last Name */}
                 <Text className="text-3xl font-bold text-gray-800 mt-4">
                     {currentUser.firstName} {currentUser.lastName}
                 </Text>
@@ -49,7 +47,6 @@ const ProfileScreen = () => {
                     {currentUser.email}
                 </Text>
                 
-                {/* Display the User ID with a Copy button */}
                 <View className="w-full bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <Text className="text-sm text-gray-500 mb-1">Your Unique User ID</Text>
                     <View className="flex-row justify-between items-center">
@@ -58,6 +55,16 @@ const ProfileScreen = () => {
                             <Feather name="copy" size={20} color="#4f46e5" />
                         </TouchableOpacity>
                     </View>
+                </View>
+
+                {/* --- 3. ADDED: New Sign Out button --- */}
+                <View className="w-full mt-8">
+                    <TouchableOpacity
+                        onPress={() => signOut()}
+                        className="py-4 bg-red-600 rounded-lg items-center shadow"
+                    >
+                        <Text className="text-white text-lg font-bold">Sign Out</Text>
+                    </TouchableOpacity>
                 </View>
             </View>
         );

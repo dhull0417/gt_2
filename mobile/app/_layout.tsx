@@ -1,15 +1,12 @@
 import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
-import { Stack, useRouter, useSegments } from "expo-router";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { Stack } from "expo-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useUserSync } from "@/hooks/useUserSync";
-import { ActivityIndicator, View } from "react-native";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import * as SecureStore from 'expo-secure-store';
-import { User, useApiClient, userApi } from "@/utils/api";
 import * as SplashScreen from 'expo-splash-screen';
 import "../global.css";
 
-// Prevent the splash screen from auto-hiding before we are ready.
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
@@ -23,45 +20,30 @@ const tokenCache = {
     },
 };
 
-// This is the core component that manages the app's root navigation state.
 const RootLayoutNav = () => {
-  const { isLoaded, isSignedIn } = useAuth();
-  const router = useRouter();
-  const segments = useSegments();
-
-  // This hook handles the user sync process.
+  const { isLoaded } = useAuth();
+  
+  // This hook runs once Clerk is loaded and the user is signed in.
   useUserSync();
 
+  // This effect's only job is to hide the splash screen when Clerk is ready.
   useEffect(() => {
-    if (!isLoaded) return;
-
-    const inTabsGroup = segments[0] === '(tabs)';
-
-    if (isSignedIn && !inTabsGroup) {
-      // Redirect to the main app if the user is signed in and not already there.
-      router.replace('/(tabs)');
-    } else if (!isSignedIn && inTabsGroup) {
-      // Redirect to the auth flow if the user is signed out.
-      router.replace('/(auth)');
+    if (isLoaded) {
+      SplashScreen.hideAsync();
     }
-  }, [isSignedIn, isLoaded, segments, router]);
+  }, [isLoaded]);
 
-  // Show a loading spinner until Clerk is ready
+  // Render nothing until Clerk is loaded to prevent screen flicker.
   if (!isLoaded) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
+    return null;
   }
 
-  // This single, unconditional Stack is what Expo Router needs to see.
-
+  // This single, unconditional Stack provides a stable foundation for the app.
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="(auth)" />
-      <Stack.Screen name="profile-setup" options={{ presentation: 'modal' }}/>
+      <Stack.Screen name="profile-setup" options={{ presentation: 'modal' }} />
     </Stack>
   );
 };
@@ -76,7 +58,6 @@ export default function RootLayout() {
       publishableKey={publishableKey}
     >
       <QueryClientProvider client={queryClient}>
-
           <RootLayoutNav />
       </QueryClientProvider>
     </ClerkProvider>
