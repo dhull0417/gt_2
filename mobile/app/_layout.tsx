@@ -1,11 +1,9 @@
-// --- THIS IS THE FIX: Added SignedIn and SignedOut to the import ---
-import { ClerkProvider, ClerkLoaded, ClerkLoading, SignedIn, SignedOut, useAuth } from "@clerk/clerk-expo";
-import { Stack, useRouter } from "expo-router";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
+import { Stack, useRouter, useSegments } from "expo-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useUserSync } from "@/hooks/useUserSync";
 import { ActivityIndicator, View } from "react-native";
 import { useEffect } from "react";
-import { useApiClient, userApi, User } from "@/utils/api";
 import * as SecureStore from 'expo-secure-store';
 import "../global.css";
 
@@ -13,52 +11,51 @@ const queryClient = new QueryClient();
 
 const tokenCache = {
     async getToken(key: string) {
-        try {
-            return SecureStore.getItemAsync(key);
-        } catch (err) {
-            return null;
-        }
+        try { return SecureStore.getItemAsync(key); } catch (err) { return null; }
     },
     async saveToken(key: string, value: string) {
-        try {
-            return SecureStore.setItemAsync(key, value);
-        } catch (err) {
-            return;
-        }
+        try { return SecureStore.setItemAsync(key, value); } catch (err) { return; }
     },
 };
 
-const InitialLayout = () => {
-  useUserSync();
+// This is the core component that manages the app's root navigation state.
+const RootLayoutNav = () => {
+  const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
-  const api = useApiClient();
+  const segments = useSegments();
 
-  const { data: currentUser, isSuccess } = useQuery<User, Error>({
-    queryKey: ['currentUser'],
-    queryFn: () => userApi.getCurrentUser(api),
-  });
+  // This hook handles the user sync process.
+  useUserSync();
 
   useEffect(() => {
-    if (isSuccess && currentUser) {
-      const profileIncomplete = !currentUser.firstName || !currentUser.lastName;
-      if (profileIncomplete) {
-        router.replace({ pathname: '/profile-setup' as any });
-      }
-    }
-  }, [currentUser, isSuccess, router]);
+    if (!isLoaded) return;
 
-  if (!isSuccess) {
+    const inTabsGroup = segments[0] === '(tabs)';
+
+    if (isSignedIn && !inTabsGroup) {
+      // Redirect to the main app if the user is signed in and not already there.
+      router.replace('/(tabs)');
+    } else if (!isSignedIn && inTabsGroup) {
+      // Redirect to the auth flow if the user is signed out.
+      router.replace('/(auth)');
+    }
+  }, [isSignedIn, isLoaded, segments, router]);
+
+  // Show a loading spinner until Clerk is ready
+  if (!isLoaded) {
     return (
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <ActivityIndicator size="large" color="#4f46e5" />
-        </View>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
     );
   }
 
+  // This single, unconditional Stack is what Expo Router needs to see.
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="profile-setup" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="(auth)" />
+      <Stack.Screen name="profile-setup" options={{ presentation: 'modal' }}/>
     </Stack>
   );
 };
@@ -73,24 +70,7 @@ export default function RootLayout() {
       publishableKey={publishableKey}
     >
       <QueryClientProvider client={queryClient}>
-        {/* Shows a loading spinner until Clerk is ready */}
-        <ClerkLoading>
-          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <ActivityIndicator size="large" color="#4f46e5" />
-          </View>
-        </ClerkLoading>
-        
-        {/* Renders the main app ONLY when a user is signed in */}
-        <SignedIn>
-          <InitialLayout />
-        </SignedIn>
-        
-        {/* Renders the auth flow ONLY when a user is signed out */}
-        <SignedOut>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(auth)" />
-          </Stack>
-        </SignedOut>
+          <RootLayoutNav />
       </QueryClientProvider>
     </ClerkProvider>
   );
