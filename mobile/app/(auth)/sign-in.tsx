@@ -24,14 +24,8 @@ const SignInScreen = () => {
 
       if (signInAttempt.status === 'complete') {
         await setActive({ session: signInAttempt.createdSessionId });
-<<<<<<< HEAD
-        await Updates.reloadAsync();
-=======
-        // --- THIS IS THE FIX ---
-        // Manually navigate to the main app after the session is active.
-        // 'replace' is used to prevent the user from going "back" to the login screen.
         router.replace('/(tabs)');
->>>>>>> 6cf540d932bcb9a4632f33d6e30738fbdbedcf53
+
       } else {
         console.error(JSON.stringify(signInAttempt, null, 2));
       }
@@ -44,17 +38,6 @@ const SignInScreen = () => {
 
   return (
     <SafeAreaView className="flex-1 bg-white">
-<<<<<<< HEAD
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        className="flex-1"
-      >
-        <View className="flex-row items-center px-4 pt-2">
-          <TouchableOpacity onPress={() => router.back()}>
-            {/* --- THIS IS THE FIX --- */}
-            <Feather name="arrow-left" size={28} color="#4f46e5" />
-          </TouchableOpacity>
-=======
       <View className="flex-row items-center px-4 pt-2">
         <TouchableOpacity onPress={() => router.back()}>
           <Feather name="arrow-left" size={28} color="#4f46e5" />
@@ -90,7 +73,6 @@ const SignInScreen = () => {
             <Link href="/(auth)/sign-up">
                 <Text className="text-base text-indigo-600 font-bold">Sign Up</Text>
             </Link>
->>>>>>> 6cf540d932bcb9a4632f33d6e30738fbdbedcf53
         </View>
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
@@ -128,7 +110,7 @@ const SignInScreen = () => {
               </Link>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 };
