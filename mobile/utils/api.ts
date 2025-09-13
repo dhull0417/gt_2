@@ -39,7 +39,6 @@ export interface Event {
   in: string[];
   out: string[];
 }
-// This payload now correctly contains all fields for the single-step creation
 interface CreateGroupPayload {
   name: string;
   time: string;
@@ -49,6 +48,11 @@ interface CreateGroupPayload {
 interface AddMemberPayload {
   groupId: string;
   userId: string;
+}
+// 1. --- ADDED: Interface for the remove member payload ---
+interface RemoveMemberPayload {
+  groupId: string;
+  memberIdToRemove: string;
 }
 interface RsvpPayload {
   eventId: string;
@@ -86,7 +90,7 @@ export const groupApi = {
     return response.data;
   },
   getGroups: async (api: AxiosInstance): Promise<Group[]> => {
-    const response = await api.get<Group[]>(`/api/groups`);
+    const response = await api.get<Group[]>("/api/groups");
     return response.data;
   },
   addMember: async (api: AxiosInstance, { groupId, userId }: AddMemberPayload): Promise<{ message: string }> => {
@@ -99,6 +103,15 @@ export const groupApi = {
   },
   deleteGroup: async (api: AxiosInstance, groupId: string): Promise<{ message: string }> => {
     const response = await api.delete(`/api/groups/${groupId}`);
+    return response.data;
+  },
+  // 2. --- ADDED: New functions for leaving and removing members ---
+  leaveGroup: async (api: AxiosInstance, groupId: string): Promise<{ message: string }> => {
+    const response = await api.post(`/api/groups/${groupId}/leave`);
+    return response.data;
+  },
+  removeMember: async (api: AxiosInstance, payload: RemoveMemberPayload): Promise<{ message: string }> => {
+    const response = await api.post(`/api/groups/${payload.groupId}/remove-member`, { memberIdToRemove: payload.memberIdToRemove });
     return response.data;
   }
 };
