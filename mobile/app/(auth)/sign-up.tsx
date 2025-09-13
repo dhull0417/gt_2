@@ -7,7 +7,7 @@ import { Feather } from '@expo/vector-icons';
 
 const SignUpScreen = () => {
   const router = useRouter();
-  const { isLoaded, signUp, setActive } = useSignUp();
+  const { isLoaded, signUp } = useSignUp();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,12 +17,16 @@ const SignUpScreen = () => {
     if (!isLoaded) return;
     setIsLoading(true);
     try {
+      // Create the user
       await signUp.create({ username, emailAddress: email, password });
+      
+      // Send the verification email
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-      Alert.alert("Success", "Please check your email to verify your account.");
-      router.back(); 
+      
+      // Navigate to the verification screen
+      router.push('/(auth)/verify-code');
     } catch (err: any) {
-      Alert.alert('Error', err.errors?.[0]?.message || 'An error occurred during sign up.');
+      Alert.alert('Error', err.errors?.[0]?.longMessage || 'An error occurred during sign up.');
     } finally {
       setIsLoading(false);
     }
@@ -42,7 +46,7 @@ const SignUpScreen = () => {
                 value={username}
                 onChangeText={setUsername}
                 placeholder="Username"
-                placeholderTextColor="#9CA3AF" // Added this line
+                placeholderTextColor="#9CA3AF"
                 className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
             />
             <TextInput
@@ -51,14 +55,14 @@ const SignUpScreen = () => {
                 value={email}
                 onChangeText={setEmail}
                 placeholder="Email Address"
-                placeholderTextColor="#9CA3AF" // Added this line
+                placeholderTextColor="#9CA3AF"
                 className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
             />
             <TextInput
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Password"
-                placeholderTextColor="#9CA3AF" // Added this line
+                placeholderTextColor="#9CA3AF"
                 secureTextEntry
                 className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-6"
             />

@@ -23,11 +23,15 @@ const SignInScreen = () => {
 
       if (signInAttempt.status === 'complete') {
         await setActive({ session: signInAttempt.createdSessionId });
+        // --- THIS IS THE FIX ---
+        // Manually navigate to the main app after the session is active.
+        // 'replace' is used to prevent the user from going "back" to the login screen.
+        router.replace('/(tabs)');
       } else {
         console.error(JSON.stringify(signInAttempt, null, 2));
       }
     } catch (err: any) {
-      Alert.alert('Error', err.errors?.[0]?.message || 'An error occurred during sign in.');
+      Alert.alert('Error', err.errors?.[0]?.longMessage || 'An error occurred during sign in.');
     } finally {
       setIsLoading(false);
     }
@@ -47,14 +51,14 @@ const SignInScreen = () => {
           value={username}
           onChangeText={setUsername}
           placeholder="Username"
-          placeholderTextColor="#9CA3AF" // Added this line
+          placeholderTextColor="#9CA3AF"
           className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
         />
         <TextInput
           value={password}
           onChangeText={setPassword}
           placeholder="Password"
-          placeholderTextColor="#9CA3AF" // Added this line
+          placeholderTextColor="#9CA3AF"
           secureTextEntry
           className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-6"
         />

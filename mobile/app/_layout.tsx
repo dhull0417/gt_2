@@ -1,21 +1,39 @@
-import { ClerkProvider, ClerkLoaded, ClerkLoading } from "@clerk/clerk-expo";
-import { tokenCache } from '@clerk/clerk-expo/token-cache';
+// --- THIS IS THE FIX: Added SignedIn and SignedOut to the import ---
+import { ClerkProvider, ClerkLoaded, ClerkLoading, SignedIn, SignedOut, useAuth } from "@clerk/clerk-expo";
 import { Stack, useRouter } from "expo-router";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { useUserSync } from "@/hooks/useUserSync";
 import { ActivityIndicator, View } from "react-native";
 import { useEffect } from "react";
-import { useApiClient, userApi } from "@/utils/api";
+import { useApiClient, userApi, User } from "@/utils/api";
+import * as SecureStore from 'expo-secure-store';
 import "../global.css";
 
 const queryClient = new QueryClient();
+
+const tokenCache = {
+    async getToken(key: string) {
+        try {
+            return SecureStore.getItemAsync(key);
+        } catch (err) {
+            return null;
+        }
+    },
+    async saveToken(key: string, value: string) {
+        try {
+            return SecureStore.setItemAsync(key, value);
+        } catch (err) {
+            return;
+        }
+    },
+};
 
 const InitialLayout = () => {
   useUserSync();
   const router = useRouter();
   const api = useApiClient();
 
-  const { data: currentUser, isSuccess } = useQuery({
+  const { data: currentUser, isSuccess } = useQuery<User, Error>({
     queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
   });
@@ -23,19 +41,24 @@ const InitialLayout = () => {
   useEffect(() => {
     if (isSuccess && currentUser) {
       const profileIncomplete = !currentUser.firstName || !currentUser.lastName;
-
       if (profileIncomplete) {
-        // --- THIS IS THE FIX ---
-        // Use the object syntax for the redirect to satisfy typed routes.
-        router.replace({ pathname: '/profile-setup' as any });      }
+        router.replace({ pathname: '/profile-setup' as any });
+      }
     }
   }, [currentUser, isSuccess, router]);
 
+  if (!isSuccess) {
+    return (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+            <ActivityIndicator size="large" color="#4f46e5" />
+        </View>
+    );
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="profile-setup" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="profile-setup" options={{ presentation: 'modal' }} />
     </Stack>
   );
 };
@@ -50,15 +73,24 @@ export default function RootLayout() {
       publishableKey={publishableKey}
     >
       <QueryClientProvider client={queryClient}>
+        {/* Shows a loading spinner until Clerk is ready */}
         <ClerkLoading>
           <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
             <ActivityIndicator size="large" color="#4f46e5" />
           </View>
         </ClerkLoading>
         
-        <ClerkLoaded>
+        {/* Renders the main app ONLY when a user is signed in */}
+        <SignedIn>
           <InitialLayout />
-        </ClerkLoaded>
+        </SignedIn>
+        
+        {/* Renders the auth flow ONLY when a user is signed out */}
+        <SignedOut>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(auth)" />
+          </Stack>
+        </SignedOut>
       </QueryClientProvider>
     </ClerkProvider>
   );

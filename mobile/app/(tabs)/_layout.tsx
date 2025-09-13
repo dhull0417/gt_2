@@ -1,59 +1,44 @@
-import React from 'react'
-import { Redirect, Tabs } from 'expo-router'
-import { Feather } from '@expo/vector-icons'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useAuth } from '@clerk/clerk-expo'
+import React from 'react';
+import { Tabs } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const TabsLayout = () => {
-const insets = useSafeAreaInsets(); // So tab bar isn't covered by action bar or other phone provider unique feature(i.e. "safe area")
-
-const { isLoaded, isSignedIn } = useAuth();
-if (!isLoaded) return null;
-if (!isSignedIn) return <Redirect href="/(auth)" />;
+  const insets = useSafeAreaInsets();
+  // All useAuth hooks and redirects have been removed.
 
   return (
     <Tabs
         screenOptions={{
-            tabBarActiveTintColor: "#1DA1F2",
-            tabBarInactiveTintColor: "#657786",
-            tabBarStyle: {
-                backgroundColor: "#fff",
-                borderTopWidth: 1,
-                borderTopColor: "#E1E8ED",
-                height: 50 + insets.bottom, //inset implementation
-                paddingTop: 8,
-            },
-            tabBarLabelStyle: { //in case of text (none here)
-                fontSize: 25,
-                fontWeight: "500"
-            },
             headerShown: false,
+            tabBarActiveTintColor: "#4f46e5",
+            tabBarInactiveTintColor: "#6b7280",
+            tabBarStyle: { height: 50 + insets.bottom },
         }}
     >
-        <Tabs.Screen 
-            name='index'
-            options={{
-                title:"",
-                tabBarIcon: ({color, size}) =>  <Feather name='user' size={size} color={color}/>
-            }}
-        />
-        <Tabs.Screen 
-            name='groups'
-            options={{
-                title:"",
-                tabBarIcon: ({color, size}) =>  <Feather name='dribbble' size={size} color={color}/>
-            }}
-        />
-        <Tabs.Screen
-            name="events"
-            options={{
-                title: "",
-                tabBarIcon: ({color, size}) =>  <Feather name="calendar" size={size} color={color} />
-            }}
+      <Tabs.Screen 
+          name='index'
+          options={{
+              title:"",
+              tabBarIcon: ({color, size}) => <Feather name='home' size={size} color={color}/>
+          }}
       />
-
+      <Tabs.Screen 
+          name='groups'
+          options={{
+              title:"",
+              tabBarIcon: ({color, size}) => <Feather name='users' size={size} color={color}/>
+          }}
+      />
+      <Tabs.Screen 
+        name='events'
+        options={{
+          title: 'Events',
+          tabBarIcon: ({ color, size }) => <Feather name="calendar" size={size} color={color} />
+        }}
+      />
     </Tabs>
-  )
-}
+  );
+};
 
-export default TabsLayout
+export default TabsLayout;
