@@ -9,25 +9,41 @@ const calculateNextEventDate = (schedule, groupTime, timezone) => {
   let [hour, minute] = time.split(':').map(Number);
   if (period.toUpperCase() === 'PM' && hour !== 12) hour += 12;
   if (period.toUpperCase() === 'AM' && hour === 12) hour = 0;
+
+  console.log(`--- DIAGNOSTICS (CRON): Calculating Next Event Date ---`);
+  console.log(`Current Time in Zone (${timezone}): ${now.toString()}`);
+  console.log(`Input Schedule: freq=${schedule.frequency}, day=${schedule.day}`);
+  console.log(`Input Time: ${groupTime} (Parsed as H:${hour} M:${minute})`);
+  
   let eventDate;
+
   if (schedule.frequency === 'weekly') {
     const targetWeekday = schedule.day === 0 ? 7 : schedule.day;
-    let eventDateTime = now.set({ hour: hour, minute: minute, second: 0, millisecond: 0 });
-    if (targetWeekday > now.weekday || (targetWeekday === now.weekday && eventDateTime > now)) {
-        eventDate = eventDateTime.set({ weekday: targetWeekday });
-    } else {
-        eventDate = eventDateTime.plus({ weeks: 1 }).set({ weekday: targetWeekday });
+    let nextOccurrence = now.set({ weekday: targetWeekday });
+    console.log(`Initial next occurrence of weekday ${targetWeekday}: ${nextOccurrence.toString()}`);
+    let potentialEvent = nextOccurrence.set({ hour, minute, second: 0, millisecond: 0 });
+    console.log(`Potential event time in zone: ${potentialEvent.toString()}`);
+    if (potentialEvent < now) {
+      console.log("Calculated time is in the past, advancing one week.");
+      potentialEvent = potentialEvent.plus({ weeks: 1 });
     }
-  } else {
+    eventDate = potentialEvent;
+
+  } else { // monthly
     const targetDayOfMonth = schedule.day;
-    let eventDateTime = now.set({ day: targetDayOfMonth, hour: hour, minute: minute, second: 0, millisecond: 0 });
-    if (eventDateTime < now) {
-      eventDate = eventDateTime.plus({ months: 1 });
-    } else {
-      eventDate = eventDateTime;
+    let potentialEvent = now.set({ day: targetDayOfMonth, hour, minute, second: 0, millisecond: 0 });
+    if (potentialEvent < now) {
+        potentialEvent = potentialEvent.plus({ months: 1 });
     }
+    eventDate = potentialEvent;
   }
-  return eventDate.toJSDate();
+
+  console.log(`Final event time in zone: ${eventDate.toString()}`);
+  const finalUTCDate = eventDate.toJSDate();
+  console.log(`Final UTC date for DB: ${finalUTCDate.toISOString()}`);
+  console.log(`------------------------------------------`);
+  
+  return finalUTCDate;
 };
 
 const parseTime = (timeString) => {
