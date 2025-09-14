@@ -46,15 +46,25 @@ export const createGroup = asyncHandler(async (req, res) => {
   await owner.updateOne({ $addToSet: { groups: newGroup._id } });
 
   try {
+    // --- ADDED: More detailed logs for debugging ---
+    console.log("--- Attempting to create first event ---");
+    console.log("Using schedule:", JSON.stringify(newGroup.schedule, null, 2));
+    console.log("Using time:", newGroup.time);
+    console.log("Using timezone:", newGroup.timezone);
+
     const eventDate = calculateNextEventDate(newGroup.schedule, newGroup.time, newGroup.timezone);
+    
+    console.log("Calculated event date:", eventDate);
+
     await Event.create({
       group: newGroup._id, name: newGroup.name, date: eventDate, time: newGroup.time,
       timezone: newGroup.timezone,
       members: newGroup.members, undecided: newGroup.members,
     });
-    console.log(`First event for group '${newGroup.name}' created for ${eventDate.toDateString()}`);
+    console.log(`Successfully created event for group '${newGroup.name}'`);
   } catch (eventError) {
-    console.error("Failed to create the first event for the new group:", eventError);
+    console.error("--- ERROR: Failed to create the first event for the new group ---");
+    console.error(eventError);
   }
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
 });
