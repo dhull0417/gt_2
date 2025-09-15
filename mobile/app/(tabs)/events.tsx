@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator, Image } from 'react-native';
 import React, { useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+// 1. Import useSafeAreaInsets
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useGetEvents } from '@/hooks/useGetEvents';
 import { useRsvp } from '@/hooks/useRsvp';
@@ -10,6 +11,9 @@ import { Feather } from '@expo/vector-icons';
 const EventsScreen = () => {
     const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
     const [isModalVisible, setIsModalVisible] = useState(false);
+
+    // 2. Get the inset values
+    const insets = useSafeAreaInsets();
 
     const api = useApiClient();
     const queryClient = useQueryClient();
@@ -21,29 +25,23 @@ const EventsScreen = () => {
         queryFn: () => userApi.getCurrentUser(api),
     });
 
-    const formatDate = (dateString: string) => {
+    const formatDate = (dateString: string, timezone: string) => {
         const options: Intl.DateTimeFormatOptions = {
-            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', 
+            timeZone: timezone,
         };
         return new Date(dateString).toLocaleDateString(undefined, options);
     };
 
     const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
         try {
-            // --- THIS IS THE FIX ---
-            // 'shortGeneric' provides a stable abbreviation (e.g., ET, PT)
-            // that is not dependent on the user's local settings or Daylight Saving Time.
-            const options: Intl.DateTimeFormatOptions = { 
-                timeZone: timezone, 
-                timeZoneName: 'shortGeneric' 
-            };
+            const options: Intl.DateTimeFormatOptions = { timeZone: timezone, timeZoneName: 'shortGeneric' };
             const date = new Date(dateString);
             const formatter = new Intl.DateTimeFormat('en-US', options);
             const parts = formatter.formatToParts(date);
             const tzPart = parts.find(part => part.type === 'timeZoneName');
             return tzPart ? tzPart.value : '';
         } catch (e) {
-            console.error("Error formatting timezone:", e);
             return timezone.split('/').pop()?.replace('_', ' ') || '';
         }
     };
@@ -106,7 +104,7 @@ const EventsScreen = () => {
                     >
                         <Text className="text-lg font-semibold text-gray-800">{event.name}</Text>
                         <Text className="text-base text-gray-600 mt-1">
-                            {formatDate(event.date)} at {event.time} {getTimezoneAbbreviation(event.date, event.timezone)}
+                            {formatDate(event.date, event.timezone)} at {event.time} {getTimezoneAbbreviation(event.date, event.timezone)}
                         </Text>
                     </TouchableOpacity>
                 ))}
@@ -114,8 +112,13 @@ const EventsScreen = () => {
 
             <Modal visible={isModalVisible} animationType="slide" onRequestClose={handleCloseModal}>
                 {selectedEvent && (
-                    <SafeAreaView className="flex-1 bg-white">
-                        <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
+                    // 3. Use a regular View as the main container
+                    <View className="flex-1 bg-white">
+                        {/* 4. Manually apply the top padding to the header View */}
+                        <View 
+                            className="flex-row items-center px-4 py-3 border-b border-gray-200"
+                            style={{ paddingTop: insets.top + 12, paddingBottom: 12 }}
+                        >
                             <TouchableOpacity onPress={handleCloseModal} className="mr-4">
                                 <Feather name="arrow-left" size={24} color="#4f46e5" />
                             </TouchableOpacity>
@@ -123,7 +126,7 @@ const EventsScreen = () => {
                         </View>
                         
                         <View className="p-6">
-                            <Text className="text-base text-gray-600">{formatDate(selectedEvent.date)}</Text>
+                            <Text className="text-base text-gray-600">{formatDate(selectedEvent.date, selectedEvent.timezone)}</Text>
                             <Text className="text-base text-gray-600 mb-6">
                                 at {selectedEvent.time} {getTimezoneAbbreviation(selectedEvent.date, selectedEvent.timezone)}
                             </Text>
@@ -166,7 +169,7 @@ const EventsScreen = () => {
                                 )
                             })}
                         </ScrollView>
-                    </SafeAreaView>
+                    </View>
                 )}
             </Modal>
         </SafeAreaView>

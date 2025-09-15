@@ -11,6 +11,9 @@ const SignInScreen = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // 1. --- ADDED: State to manage password visibility ---
+  const [isPasswordVisible, setPasswordVisible] = useState(false);
 
   const onSignInPress = async () => {
     if (!isLoaded) return;
@@ -59,14 +62,26 @@ const SignInScreen = () => {
             placeholderTextColor="#9CA3AF"
             className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
           />
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            placeholderTextColor="#9CA3AF"
-            secureTextEntry
-            className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-6"
-          />
+          
+          {/* 2. --- MODIFIED: Password input with visibility toggle --- */}
+          <View className="w-full flex-row items-center bg-gray-100 border border-gray-300 rounded-lg text-base mb-6 pr-4">
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password"
+              placeholderTextColor="#9CA3AF"
+              secureTextEntry={!isPasswordVisible}
+              className="flex-1 p-4 text-base"
+            />
+            <TouchableOpacity onPress={() => setPasswordVisible(!isPasswordVisible)}>
+                <Feather 
+                    name={isPasswordVisible ? 'eye-off' : 'eye'} 
+                    size={22} 
+                    color="#6B7280" 
+                />
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
             onPress={onSignInPress}
             disabled={isLoading}
