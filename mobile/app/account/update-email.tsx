@@ -14,10 +14,14 @@ const UpdateEmailScreen = () => {
         if (!user) return;
         setIsLoading(true);
         try {
-            // This creates the new email address object and sends the verification code
+            // Step 1: Add the new email address to the user's account
             const newEmailAddress = await user.createEmailAddress({ email: newEmail });
             
-            // Navigate to the verification screen, passing the new email ID
+            // --- THIS IS THE FIX ---
+            // Step 2: Explicitly tell Clerk to send the verification code to the new email
+            await newEmailAddress.prepareVerification({ strategy: 'email_code' });
+
+            // Step 3: Navigate to the verification screen
             router.push({ 
                 pathname: '/account/verify-email', 
                 params: { emailId: newEmailAddress.id }
