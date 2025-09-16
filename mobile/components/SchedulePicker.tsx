@@ -8,13 +8,15 @@ export interface Schedule {
 
 interface SchedulePickerProps {
     onScheduleChange: (schedule: Schedule) => void;
+    initialValue?: Schedule; // Can accept an initial schedule object
 }
 
 const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const daysOfMonth = Array.from({ length: 31 }, (_, i) => i + 1);
 
-const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange }) => {
-  const [schedule, setSchedule] = useState<Schedule>({ frequency: 'weekly', day: 1 });
+const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange, initialValue }) => {
+  // Initialize state with the initialValue if provided, otherwise use a default
+  const [schedule, setSchedule] = useState<Schedule>(initialValue || { frequency: 'weekly', day: 1 });
 
   useEffect(() => {
     onScheduleChange(schedule);

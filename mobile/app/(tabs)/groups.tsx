@@ -1,7 +1,8 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, TextInput, Keyboard, Alert, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, TextInput, Keyboard, Alert } from 'react-native';
 import React, { useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'expo-router';
 import CreateGroupPopup from '@/components/CreateGroupPopup';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useAddMember } from '@/hooks/useAddMember';
@@ -17,19 +18,16 @@ const GroupScreen = () => {
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [isGroupDetailVisible, setIsGroupDetailVisible] = useState(false);
     const [userIdToAdd, setUserIdToAdd] = useState('');
-
     const insets = useSafeAreaInsets();
     const api = useApiClient();
     const queryClient = useQueryClient();
-
     const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups } = useGetGroups();
     const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(selectedGroup?._id || null);
     const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
-    
     const { mutate: addMember, isPending: isAddingMember } = useAddMember();
     const { mutate: deleteGroup, isPending: isDeletingGroup } = useDeleteGroup();
     const { mutate: leaveGroup, isPending: isLeavingGroup } = useLeaveGroup();
-    const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
+    const { mutate: removeMember } = useRemoveMember();
 
     const formatSchedule = (schedule: Schedule): string => {
         if (schedule.frequency === 'weekly') {
@@ -43,7 +41,6 @@ const GroupScreen = () => {
         else if ([3, 23].includes(day)) suffix = 'rd';
         return `Monthly on the ${day}${suffix}`;
     };
-
     const handleAddMember = () => {
         if (!userIdToAdd.trim() || !selectedGroup) return;
         addMember({ groupId: selectedGroup._id, userId: userIdToAdd }, {
@@ -54,7 +51,6 @@ const GroupScreen = () => {
             }
         });
     };
-    
     const handleDeleteGroup = () => {
         if (!selectedGroup) return;
         Alert.alert("Delete Group", `Are you sure you want to permanently delete "${selectedGroup.name}"?`, [
@@ -66,7 +62,6 @@ const GroupScreen = () => {
             }},
         ]);
     };
-
     const handleLeaveGroup = () => {
         if (!selectedGroup) return;
         Alert.alert("Leave Group", "Are you sure you want to leave this group?", [
@@ -78,7 +73,6 @@ const GroupScreen = () => {
             }},
         ]);
     };
-
     const handleRemoveMember = (memberIdToRemove: string) => {
         if (!selectedGroup) return;
         Alert.alert("Remove Member", "Are you sure you want to remove this member from the group?", [
@@ -92,16 +86,8 @@ const GroupScreen = () => {
             }},
         ]);
     };
-
-    const handleOpenGroupDetail = (group: Group) => {
-        setSelectedGroup(group);
-        setIsGroupDetailVisible(true);
-    };
-    const handleCloseGroupDetail = () => {
-        setIsGroupDetailVisible(false);
-        setSelectedGroup(null);
-        setUserIdToAdd('');
-    };
+    const handleOpenGroupDetail = (group: Group) => { setSelectedGroup(group); setIsGroupDetailVisible(true); };
+    const handleCloseGroupDetail = () => { setIsGroupDetailVisible(false); setSelectedGroup(null); setUserIdToAdd(''); };
     const handleOpenCreateModal = () => setCreateIsModalVisible(true);
     const handleCloseCreateModal = () => setCreateIsModalVisible(false);
 
@@ -133,13 +119,11 @@ const GroupScreen = () => {
                 </View>
                 <View>{renderGroupList()}</View>
             </ScrollView>
-
             {isCreateModalVisible && (
                 <View className="absolute top-0 bottom-0 left-0 right-0 bg-black/50 justify-center items-center">
                     <CreateGroupPopup onClose={handleCloseCreateModal} />
                 </View>
             )}
-
             {isGroupDetailVisible && selectedGroup && (
                  <View className="absolute top-0 bottom-0 left-0 right-0 bg-white" style={{ paddingTop: insets.top }}>
                     <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
@@ -149,8 +133,26 @@ const GroupScreen = () => {
                         <Text className="text-xl font-bold text-gray-900">{selectedGroup.name}</Text>
                     </View>
                     <ScrollView className="flex-1 p-6 bg-gray-50" keyboardShouldPersistTaps="handled">
-                        <View className="space-y-2 mb-8">
+                        <View className="flex-row justify-between items-center mb-8">
                             <Text className="text-lg text-gray-800 font-semibold">Group Details</Text>
+                            {currentUser && currentUser._id === selectedGroup.owner && (
+                                <Link 
+                                    // --- THIS IS THE FIX ---
+                                    // Use the object syntax and cast to 'any' to bypass the type error
+                                    href={{
+                                        pathname: "/group-edit/[id]" as any,
+                                        params: { id: selectedGroup._id },
+                                    }} 
+                                    asChild
+                                >
+                                    <TouchableOpacity className="flex-row items-center bg-gray-200 px-3 py-1 rounded-full">
+                                        <Feather name="edit-2" size={14} color="#4B5563" />
+                                        <Text className="text-gray-700 font-semibold ml-2">Edit</Text>
+                                    </TouchableOpacity>
+                                </Link>
+                            )}
+                        </View>
+                        <View className="space-y-2 mb-8">
                             <Text className="text-base text-gray-600">ID: {selectedGroup._id}</Text>
                             <Text className="text-base text-gray-600">Meeting Time: {selectedGroup.time}</Text>
                             {selectedGroup.schedule && (
@@ -171,7 +173,7 @@ const GroupScreen = () => {
                                                 <Text className="text-base text-gray-700 flex-1">{member.firstName} {member.lastName}</Text>
                                             </View>
                                             {canRemove && (
-                                                <TouchableOpacity onPress={() => handleRemoveMember(member._id)} disabled={isRemovingMember} className="p-2">
+                                                <TouchableOpacity onPress={() => handleRemoveMember(member._id)} className="p-2">
                                                     <Feather name="x-circle" size={24} color="#ef4444" />
                                                 </TouchableOpacity>
                                             )}

@@ -3,20 +3,28 @@ import { View, Text, FlatList, StyleSheet, ViewToken } from 'react-native';
 
 interface TimePickerProps {
   onTimeChange: (time: string) => void;
+  initialValue?: string; // Can accept an initial time string
 }
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);
 const MINUTES = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
 const PERIODS = ['AM', 'PM'];
-
 const ITEM_HEIGHT = 50;
 const VISIBLE_ITEMS = 3;
 const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
 
-const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange }) => {
-  const [hour, setHour] = useState(5);
-  const [minute, setMinute] = useState('00');
-  const [period, setPeriod] = useState('PM');
+const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue }) => {
+  const parseInitialTime = () => {
+    if (!initialValue) return { initialHour: 5, initialMinute: '00', initialPeriod: 'PM' };
+    const [time, period] = initialValue.split(' ');
+    const [hour, minute] = time.split(':');
+    return { initialHour: parseInt(hour, 10), initialMinute: minute, initialPeriod: period as 'AM' | 'PM' };
+  };
+
+  const { initialHour, initialMinute, initialPeriod } = parseInitialTime();
+  const [hour, setHour] = useState(initialHour);
+  const [minute, setMinute] = useState(initialMinute);
+  const [period, setPeriod] = useState(initialPeriod);
 
   const hourRef = useRef<FlatList>(null);
   const minuteRef = useRef<FlatList>(null);

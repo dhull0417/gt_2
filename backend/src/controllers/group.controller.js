@@ -12,44 +12,25 @@ const calculateNextEventDate = (schedule, groupTime, timezone) => {
   let [hour, minute] = time.split(':').map(Number);
   if (period.toUpperCase() === 'PM' && hour !== 12) hour += 12;
   if (period.toUpperCase() === 'AM' && hour === 12) hour = 0;
-
-  console.log(`--- DIAGNOSTICS: Calculating Next Event Date ---`);
-  console.log(`Current Time in Zone (${timezone}): ${now.toString()}`);
-  console.log(`Input Schedule: freq=${schedule.frequency}, day=${schedule.day}`);
-  console.log(`Input Time: ${groupTime} (Parsed as H:${hour} M:${minute})`);
-  
   let eventDate;
-
   if (schedule.frequency === 'weekly') {
-    const targetWeekday = schedule.day === 0 ? 7 : schedule.day; // Luxon: Mon=1, Sun=7
-    
-    let nextOccurrence = now.set({ weekday: targetWeekday });
-    console.log(`Initial next occurrence of weekday ${targetWeekday}: ${nextOccurrence.toString()}`);
-
-    let potentialEvent = nextOccurrence.set({ hour, minute, second: 0, millisecond: 0 });
-    console.log(`Potential event time in zone: ${potentialEvent.toString()}`);
-
-    if (potentialEvent < now) {
-      console.log("Calculated time is in the past, advancing one week.");
-      potentialEvent = potentialEvent.plus({ weeks: 1 });
+    const targetWeekday = schedule.day === 0 ? 7 : schedule.day;
+    let eventDateTime = now.set({ hour: hour, minute: minute, second: 0, millisecond: 0 });
+    if (targetWeekday > now.weekday || (targetWeekday === now.weekday && eventDateTime > now)) {
+        eventDate = eventDateTime.set({ weekday: targetWeekday });
+    } else {
+        eventDate = eventDateTime.plus({ weeks: 1 }).set({ weekday: targetWeekday });
     }
-    eventDate = potentialEvent;
-
-  } else { // monthly
+  } else {
     const targetDayOfMonth = schedule.day;
-    let potentialEvent = now.set({ day: targetDayOfMonth, hour, minute, second: 0, millisecond: 0 });
-    if (potentialEvent < now) {
-        potentialEvent = potentialEvent.plus({ months: 1 });
+    let eventDateTime = now.set({ day: targetDayOfMonth, hour: hour, minute: minute, second: 0, millisecond: 0 });
+    if (eventDateTime < now) {
+      eventDate = eventDateTime.plus({ months: 1 });
+    } else {
+      eventDate = eventDateTime;
     }
-    eventDate = potentialEvent;
   }
-
-  console.log(`Final event time in zone: ${eventDate.toString()}`);
-  const finalUTCDate = eventDate.toJSDate();
-  console.log(`Final UTC date for DB: ${finalUTCDate.toISOString()}`);
-  console.log(`------------------------------------------`);
-  
-  return finalUTCDate;
+  return eventDate.toJSDate();
 };
 
 export const createGroup = asyncHandler(async (req, res) => {
@@ -63,23 +44,68 @@ export const createGroup = asyncHandler(async (req, res) => {
   const groupData = { name, time, schedule, timezone, owner: owner._id, members: [owner._id] };
   const newGroup = await Group.create(groupData);
   await owner.updateOne({ $addToSet: { groups: newGroup._id } });
-
   try {
     const eventDate = calculateNextEventDate(newGroup.schedule, newGroup.time, newGroup.timezone);
-    
-    console.log("Calculated event date:", eventDate);
-
     await Event.create({
       group: newGroup._id, name: newGroup.name, date: eventDate, time: newGroup.time,
       timezone: newGroup.timezone,
       members: newGroup.members, undecided: newGroup.members,
     });
-    console.log(`Successfully created event for group '${newGroup.name}'`);
   } catch (eventError) {
-    console.error("--- ERROR: Failed to create the first event for the new group ---");
-    console.error(eventError);
+    console.error("Failed to create the first event for the new group:", eventError);
   }
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
+});
+
+// --- ADDED: Function to update a group's details ---
+export const updateGroup = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+    const { time, schedule, timezone } = req.body;
+
+    if (!time || !schedule || !timezone) {
+        return res.status(400).json({ error: "Time, schedule, and timezone are required." });
+    }
+
+    const group = await Group.findById(groupId);
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
+
+    // Authorization check: only the owner can edit
+    if (group.owner.toString() !== requester._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can edit the group." });
+    }
+
+    // Update the group document
+    group.time = time;
+    group.schedule = schedule;
+    group.timezone = timezone;
+    const updatedGroup = await group.save();
+
+    // Now, regenerate the upcoming event
+    try {
+        // 1. Delete all existing future events for this group
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        await Event.deleteMany({ group: group._id, date: { $gte: today } });
+
+        // 2. Create a new event with the updated details
+        const nextEventDate = calculateNextEventDate(updatedGroup.schedule, updatedGroup.time, updatedGroup.timezone);
+        await Event.create({
+            group: updatedGroup._id,
+            name: updatedGroup.name,
+            date: nextEventDate,
+            time: updatedGroup.time,
+            timezone: updatedGroup.timezone,
+            members: updatedGroup.members,
+            undecided: updatedGroup.members,
+        });
+        console.log(`Regenerated event for updated group '${updatedGroup.name}' for ${nextEventDate.toDateString()}`);
+    } catch (eventError) {
+        console.error("Failed to regenerate event after group update:", eventError);
+    }
+
+    res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
 });
 
 export const getGroups = asyncHandler(async (req, res) => {

@@ -12,7 +12,7 @@ export interface User {
   _id: string;
   clerkId: string;
   email: string;
-  username: string,
+  username: string;
   firstName?: string;
   lastName?: string;
   profilePicture?: string;
@@ -46,11 +46,17 @@ interface CreateGroupPayload {
   schedule: Schedule;
   timezone: string;
 }
+// 1. --- ADDED: Interface for the update payload ---
+interface UpdateGroupPayload {
+    groupId: string;
+    time: string;
+    schedule: Schedule;
+    timezone: string;
+}
 interface AddMemberPayload {
   groupId: string;
   userId: string;
 }
-// 1. --- ADDED: Interface for the remove member payload ---
 interface RemoveMemberPayload {
   groupId: string;
   memberIdToRemove: string;
@@ -90,6 +96,11 @@ export const groupApi = {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);
     return response.data;
   },
+  // 2. --- ADDED: New function to update a group ---
+  updateGroup: async (api: AxiosInstance, { groupId, ...details }: UpdateGroupPayload): Promise<{ group: Group }> => {
+    const response = await api.put<{ group: Group }>(`/api/groups/${groupId}`, details);
+    return response.data;
+  },
   getGroups: async (api: AxiosInstance): Promise<Group[]> => {
     const response = await api.get<Group[]>("/api/groups");
     return response.data;
@@ -106,7 +117,6 @@ export const groupApi = {
     const response = await api.delete(`/api/groups/${groupId}`);
     return response.data;
   },
-  // 2. --- ADDED: New functions for leaving and removing members ---
   leaveGroup: async (api: AxiosInstance, groupId: string): Promise<{ message: string }> => {
     const response = await api.post(`/api/groups/${groupId}/leave`);
     return response.data;

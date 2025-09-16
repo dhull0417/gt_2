@@ -78,17 +78,8 @@ const InitialLayout = () => {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
-      
-      {/* This presents the account screen as a modal with its own header */}
-      <Stack.Screen 
-        name="account" 
-        options={{ 
-          presentation: 'modal',
-          headerShown: true,
-          headerTitle: 'Account Settings',
-          headerBackTitle: 'Home'
-        }} 
-      />
+      <Stack.Screen name="account"options={{presentation: 'modal', headerShown: true, headerTitle: 'Account Settings', headerBackTitle: 'Home'}}/>
+      <Stack.Screen name="group-edit" options={{ headerShown: false }} />
     </Stack>
   );
 };
