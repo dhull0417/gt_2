@@ -7,6 +7,7 @@ const AccountLayout = () => {
             <Stack.Screen 
                 name="index" 
                 options={{ 
+                    headerShown: false,
                     headerTitle: 'Account Settings',
                 }} 
             />
@@ -29,6 +30,13 @@ const AccountLayout = () => {
                 name="verify-email" 
                 options={{ 
                     headerTitle: 'Verify New Email',
+                    presentation: 'modal',
+                }} 
+            />
+            <Stack.Screen 
+                name="change-password" 
+                options={{ 
+                    headerTitle: 'Change Password',
                     presentation: 'modal',
                 }} 
             />

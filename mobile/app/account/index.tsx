@@ -14,11 +14,15 @@ const AccountSettingsScreen = () => {
                         <Feather name="chevron-right" size={20} color="#6B7280" />
                     </TouchableOpacity>
                 </Link>
-
-                {/* --- ADDED: The button to start the email update flow --- */}
                 <Link href="/account/update-email" asChild>
                     <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm">
                         <Text className="text-base text-gray-800">Update Email</Text>
+                        <Feather name="chevron-right" size={20} color="#6B7280" />
+                    </TouchableOpacity>
+                </Link>
+                <Link href="/account/change-password" asChild>
+                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm">
+                        <Text className="text-base text-gray-800">Change Password</Text>
                         <Feather name="chevron-right" size={20} color="#6B7280" />
                     </TouchableOpacity>
                 </Link>
