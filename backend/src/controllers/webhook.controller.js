@@ -31,26 +31,30 @@ export const clerkWebhook = asyncHandler(async (req, res) => {
     return res.status(400).send("Error occured");
   }
   
-  const { id } = evt.data;
   const eventType = evt.type;
-
-  console.log(`Webhook with an ID of ${id} and type of ${eventType}`);
   
   if (eventType === 'user.updated') {
-    // --- MODIFIED: Get username from the webhook payload ---
     const { id, first_name, last_name, image_url, email_addresses, username } = evt.data;
+
+    // --- THIS IS THE FIX ---
+    // Create an update object with only the data that is not null or undefined.
+    const updatedFields = {};
+    if (username) updatedFields.username = username;
+    if (first_name) updatedFields.firstName = first_name;
+    if (last_name) updatedFields.lastName = last_name;
+    if (image_url) updatedFields.profilePicture = image_url;
+    if (email_addresses && email_addresses.length > 0) {
+      updatedFields.email = email_addresses[0].email_address;
+    }
     
+    // Use $set to only update the fields that have new data,
+    // preventing the webhook from erasing existing names with empty ones.
     await User.findOneAndUpdate(
       { clerkId: id },
-      {
-        firstName: first_name,
-        lastName: last_name,
-        profilePicture: image_url,
-        email: email_addresses[0].email_address,
-        username: username, // Sync the username
-      }
+      { $set: updatedFields }
     );
-    console.log(`User ${id} was updated in the database.`);
+    
+    console.log(`User ${id} was updated in the database with fields:`, Object.keys(updatedFields));
   }
 
   res.status(200).json({ message: "Webhook received" });

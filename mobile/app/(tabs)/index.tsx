@@ -1,21 +1,32 @@
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert } from 'react-native';
-import React from 'react';
+import React, { useCallback } from 'react'; // 1. Import useCallback
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/clerk-expo';
 import { useQuery } from '@tanstack/react-query';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { Link } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router'; // 2. Import useFocusEffect
 
 const HomeScreen = () => {
   const { signOut } = useAuth();
   const api = useApiClient();
+  const router = useRouter();
 
-  const { data: currentUser, isLoading, isError } = useQuery<User, Error>({
+  // 3. Destructure the 'refetch' function from useQuery
+  const { data: currentUser, isLoading, isError, refetch } = useQuery<User, Error>({
       queryKey: ['currentUser'],
       queryFn: () => userApi.getCurrentUser(api),
   });
+
+  // 4. Use the useFocusEffect hook to refetch data whenever the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      // This function will be called every time the screen is focused
+      console.log("Home screen is focused, refetching user data...");
+      refetch();
+    }, [refetch])
+  );
 
   const handleCopyId = async () => {
       if (currentUser?._id) {
@@ -31,11 +42,11 @@ const HomeScreen = () => {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
-        {isLoading ? (
+        {isLoading && !currentUser ? ( // Only show main loader on initial load
             <ActivityIndicator size="large" color="#4f46e5" className="mt-16" />
-        ) : isError || !currentUser ? (
+        ) : isError ? (
             <Text className="text-center text-red-500 mt-8">Failed to load profile.</Text>
-        ) : (
+        ) : currentUser ? (
           <>
             <View className="items-center p-6 bg-white border-b border-gray-200">
               <Image
@@ -45,15 +56,12 @@ const HomeScreen = () => {
               <Text className="text-2xl font-bold text-gray-800 mt-4">
                   {currentUser.firstName} {currentUser.lastName}
               </Text>
-
-              {/* --- ADDED: Display Username and Email --- */}
               <Text className="text-lg text-gray-500">
                   {currentUser.username}
               </Text>
               <Text className="text-base text-gray-500 mt-1">
                   {currentUser.email}
               </Text>
-
               <View className="w-full bg-gray-100 p-3 mt-6 rounded-lg">
                   <Text className="text-xs text-gray-500 mb-1 text-center">Your Unique User ID (Tap to Copy)</Text>
                   <TouchableOpacity onPress={handleCopyId} className="flex-row justify-center items-center">
@@ -64,13 +72,13 @@ const HomeScreen = () => {
             </View>
 
             <View className="px-4 mt-8 space-y-4">
-                <Link href="/account" asChild>
-                    <TouchableOpacity
-                        className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
-                    >
-                        <Text className="text-indigo-600 text-lg font-bold">Update Account Info</Text>
-                    </TouchableOpacity>
-                </Link>
+                <TouchableOpacity
+                    onPress={() => router.push('/account')}
+                    className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
+                >
+                    <Text className="text-indigo-600 text-lg font-bold">Update Account Info</Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity
                     onPress={() => signOut()}
                     className="py-4 bg-red-600 rounded-lg items-center shadow"
@@ -79,7 +87,7 @@ const HomeScreen = () => {
                 </TouchableOpacity>
             </View>
           </>
-        )}
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   )
