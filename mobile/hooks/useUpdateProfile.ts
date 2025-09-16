@@ -19,7 +19,9 @@ export const useUpdateProfile = () => {
     
     onSuccess: () => {
       Alert.alert("Success", "Your name has been updated.");
+      // Invalidate the currentUser query to ensure the whole app gets the fresh data
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+      // Go back to the previous screen (the account menu)
       router.back();
     },
     onError: (error: any) => {

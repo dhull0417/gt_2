@@ -1,4 +1,4 @@
-import express from "express"; // This line was missing
+import express from "express";
 import cors from "cors";
 import { clerkMiddleware } from "@clerk/express";
 
@@ -16,8 +16,11 @@ const app = express();
 
 app.use(cors());
 
+// Place the webhook route BEFORE the global express.json() middleware
+// This is because webhooks require the raw request body for signature verification.
 app.use("/api/webhooks", webhookRoutes);
 
+// This will parse JSON for all other routes
 app.use(express.json());
 
 app.use(clerkMiddleware());

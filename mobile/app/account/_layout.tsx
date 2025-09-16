@@ -17,6 +17,21 @@ const AccountLayout = () => {
                     presentation: 'modal',
                 }} 
             />
+            {/* --- ADDED: New screens for the email update flow --- */}
+            <Stack.Screen 
+                name="update-email" 
+                options={{ 
+                    headerTitle: 'Update Email',
+                    presentation: 'modal',
+                }} 
+            />
+            <Stack.Screen 
+                name="verify-email" 
+                options={{ 
+                    headerTitle: 'Verify New Email',
+                    presentation: 'modal',
+                }} 
+            />
         </Stack>
     );
 };

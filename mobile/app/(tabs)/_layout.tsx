@@ -19,19 +19,20 @@ const TabsLayout = () => {
   });
 
   if (!isLoaded || (isSignedIn && !isSuccess)) {
-    return (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" />
-        </View>
-    );
+    if (isSignedIn) {
+      return (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <ActivityIndicator size="large" />
+          </View>
+      );
+    }
+    return null;
   }
 
-  // If the user is not signed in, redirect them to the auth flow.
   if (!isSignedIn) {
     return <Redirect href="/(auth)" />;
   }
 
-  // If the user is signed in but their profile is incomplete, redirect them to the setup screen.
   if (currentUser && (!currentUser.firstName || !currentUser.lastName)) {
     return <Redirect href="/profile-setup" />;
   }
