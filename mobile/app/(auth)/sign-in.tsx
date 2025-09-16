@@ -11,8 +11,6 @@ const SignInScreen = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
-  // 1. --- ADDED: State to manage password visibility ---
   const [isPasswordVisible, setPasswordVisible] = useState(false);
 
   const onSignInPress = async () => {
@@ -26,7 +24,7 @@ const SignInScreen = () => {
 
       if (signInAttempt.status === 'complete') {
         await setActive({ session: signInAttempt.createdSessionId });
-        router.replace('/(tabs)');
+        // The root layout will now handle the redirect automatically
       } else {
         console.error(JSON.stringify(signInAttempt, null, 2));
       }
@@ -58,13 +56,12 @@ const SignInScreen = () => {
             autoCapitalize="none"
             value={username}
             onChangeText={setUsername}
-            placeholder="Username"
+            placeholder="Username or Email"
             placeholderTextColor="#9CA3AF"
             className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
           />
           
-          {/* 2. --- MODIFIED: Password input with visibility toggle --- */}
-          <View className="w-full flex-row items-center bg-gray-100 border border-gray-300 rounded-lg text-base mb-6 pr-4">
+          <View className="w-full flex-row items-center bg-gray-100 border border-gray-300 rounded-lg text-base mb-2 pr-4">
             <TextInput
               value={password}
               onChangeText={setPassword}
@@ -82,6 +79,13 @@ const SignInScreen = () => {
             </TouchableOpacity>
           </View>
 
+          {/* --- ADDED: "Forgot Password?" Link --- */}
+          <Link href="/(auth)/forgot-password" asChild>
+            <TouchableOpacity className="self-end mb-6">
+              <Text className="text-base text-gray-600">Forgot Password?</Text>
+            </TouchableOpacity>
+          </Link>
+
           <TouchableOpacity
             onPress={onSignInPress}
             disabled={isLoading}
@@ -91,8 +95,10 @@ const SignInScreen = () => {
           </TouchableOpacity>
           <View className="flex-row justify-center mt-6">
               <Text className="text-base text-gray-600">Don't have an account? </Text>
-              <Link href="/(auth)/sign-up">
+              <Link href="/(auth)/sign-up" asChild>
+                <TouchableOpacity>
                   <Text className="text-base text-indigo-600 font-bold">Sign Up</Text>
+                </TouchableOpacity>
               </Link>
           </View>
         </ScrollView>

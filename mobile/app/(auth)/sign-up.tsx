@@ -7,34 +7,29 @@ import { Feather } from '@expo/vector-icons';
 
 const SignUpScreen = () => {
   const router = useRouter();
-  // The setActive function is returned directly from the useSignUp hook
   const { isLoaded, signUp, setActive } = useSignUp();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
   const [isPasswordVisible, setPasswordVisible] = useState(false);
   const [isConfirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
 
   const onSignUpPress = async () => {
     if (!isLoaded) return;
-
     if (password !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match. Please try again.');
       return;
     }
-
     setIsLoading(true);
     try {
       const signUpAttempt = await signUp.create({ username, emailAddress: email, password });
       
       if (signUpAttempt.status === 'complete') {
-        // --- THIS IS THE FIX ---
-        // Call setActive directly, not as a method of the signUp object.
+        // Set the session as active, which will update the global auth state
         await setActive({ session: signUpAttempt.createdSessionId });
-        router.replace('/(tabs)');
+        // The root layout will now handle the redirect automatically.
       } else {
         console.error(JSON.stringify(signUpAttempt, null, 2));
       }
@@ -79,7 +74,6 @@ const SignUpScreen = () => {
                 placeholderTextColor="#9CA3AF"
                 className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
             />
-            
             <View className="w-full flex-row items-center bg-gray-100 border border-gray-300 rounded-lg text-base mb-4 pr-4">
                 <TextInput
                     value={password}
@@ -97,7 +91,6 @@ const SignUpScreen = () => {
                     />
                 </TouchableOpacity>
             </View>
-
             <View className="w-full flex-row items-center bg-gray-100 border border-gray-300 rounded-lg text-base mb-6 pr-4">
                 <TextInput
                     value={confirmPassword}
@@ -115,7 +108,6 @@ const SignUpScreen = () => {
                     />
                 </TouchableOpacity>
             </View>
-
             <TouchableOpacity
                 onPress={onSignUpPress}
                 disabled={isLoading}

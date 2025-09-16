@@ -18,10 +18,9 @@ export const useUpdateProfile = () => {
       userApi.updateProfile(api, variables),
     
     onSuccess: () => {
-      // Invalidate the currentUser query to ensure the whole app gets the fresh data
+      Alert.alert("Success", "Your name has been updated.");
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-      // Redirect the user to the main app now that their profile is complete
-      router.replace('/(tabs)');
+      router.back();
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Failed to update profile.";
