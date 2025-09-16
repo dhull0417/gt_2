@@ -7,8 +7,7 @@ const AccountLayout = () => {
             <Stack.Screen 
                 name="index" 
                 options={{ 
-                    headerShown: false,
-                    headerTitle: 'Account Settings',
+                    headerShown: false, // Your change is preserved here
                 }} 
             />
             <Stack.Screen 
@@ -18,7 +17,6 @@ const AccountLayout = () => {
                     presentation: 'modal',
                 }} 
             />
-            {/* --- ADDED: New screens for the email update flow --- */}
             <Stack.Screen 
                 name="update-email" 
                 options={{ 
@@ -37,6 +35,13 @@ const AccountLayout = () => {
                 name="change-password" 
                 options={{ 
                     headerTitle: 'Change Password',
+                    presentation: 'modal',
+                }} 
+            />
+            <Stack.Screen 
+                name="update-username" 
+                options={{ 
+                    headerTitle: 'Update Username',
                     presentation: 'modal',
                 }} 
             />

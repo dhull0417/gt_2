@@ -33,7 +33,10 @@ const TabsLayout = () => {
     return <Redirect href="/(auth)" />;
   }
 
-  if (currentUser && (!currentUser.firstName || !currentUser.lastName)) {
+  // --- THIS IS THE FIX ---
+  // We now explicitly check if the trimmed length of the names is zero.
+  // This correctly handles users who may have an empty string for a name.
+  if (currentUser && (currentUser.firstName?.trim().length === 0 || currentUser.lastName?.trim().length === 0)) {
     return <Redirect href="/profile-setup" />;
   }
 
@@ -47,9 +50,27 @@ const TabsLayout = () => {
             tabBarShowLabel: false,
         }}
     >
-      <Tabs.Screen name='index' options={{ title: "Home", tabBarIcon: ({color, size}) => <Feather name='home' size={size} color={color}/> }} />
-      <Tabs.Screen name='groups' options={{ title: "Groups", tabBarIcon: ({color, size}) => <Feather name='users' size={size} color={color}/> }} />
-      <Tabs.Screen name='events' options={{ title: 'Events', tabBarIcon: ({ color, size }) => <Feather name="calendar" size={size} color={color} /> }} />
+      <Tabs.Screen 
+          name='index'
+          options={{
+              title: "Home",
+              tabBarIcon: ({color, size}) => <Feather name='home' size={size} color={color}/>
+          }}
+      />
+      <Tabs.Screen 
+          name='groups'
+          options={{
+              title: "Groups",
+              tabBarIcon: ({color, size}) => <Feather name='users' size={size} color={color}/>
+          }}
+      />
+      <Tabs.Screen 
+        name='events'
+        options={{
+          title: 'Events',
+          tabBarIcon: ({ color, size }) => <Feather name="calendar" size={size} color={color} />
+        }}
+      />
     </Tabs>
   );
 };

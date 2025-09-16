@@ -16,14 +16,11 @@ export const clerkWebhook = asyncHandler(async (req, res) => {
     return res.status(400).send("Error occurred -- no svix headers");
   }
 
-  // --- THIS IS THE FIX ---
-  // The 'req.body' is the raw payload. We use it directly for verification.
   const payload = req.body;
   const wh = new Webhook(WEBHOOK_SECRET);
   let evt;
 
   try {
-    // Verify the raw payload
     evt = wh.verify(payload, {
       "svix-id": svix_id,
       "svix-timestamp": svix_timestamp,
@@ -34,14 +31,15 @@ export const clerkWebhook = asyncHandler(async (req, res) => {
     return res.status(400).send("Error occured");
   }
   
-  // AFTER successful verification, we can safely use the data.
   const { id } = evt.data;
   const eventType = evt.type;
 
   console.log(`Webhook with an ID of ${id} and type of ${eventType}`);
   
   if (eventType === 'user.updated') {
-    const { id, first_name, last_name, image_url, email_addresses } = evt.data;
+    // --- MODIFIED: Get username from the webhook payload ---
+    const { id, first_name, last_name, image_url, email_addresses, username } = evt.data;
+    
     await User.findOneAndUpdate(
       { clerkId: id },
       {
@@ -49,6 +47,7 @@ export const clerkWebhook = asyncHandler(async (req, res) => {
         lastName: last_name,
         profilePicture: image_url,
         email: email_addresses[0].email_address,
+        username: username, // Sync the username
       }
     );
     console.log(`User ${id} was updated in the database.`);

@@ -14,6 +14,12 @@ const AccountSettingsScreen = () => {
                         <Feather name="chevron-right" size={20} color="#6B7280" />
                     </TouchableOpacity>
                 </Link>
+                <Link href="/account/update-username" asChild>
+                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm">
+                        <Text className="text-base text-gray-800">Update Username</Text>
+                        <Feather name="chevron-right" size={20} color="#6B7280" />
+                    </TouchableOpacity>
+                </Link>
                 <Link href="/account/update-email" asChild>
                     <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm">
                         <Text className="text-base text-gray-800">Update Email</Text>

@@ -34,9 +34,9 @@ export const syncUser = asyncHandler(async (req, res) => {
   const userData = {
     clerkId: userId,
     email: clerkUser.emailAddresses[0].emailAddress,
+    username: clerkUser.username,
     firstName: clerkUser.firstName || "",
     lastName: clerkUser.lastName || "",
-    username: clerkUser.emailAddresses[0].emailAddress.split("@")[0],
     profilePicture: clerkUser.imageUrl || "",
   };
 
@@ -47,46 +47,11 @@ export const syncUser = asyncHandler(async (req, res) => {
 
 export const getCurrentUser = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
-  const user = await User.findOne({ clerkId: clerkId }).lean();
+  const user = await User.findOne({ clerkId }).lean();
 
   if (!user) {
-    return res.status(404).json({ error: "User not found" });
+    return res.status(404).json({ error: "User not found in database." });
   }
   
-  // FIX: Return the user object in a nested { user } object for consistency.
   res.status(200).json({ user });
-});
-
-export const followUser = asyncHandler(async (req, res) => {
-  const { userId } = getAuth(req);
-  const { targetUserId } = req.params;
-
-  if (userId === targetUserId) return res.status(400).json({ error: "You cannot follow yourself" });
-
-  const currentUser = await User.findOne({ clerkId: userId });
-  const targetUser = await User.findById(targetUserId);
-
-  if (!currentUser || !targetUser) return res.status(404).json({ error: "User not found" });
-
-  const isFollowing = currentUser.following.includes(targetUserId);
-
-  if (isFollowing) {
-    await User.findByIdAndUpdate(currentUser._id, {
-      $pull: { following: targetUserId },
-    });
-    await User.findByIdAndUpdate(targetUserId, {
-      $pull: { followers: currentUser._id },
-    });
-  } else {
-    await User.findByIdAndUpdate(currentUser._id, {
-      $push: { following: targetUserId },
-    });
-    await User.findByIdAndUpdate(targetUserId, {
-      $push: { followers: currentUser._id },
-    });
-  }
-
-  res.status(200).json({
-    message: isFollowing ? "User unfollowed successfully" : "User followed successfully",
-  });
 });

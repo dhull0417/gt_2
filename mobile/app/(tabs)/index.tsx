@@ -6,12 +6,11 @@ import { useQuery } from '@tanstack/react-query';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 
 const HomeScreen = () => {
   const { signOut } = useAuth();
   const api = useApiClient();
-  const router = useRouter();
 
   const { data: currentUser, isLoading, isError } = useQuery<User, Error>({
       queryKey: ['currentUser'],
@@ -46,7 +45,16 @@ const HomeScreen = () => {
               <Text className="text-2xl font-bold text-gray-800 mt-4">
                   {currentUser.firstName} {currentUser.lastName}
               </Text>
-              <View className="w-full bg-gray-100 p-3 mt-4 rounded-lg">
+
+              {/* --- ADDED: Display Username and Email --- */}
+              <Text className="text-lg text-gray-500">
+                  {currentUser.username}
+              </Text>
+              <Text className="text-base text-gray-500 mt-1">
+                  {currentUser.email}
+              </Text>
+
+              <View className="w-full bg-gray-100 p-3 mt-6 rounded-lg">
                   <Text className="text-xs text-gray-500 mb-1 text-center">Your Unique User ID (Tap to Copy)</Text>
                   <TouchableOpacity onPress={handleCopyId} className="flex-row justify-center items-center">
                       <Text className="text-sm text-gray-700 font-mono mr-2" selectable>{currentUser._id}</Text>
@@ -56,15 +64,13 @@ const HomeScreen = () => {
             </View>
 
             <View className="px-4 mt-8 space-y-4">
-                <TouchableOpacity
-                    // --- THIS IS THE FIX ---
-                    // Cast the href to 'any' to bypass the stale type error
-                    onPress={() => router.push('/account' as any)}
-                    className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
-                >
-                    <Text className="text-indigo-600 text-lg font-bold">Update Account Info</Text>
-                </TouchableOpacity>
-
+                <Link href="/account" asChild>
+                    <TouchableOpacity
+                        className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
+                    >
+                        <Text className="text-indigo-600 text-lg font-bold">Update Account Info</Text>
+                    </TouchableOpacity>
+                </Link>
                 <TouchableOpacity
                     onPress={() => signOut()}
                     className="py-4 bg-red-600 rounded-lg items-center shadow"
