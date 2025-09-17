@@ -45,41 +45,39 @@ const parseTime = (timeString) => {
 export const regenerateEvents = asyncHandler(async (req, res) => {
   console.log("Cron job started: Regenerating events...");
   const now = new Date();
-  const allEvents = await Event.find().lean();
   
-  const expiredEvents = allEvents.filter(event => {
+  // 1. Find only the automatically scheduled events that have expired.
+  const expiredRecurringEvents = await Event.find({
+      isOverride: false, // Only look for the main recurring events
+  }).lean();
+
+  const eventsToDelete = expiredRecurringEvents.filter(event => {
     const eventDateTime = new Date(event.date);
     const { hours, minutes } = parseTime(event.time);
     eventDateTime.setUTCHours(hours, minutes);
     return eventDateTime < now;
   });
+  
+  // Note: One-off events (isOverride: true) are now left alone until they are manually deleted or handled differently.
+  // This is a simple approach. A more advanced one could clean up expired one-offs here too.
 
-  if (expiredEvents.length === 0) {
-    console.log("No expired events to process. Job finished.");
-    return res.status(200).json({ message: "No expired events to process." });
+  if (eventsToDelete.length === 0) {
+    console.log("No recurring events to process. Job finished.");
+    return res.status(200).json({ message: "No recurring events to process." });
   }
 
-  const expiredEventIds = expiredEvents.map(e => e._id);
-  const groupIdsToRegenerate = [...new Set(expiredEvents.map(e => String(e.group)))];
+  const expiredEventIds = eventsToDelete.map(e => e._id);
+  const groupIdsToRegenerate = [...new Set(eventsToDelete.map(e => String(e.group)))];
 
+  // 2. Delete only the expired recurring events
   await Event.deleteMany({ _id: { $in: expiredEventIds } });
-  console.log(`Deleted ${expiredEventIds.length} expired events.`);
+  console.log(`Deleted ${expiredEventIds.length} expired recurring events.`);
 
   const groups = await Group.find({ _id: { $in: groupIdsToRegenerate } });
 
   for (const group of groups) {
     if (group.schedule) {
-      const upcomingOverride = await Event.findOne({
-          group: group._id,
-          isOverride: true,
-          date: { $gte: now },
-      });
-
-      if (upcomingOverride) {
-          console.log(`Skipping regeneration for group '${group.name}' because a future override event exists.`);
-          continue;
-      }
-
+      // 3. We can now safely generate the next recurring event
       const nextEventDate = calculateNextEventDate(group.schedule, group.time, group.timezone);
       await Event.create({
         group: group._id,
@@ -89,9 +87,9 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
         timezone: group.timezone,
         members: group.members,
         undecided: group.members,
-        isOverride: false,
+        isOverride: false, // Ensure it's marked as a recurring event
       });
-      console.log(`Regenerated event for group '${group.name}' for ${nextEventDate.toDateString()}`);
+      console.log(`Regenerated recurring event for group '${group.name}'`);
     }
   }
 

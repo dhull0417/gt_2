@@ -217,3 +217,38 @@ export const removeMember = asyncHandler(async (req, res) => {
     );
     res.status(200).json({ message: "Member successfully removed from the group." });
 });
+
+// --- ADD THIS NEW CONTROLLER FUNCTION ---
+export const createOneOffEvent = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+    const { date, time, timezone } = req.body;
+
+    if (!date || !time || !timezone) {
+        return res.status(400).json({ error: "Date, time, and timezone are required." });
+    }
+
+    const group = await Group.findById(groupId);
+    const requester = await User.findOne({ clerkId }).lean();
+
+    if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
+
+    // Authorization check: only the owner can schedule extra events
+    if (group.owner.toString() !== requester._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can schedule events." });
+    }
+
+    // Create the new event and explicitly mark it as an override
+    const newEvent = await Event.create({
+        group: group._id,
+        name: group.name,
+        date: date,
+        time: time,
+        timezone: timezone,
+        members: group.members,
+        undecided: group.members,
+        isOverride: true, // Mark this as a special, one-off event
+    });
+
+    res.status(201).json({ event: newEvent, message: "One-off event scheduled successfully." });
+  });
