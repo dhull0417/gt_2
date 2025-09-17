@@ -9,41 +9,25 @@ const calculateNextEventDate = (schedule, groupTime, timezone) => {
   let [hour, minute] = time.split(':').map(Number);
   if (period.toUpperCase() === 'PM' && hour !== 12) hour += 12;
   if (period.toUpperCase() === 'AM' && hour === 12) hour = 0;
-
-  console.log(`--- DIAGNOSTICS (CRON): Calculating Next Event Date ---`);
-  console.log(`Current Time in Zone (${timezone}): ${now.toString()}`);
-  console.log(`Input Schedule: freq=${schedule.frequency}, day=${schedule.day}`);
-  console.log(`Input Time: ${groupTime} (Parsed as H:${hour} M:${minute})`);
-  
   let eventDate;
-
   if (schedule.frequency === 'weekly') {
     const targetWeekday = schedule.day === 0 ? 7 : schedule.day;
-    let nextOccurrence = now.set({ weekday: targetWeekday });
-    console.log(`Initial next occurrence of weekday ${targetWeekday}: ${nextOccurrence.toString()}`);
-    let potentialEvent = nextOccurrence.set({ hour, minute, second: 0, millisecond: 0 });
-    console.log(`Potential event time in zone: ${potentialEvent.toString()}`);
-    if (potentialEvent < now) {
-      console.log("Calculated time is in the past, advancing one week.");
-      potentialEvent = potentialEvent.plus({ weeks: 1 });
+    let eventDateTime = now.set({ hour: hour, minute: minute, second: 0, millisecond: 0 });
+    if (targetWeekday > now.weekday || (targetWeekday === now.weekday && eventDateTime > now)) {
+        eventDate = eventDateTime.set({ weekday: targetWeekday });
+    } else {
+        eventDate = eventDateTime.plus({ weeks: 1 }).set({ weekday: targetWeekday });
     }
-    eventDate = potentialEvent;
-
-  } else { // monthly
+  } else {
     const targetDayOfMonth = schedule.day;
-    let potentialEvent = now.set({ day: targetDayOfMonth, hour, minute, second: 0, millisecond: 0 });
-    if (potentialEvent < now) {
-        potentialEvent = potentialEvent.plus({ months: 1 });
+    let eventDateTime = now.set({ day: targetDayOfMonth, hour: hour, minute: minute, second: 0, millisecond: 0 });
+    if (eventDateTime < now) {
+      eventDate = eventDateTime.plus({ months: 1 });
+    } else {
+      eventDate = eventDateTime;
     }
-    eventDate = potentialEvent;
   }
-
-  console.log(`Final event time in zone: ${eventDate.toString()}`);
-  const finalUTCDate = eventDate.toJSDate();
-  console.log(`Final UTC date for DB: ${finalUTCDate.toISOString()}`);
-  console.log(`------------------------------------------`);
-  
-  return finalUTCDate;
+  return eventDate.toJSDate();
 };
 
 const parseTime = (timeString) => {
@@ -85,6 +69,17 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
   for (const group of groups) {
     if (group.schedule) {
+      const upcomingOverride = await Event.findOne({
+          group: group._id,
+          isOverride: true,
+          date: { $gte: now },
+      });
+
+      if (upcomingOverride) {
+          console.log(`Skipping regeneration for group '${group.name}' because a future override event exists.`);
+          continue;
+      }
+
       const nextEventDate = calculateNextEventDate(group.schedule, group.time, group.timezone);
       await Event.create({
         group: group._id,
@@ -94,6 +89,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
         timezone: group.timezone,
         members: group.members,
         undecided: group.members,
+        isOverride: false,
       });
       console.log(`Regenerated event for group '${group.name}' for ${nextEventDate.toDateString()}`);
     }

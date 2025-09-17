@@ -1,23 +1,19 @@
 import asyncHandler from "express-async-handler";
 import Event from "../models/event.model.js";
 import User from "../models/user.model.js";
+import Group from "../models/group.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 
-// This function finds all upcoming events for the currently logged-in user.
 export const getEvents = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
-
   const currentUser = await User.findOne({ clerkId }).lean();
   if (!currentUser) {
     return res.status(404).json({ error: "User not found." });
   }
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // --- MODIFICATION: Populate the 'members' field ---
-  // This will replace the member IDs with actual user objects (name, picture, etc.)
   const upcomingEvents = await Event.find({
     members: currentUser._id,
     date: { $gte: today },
@@ -26,24 +22,52 @@ export const getEvents = asyncHandler(async (req, res) => {
       path: "members",
       select: "firstName lastName _id profilePicture",
   })
+  .populate({
+      path: "group",
+      select: "owner",
+  })
   .sort({ date: "asc" });
 
   res.status(200).json(upcomingEvents);
 });
 
-// --- ADDED: New function to handle an RSVP submission ---
+export const updateEvent = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { eventId } = req.params;
+    const { date, time, timezone } = req.body;
+
+    if (!date || !time || !timezone) {
+        return res.status(400).json({ error: "Date, time, and timezone are required." });
+    }
+
+    const event = await Event.findById(eventId).populate('group');
+    const requester = await User.findOne({ clerkId }).lean();
+    
+    if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
+
+    if (event.group.owner.toString() !== requester._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can edit this event." });
+    }
+
+    event.date = date;
+    event.time = time;
+    event.timezone = timezone;
+    event.isOverride = true;
+    await event.save();
+
+    res.status(200).json({ message: "Event updated successfully.", event });
+});
+
 export const handleRsvp = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
   const { eventId } = req.params;
-  const { status } = req.body; // Expecting 'in' or 'out'
+  const { status } = req.body;
 
-  // Find the current user to get their MongoDB _id
   const currentUser = await User.findOne({ clerkId }).lean();
   if (!currentUser) {
     return res.status(404).json({ error: "User not found." });
   }
 
-  // Basic validation
   if (!['in', 'out'].includes(status)) {
     return res.status(400).json({ error: "Invalid RSVP status." });
   }
@@ -56,8 +80,6 @@ export const handleRsvp = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "Event not found." });
   }
 
-  // Use Mongoose operators to atomically move the user's ID between arrays.
-  // First, pull the user from all possible arrays to ensure they only exist in one.
   await Event.updateOne(
     { _id: eventId },
     {
@@ -69,11 +91,10 @@ export const handleRsvp = asyncHandler(async (req, res) => {
     }
   );
 
-  // Now, add the user to the correct array based on their new status.
   await Event.updateOne(
     { _id: eventId },
     {
-      $addToSet: { [status]: currentUser._id }, // [status] dynamically uses 'in' or 'out'
+      $addToSet: { [status]: currentUser._id },
     }
   );
 
