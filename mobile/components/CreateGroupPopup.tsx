@@ -20,7 +20,9 @@ interface CreateGroupPopupProps { onClose: () => void; }
 const CreateGroupPopup: React.FC<CreateGroupPopupProps> = ({ onClose }) => {
   const [groupName, setGroupName] = useState("");
   const [meetTime, setMeetTime] = useState("05:00 PM");
-  const [schedule, setSchedule] = useState<Schedule>({ frequency: 'weekly', day: 1 });
+  // --- THIS IS THE FIX ---
+  // The schedule state now correctly uses a 'days' array to match the new type
+  const [schedule, setSchedule] = useState<Schedule>({ frequency: 'weekly', days: [1] });
   const [timezone, setTimezone] = useState("America/Denver");
   
   const { mutate, isPending } = useCreateGroup();

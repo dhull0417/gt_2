@@ -31,16 +31,20 @@ const GroupScreen = () => {
 
     const formatSchedule = (schedule: Schedule): string => {
         if (schedule.frequency === 'weekly') {
-            const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            return `Weekly on ${daysOfWeek[schedule.day]}`;
+            const daysOfWeek = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+            // Map over the array of day indexes and join them with a comma
+            const selectedDays = schedule.days.map(dayIndex => daysOfWeek[dayIndex]).join(', ');
+            return `Weekly on ${selectedDays}`;
         }
-        const day = schedule.day;
+        // For monthly, we still expect only one day in the array
+        const day = schedule.days[0];
         let suffix = 'th';
         if ([1, 21, 31].includes(day)) suffix = 'st';
         else if ([2, 22].includes(day)) suffix = 'nd';
         else if ([3, 23].includes(day)) suffix = 'rd';
         return `Monthly on the ${day}${suffix}`;
     };
+
     const handleAddMember = () => {
         if (!userIdToAdd.trim() || !selectedGroup) return;
         addMember({ groupId: selectedGroup._id, userId: userIdToAdd }, {
@@ -201,15 +205,7 @@ const GroupScreen = () => {
                         )}
                         <View className="mt-4 pt-4 border-t border-gray-300">
                              {currentUser && currentUser._id === selectedGroup.owner && (
-                                <Link 
-                                    href={{ 
-                                        // --- THIS IS THE FIX ---
-                                        // The pathname and params key now use a hyphen, as suggested by the error message.
-                                        pathname: "/schedule-event/[group-id]",
-                                        params: { "group-id": selectedGroup._id }
-                                    }} 
-                                    asChild
-                                >
+                                <Link href={{ pathname: `/schedule-event/[group-id]`, params: { "group-id": selectedGroup._id } }} asChild>
                                     <TouchableOpacity className="py-4 mb-4 rounded-lg items-center shadow bg-blue-500">
                                         <Text className="text-white text-lg font-bold">Schedule One-Off Event</Text>
                                     </TouchableOpacity>

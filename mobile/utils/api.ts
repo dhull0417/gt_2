@@ -6,7 +6,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
-  day: number;
+  days: number[]; // MODIFIED: Changed 'day' to 'days' to support multiple days
 }
 export interface User {
   _id: string;

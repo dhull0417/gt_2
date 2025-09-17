@@ -3,30 +3,49 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-nati
 
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
-  day: number;
+  days: number[]; // The state now holds an array of days
 }
 
 interface SchedulePickerProps {
     onScheduleChange: (schedule: Schedule) => void;
-    initialValue?: Schedule; // Can accept an initial schedule object
+    initialValue?: Schedule;
 }
 
 const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const daysOfMonth = Array.from({ length: 31 }, (_, i) => i + 1);
 
 const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange, initialValue }) => {
-  // Initialize state with the initialValue if provided, otherwise use a default
-  const [schedule, setSchedule] = useState<Schedule>(initialValue || { frequency: 'weekly', day: 1 });
+  // Initialize state with the initialValue or a default
+  const [schedule, setSchedule] = useState<Schedule>(initialValue || { frequency: 'weekly', days: [1] });
 
   useEffect(() => {
     onScheduleChange(schedule);
   }, [schedule, onScheduleChange]);
 
   const setFrequency = (frequency: 'weekly' | 'monthly') => {
-    setSchedule({ frequency, day: frequency === 'weekly' ? 1 : 15 });
+    // When switching frequency, reset the days to a sensible default
+    const newDays = frequency === 'weekly' ? [1] : [15];
+    setSchedule({ frequency, days: newDays });
   };
-  const setDay = (day: number) => {
-    setSchedule(currentSchedule => ({ ...currentSchedule, day }));
+
+  const toggleDay = (dayValue: number) => {
+    if (schedule.frequency === 'weekly') {
+      const newDays = [...schedule.days];
+      const index = newDays.indexOf(dayValue);
+      if (index > -1) {
+        // If the day is already selected, remove it (unless it's the last one)
+        if (newDays.length > 1) {
+            newDays.splice(index, 1);
+        }
+      } else {
+        // If the day is not selected, add it
+        newDays.push(dayValue);
+      }
+      setSchedule({ ...schedule, days: newDays.sort() });
+    } else { // monthly
+      // For monthly, it's still a single selection
+      setSchedule({ ...schedule, days: [dayValue] });
+    }
   };
 
   return (
@@ -44,11 +63,12 @@ const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange, initi
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {(schedule.frequency === 'weekly' ? daysOfWeek : daysOfMonth).map((dayLabel, index) => {
             const dayValue = schedule.frequency === 'weekly' ? index : (dayLabel as number);
-            const isSelected = schedule.day === dayValue;
+            // Check if the current day is in the 'days' array
+            const isSelected = schedule.days.includes(dayValue);
             return (
               <TouchableOpacity
                 key={dayValue}
-                onPress={() => setDay(dayValue)}
+                onPress={() => toggleDay(dayValue)}
                 style={[styles.dayButton, isSelected && styles.dayButtonSelected]}
               >
                 <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>{dayLabel}</Text>
