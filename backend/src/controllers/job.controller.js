@@ -12,7 +12,7 @@ const calculateNextEventDate = (schedule, groupTime, timezone) => {
   let eventDate;
   if (schedule.frequency === 'weekly') {
     const targetWeekday = schedule.day === 0 ? 7 : schedule.day;
-    let eventDateTime = now.set({ hour: hour, minute: minute, second: 0, millisecond: 0 });
+    let eventDateTime = now.set({ hour, minute, second: 0, millisecond: 0 });
     if (targetWeekday > now.weekday || (targetWeekday === now.weekday && eventDateTime > now)) {
         eventDate = eventDateTime.set({ weekday: targetWeekday });
     } else {
@@ -20,7 +20,7 @@ const calculateNextEventDate = (schedule, groupTime, timezone) => {
     }
   } else {
     const targetDayOfMonth = schedule.day;
-    let eventDateTime = now.set({ day: targetDayOfMonth, hour: hour, minute: minute, second: 0, millisecond: 0 });
+    let eventDateTime = now.set({ day: targetDayOfMonth, hour, minute, second: 0, millisecond: 0 });
     if (eventDateTime < now) {
       eventDate = eventDateTime.plus({ months: 1 });
     } else {
@@ -45,51 +45,56 @@ const parseTime = (timeString) => {
 export const regenerateEvents = asyncHandler(async (req, res) => {
   console.log("Cron job started: Regenerating events...");
   const now = new Date();
+  const allEvents = await Event.find().lean();
   
-  // 1. Find only the automatically scheduled events that have expired.
-  const expiredRecurringEvents = await Event.find({
-      isOverride: false, // Only look for the main recurring events
-  }).lean();
-
-  const eventsToDelete = expiredRecurringEvents.filter(event => {
+  const expiredEvents = allEvents.filter(event => {
     const eventDateTime = new Date(event.date);
     const { hours, minutes } = parseTime(event.time);
     eventDateTime.setUTCHours(hours, minutes);
     return eventDateTime < now;
   });
-  
-  // Note: One-off events (isOverride: true) are now left alone until they are manually deleted or handled differently.
-  // This is a simple approach. A more advanced one could clean up expired one-offs here too.
 
-  if (eventsToDelete.length === 0) {
-    console.log("No recurring events to process. Job finished.");
-    return res.status(200).json({ message: "No recurring events to process." });
+  if (expiredEvents.length === 0) {
+    console.log("No expired events to process. Job finished.");
+    return res.status(200).json({ message: "No expired events to process." });
   }
 
-  const expiredEventIds = eventsToDelete.map(e => e._id);
-  const groupIdsToRegenerate = [...new Set(eventsToDelete.map(e => String(e.group)))];
+  const expiredEventIds = expiredEvents.map(e => e._id);
+  // Find which of the expired events were recurring ones
+  const groupIdsToRegenerate = [...new Set(expiredEvents
+    .filter(e => !e.isOverride)
+    .map(e => String(e.group)))
+  ];
 
-  // 2. Delete only the expired recurring events
   await Event.deleteMany({ _id: { $in: expiredEventIds } });
-  console.log(`Deleted ${expiredEventIds.length} expired recurring events.`);
+  console.log(`Deleted ${expiredEventIds.length} expired events.`);
 
   const groups = await Group.find({ _id: { $in: groupIdsToRegenerate } });
 
   for (const group of groups) {
     if (group.schedule) {
-      // 3. We can now safely generate the next recurring event
-      const nextEventDate = calculateNextEventDate(group.schedule, group.time, group.timezone);
-      await Event.create({
-        group: group._id,
-        name: group.name,
-        date: nextEventDate,
-        time: group.time,
-        timezone: group.timezone,
-        members: group.members,
-        undecided: group.members,
-        isOverride: false, // Ensure it's marked as a recurring event
+      const upcomingEvent = await Event.findOne({
+          group: group._id,
+          date: { $gte: now },
       });
-      console.log(`Regenerated recurring event for group '${group.name}'`);
+      
+      // Only generate a new event if no other event (recurring or override) exists for this group
+      if (!upcomingEvent) {
+          const nextEventDate = calculateNextEventDate(group.schedule, group.time, group.timezone);
+          await Event.create({
+            group: group._id,
+            name: group.name,
+            date: nextEventDate,
+            time: group.time,
+            timezone: group.timezone,
+            members: group.members,
+            undecided: group.members,
+            isOverride: false,
+          });
+          console.log(`Regenerated event for group '${group.name}' for ${nextEventDate.toDateString()}`);
+      } else {
+        console.log(`Skipping regeneration for group '${group.name}' because a future event already exists.`);
+      }
     }
   }
 

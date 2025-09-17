@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Platform } from 'react-native';
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
@@ -27,23 +27,33 @@ const EventEditScreen = () => {
     const eventToEdit = queryClient.getQueryData<Event[]>(['events'])?.find(e => e._id === id);
 
     const [date, setDate] = useState(new Date());
+    const [tempDate, setTempDate] = useState(new Date()); // Temporary state for the picker
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [meetTime, setMeetTime] = useState("05:00 PM");
     const [timezone, setTimezone] = useState("America/Denver");
 
     useEffect(() => {
         if (eventToEdit) {
-            setDate(new Date(eventToEdit.date));
+            const initialDate = new Date(eventToEdit.date);
+            setDate(initialDate);
+            setTempDate(initialDate);
             setMeetTime(eventToEdit.time);
             setTimezone(eventToEdit.timezone);
         }
     }, [eventToEdit]);
 
     const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-        setShowDatePicker(false);
-        if (selectedDate) {
-            setDate(selectedDate);
+        if (Platform.OS === 'android') {
+            setShowDatePicker(false);
         }
+        if (selectedDate) {
+            setTempDate(selectedDate); // Only update temp date during selection
+        }
+    };
+
+    const confirmDate = () => {
+        setDate(tempDate); // Finalize the date selection
+        setShowDatePicker(false);
     };
     
     const handleSaveChanges = () => {
@@ -52,7 +62,7 @@ const EventEditScreen = () => {
     };
 
     if (!eventToEdit) {
-        return <Text style={{textAlign: 'center', marginTop: 20}}>Event not found or data is still loading. Please go back and try again.</Text>;
+        return <Text style={{textAlign: 'center', marginTop: 20}}>Event not found. Please go back and try again.</Text>;
     }
 
     return (
@@ -63,14 +73,6 @@ const EventEditScreen = () => {
                     <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateButton}>
                         <Text style={styles.dateButtonText}>{date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}</Text>
                     </TouchableOpacity>
-                    {showDatePicker && (
-                        <DateTimePicker
-                            value={date}
-                            mode="date"
-                            display="spinner"
-                            onChange={onDateChange}
-                        />
-                    )}
                 </View>
                 
                 <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
@@ -96,6 +98,41 @@ const EventEditScreen = () => {
                     <Text style={styles.saveButtonText}>{isPending ? "Saving..." : "Save Changes"}</Text>
                 </TouchableOpacity>
             </ScrollView>
+
+            {/* --- THIS IS THE NEW MODAL FOR THE DATE PICKER --- */}
+            {showDatePicker && (
+                // On Android, the default picker is a modal, so we only need the custom modal for iOS
+                Platform.OS === 'ios' ? (
+                    <Modal
+                        animationType="slide"
+                        transparent={true}
+                        visible={showDatePicker}
+                        onRequestClose={() => setShowDatePicker(false)}
+                    >
+                        <View style={styles.modalContainer}>
+                            <View style={styles.datePickerContent}>
+                                <DateTimePicker
+                                    value={tempDate}
+                                    mode="date"
+                                    display="spinner"
+                                    onChange={onDateChange}
+                                    textColor='black' // Fix for invisible text
+                                />
+                                <TouchableOpacity onPress={confirmDate} style={styles.doneButton}>
+                                    <Text style={styles.doneButtonText}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </Modal>
+                ) : (
+                    <DateTimePicker
+                        value={tempDate}
+                        mode="date"
+                        display="default"
+                        onChange={onDateChange}
+                    />
+                )
+            )}
         </SafeAreaView>
     );
 };
@@ -108,7 +145,11 @@ const styles = StyleSheet.create({
     pickerWrapper: { backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB', overflow: 'hidden' },
     saveButton: { width: '100%', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 24, backgroundColor: '#4F46E5' },
     saveButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
-    pickerItem: { color: 'black', fontSize: 18 }
+    pickerItem: { color: 'black', fontSize: 18 },
+    modalContainer: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    datePickerContent: { backgroundColor: 'white', borderTopRightRadius: 20, borderTopLeftRadius: 20, padding: 16 },
+    doneButton: { backgroundColor: '#4F46E5', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+    doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
 });
 
 export default EventEditScreen;

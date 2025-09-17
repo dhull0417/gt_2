@@ -1,7 +1,7 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
-import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Platform } from 'react-native';
+import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useCreateOneOffEvent } from '@/hooks/useCreateOneOffEvent';
 import TimePicker from '@/components/TimePicker';
 import { Picker } from '@react-native-picker/picker';
@@ -19,30 +19,31 @@ const usaTimezones = [
 ];
 
 const ScheduleEventScreen = () => {
-    // --- THIS IS THE FIX ---
-    // The parameter is now correctly destructured as "group-id" to match the file name
     const { "group-id": groupId } = useLocalSearchParams<{ "group-id": string }>();
     const { mutate: createOneOffEvent, isPending } = useCreateOneOffEvent();
     
-    useEffect(() => {
-        console.log("Schedule Event screen loaded for groupId:", groupId);
-    }, [groupId]);
-
     const [date, setDate] = useState(new Date());
+    const [tempDate, setTempDate] = useState(new Date());
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [meetTime, setMeetTime] = useState("05:00 PM");
     const [timezone, setTimezone] = useState("America/Denver");
 
     const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-        setShowDatePicker(false);
-        if (selectedDate) {
-            setDate(selectedDate);
+        if (Platform.OS === 'android') {
+            setShowDatePicker(false);
         }
+        if (selectedDate) {
+            setTempDate(selectedDate);
+        }
+    };
+
+    const confirmDate = () => {
+        setDate(tempDate);
+        setShowDatePicker(false);
     };
     
     const handleScheduleEvent = () => {
         if (!groupId) {
-            console.error("Cannot schedule event: groupId is missing.");
             Alert.alert("Error", "Could not find the group ID to schedule this event for.");
             return;
         };
@@ -57,14 +58,6 @@ const ScheduleEventScreen = () => {
                     <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateButton}>
                         <Text style={styles.dateButtonText}>{date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
                     </TouchableOpacity>
-                    {showDatePicker && (
-                        <DateTimePicker
-                            value={date}
-                            mode="date"
-                            display="spinner"
-                            onChange={onDateChange}
-                        />
-                    )}
                 </View>
                 
                 <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
@@ -90,6 +83,39 @@ const ScheduleEventScreen = () => {
                     <Text style={styles.saveButtonText}>{isPending ? "Scheduling..." : "Schedule Event"}</Text>
                 </TouchableOpacity>
             </ScrollView>
+
+            {showDatePicker && (
+                 Platform.OS === 'ios' ? (
+                    <Modal
+                        animationType="slide"
+                        transparent={true}
+                        visible={showDatePicker}
+                        onRequestClose={() => setShowDatePicker(false)}
+                    >
+                        <View style={styles.modalContainer}>
+                            <View style={styles.datePickerContent}>
+                                <DateTimePicker
+                                    value={tempDate}
+                                    mode="date"
+                                    display="spinner"
+                                    onChange={onDateChange}
+                                    textColor='black'
+                                />
+                                <TouchableOpacity onPress={confirmDate} style={styles.doneButton}>
+                                    <Text style={styles.doneButtonText}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </Modal>
+                ) : (
+                    <DateTimePicker
+                        value={tempDate}
+                        mode="date"
+                        display="default"
+                        onChange={onDateChange}
+                    />
+                )
+            )}
         </SafeAreaView>
     );
 };
@@ -102,7 +128,11 @@ const styles = StyleSheet.create({
     pickerWrapper: { backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB', overflow: 'hidden' },
     saveButton: { width: '100%', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 24, backgroundColor: '#4F46E5' },
     saveButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
-    pickerItem: { color: 'black', fontSize: 18 }
+    pickerItem: { color: 'black', fontSize: 18 },
+    modalContainer: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    datePickerContent: { backgroundColor: 'white', borderTopRightRadius: 20, borderTopLeftRadius: 20, padding: 16 },
+    doneButton: { backgroundColor: '#4F46E5', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+    doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
 });
 
 export default ScheduleEventScreen;
