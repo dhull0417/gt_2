@@ -87,6 +87,7 @@ const InitialLayout = () => {
       <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true }} />
       <Stack.Screen name="group-edit" options={{ headerShown: false }} />
       <Stack.Screen name="event-edit" options={{ headerShown: false }} />
+      <Stack.Screen name="schedule-event" options={{ headerShown: false }} />
     </Stack>
   );
 };

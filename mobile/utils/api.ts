@@ -73,6 +73,12 @@ interface CreateGroupResponse {
   group: Group;
   message: string;
 }
+interface CreateOneOffEventPayload {
+    groupId: string;
+    date: Date;
+    time: string;
+    timezone: string;
+}
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
   const api = axios.create({ baseURL: API_BASE_URL, headers: { "User-Agent": "GT2MobileApp/1.0" } });
@@ -102,6 +108,10 @@ export const groupApi = {
   },
   updateGroup: async (api: AxiosInstance, { groupId, ...details }: any): Promise<{ group: Group }> => {
     const response = await api.put<{ group: Group }>(`/api/groups/${groupId}`, details);
+    return response.data;
+  },
+  createOneOffEvent: async (api: AxiosInstance, { groupId, ...details }: CreateOneOffEventPayload): Promise<{ event: Event }> => {
+    const response = await api.post<{ event: Event }>(`/api/groups/${groupId}/events`, details);
     return response.data;
   },
   getGroups: async (api: AxiosInstance): Promise<Group[]> => {

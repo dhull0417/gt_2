@@ -27,7 +27,7 @@ const GroupScreen = () => {
     const { mutate: addMember, isPending: isAddingMember } = useAddMember();
     const { mutate: deleteGroup, isPending: isDeletingGroup } = useDeleteGroup();
     const { mutate: leaveGroup, isPending: isLeavingGroup } = useLeaveGroup();
-    const { mutate: removeMember } = useRemoveMember();
+    const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
 
     const formatSchedule = (schedule: Schedule): string => {
         if (schedule.frequency === 'weekly') {
@@ -94,7 +94,7 @@ const GroupScreen = () => {
     const renderGroupList = () => {
         if (isLoadingGroups || !currentUser) return <ActivityIndicator size="large" color="#4f46e5" className="mt-8"/>;
         if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
-        if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You are not in any groups yet.</Text>;
+        if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
         return groups.map((group) => (
             <TouchableOpacity key={group._id} className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200" onPress={() => handleOpenGroupDetail(group)}>
                 <Text className="text-lg font-semibold text-gray-800">{group.name}</Text>
@@ -137,8 +137,6 @@ const GroupScreen = () => {
                             <Text className="text-lg text-gray-800 font-semibold">Group Details</Text>
                             {currentUser && currentUser._id === selectedGroup.owner && (
                                 <Link 
-                                    // --- THIS IS THE FIX ---
-                                    // Use the object syntax and cast to 'any' to bypass the type error
                                     href={{
                                         pathname: "/group-edit/[id]" as any,
                                         params: { id: selectedGroup._id },
@@ -173,7 +171,7 @@ const GroupScreen = () => {
                                                 <Text className="text-base text-gray-700 flex-1">{member.firstName} {member.lastName}</Text>
                                             </View>
                                             {canRemove && (
-                                                <TouchableOpacity onPress={() => handleRemoveMember(member._id)} className="p-2">
+                                                <TouchableOpacity onPress={() => handleRemoveMember(member._id)} disabled={isRemovingMember} className="p-2">
                                                     <Feather name="x-circle" size={24} color="#ef4444" />
                                                 </TouchableOpacity>
                                             )}
@@ -202,6 +200,21 @@ const GroupScreen = () => {
                             </View>
                         )}
                         <View className="mt-4 pt-4 border-t border-gray-300">
+                             {currentUser && currentUser._id === selectedGroup.owner && (
+                                <Link 
+                                    href={{ 
+                                        // --- THIS IS THE FIX ---
+                                        // The pathname and params key now use a hyphen, as suggested by the error message.
+                                        pathname: "/schedule-event/[group-id]",
+                                        params: { "group-id": selectedGroup._id }
+                                    }} 
+                                    asChild
+                                >
+                                    <TouchableOpacity className="py-4 mb-4 rounded-lg items-center shadow bg-blue-500">
+                                        <Text className="text-white text-lg font-bold">Schedule One-Off Event</Text>
+                                    </TouchableOpacity>
+                                </Link>
+                            )}
                             {currentUser && currentUser._id !== selectedGroup.owner && groupDetails?.members.some(m => m._id === currentUser._id) && (
                                 <TouchableOpacity
                                     onPress={handleLeaveGroup}
