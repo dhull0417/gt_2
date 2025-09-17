@@ -2,7 +2,10 @@ import mongoose from "mongoose";
 
 const scheduleSchema = new mongoose.Schema({
   frequency: { type: String, required: true, enum: ['weekly', 'monthly'] },
-  day: { type: Number, required: true }, 
+    days: [{ 
+    type: Number, 
+    required: true 
+  }], 
 }, { _id: false });
 
 const groupSchema = new mongoose.Schema({
