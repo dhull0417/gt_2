@@ -1,7 +1,7 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useUpdateGroup } from '@/hooks/useUpdateGroup';
 import TimePicker from '@/components/TimePicker';
@@ -20,16 +20,15 @@ const usaTimezones = [
 
 const GroupEditScreen = () => {
     const { id } = useLocalSearchParams<{ id: string }>();
+    const router = useRouter();
 
     const { data: groupDetails, isLoading } = useGetGroupDetails(id);
     const { mutate: updateGroup, isPending } = useUpdateGroup();
 
-    // State for the form, initialized as empty
     const [meetTime, setMeetTime] = useState<string | undefined>();
     const [timezone, setTimezone] = useState<string | undefined>();
     const [schedule, setSchedule] = useState<Schedule | undefined>();
 
-    // When the group data loads, pre-fill the form state
     useEffect(() => {
         if (groupDetails) {
             setMeetTime(groupDetails.time);
@@ -43,36 +42,54 @@ const GroupEditScreen = () => {
         updateGroup({ groupId: id, time: meetTime, schedule, timezone });
     };
 
-    if (isLoading || !groupDetails) {
-        return <ActivityIndicator size="large" className="mt-8" />;
+    if (isLoading || !groupDetails || !schedule) {
+        return <ActivityIndicator size="large" style={{ marginTop: 32 }} />;
     }
 
     return (
-        <SafeAreaView className="flex-1 bg-gray-50">
-            <ScrollView className="p-6">
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+            <ScrollView style={{ padding: 24 }} keyboardShouldPersistTaps="handled">
                 <TimePicker onTimeChange={setMeetTime} initialValue={groupDetails.time} />
-                <View className="w-full my-4">
-                    <Text className="text-lg font-semibold text-gray-700 mb-2 text-center">Select Timezone</Text>
-                    <View className="bg-white rounded-lg border border-gray-300 overflow-hidden">
-                        <Picker selectedValue={timezone} onValueChange={setTimezone}>
+                <View style={styles.timezoneContainer}>
+                    <Text style={styles.timezoneTitle}>Select Timezone</Text>
+                    <View style={styles.pickerWrapper}>
+                        <Picker 
+                            selectedValue={timezone} 
+                            onValueChange={setTimezone}
+                            // --- THIS IS THE FIX for the invisible text ---
+                            itemStyle={styles.pickerItem}
+                        >
                             {usaTimezones.map(tz => <Picker.Item key={tz.value} label={tz.label} value={tz.value} />)}
                         </Picker>
                     </View>
                 </View>
-                {/* Ensure the SchedulePicker is only rendered when we have an initial value */}
-                {schedule && (
-                    <SchedulePicker onScheduleChange={setSchedule} initialValue={schedule} />
-                )}
+                
+                <SchedulePicker onScheduleChange={setSchedule} initialValue={schedule} />
+                
                 <TouchableOpacity
                     onPress={handleSaveChanges}
                     disabled={isPending}
-                    className={`w-full p-4 rounded-lg items-center mt-6 ${isPending ? 'bg-indigo-300' : 'bg-indigo-600'}`}
+                    style={[styles.saveButton, isPending && { backgroundColor: '#A5B4FC' }]}
                 >
-                    <Text className="text-white text-lg font-bold">{isPending ? "Saving..." : "Save Changes"}</Text>
+                    <Text style={styles.saveButtonText}>{isPending ? "Saving..." : "Save Changes"}</Text>
                 </TouchableOpacity>
             </ScrollView>
         </SafeAreaView>
     );
 };
+
+const styles = StyleSheet.create({
+    headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#1F2937', marginBottom: 8 },
+    headerSubtitle: { fontSize: 18, color: '#4B5563', marginBottom: 24 },
+    timezoneContainer: { width: '100%', marginVertical: 16 },
+    timezoneTitle: { fontSize: 18, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
+    pickerWrapper: { backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB', overflow: 'hidden' },
+    saveButton: { width: '100%', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 24, backgroundColor: '#4F46E5' },
+    saveButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
+    pickerItem: {
+        color: 'black',
+        fontSize: 18,
+    }
+});
 
 export default GroupEditScreen;
