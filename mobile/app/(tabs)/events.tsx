@@ -1,10 +1,11 @@
-import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator, Image } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Modal, ActivityIndicator, Image, Alert } from 'react-native';
 import React, { useState, useCallback } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useFocusEffect } from 'expo-router';
 import { useGetEvents } from '@/hooks/useGetEvents';
 import { useRsvp } from '@/hooks/useRsvp';
+import { useDeleteEvent } from '@/hooks/useDeleteEvent';
 import { Event, User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 
@@ -16,6 +17,7 @@ const EventsScreen = () => {
     const queryClient = useQueryClient();
     const { data: events, isLoading, isError, refetch } = useGetEvents();
     const { mutate: rsvp, isPending: isRsvping } = useRsvp();
+    const { mutate: deleteEvent, isPending: isDeletingEvent } = useDeleteEvent();
     
     const { data: currentUser } = useQuery<User, Error>({
         queryKey: ['currentUser'],
@@ -94,6 +96,24 @@ const EventsScreen = () => {
         if (selectedEvent?.in.includes(userId)) return 'in';
         if (selectedEvent?.out.includes(userId)) return 'out';
         return 'undecided';
+    };
+
+    const handleDeleteEvent = () => {
+        if (!selectedEvent) return;
+        Alert.alert(
+            "Delete Event",
+            "Are you sure you want to delete this event? This may cause a new recurring event to be generated.",
+            [
+                { text: "Cancel", style: "cancel" },
+                { text: "Delete", style: "destructive", onPress: () => {
+                    deleteEvent({ eventId: selectedEvent._id }, {
+                        onSuccess: () => {
+                            handleCloseModal(); // Close the modal on success
+                        }
+                    });
+                }},
+            ]
+        );
     };
 
     return (
@@ -185,6 +205,19 @@ const EventsScreen = () => {
                                 </View>
                             )
                         })}
+                        {currentUser && selectedEvent.group.owner === currentUser._id && (
+                            <View className="mt-8 pt-4 border-t border-gray-200">
+                                <TouchableOpacity
+                                    onPress={handleDeleteEvent}
+                                    disabled={isDeletingEvent}
+                                    className={`py-4 rounded-lg items-center shadow ${isDeletingEvent ? 'bg-red-300' : 'bg-red-600'}`}
+                                >
+                                    <Text className="text-white text-lg font-bold">
+                                        {isDeletingEvent ? "Deleting..." : "Delete Event"}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
                     </ScrollView>
                 </View>
             )}

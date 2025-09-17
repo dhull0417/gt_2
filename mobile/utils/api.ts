@@ -30,7 +30,7 @@ export interface GroupDetails extends Group {
 }
 export interface Event {
   _id: string;
-  group: { // MODIFIED: Now an object to hold the owner's ID
+  group: {
     _id: string;
     owner: string;
   };
@@ -50,6 +50,12 @@ interface CreateGroupPayload {
   schedule: Schedule;
   timezone: string;
 }
+interface UpdateGroupPayload {
+    groupId: string;
+    time: string;
+    schedule: Schedule;
+    timezone: string;
+}
 interface AddMemberPayload {
   groupId: string;
   userId: string;
@@ -58,7 +64,6 @@ interface RemoveMemberPayload {
   groupId: string;
   memberIdToRemove: string;
 }
-// 1. --- ADDED: Interface for the update event payload ---
 interface UpdateEventPayload {
     eventId: string;
     date: Date;
@@ -106,7 +111,7 @@ export const groupApi = {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);
     return response.data;
   },
-  updateGroup: async (api: AxiosInstance, { groupId, ...details }: any): Promise<{ group: Group }> => {
+  updateGroup: async (api: AxiosInstance, { groupId, ...details }: UpdateGroupPayload): Promise<{ group: Group }> => {
     const response = await api.put<{ group: Group }>(`/api/groups/${groupId}`, details);
     return response.data;
   },
@@ -148,9 +153,12 @@ export const eventApi = {
     const response = await api.post(`/api/events/${eventId}/rsvp`, { status });
     return response.data;
   },
-  // 2. --- ADDED: New function to update a single event ---
   updateEvent: async (api: AxiosInstance, { eventId, ...details }: UpdateEventPayload): Promise<{ event: Event }> => {
     const response = await api.put<{ event: Event }>(`/api/events/${eventId}`, details);
+    return response.data;
+  },
+  deleteEvent: async (api: AxiosInstance, eventId: string): Promise<{ message: string }> => {
+    const response = await api.delete(`/api/events/${eventId}`);
     return response.data;
   }
 };
