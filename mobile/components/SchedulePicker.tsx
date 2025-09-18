@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
-  days: number[]; // The state now holds an array of days
+  days: number[];
 }
 
 interface SchedulePickerProps {
@@ -15,7 +15,6 @@ const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const daysOfMonth = Array.from({ length: 31 }, (_, i) => i + 1);
 
 const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange, initialValue }) => {
-  // Initialize state with the initialValue or a default
   const [schedule, setSchedule] = useState<Schedule>(initialValue || { frequency: 'weekly', days: [1] });
 
   useEffect(() => {
@@ -23,29 +22,28 @@ const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange, initi
   }, [schedule, onScheduleChange]);
 
   const setFrequency = (frequency: 'weekly' | 'monthly') => {
-    // When switching frequency, reset the days to a sensible default
     const newDays = frequency === 'weekly' ? [1] : [15];
     setSchedule({ frequency, days: newDays });
   };
 
   const toggleDay = (dayValue: number) => {
-    if (schedule.frequency === 'weekly') {
-      const newDays = [...schedule.days];
-      const index = newDays.indexOf(dayValue);
-      if (index > -1) {
-        // If the day is already selected, remove it (unless it's the last one)
-        if (newDays.length > 1) {
-            newDays.splice(index, 1);
-        }
-      } else {
-        // If the day is not selected, add it
-        newDays.push(dayValue);
+    const newDays = [...schedule.days];
+    const index = newDays.indexOf(dayValue);
+
+    if (index > -1) {
+      // If the day is already selected, remove it (unless it's the last one)
+      if (newDays.length > 1) {
+          newDays.splice(index, 1);
       }
-      setSchedule({ ...schedule, days: newDays.sort() });
-    } else { // monthly
-      // For monthly, it's still a single selection
-      setSchedule({ ...schedule, days: [dayValue] });
+    } else {
+      // If the day is not selected, check the limit before adding it
+      if (schedule.frequency === 'monthly' && newDays.length >= 10) {
+          Alert.alert("Limit Reached", "You can select up to 10 dates for monthly events.");
+          return; // Stop the function here
+      }
+      newDays.push(dayValue);
     }
+    setSchedule({ ...schedule, days: newDays.sort((a, b) => a - b) });
   };
 
   return (
@@ -60,10 +58,15 @@ const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange, initi
             <Text style={[styles.freqText, schedule.frequency === 'monthly' && styles.freqTextActive]}>Monthly</Text>
           </TouchableOpacity>
         </View>
+        
+        {/* Conditionally render the limit text for monthly selection */}
+        {schedule.frequency === 'monthly' && (
+            <Text style={styles.limitText}>Up to 10 dates may be selected</Text>
+        )}
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {(schedule.frequency === 'weekly' ? daysOfWeek : daysOfMonth).map((dayLabel, index) => {
             const dayValue = schedule.frequency === 'weekly' ? index : (dayLabel as number);
-            // Check if the current day is in the 'days' array
             const isSelected = schedule.days.includes(dayValue);
             return (
               <TouchableOpacity
@@ -89,6 +92,7 @@ const styles = StyleSheet.create({
   freqButtonActive: { backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41, elevation: 2 },
   freqText: { fontWeight: '600', color: '#4B5563' },
   freqTextActive: { color: '#4F46E5' },
+  limitText: { textAlign: 'center', color: '#6B7280', fontSize: 12, marginBottom: 12 },
   dayButton: { height: 48, width: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginRight: 8, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB' },
   dayButtonSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
   dayText: { fontWeight: 'bold', fontSize: 14, color: '#374151' },
