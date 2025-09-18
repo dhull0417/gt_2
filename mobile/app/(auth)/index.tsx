@@ -60,7 +60,6 @@ export default function Index() {
                 </Text>
               </TouchableOpacity>
             </Link>
-
           </View>
           <View>
             <Text className="text-center text-gray-500 text-xs leading-4 mt-6 px-2">

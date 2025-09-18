@@ -5,7 +5,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useFocusEffect } from 'expo-router';
 import { useGetEvents } from '@/hooks/useGetEvents';
 import { useRsvp } from '@/hooks/useRsvp';
-import { Event, User, useApiClient, userApi } from '@/utils/api';
+import { useDeleteEvent } from '@/hooks/useDeleteEvent';
+import { useRemoveScheduledDay } from '@/hooks/useRemoveScheduledDay';
+import { Event, User, useApiClient, userApi, GroupDetails, groupApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 
@@ -24,6 +26,8 @@ const EventsScreen = () => {
     const queryClient = useQueryClient();
     const { data: events, isLoading, isError, refetch } = useGetEvents();
     const { mutate: rsvp, isPending: isRsvping } = useRsvp();
+    const { mutate: deleteEvent, isPending: isDeletingEvent } = useDeleteEvent();
+    const { mutate: removeScheduledDay, isPending: isRemovingDay } = useRemoveScheduledDay();
     const { data: currentUser } = useQuery<User, Error>({
         queryKey: ['currentUser'],
         queryFn: () => userApi.getCurrentUser(api),
@@ -41,7 +45,7 @@ const EventsScreen = () => {
             'Future': [],
         };
         
-        if (!events) return groups; // Return the typed empty object
+        if (!events) return groups;
 
         const today = DateTime.now().startOf('day');
 
@@ -118,6 +122,59 @@ const EventsScreen = () => {
         return 'undecided';
     };
 
+    const handleDeleteThisEvent = () => {
+        if (!selectedEvent) return;
+        const confirmationMessage = selectedEvent.isOverride 
+            ? "Are you sure you want to delete this one-off event?"
+            : "Are you sure you want to delete this single event? A new one will be generated for the next occurrence.";
+        
+        Alert.alert("Delete This Event?", confirmationMessage, [
+            { text: "Cancel", style: "cancel" },
+            { text: "Delete", style: "destructive", onPress: () => {
+                deleteEvent({ eventId: selectedEvent._id }, {
+                    onSuccess: () => {
+                        if (!selectedEvent.isOverride) {
+                            Alert.alert("Success", "The next occurrence for this event has been created.");
+                        }
+                        handleCloseModal();
+                    }
+                });
+            }},
+        ]);
+    };
+
+    const handleRemoveThisDay = async () => {
+        if (!selectedEvent) return;
+        try {
+            const group: GroupDetails = await queryClient.fetchQuery({
+                queryKey: ['groupDetails', selectedEvent.group._id],
+                queryFn: () => groupApi.getGroupDetails(api, selectedEvent.group._id),
+            });
+
+            if (!group.schedule) return;
+
+            const eventDate = DateTime.fromISO(selectedEvent.date, { zone: selectedEvent.timezone });
+            const dayToRemove = group.schedule.frequency === 'weekly' 
+                ? eventDate.weekday === 7 ? 0 : eventDate.weekday
+                : eventDate.day;
+
+            const dayDescription = group.schedule.frequency === 'weekly' 
+                ? eventDate.toFormat('EEEE') 
+                : `the ${eventDate.toFormat('do')}`;
+            
+            Alert.alert(`Delete all future ${dayDescription}s?`, `This will permanently remove this day from the group's recurring schedule.`, [
+                { text: "Cancel", style: "cancel" },
+                { text: "Confirm", style: "destructive", onPress: () => {
+                    removeScheduledDay({ groupId: selectedEvent.group._id, day: dayToRemove, frequency: group.schedule.frequency }, {
+                        onSuccess: () => handleCloseModal()
+                    });
+                }},
+            ]);
+        } catch (error) {
+            Alert.alert("Error", "Could not fetch group details to update schedule.");
+        }
+    };
+
     return (
         <SafeAreaView className='flex-1 bg-gray-50'>
             <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
@@ -153,8 +210,8 @@ const EventsScreen = () => {
             {isModalVisible && selectedEvent && (
                 <View className="absolute top-0 bottom-0 left-0 right-0 bg-white">
                     <View 
-                        className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200"
-                        style={{ paddingTop: insets.top + 12, paddingBottom: 12 }}
+                        className="flex-row items-center justify-between px-4"
+                        style={{ paddingTop: insets.top + 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}
                     >
                         <View className="flex-row items-center">
                             <TouchableOpacity onPress={handleCloseModal} className="mr-4">
@@ -170,7 +227,6 @@ const EventsScreen = () => {
                             </Link>
                         )}
                     </View>
-                    
                     <View className="p-6">
                         <Text className="text-base text-gray-600">{formatDate(selectedEvent.date, selectedEvent.timezone)}</Text>
                         <Text className="text-base text-gray-600 mb-6">
@@ -186,8 +242,7 @@ const EventsScreen = () => {
                             </TouchableOpacity>
                         </View>
                     </View>
-                    
-                    <ScrollView className="flex-1 px-6 bg-gray-50">
+                    <ScrollView className="flex-1 px-6 bg-gray-50" contentContainerStyle={{ paddingBottom: 40 }}>
                         <Text className="text-lg text-gray-800 font-semibold mb-2 pt-6">Guest List</Text>
                         {selectedEvent.members.map(member => {
                             const status = getRsvpStatus(member._id);
@@ -205,6 +260,31 @@ const EventsScreen = () => {
                                 </View>
                             )
                         })}
+                        {currentUser && selectedEvent.group.owner === currentUser._id && (
+                            <View className="mt-8 pt-4 border-t border-gray-200 space-y-4">
+                                <Text className="text-base font-semibold text-gray-600 text-center">Owner Actions</Text>
+                                {selectedEvent.isOverride ? (
+                                    <TouchableOpacity
+                                        onPress={handleDeleteThisEvent} disabled={isDeletingEvent}
+                                        className={`py-4 rounded-lg items-center shadow ${isDeletingEvent ? 'bg-red-300' : 'bg-red-600'}`}>
+                                        <Text className="text-white text-lg font-bold">Delete One-Off Event</Text>
+                                    </TouchableOpacity>
+                                ) : (
+                                    <>
+                                        <TouchableOpacity
+                                            onPress={handleDeleteThisEvent} disabled={isDeletingEvent}
+                                            className={`py-4 rounded-lg items-center shadow ${isDeletingEvent ? 'bg-yellow-600' : 'bg-yellow-500'}`}>
+                                            <Text className="text-white text-lg font-bold">Delete This Event Only</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={handleRemoveThisDay} disabled={isRemovingDay}
+                                            className={`py-4 rounded-lg items-center shadow ${isRemovingDay ? 'bg-red-300' : 'bg-red-600'}`}>
+                                            <Text className="text-white text-lg font-bold">Delete All Occurrences on this Day</Text>
+                                        </TouchableOpacity>
+                                    </>
+                                )}
+                            </View>
+                        )}
                     </ScrollView>
                 </View>
             )}

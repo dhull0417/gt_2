@@ -6,7 +6,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export interface Schedule {
   frequency: 'weekly' | 'monthly';
-  days: number[]; // MODIFIED: Changed 'day' to 'days' to support multiple days
+  days: number[];
 }
 export interface User {
   _id: string;
@@ -84,6 +84,11 @@ interface CreateOneOffEventPayload {
     time: string;
     timezone: string;
 }
+interface RemoveScheduledDayPayload {
+    groupId: string;
+    day: number;
+    frequency: 'weekly' | 'monthly';
+}
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
   const api = axios.create({ baseURL: API_BASE_URL, headers: { "User-Agent": "GT2MobileApp/1.0" } });
@@ -118,6 +123,10 @@ export const groupApi = {
   createOneOffEvent: async (api: AxiosInstance, { groupId, ...details }: CreateOneOffEventPayload): Promise<{ event: Event }> => {
     const response = await api.post<{ event: Event }>(`/api/groups/${groupId}/events`, details);
     return response.data;
+  },
+  removeScheduledDay: async (api: AxiosInstance, payload: RemoveScheduledDayPayload): Promise<{ message: string }> => {
+      const response = await api.post(`/api/groups/${payload.groupId}/schedule/remove`, { day: payload.day, frequency: payload.frequency });
+      return response.data;
   },
   getGroups: async (api: AxiosInstance): Promise<Group[]> => {
     const response = await api.get<Group[]>("/api/groups");

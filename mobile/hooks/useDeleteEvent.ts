@@ -15,8 +15,7 @@ export const useDeleteEvent = () => {
       eventApi.deleteEvent(api, variables.eventId),
     
     onSuccess: (data) => {
-      Alert.alert("Success", data.message);
-      // Invalidate the events query to refresh the list
+      // The success message will be customized in the component
       queryClient.invalidateQueries({ queryKey: ['events'] });
     },
     onError: (error: any) => {

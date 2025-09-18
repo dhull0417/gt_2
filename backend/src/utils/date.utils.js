@@ -1,7 +1,8 @@
 import { DateTime } from "luxon";
 
-// This helper function can now be used by any controller.
-export const calculateNextEventDate = (schedule, groupTime, timezone) => {
+// This helper now correctly calculates the next date for a SINGLE target day.
+// It will be called inside a loop by the controllers.
+export const calculateNextEventDate = (targetDay, groupTime, timezone, frequency) => {
   const now = DateTime.now().setZone(timezone);
   const [time, period] = groupTime.split(' ');
   let [hour, minute] = time.split(':').map(Number);
@@ -10,17 +11,25 @@ export const calculateNextEventDate = (schedule, groupTime, timezone) => {
   
   let eventDate;
 
-  if (schedule.frequency === 'weekly') {
-    const targetWeekday = schedule.day === 0 ? 7 : schedule.day;
-    let eventDateTime = now.set({ hour: hour, minute: minute, second: 0, millisecond: 0 });
-    if (targetWeekday > now.weekday || (targetWeekday === now.weekday && eventDateTime > now)) {
-        eventDate = eventDateTime.set({ weekday: targetWeekday });
-    } else {
-        eventDate = eventDateTime.plus({ weeks: 1 }).set({ weekday: targetWeekday });
+  if (frequency === 'weekly') {
+    const targetWeekday = targetDay === 0 ? 7 : targetDay; // Luxon: Mon=1, Sun=7
+    let eventDateTime = now.set({ hour, minute, second: 0, millisecond: 0 });
+
+    // Logic to find the next occurrence of the target weekday
+    if (targetWeekday > now.weekday) {
+      eventDate = eventDateTime.set({ weekday: targetWeekday });
+    } else if (targetWeekday < now.weekday) {
+      eventDate = eventDateTime.plus({ weeks: 1 }).set({ weekday: targetWeekday });
+    } else { // Today is the correct weekday
+      if (eventDateTime > now) {
+        eventDate = eventDateTime; // It's for later today
+      } else {
+        eventDate = eventDateTime.plus({ weeks: 1 }); // It has passed, go to next week
+      }
     }
-  } else {
-    const targetDayOfMonth = schedule.day;
-    let eventDateTime = now.set({ day: targetDayOfMonth, hour: hour, minute: minute, second: 0, millisecond: 0 });
+  } else { // monthly
+    const targetDayOfMonth = targetDay;
+    let eventDateTime = now.set({ day: targetDayOfMonth, hour, minute, second: 0, millisecond: 0 });
     if (eventDateTime < now) {
       eventDate = eventDateTime.plus({ months: 1 });
     } else {

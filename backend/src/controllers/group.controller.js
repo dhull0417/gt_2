@@ -4,15 +4,13 @@ import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
-import { calculateNextEventDate } from "../utils/date.utils.js"; // Import from new location
-
-// The calculateNextEventDate helper function is now removed from this file.
+import { calculateNextEventDate } from "../utils/date.utils.js";
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   const { name, time, schedule, timezone } = req.body;
-  if (!name || !time || !schedule || !timezone) {
-    return res.status(400).json({ error: "All group details are required." });
+  if (!name || !time || !schedule || !timezone || !schedule.days || schedule.days.length === 0) {
+    return res.status(400).json({ error: "All group details, including at least one day, are required." });
   }
   const owner = await User.findOne({ clerkId: userId });
   if (!owner) return res.status(404).json({ error: "User not found." });
@@ -21,18 +19,54 @@ export const createGroup = asyncHandler(async (req, res) => {
   await owner.updateOne({ $addToSet: { groups: newGroup._id } });
 
   try {
-    // This function now uses the imported calculateNextEventDate
-    const eventDate = calculateNextEventDate(newGroup.schedule, newGroup.time, newGroup.timezone);
-    await Event.create({
-      group: newGroup._id, name: newGroup.name, date: eventDate, time: newGroup.time,
-      timezone: newGroup.timezone,
-      members: newGroup.members, undecided: newGroup.members,
-    });
-    console.log(`First event for group '${newGroup.name}' created for ${eventDate.toDateString()}`);
+    for (const day of newGroup.schedule.days) {
+      const eventDate = calculateNextEventDate(day, newGroup.time, newGroup.timezone, newGroup.schedule.frequency);
+      await Event.create({
+        group: newGroup._id, name: newGroup.name, date: eventDate, time: newGroup.time,
+        timezone: newGroup.timezone,
+        members: newGroup.members, undecided: newGroup.members,
+      });
+    }
+    console.log(`Created initial events for new group '${newGroup.name}'`);
   } catch (eventError) {
-    console.error("Failed to create the first event for the new group:", eventError);
+    console.error("Failed to create the first events for the new group:", eventError);
   }
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
+});
+
+export const updateGroup = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+    const { time, schedule, timezone } = req.body;
+    if (!time || !schedule || !timezone || !schedule.days || schedule.days.length === 0) {
+        return res.status(400).json({ error: "Time, schedule, and timezone are required." });
+    }
+    const group = await Group.findById(groupId);
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
+    if (group.owner.toString() !== requester._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can edit the group." });
+    }
+    group.time = time;
+    group.schedule = schedule;
+    group.timezone = timezone;
+    const updatedGroup = await group.save();
+    try {
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        await Event.deleteMany({ group: group._id, isOverride: false, date: { $gte: today } });
+        for (const day of updatedGroup.schedule.days) {
+            const nextEventDate = calculateNextEventDate(day, updatedGroup.time, updatedGroup.timezone, updatedGroup.schedule.frequency);
+            await Event.create({
+                group: updatedGroup._id, name: updatedGroup.name, date: nextEventDate, time: updatedGroup.time,
+                timezone: updatedGroup.timezone, members: updatedGroup.members, undecided: updatedGroup.members,
+            });
+        }
+        console.log(`Regenerated events for updated group '${updatedGroup.name}'`);
+    } catch (eventError) {
+        console.error("Failed to regenerate event after group update:", eventError);
+    }
+    res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
 });
 
 export const getGroups = asyncHandler(async (req, res) => {
@@ -156,51 +190,6 @@ export const removeMember = asyncHandler(async (req, res) => {
     );
     
     res.status(200).json({ message: "Member successfully removed from the group." });
-});
-
-export const updateGroup = asyncHandler(async (req, res) => {
-    const { userId: clerkId } = getAuth(req);
-    const { groupId } = req.params;
-    const { time, schedule, timezone } = req.body;
-
-    if (!time || !schedule || !timezone) {
-        return res.status(400).json({ error: "Time, schedule, and timezone are required." });
-    }
-
-    const group = await Group.findById(groupId);
-    const requester = await User.findOne({ clerkId }).lean();
-    if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
-
-    if (group.owner.toString() !== requester._id.toString()) {
-        return res.status(403).json({ error: "Only the group owner can edit the group." });
-    }
-
-    group.time = time;
-    group.schedule = schedule;
-    group.timezone = timezone;
-    const updatedGroup = await group.save();
-
-    try {
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
-        await Event.deleteMany({ group: group._id, date: { $gte: today } });
-
-        const nextEventDate = calculateNextEventDate(updatedGroup.schedule, updatedGroup.time, updatedGroup.timezone);
-        await Event.create({
-            group: updatedGroup._id,
-            name: updatedGroup.name,
-            date: nextEventDate,
-            time: updatedGroup.time,
-            timezone: updatedGroup.timezone,
-            members: updatedGroup.members,
-            undecided: updatedGroup.members,
-        });
-        console.log(`Regenerated event for updated group '${updatedGroup.name}' for ${nextEventDate.toDateString()}`);
-    } catch (eventError) {
-        console.error("Failed to regenerate event after group update:", eventError);
-    }
-
-    res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
 });
 
 export const createOneOffEvent = asyncHandler(async (req, res) => {
