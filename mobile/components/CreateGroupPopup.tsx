@@ -20,8 +20,6 @@ interface CreateGroupPopupProps { onClose: () => void; }
 const CreateGroupPopup: React.FC<CreateGroupPopupProps> = ({ onClose }) => {
   const [groupName, setGroupName] = useState("");
   const [meetTime, setMeetTime] = useState("05:00 PM");
-  // --- THIS IS THE FIX ---
-  // The schedule state now correctly uses a 'days' array to match the new type
   const [schedule, setSchedule] = useState<Schedule>({ frequency: 'weekly', days: [1] });
   const [timezone, setTimezone] = useState("America/Denver");
   
@@ -38,7 +36,11 @@ const CreateGroupPopup: React.FC<CreateGroupPopupProps> = ({ onClose }) => {
         <TouchableOpacity className="absolute top-2 right-4 p-2 z-10" onPress={onClose}>
           <Text className="text-gray-500 text-xl font-bold">X</Text>
         </TouchableOpacity>
-        <ScrollView showsVerticalScrollIndicator={true} keyboardShouldPersistTaps="handled">
+        {/* --- THIS IS THE FIX: Reverted from FlatList back to ScrollView --- */}
+        <ScrollView 
+            showsVerticalScrollIndicator={true} 
+            keyboardShouldPersistTaps="handled"
+        >
           <Text className="text-3xl font-bold mb-2 text-gray-800 text-center">Create Your Group</Text>
           <Text className="text-lg mb-4 text-gray-600 text-center">Enter group details below</Text>
           <TextInput
