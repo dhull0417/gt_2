@@ -4,7 +4,20 @@ import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
-import { calculateNextEventDate } from "../utils/date.utils.js"; // Import the shared helper
+import { DateTime } from "luxon";
+import { calculateNextEventDate } from "../utils/date.utils.js";
+
+const parseTime = (timeString) => {
+    const [time, period] = timeString.split(' ');
+    let [hours, minutes] = time.split(':').map(Number);
+    if (period.toUpperCase() === 'PM' && hours !== 12) {
+        hours += 12;
+    }
+    if (period.toUpperCase() === 'AM' && hours === 12) {
+        hours = 0;
+    }
+    return { hours, minutes };
+};
 
 export const getEvents = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
@@ -39,6 +52,15 @@ export const updateEvent = asyncHandler(async (req, res) => {
 
     if (!date || !time || !timezone) {
         return res.status(400).json({ error: "Date, time, and timezone are required." });
+    }
+    
+    // --- ADDED: Validation check for past dates ---
+    const { hours, minutes } = parseTime(time);
+    const eventDateTime = DateTime.fromJSDate(new Date(date), { zone: timezone }).set({ hour: hours, minute: minutes });
+    const now = DateTime.now().setZone(timezone);
+
+    if (eventDateTime < now) {
+        return res.status(400).json({ error: "Cannot reschedule an event to the past." });
     }
 
     const event = await Event.findById(eventId).populate('group');
@@ -117,7 +139,6 @@ export const deleteEvent = asyncHandler(async (req, res) => {
                 undecided: parentGroup.members,
                 isOverride: false,
             });
-            console.log(`Regenerated next event for group '${parentGroup.name}'`);
         } catch (regenError) {
             console.error("Failed to regenerate next event after deletion:", regenError);
         }
