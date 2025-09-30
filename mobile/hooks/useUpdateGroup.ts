@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 
 interface UpdateGroupVariables {
   groupId: string;
+  name?: string; // --- ADDED: 'name' is now an optional property ---
   time: string;
   schedule: Schedule;
   timezone: string;
@@ -21,13 +22,11 @@ export const useUpdateGroup = () => {
     
     onSuccess: async (data) => {
       Alert.alert("Success", "Group updated successfully!");
-      
       await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['groups'] }),
           queryClient.invalidateQueries({ queryKey: ['events'] }),
           queryClient.invalidateQueries({ queryKey: ['groupDetails', data.group._id] })
       ]);
-
       router.back();
     },
     onError: (error: any) => {
