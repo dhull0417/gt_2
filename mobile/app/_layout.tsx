@@ -6,28 +6,19 @@ import { ActivityIndicator, View } from "react-native";
 import { useEffect } from "react";
 import * as SecureStore from 'expo-secure-store';
 import { User, useApiClient, userApi } from "@/utils/api";
+import * as SplashScreen from 'expo-splash-screen';
 import "../global.css";
 
+SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
-// --- THIS IS THE FIX ---
-// This is the correct definition for the tokenCache object,
-// as recommended by the Clerk + Expo documentation.
 const tokenCache = {
     async getToken(key: string) {
-        try { 
-            return SecureStore.getItemAsync(key); 
-        } catch (err) { 
-            return null; 
-        }
+        try { return SecureStore.getItemAsync(key); } catch (err) { return null; }
     },
     async saveToken(key: string, value: string) {
-        try { 
-            return SecureStore.setItemAsync(key, value); 
-        } catch (err) { 
-            return; 
-        }
+        try { return SecureStore.setItemAsync(key, value); } catch (err) { return; }
     },
 };
 
@@ -59,12 +50,13 @@ const InitialLayout = () => {
       } else if (inAuthGroup) {
         router.replace('/(tabs)');
       }
-    } else if (!isSignedIn) {
+    } else { 
       if (!inAuthGroup) {
         router.replace('/(auth)');
       }
     }
     
+    SplashScreen.hideAsync();
 
   }, [isLoaded, isSignedIn, currentUser, isSuccess, segments, router]);
 
@@ -77,9 +69,9 @@ const InitialLayout = () => {
   }
 
   return (
-    <Stack>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(auth)" />
       <Stack.Screen name="profile-setup" options={{ presentation: 'modal' }} />
       <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true }} />
       <Stack.Screen name="group-edit" options={{ headerShown: false }} />
@@ -98,6 +90,9 @@ export default function RootLayout() {
     <ClerkProvider 
       tokenCache={tokenCache}
       publishableKey={publishableKey}
+      // --- THIS IS THE FIX ---
+      // Disable Clerk's internal telemetry to remove the warning
+      telemetry={false}
     >
       <QueryClientProvider client={queryClient}>
           <InitialLayout />
