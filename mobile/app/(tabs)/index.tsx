@@ -1,92 +1,181 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert } from 'react-native';
-import React, { useCallback } from 'react'; // 1. Import useCallback
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '@clerk/clerk-expo';
-import { useQuery } from '@tanstack/react-query';
-import { User, useApiClient, userApi } from '@/utils/api';
-import { Feather } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
-import { useRouter, useFocusEffect } from 'expo-router'; // 2. Import useFocusEffect
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useGetEvents } from '@/hooks/useGetEvents';
+import { useRsvp } from '@/hooks/useRsvp'; // 1. Import the RSVP hook
+import { Event, User, useApiClient, userApi } from '@/utils/api';
+import { useFocusEffect } from 'expo-router';
+import EventDetailModal from '@/components/EventDetailModal';
 
-const HomeScreen = () => {
-  const { signOut } = useAuth();
-  const api = useApiClient();
-  const router = useRouter();
+// --- MODIFIED: EventCard now handles RSVP buttons ---
+const EventCard = ({ 
+    event, 
+    onPress, 
+    showRsvpButtons, 
+    onRsvp, 
+    isRsvping 
+}: { 
+    event: Event; 
+    onPress: () => void;
+    showRsvpButtons: boolean;
+    onRsvp: (status: 'in' | 'out') => void;
+    isRsvping: boolean;
+}) => {
+    const formatDate = (dateString: string, timezone: string) => {
+        const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: timezone };
+        return new Date(dateString).toLocaleDateString(undefined, options);
+    };
 
-  // 3. Destructure the 'refetch' function from useQuery
-  const { data: currentUser, isLoading, isError, refetch } = useQuery<User, Error>({
-      queryKey: ['currentUser'],
-      queryFn: () => userApi.getCurrentUser(api),
-  });
+    const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
+        try {
+            const options: Intl.DateTimeFormatOptions = { timeZone: timezone, timeZoneName: 'shortGeneric' };
+            const date = new Date(dateString);
+            const formatter = new Intl.DateTimeFormat('en-US', options);
+            const parts = formatter.formatToParts(date);
+            const tzPart = parts.find(part => part.type === 'timeZoneName');
+            return tzPart ? tzPart.value : '';
+        } catch (e) { return timezone.split('/').pop()?.replace('_', ' ') || ''; }
+    };
 
-  // 4. Use the useFocusEffect hook to refetch data whenever the screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      // This function will be called every time the screen is focused
-      console.log("Home screen is focused, refetching user data...");
-      refetch();
-    }, [refetch])
-  );
+    return (
+        <View className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200">
+            <TouchableOpacity onPress={onPress}>
+                <Text className="text-xl font-bold text-gray-800">{event.name}</Text>
+                <Text className="text-base text-gray-600 mt-1">{formatDate(event.date, event.timezone)}</Text>
+                <Text className="text-base text-gray-600">{event.time} {getTimezoneAbbreviation(event.date, event.timezone)}</Text>
+            </TouchableOpacity>
 
-  const handleCopyId = async () => {
-      if (currentUser?._id) {
-          await Clipboard.setStringAsync(currentUser._id);
-          Alert.alert("Copied!", "Your User ID has been copied to the clipboard.");
-      }
-  };
+            {/* Conditionally render RSVP buttons */}
+            {showRsvpButtons && (
+                <View className="flex-row space-x-4 mt-4 pt-4 border-t border-gray-100">
+                    <TouchableOpacity 
+                        onPress={() => onRsvp('in')}
+                        disabled={isRsvping}
+                        className="flex-1 py-3 bg-green-500 rounded-lg items-center justify-center shadow"
+                    >
+                        <Text className="text-white font-bold text-base">I'm In</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        onPress={() => onRsvp('out')}
+                        disabled={isRsvping}
+                        className="flex-1 py-3 bg-red-500 rounded-lg items-center justify-center shadow"
+                    >
+                        <Text className="text-white font-bold text-base">I'm Out</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+        </View>
+    );
+};
 
-  return (
-    <SafeAreaView className='flex-1 bg-gray-100'>
-      <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
-        {isLoading && !currentUser ? ( // Only show main loader on initial load
-            <ActivityIndicator size="large" color="#4f46e5" className="mt-16" />
-        ) : isError ? (
-            <Text className="text-center text-red-500 mt-8">Failed to load profile.</Text>
-        ) : currentUser ? (
-          <>
-            <View className="items-center p-6 bg-white border-b border-gray-200">
-              <Image
-                  source={{ uri: currentUser.profilePicture || 'https://placehold.co/200x200/EEE/31343C?text=?' }}
-                  className="w-24 h-24 rounded-full border-4 border-gray-200"
-              />
-              <Text className="text-2xl font-bold text-gray-800 mt-4">
-                  {currentUser.firstName} {currentUser.lastName}
-              </Text>
-              <Text className="text-lg text-gray-500">
-                  {currentUser.username}
-              </Text>
-              <Text className="text-base text-gray-500 mt-1">
-                  {currentUser.email}
-              </Text>
-              <View className="w-full bg-gray-100 p-3 mt-6 rounded-lg">
-                  <Text className="text-xs text-gray-500 mb-1 text-center">Your Unique User ID (Tap to Copy)</Text>
-                  <TouchableOpacity onPress={handleCopyId} className="flex-row justify-center items-center">
-                      <Text className="text-sm text-gray-700 font-mono mr-2" selectable>{currentUser._id}</Text>
-                      <Feather name="copy" size={16} color="#4f46e5" />
-                  </TouchableOpacity>
-              </View>
+const DashboardScreen = () => {
+    const api = useApiClient();
+    const queryClient = useQueryClient();
+    const { data: events, isLoading, isError, refetch } = useGetEvents();
+    const { data: currentUser } = useQuery<User, Error>({
+        queryKey: ['currentUser'],
+        queryFn: () => userApi.getCurrentUser(api),
+    });
+
+    // 2. Instantiate the RSVP hook
+    const { mutate: rsvp, isPending: isRsvping } = useRsvp();
+
+    const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+    const [isModalVisible, setIsModalVisible] = useState(false);
+
+    useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
+
+    const { nextUndecidedEvent, nextOverallEvents } = useMemo(() => {
+        if (!events || !currentUser) {
+            return { nextUndecidedEvent: null, nextOverallEvents: [] };
+        }
+        const nextUndecided = events.find(event => event.undecided.includes(currentUser._id));
+        const nextOverall = events.slice(0, 3);
+        return { nextUndecidedEvent: nextUndecided, nextOverallEvents: nextOverall };
+    }, [events, currentUser]);
+    
+    const handleOpenModal = (event: Event) => {
+        setSelectedEvent(event);
+        setIsModalVisible(true);
+    };
+    const handleCloseModal = () => {
+        setIsModalVisible(false);
+        setSelectedEvent(null);
+    };
+
+    // 3. Create the RSVP handler function
+    const handleDashboardRsvp = (eventId: string, status: 'in' | 'out') => {
+        if (!currentUser) return;
+        rsvp({ eventId, status }, {
+            onSuccess: () => {
+                // Invalidate the events query to automatically refresh the dashboard
+                queryClient.invalidateQueries({ queryKey: ['events'] });
+            }
+        });
+    };
+
+    return (
+        <SafeAreaView className='flex-1 bg-gray-100'>
+            <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
+                <Text className="text-xl font-bold text-gray-900">Dashboard</Text>
             </View>
 
-            <View className="px-4 mt-8 space-y-4">
-                <TouchableOpacity
-                    onPress={() => router.push('/account')}
-                    className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
-                >
-                    <Text className="text-indigo-600 text-lg font-bold">Update Account Info</Text>
-                </TouchableOpacity>
+            <ScrollView className="p-4">
+                {isLoading ? (
+                    <ActivityIndicator size="large" color="#4f46e5" className="mt-16" />
+                ) : isError ? (
+                    <Text className="text-center text-red-500 mt-8">Failed to load events.</Text>
+                ) : (
+                    <>
+                        <View className="mb-8">
+                            <Text className="text-3xl font-bold text-gray-800 px-2 mb-2">You coming?</Text>
+                            {nextUndecidedEvent ? (
+                                <EventCard 
+                                    event={nextUndecidedEvent} 
+                                    onPress={() => handleOpenModal(nextUndecidedEvent)}
+                                    showRsvpButtons={true}
+                                    onRsvp={(status) => handleDashboardRsvp(nextUndecidedEvent._id, status)}
+                                    isRsvping={isRsvping}
+                                />
+                            ) : (
+                                <View className="bg-white p-5 my-2 rounded-lg items-center">
+                                    <Text className="text-base text-gray-500">You're all caught up! No pending RSVPs.</Text>
+                                </View>
+                            )}
+                        </View>
 
-                <TouchableOpacity
-                    onPress={() => signOut()}
-                    className="py-4 bg-red-600 rounded-lg items-center shadow"
-                >
-                    <Text className="text-white text-lg font-bold">Sign Out</Text>
-                </TouchableOpacity>
-            </View>
-          </>
-        ) : null}
-      </ScrollView>
-    </SafeAreaView>
-  )
-}
+                        <View>
+                            <Text className="text-3xl font-bold text-gray-800 px-2 mb-2">Up Next</Text>
+                            {nextOverallEvents && nextOverallEvents.length > 0 ? (
+                                nextOverallEvents.map(event => (
+                                    <EventCard 
+                                        key={event._id} 
+                                        event={event} 
+                                        onPress={() => handleOpenModal(event)}
+                                        showRsvpButtons={false}
+                                        onRsvp={() => {}}
+                                        isRsvping={false}
+                                    />
+                                ))
+                            ) : (
+                                <View className="bg-white p-5 my-2 rounded-lg items-center">
+                                    <Text className="text-base text-gray-500">No upcoming events.</Text>
+                                </View>
+                            )}
+                        </View>
+                    </>
+                )}
+            </ScrollView>
+            <Modal
+                visible={isModalVisible}
+                animationType="slide"
+                onRequestClose={handleCloseModal}
+            >
+                <EventDetailModal event={selectedEvent} onClose={handleCloseModal} />
+            </Modal>
+        </SafeAreaView>
+    );
+};
 
-export default HomeScreen;
+export default DashboardScreen;
