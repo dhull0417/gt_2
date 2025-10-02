@@ -1,32 +1,24 @@
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert } from 'react-native';
-import React, { useCallback } from 'react'; // 1. Import useCallback
+import React, { useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/clerk-expo';
 import { useQuery } from '@tanstack/react-query';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { useRouter, useFocusEffect } from 'expo-router'; // 2. Import useFocusEffect
+import { useRouter, useFocusEffect } from 'expo-router';
 
 const HomeScreen = () => {
   const { signOut } = useAuth();
   const api = useApiClient();
   const router = useRouter();
 
-  // 3. Destructure the 'refetch' function from useQuery
   const { data: currentUser, isLoading, isError, refetch } = useQuery<User, Error>({
       queryKey: ['currentUser'],
       queryFn: () => userApi.getCurrentUser(api),
   });
 
-  // 4. Use the useFocusEffect hook to refetch data whenever the screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      // This function will be called every time the screen is focused
-      console.log("Home screen is focused, refetching user data...");
-      refetch();
-    }, [refetch])
-  );
+  useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
   const handleCopyId = async () => {
       if (currentUser?._id) {
@@ -37,12 +29,16 @@ const HomeScreen = () => {
 
   return (
     <SafeAreaView className='flex-1 bg-gray-100'>
+      <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
+        <Text className="text-xl font-bold text-gray-900">Home</Text>
+      </View>
+
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
-        {isLoading && !currentUser ? ( // Only show main loader on initial load
+        {isLoading ? (
             <ActivityIndicator size="large" color="#4f46e5" className="mt-16" />
-        ) : isError ? (
+        ) : isError || !currentUser ? (
             <Text className="text-center text-red-500 mt-8">Failed to load profile.</Text>
-        ) : currentUser ? (
+        ) : (
           <>
             <View className="items-center p-6 bg-white border-b border-gray-200">
               <Image
@@ -53,7 +49,7 @@ const HomeScreen = () => {
                   {currentUser.firstName} {currentUser.lastName}
               </Text>
               <Text className="text-lg text-gray-500">
-                  {currentUser.username}
+                  @{currentUser.username}
               </Text>
               <Text className="text-base text-gray-500 mt-1">
                   {currentUser.email}
@@ -83,7 +79,7 @@ const HomeScreen = () => {
                 </TouchableOpacity>
             </View>
           </>
-        ) : null}
+        )}
       </ScrollView>
     </SafeAreaView>
   )

@@ -11,6 +11,8 @@ import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { useRemoveMember } from '@/hooks/useRemoveMember';
 import { Group, Schedule, User, useApiClient, userApi } from '@/utils/api'; 
 import { Feather } from '@expo/vector-icons';
+import { useSearchUsers } from '@/hooks/useSearchUsers';
+import { useInviteUser } from '@/hooks/useInviteUser';
 
 const GroupScreen = () => {
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -26,6 +28,14 @@ const GroupScreen = () => {
     const { mutate: deleteGroup, isPending: isDeletingGroup } = useDeleteGroup();
     const { mutate: leaveGroup, isPending: isLeavingGroup } = useLeaveGroup();
     const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
+    const [searchQuery, setSearchQuery] = useState('');
+    const { data: searchResults } = useSearchUsers(searchQuery);
+    const { mutate: inviteUser, isPending: isInviting } = useInviteUser();
+
+    const handleInvite = (userIdToInvite: string) => {
+        if (!selectedGroup) return;
+        inviteUser({ groupId: selectedGroup._id, userIdToInvite });
+    };
 
     const formatSchedule = (schedule: Schedule): string => {
         if (schedule.frequency === 'weekly') {
@@ -87,7 +97,7 @@ const GroupScreen = () => {
         ]);
     };
     const handleOpenGroupDetail = (group: Group) => { setSelectedGroup(group); setIsGroupDetailVisible(true); };
-    const handleCloseGroupDetail = () => { setIsGroupDetailVisible(false); setSelectedGroup(null); setUserIdToAdd(''); };
+    const handleCloseGroupDetail = () => { setIsGroupDetailVisible(false); setSelectedGroup(null); setUserIdToAdd(''); setSearchQuery(''); };
 
     const renderGroupList = () => {
         if (isLoadingGroups || !currentUser) return <ActivityIndicator size="large" color="#4f46e5" className="mt-8"/>;
@@ -102,8 +112,13 @@ const GroupScreen = () => {
 
     return (
         <SafeAreaView className='flex-1 bg-gray-50'>
+            <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white relative">
+                <Text className="text-xl font-bold text-gray-900">Groups</Text>
+            </View>
             <ScrollView className="px-4">
                 <View className="my-4">
+                    {/* --- THIS IS THE FIX --- */}
+                    {/* Cast the href to 'any' to bypass the stale type error */}
                     <Link href={"/create-group" as any} asChild>
                         <TouchableOpacity 
                             className={`py-4 rounded-lg items-center shadow ${!currentUser ? 'bg-indigo-300' : 'bg-indigo-600'}`} 
@@ -174,21 +189,29 @@ const GroupScreen = () => {
                         </View>
                         {currentUser && currentUser._id === selectedGroup.owner && (
                             <View className="mb-8">
-                                <Text className="text-lg text-gray-800 font-semibold mb-2">Add New Member</Text>
+                                <Text className="text-lg text-gray-800 font-semibold mb-2">Invite by Username</Text>
                                 <TextInput
-                                    className="w-full p-4 border border-gray-300 rounded-lg bg-white text-base text-gray-800"
-                                    placeholder="Enter User ID to add"
-                                    placeholderTextColor="#999"
-                                    value={userIdToAdd}
-                                    onChangeText={setUserIdToAdd}
+                                    className="w-full p-4 border border-gray-300 rounded-lg bg-white text-base"
+                                    placeholder="Search for a user..."
+                                    value={searchQuery}
+                                    onChangeText={setSearchQuery}
+                                    autoCapitalize="none"
                                 />
-                                <TouchableOpacity
-                                    onPress={handleAddMember}
-                                    disabled={isAddingMember || !userIdToAdd.trim()}
-                                    className={`py-4 mt-4 rounded-lg items-center shadow ${isAddingMember || !userIdToAdd.trim() ? 'bg-indigo-300' : 'bg-indigo-600'}`}
-                                >
-                                    {isAddingMember ? <ActivityIndicator color="#fff" /> : <Text className="text-white text-lg font-bold">Add Member</Text>}
-                                </TouchableOpacity>
+                                {searchResults && searchResults.length > 0 && (
+                                    <View className="mt-2 bg-white border border-gray-200 rounded-lg">
+                                        {searchResults.map(user => (
+                                            <View key={user._id} className="flex-row items-center justify-between p-2 border-b border-gray-100">
+                                                <View className="flex-row items-center">
+                                                    <Image source={{ uri: user.profilePicture }} className="w-8 h-8 rounded-full mr-2" />
+                                                    <Text>{user.firstName} {user.lastName} (@{user.username})</Text>
+                                                </View>
+                                                <TouchableOpacity onPress={() => handleInvite(user._id)} disabled={isInviting} className="bg-indigo-500 px-3 py-1 rounded-md">
+                                                    <Text className="text-white font-bold">Invite</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        ))}
+                                    </View>
+                                )}
                             </View>
                         )}
                         <View className="mt-4 pt-4 border-t border-gray-300">

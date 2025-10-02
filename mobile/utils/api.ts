@@ -44,6 +44,16 @@ export interface Event {
   in: string[];
   out: string[];
 }
+export interface Notification {
+    _id: string;
+    recipient: string;
+    sender: User;
+    type: 'group-invite' | 'invite-accepted' | 'invite-declined';
+    group: Group;
+    status: 'pending' | 'accepted' | 'declined' | 'read';
+    read: boolean;
+    createdAt: string;
+}
 interface CreateGroupPayload {
   name: string;
   time: string;
@@ -52,6 +62,7 @@ interface CreateGroupPayload {
 }
 interface UpdateGroupPayload {
     groupId: string;
+    name?: string;
     time: string;
     schedule: Schedule;
     timezone: string;
@@ -59,6 +70,10 @@ interface UpdateGroupPayload {
 interface AddMemberPayload {
   groupId: string;
   userId: string;
+}
+interface InviteUserPayload {
+    groupId: string;
+    userIdToInvite: string;
 }
 interface RemoveMemberPayload {
   groupId: string;
@@ -110,6 +125,10 @@ export const userApi = {
     return response.data.user;
   },
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
+  searchUsers: async (api: AxiosInstance, username: string): Promise<User[]> => {
+    const response = await api.get<User[]>(`/api/users/search?username=${username}`);
+    return response.data;
+  },
 };
 export const groupApi = {
   createGroup: async (api: AxiosInstance, payload: CreateGroupPayload): Promise<CreateGroupResponse> => {
@@ -127,6 +146,10 @@ export const groupApi = {
   removeScheduledDay: async (api: AxiosInstance, payload: RemoveScheduledDayPayload): Promise<{ message: string }> => {
       const response = await api.post(`/api/groups/${payload.groupId}/schedule/remove`, { day: payload.day, frequency: payload.frequency });
       return response.data;
+  },
+  inviteUser: async (api: AxiosInstance, payload: InviteUserPayload): Promise<{ message: string }> => {
+    const response = await api.post(`/api/groups/${payload.groupId}/invite`, { userIdToInvite: payload.userIdToInvite });
+    return response.data;
   },
   getGroups: async (api: AxiosInstance): Promise<Group[]> => {
     const response = await api.get<Group[]>("/api/groups");
@@ -170,4 +193,18 @@ export const eventApi = {
     const response = await api.delete(`/api/events/${eventId}`);
     return response.data;
   }
+};
+export const notificationApi = {
+    getNotifications: async (api: AxiosInstance): Promise<Notification[]> => {
+        const response = await api.get<Notification[]>('/api/notifications');
+        return response.data;
+    },
+    acceptInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
+        const response = await api.post(`/api/notifications/${notificationId}/accept`);
+        return response.data;
+    },
+    declineInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
+        const response = await api.post(`/api/notifications/${notificationId}/decline`);
+        return response.data;
+    },
 };

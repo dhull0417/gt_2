@@ -7,6 +7,8 @@ import { useRsvp } from '@/hooks/useRsvp'; // 1. Import the RSVP hook
 import { Event, User, useApiClient, userApi } from '@/utils/api';
 import { useFocusEffect } from 'expo-router';
 import EventDetailModal from '@/components/EventDetailModal';
+import { Link } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 
 // --- MODIFIED: EventCard now handles RSVP buttons ---
 const EventCard = ({ 
@@ -117,8 +119,14 @@ const DashboardScreen = () => {
 
     return (
         <SafeAreaView className='flex-1 bg-gray-100'>
-            <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
-                <Text className="text-xl font-bold text-gray-900">Dashboard</Text>
+            <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
+                <View className="w-6" /> 
+                <Text className="text-xl font-bold text-gray-900">Home</Text>
+                <Link href="/(tabs)/notifications" asChild>
+                    <TouchableOpacity>
+                        <Feather name="bell" size={24} color="#4B5563" />
+                    </TouchableOpacity>
+                </Link>
             </View>
 
             <ScrollView className="p-4">

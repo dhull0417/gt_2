@@ -33,10 +33,7 @@ const TabsLayout = () => {
     return <Redirect href="/(auth)" />;
   }
 
-  // --- THIS IS THE FIX ---
-  // We now explicitly check if the trimmed length of the names is zero.
-  // This correctly handles users who may have an empty string for a name.
-  if (currentUser && (currentUser.firstName?.trim().length === 0 || currentUser.lastName?.trim().length === 0)) {
+  if (currentUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim())) {
     return <Redirect href="/profile-setup" />;
   }
 
@@ -71,10 +68,18 @@ const TabsLayout = () => {
           tabBarIcon: ({ color, size }) => <Feather name="calendar" size={size} color={color} />
         }}
       />
+      {/* --- ADDED: The new Notifications tab --- */}
+      <Tabs.Screen 
+          name='notifications'
+          options={{
+              title: "Notifications",
+              tabBarIcon: ({color, size}) => <Feather name='mail' size={size} color={color}/>
+          }}
+      />
       <Tabs.Screen 
           name='profile'
           options={{
-              title: "Dashboard",
+              title: "Profile",
               tabBarIcon: ({color, size}) => <Feather name='user' size={size} color={color}/>
           }}
       />
