@@ -5,12 +5,15 @@ import { DateTime } from "luxon";
 import { calculateNextEventDate } from "../utils/date.utils.js";
 
 const parseTime = (timeString) => {
+    if (!timeString || typeof timeString !== 'string' || !timeString.includes(':')) {
+        return { hours: 0, minutes: 0 }; // Return a default/safe value
+    }
     const [time, period] = timeString.split(' ');
     let [hours, minutes] = time.split(':').map(Number);
-    if (period.toUpperCase() === 'PM' && hours !== 12) {
+    if (period && period.toUpperCase() === 'PM' && hours !== 12) {
         hours += 12;
     }
-    if (period.toUpperCase() === 'AM' && hours === 12) {
+    if (period && period.toUpperCase() === 'AM' && hours === 12) {
         hours = 0;
     }
     return { hours, minutes };
@@ -19,10 +22,11 @@ const parseTime = (timeString) => {
 export const regenerateEvents = asyncHandler(async (req, res) => {
   console.log("Cron job started: Regenerating events...");
   const now = new Date();
+  
   const allEvents = await Event.find({ isOverride: false }).lean();
   
   const expiredEvents = allEvents.filter(event => {
-    if (!event.date || !event.time || typeof event.time !== 'string' || !event.time.includes(':')) {
+    if (!event.date || !event.time) {
       return false;
     }
     const eventDateTime = new Date(event.date);
@@ -56,8 +60,8 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
       const existingEventDays = new Set(existingFutureEvents.map(event => {
         const eventDate = DateTime.fromJSDate(event.date, { zone: group.timezone });
         return group.schedule.frequency === 'weekly' 
-          ? (eventDate.weekday === 7 ? 0 : eventDate.weekday) // Get weekday for weekly events
-          : eventDate.day; // Get day of month for monthly events
+          ? (eventDate.weekday === 7 ? 0 : eventDate.weekday)
+          : eventDate.day;
       }));
 
       for (const targetDay of group.schedule.days) {

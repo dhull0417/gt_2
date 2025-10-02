@@ -1,10 +1,16 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, StyleSheet, Image } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, StyleSheet, Image, Dimensions } from "react-native"; // Import Dimensions
 import { useCreateGroup } from "@/hooks/useCreateGroup";
 import TimePicker from "./TimePicker";
 import SchedulePicker, { Schedule } from "./SchedulePicker";
 import { Picker } from "@react-native-picker/picker";
 import { Feather } from '@expo/vector-icons';
+
+const GroupImage = require('../assets/images/group-image.jpeg');
+
+const { width } = Dimensions.get('window'); // Get screen width for responsive sizing
+const IMAGE_WIDTH = width * 0.7; // 70% of screen width, adjust as needed
+const IMAGE_HEIGHT = IMAGE_WIDTH * (9 / 16); // Calculate 16:9 height
 
 const usaTimezones = [
     { label: "Eastern (ET)", value: "America/New_York" },
@@ -20,7 +26,6 @@ interface CreateGroupPopupProps { onClose: () => void; }
 
 const CreateGroupPopup: React.FC<CreateGroupPopupProps> = ({ onClose }) => {
   const [step, setStep] = useState(1);
-
   const [groupName, setGroupName] = useState("");
   const [meetTime, setMeetTime] = useState("05:00 PM");
   const [schedule, setSchedule] = useState<Schedule>({ frequency: 'weekly', days: [1] });
@@ -39,9 +44,9 @@ const CreateGroupPopup: React.FC<CreateGroupPopupProps> = ({ onClose }) => {
         return (
           <View className="items-center">
             <Text className="text-3xl font-bold mb-2 text-gray-800 text-center">What's your Group name?</Text>
-            <View className="w-48 h-48 bg-gray-200 rounded-lg my-6 items-center justify-center">
-                <Feather name="image" size={60} color="#9CA3AF" />
-                <Text className="text-gray-500 mt-2">Fun Image Here</Text>
+            {/* --- DISPLAY THE IMAGE HERE WITH 16:9 ASPECT RATIO --- */}
+            <View style={[styles.imagePlaceholder, { width: IMAGE_WIDTH, height: IMAGE_HEIGHT }]}>
+                <Image source={GroupImage} style={{ width: '100%', height: '100%', borderRadius: 8 }} resizeMode="cover" />
             </View>
             <TextInput
               className="w-full p-4 border border-gray-300 rounded-lg bg-gray-50 text-base text-gray-800"
@@ -110,7 +115,6 @@ const CreateGroupPopup: React.FC<CreateGroupPopupProps> = ({ onClose }) => {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.kav}>
       <View className="bg-white rounded-xl w-11/12 max-w-lg shadow-lg relative max-h-[90%] p-6 pt-12">
-        {/* --- THIS IS THE NEW BUTTON --- */}
         <TouchableOpacity className="absolute top-2 left-4 p-2 z-10" onPress={onClose}>
           <Text className="text-red-500 text-2xl font-bold">X</Text>
         </TouchableOpacity>
@@ -118,8 +122,6 @@ const CreateGroupPopup: React.FC<CreateGroupPopupProps> = ({ onClose }) => {
         <View>
           {renderStepContent()}
         </View>
-        
-        {/* The button that was here has been removed */}
       </View>
     </KeyboardAvoidingView>
   );
@@ -127,7 +129,9 @@ const CreateGroupPopup: React.FC<CreateGroupPopupProps> = ({ onClose }) => {
 
 const styles = StyleSheet.create({
     kav: { flex: 1, justifyContent: 'center', alignItems: 'center', width: '100%' },
-    pickerItem: { color: 'black', fontSize: 18, height: 120 }
+    pickerItem: { color: 'black', fontSize: 18, height: 120 },
+    // Only marginVertical is kept, width and height are dynamically set
+    imagePlaceholder: { marginVertical: 24, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
 });
 
 export default CreateGroupPopup;

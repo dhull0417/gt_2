@@ -1,7 +1,5 @@
 import { DateTime } from "luxon";
 
-// This helper now correctly calculates the next date for a SINGLE target day.
-// It will be called inside a loop by the controllers.
 export const calculateNextEventDate = (targetDay, groupTime, timezone, frequency) => {
   const now = DateTime.now().setZone(timezone);
   const [time, period] = groupTime.split(' ');
@@ -15,7 +13,6 @@ export const calculateNextEventDate = (targetDay, groupTime, timezone, frequency
     const targetWeekday = targetDay === 0 ? 7 : targetDay; // Luxon: Mon=1, Sun=7
     let eventDateTime = now.set({ hour, minute, second: 0, millisecond: 0 });
 
-    // Logic to find the next occurrence of the target weekday
     if (targetWeekday > now.weekday) {
       eventDate = eventDateTime.set({ weekday: targetWeekday });
     } else if (targetWeekday < now.weekday) {
@@ -29,12 +26,14 @@ export const calculateNextEventDate = (targetDay, groupTime, timezone, frequency
     }
   } else { // monthly
     const targetDayOfMonth = targetDay;
-    let eventDateTime = now.set({ day: targetDayOfMonth, hour, minute, second: 0, millisecond: 0 });
-    if (eventDateTime < now) {
-      eventDate = eventDateTime.plus({ months: 1 });
-    } else {
-      eventDate = eventDateTime;
+    let potentialEvent = now.set({ hour, minute, second: 0, millisecond: 0 });
+    potentialEvent = potentialEvent.set({ day: targetDayOfMonth });
+    
+    if (potentialEvent < now) {
+      potentialEvent = potentialEvent.plus({ months: 1 });
     }
+    eventDate = potentialEvent;
   }
+  
   return eventDate.toJSDate();
 };

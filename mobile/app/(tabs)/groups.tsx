@@ -3,7 +3,6 @@ import React, { useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'expo-router';
-import CreateGroupPopup from '@/components/CreateGroupPopup';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useAddMember } from '@/hooks/useAddMember';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
@@ -14,7 +13,6 @@ import { Group, Schedule, User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 
 const GroupScreen = () => {
-    const [isCreateModalVisible, setCreateIsModalVisible] = useState(false);
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [isGroupDetailVisible, setIsGroupDetailVisible] = useState(false);
     const [userIdToAdd, setUserIdToAdd] = useState('');
@@ -32,11 +30,9 @@ const GroupScreen = () => {
     const formatSchedule = (schedule: Schedule): string => {
         if (schedule.frequency === 'weekly') {
             const daysOfWeek = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
-            // Map over the array of day indexes and join them with a comma
             const selectedDays = schedule.days.map(dayIndex => daysOfWeek[dayIndex]).join(', ');
             return `Weekly on ${selectedDays}`;
         }
-        // For monthly, we still expect only one day in the array
         const day = schedule.days[0];
         let suffix = 'th';
         if ([1, 21, 31].includes(day)) suffix = 'st';
@@ -92,8 +88,6 @@ const GroupScreen = () => {
     };
     const handleOpenGroupDetail = (group: Group) => { setSelectedGroup(group); setIsGroupDetailVisible(true); };
     const handleCloseGroupDetail = () => { setIsGroupDetailVisible(false); setSelectedGroup(null); setUserIdToAdd(''); };
-    const handleOpenCreateModal = () => setCreateIsModalVisible(true);
-    const handleCloseCreateModal = () => setCreateIsModalVisible(false);
 
     const renderGroupList = () => {
         if (isLoadingGroups || !currentUser) return <ActivityIndicator size="large" color="#4f46e5" className="mt-8"/>;
@@ -108,26 +102,20 @@ const GroupScreen = () => {
 
     return (
         <SafeAreaView className='flex-1 bg-gray-50'>
-            <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white relative">
-                <Text className="text-xl font-bold text-gray-900">Groups</Text>
-            </View>
             <ScrollView className="px-4">
                 <View className="my-4">
-                    <TouchableOpacity 
-                        className={`py-4 rounded-lg items-center shadow ${!currentUser ? 'bg-indigo-300' : 'bg-indigo-600'}`} 
-                        onPress={handleOpenCreateModal}
-                        disabled={!currentUser}
-                    >
-                        <Text className="text-white text-lg font-bold">Create Group</Text>
-                    </TouchableOpacity>
+                    <Link href={"/create-group" as any} asChild>
+                        <TouchableOpacity 
+                            className={`py-4 rounded-lg items-center shadow ${!currentUser ? 'bg-indigo-300' : 'bg-indigo-600'}`} 
+                            disabled={!currentUser}
+                        >
+                            <Text className="text-white text-lg font-bold">Create Group</Text>
+                        </TouchableOpacity>
+                    </Link>
                 </View>
                 <View>{renderGroupList()}</View>
             </ScrollView>
-            {isCreateModalVisible && (
-                <View className="absolute top-0 bottom-0 left-0 right-0 bg-black/50 justify-center items-center">
-                    <CreateGroupPopup onClose={handleCloseCreateModal} />
-                </View>
-            )}
+            
             {isGroupDetailVisible && selectedGroup && (
                  <View className="absolute top-0 bottom-0 left-0 right-0 bg-white" style={{ paddingTop: insets.top }}>
                     <View className="flex-row items-center px-4 py-3 border-b border-gray-200">

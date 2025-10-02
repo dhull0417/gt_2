@@ -177,9 +177,6 @@ const EventsScreen = () => {
 
     return (
         <SafeAreaView className='flex-1 bg-gray-50'>
-            <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
-                <Text className="text-xl font-bold text-gray-900">Upcoming Events</Text>
-            </View>
             <ScrollView className="px-4 mt-4" contentContainerStyle={{ paddingBottom: 20 }}>
                 {isLoading && <ActivityIndicator size="large" color="#4f46e5" className="mt-8"/>}
                 {isError && <Text className="text-center text-red-500 mt-4">Failed to load events.</Text>}

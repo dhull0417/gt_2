@@ -6,10 +6,8 @@ import { ActivityIndicator, View } from "react-native";
 import { useEffect } from "react";
 import * as SecureStore from 'expo-secure-store';
 import { User, useApiClient, userApi } from "@/utils/api";
-import * as SplashScreen from 'expo-splash-screen';
 import "../global.css";
 
-SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
@@ -67,7 +65,6 @@ const InitialLayout = () => {
       }
     }
     
-    SplashScreen.hideAsync();
 
   }, [isLoaded, isSignedIn, currentUser, isSuccess, segments, router]);
 
@@ -88,6 +85,7 @@ const InitialLayout = () => {
       <Stack.Screen name="group-edit" options={{ headerShown: false }} />
       <Stack.Screen name="event-edit" options={{ headerShown: false }} />
       <Stack.Screen name="schedule-event" options={{ headerShown: false }} />
+      <Stack.Screen name="create-group" options={{ presentation: 'modal', headerShown: false }} />
     </Stack>
   );
 };

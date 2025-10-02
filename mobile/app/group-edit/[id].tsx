@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, TextInput, Image, Dimensions } from 'react-native'; // Import Dimensions
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -8,6 +8,12 @@ import TimePicker from '@/components/TimePicker';
 import SchedulePicker, { Schedule } from '@/components/SchedulePicker';
 import { Picker } from '@react-native-picker/picker';
 import { Feather } from '@expo/vector-icons';
+
+const GroupImage = require('../../assets/images/group-image.jpeg');
+
+const { width } = Dimensions.get('window'); // Get screen width for responsive sizing
+const IMAGE_WIDTH = width * 0.7; // 70% of screen width, adjust as needed
+const IMAGE_HEIGHT = IMAGE_WIDTH * (9 / 16); // Calculate 16:9 height
 
 const usaTimezones = [
     { label: "Eastern (ET)", value: "America/New_York" },
@@ -22,18 +28,19 @@ const usaTimezones = [
 const GroupEditScreen = () => {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
+
     const { data: groupDetails, isLoading } = useGetGroupDetails(id);
     const { mutate: updateGroup, isPending } = useUpdateGroup();
 
     const [step, setStep] = useState(1);
-    const [groupName, setGroupName] = useState(''); // --- ADDED: State for group name ---
+    const [groupName, setGroupName] = useState('');
     const [meetTime, setMeetTime] = useState<string | undefined>();
     const [timezone, setTimezone] = useState<string | undefined>();
     const [schedule, setSchedule] = useState<Schedule | undefined>();
 
     useEffect(() => {
         if (groupDetails) {
-            setGroupName(groupDetails.name); // --- ADDED: Pre-fill name ---
+            setGroupName(groupDetails.name);
             setMeetTime(groupDetails.time);
             setTimezone(groupDetails.timezone);
             setSchedule(groupDetails.schedule);
@@ -61,8 +68,9 @@ const GroupEditScreen = () => {
                             onChangeText={setGroupName}
                             placeholder="Enter new group name"
                         />
-                        <View style={styles.imagePlaceholder}>
-                            <Feather name="image" size={60} color="#9CA3AF" />
+                        {/* --- DISPLAY THE IMAGE HERE WITH 16:9 ASPECT RATIO --- */}
+                        <View style={[styles.imagePlaceholder, { width: IMAGE_WIDTH, height: IMAGE_HEIGHT }]}>
+                            <Image source={GroupImage} style={{ width: '100%', height: '100%', borderRadius: 8 }} resizeMode="cover" />
                         </View>
                         <View style={styles.footerNav}>
                             <View /> 
@@ -73,7 +81,7 @@ const GroupEditScreen = () => {
                     </View>
                 );
             case 2:
-                return (
+                 return (
                     <View style={styles.stepContainer}>
                         <Text style={styles.headerTitle}>How often will you meet?</Text>
                         <SchedulePicker onScheduleChange={setSchedule} initialValue={schedule} />
@@ -88,7 +96,7 @@ const GroupEditScreen = () => {
                     </View>
                 );
             case 3:
-                return (
+                 return (
                     <View style={styles.stepContainer}>
                         <Text style={styles.headerTitle}>Choose a new time for your group</Text>
                         <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
@@ -142,7 +150,8 @@ const styles = StyleSheet.create({
         borderBottomWidth: 2,
         borderBottomColor: '#D1D5DB'
     },
-    imagePlaceholder: { width: 192, height: 192, backgroundColor: '#E5E7EB', borderRadius: 8, marginVertical: 24, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
+    // Only marginVertical is kept, width and height are dynamically set
+    imagePlaceholder: { marginVertical: 24, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
     footerNav: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 },
     title: { fontSize: 18, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
     timezoneContainer: { width: '100%', marginVertical: 16 },

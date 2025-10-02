@@ -11,7 +11,7 @@ const EventEditLayout = () => {
             <Stack.Screen 
                 name="[id]" 
                 options={{ 
-                    headerTitle: 'Edit Event',
+                    headerTitle: 'Create Group',
                     presentation: 'modal',
                     headerLeft: () => (
                         <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
