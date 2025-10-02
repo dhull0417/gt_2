@@ -2,9 +2,50 @@ import asyncHandler from "express-async-handler";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
+import Notification from "../models/notification.model.js"; // Import Notification model
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { calculateNextEventDate } from "../utils/date.utils.js";
+
+// New function for inviting a user to a group
+export const inviteUser = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+    const { userIdToInvite } = req.body;
+
+    const requester = await User.findOne({ clerkId }).lean();
+    const group = await Group.findById(groupId);
+    const userToInvite = await User.findById(userIdToInvite);
+
+    if (!requester || !group || !userToInvite) return res.status(404).json({ error: "Resource not found." });
+
+    if (group.owner.toString() !== requester._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can send invitations." });
+    }
+    
+    if (group.members.includes(userToInvite._id)) {
+        return res.status(400).json({ error: "User is already a member of this group." });
+    }
+
+    const existingInvite = await Notification.findOne({
+        recipient: userToInvite._id,
+        group: group._id,
+        type: 'group-invite',
+        status: 'pending',
+    });
+    if (existingInvite) {
+        return res.status(400).json({ error: "This user already has a pending invitation to this group." });
+    }
+
+    await Notification.create({
+        recipient: userToInvite._id,
+        sender: requester._id,
+        type: 'group-invite',
+        group: group._id,
+    });
+
+    res.status(200).json({ message: "Invitation sent successfully." });
+});
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);

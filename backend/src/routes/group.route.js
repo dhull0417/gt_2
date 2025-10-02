@@ -1,14 +1,7 @@
 import express from "express";
 import {
-  createGroup,
-  getGroups,
-  getGroupDetails,
-  addMember,
-  deleteGroup,
-  updateGroup,
-  leaveGroup,
-  removeMember,
-  createOneOffEvent,
+  createGroup, getGroups, getGroupDetails, addMember, deleteGroup, updateGroup,
+  leaveGroup, removeMember, createOneOffEvent, inviteUser,
 } from "../controllers/group.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
@@ -23,5 +16,6 @@ router.post("/:groupId/add-member", protectRoute, addMember);
 router.post("/:groupId/leave", protectRoute, leaveGroup);
 router.post("/:groupId/remove-member", protectRoute, removeMember);
 router.post("/:groupId/events", protectRoute, createOneOffEvent);
+router.post("/:groupId/invite", protectRoute, inviteUser); // Add the new invite route
 
 export default router;

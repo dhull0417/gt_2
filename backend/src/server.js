@@ -7,6 +7,7 @@ import groupRoutes from "./routes/group.route.js";
 import eventRoutes from "./routes/event.route.js";
 import jobRoutes from "./routes/job.route.js";
 import webhookRoutes from "./routes/webhook.route.js";
+import notificationRoutes from "./routes/notification.route.js"; // Import notification routes
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
@@ -15,14 +16,8 @@ import { arcjetMiddleware } from "./middleware/arcjet.middleware.js";
 const app = express();
 
 app.use(cors());
-
-// Place the webhook route BEFORE the global express.json() middleware
-// This is because webhooks require the raw request body for signature verification.
 app.use("/api/webhooks", webhookRoutes);
-
-// This will parse JSON for all other routes
 app.use(express.json());
-
 app.use(clerkMiddleware());
 app.use(arcjetMiddleware);
 
@@ -32,6 +27,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/jobs", jobRoutes);
+app.use("/api/notifications", notificationRoutes); // Use notification routes
 
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
