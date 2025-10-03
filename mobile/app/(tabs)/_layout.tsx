@@ -33,7 +33,8 @@ const TabsLayout = () => {
     return <Redirect href="/(auth)" />;
   }
 
-  if (currentUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim())) {
+  // The redirect now also checks if the username is missing.
+  if (currentUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim() || !currentUser.username?.trim())) {
     return <Redirect href="/profile-setup" />;
   }
 
@@ -68,7 +69,6 @@ const TabsLayout = () => {
           tabBarIcon: ({ color, size }) => <Feather name="calendar" size={size} color={color} />
         }}
       />
-      {/* --- ADDED: The new Notifications tab --- */}
       <Tabs.Screen 
           name='notifications'
           options={{

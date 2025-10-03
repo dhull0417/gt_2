@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUpdateProfile } from '@/hooks/useUpdateProfile';
@@ -6,15 +6,15 @@ import { useUpdateProfile } from '@/hooks/useUpdateProfile';
 const ProfileSetupScreen = () => {
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
+    const [username, setUsername] = useState(''); // State for the username
     const { mutate: updateProfile, isPending } = useUpdateProfile();
 
     const handleSaveProfile = () => {
-        if (!firstName.trim() || !lastName.trim()) {
-            // This is a client-side check, the backend also validates
-            alert('Please enter both your first and last name.');
+        if (!firstName.trim() || !lastName.trim() || !username.trim()) {
+            Alert.alert('Missing Information', 'Please fill out all fields.');
             return;
         }
-        updateProfile({ firstName, lastName });
+        updateProfile({ firstName, lastName, username });
     };
 
     return (
@@ -35,6 +35,14 @@ const ProfileSetupScreen = () => {
                         placeholder="Last Name"
                         value={lastName}
                         onChangeText={setLastName}
+                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
+                        placeholderTextColor="#999"
+                    />
+                    <TextInput
+                        placeholder="Username"
+                        value={username}
+                        onChangeText={setUsername}
+                        autoCapitalize="none"
                         className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-6"
                         placeholderTextColor="#999"
                     />
