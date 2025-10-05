@@ -10,9 +10,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
-
 const queryClient = new QueryClient();
-
 const tokenCache = {
     async getToken(key: string) {
         try { return SecureStore.getItemAsync(key); } catch (err) { return null; }
@@ -27,9 +25,7 @@ const InitialLayout = () => {
   const segments = useSegments();
   const router = useRouter();
   const api = useApiClient();
-  
   useUserSync();
-
   const { data: currentUser, isSuccess } = useQuery<User, Error>({
     queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
@@ -37,47 +33,37 @@ const InitialLayout = () => {
   });
 
   useEffect(() => {
-    if (!isLoaded || (isSignedIn && !isSuccess)) {
-      return;
-    }
-
-    const inAuthGroup = segments[0] === '(auth)';
-    
+    if (!isLoaded || (isSignedIn && !isSuccess)) return;
+    const inTabsGroup = segments[0] === '(tabs)';
     if (isSignedIn) {
       const profileIncomplete = !currentUser?.firstName || !currentUser?.lastName;
       if (profileIncomplete) {
         router.replace('/profile-setup');
-      } else if (inAuthGroup) {
+      } else if (!inTabsGroup) {
         router.replace('/(tabs)');
       }
-    } else { 
-      if (!inAuthGroup) {
-        router.replace('/(auth)');
-      }
+    } else if (!isSignedIn && inTabsGroup) {
+      router.replace('/(auth)');
     }
-    
     SplashScreen.hideAsync();
-
   }, [isLoaded, isSignedIn, currentUser, isSuccess, segments, router]);
 
   if (!isLoaded || (isSignedIn && !isSuccess)) {
-     return (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" color="#4f46e5" />
-        </View>
-    );
+     return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#4f46e5" /></View>;
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="profile-setup" options={{ presentation: 'modal' }} />
+    <Stack>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
       <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true }} />
       <Stack.Screen name="group-edit" options={{ headerShown: false }} />
       <Stack.Screen name="event-edit" options={{ headerShown: false }} />
       <Stack.Screen name="schedule-event" options={{ headerShown: false }} />
       <Stack.Screen name="create-group" options={{ presentation: 'modal', headerShown: false }} />
+      <Stack.Screen name="group" options={{ headerShown: true }} />
+      <Stack.Screen name="group-details" options={{ headerShown: false }} />
     </Stack>
   );
 };
@@ -85,15 +71,8 @@ const InitialLayout = () => {
 export default function RootLayout() {
   const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
   if (!publishableKey) throw new Error('Missing Clerk Publishable Key');
-
   return (
-    <ClerkProvider 
-      tokenCache={tokenCache}
-      publishableKey={publishableKey}
-      // --- THIS IS THE FIX ---
-      // Disable Clerk's internal telemetry to remove the warning
-      telemetry={false}
-    >
+    <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
       <QueryClientProvider client={queryClient}>
           <InitialLayout />
       </QueryClientProvider>

@@ -30,7 +30,7 @@ const HomeScreen = () => {
   return (
     <SafeAreaView className='flex-1 bg-gray-100'>
       <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
-        <Text className="text-xl font-bold text-gray-900">Home</Text>
+        <Text className="text-xl font-bold text-gray-900">Profile</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>

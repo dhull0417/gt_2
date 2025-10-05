@@ -1,4 +1,4 @@
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, Alert, Image } from 'react-native';
 import React, { useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, Stack } from 'expo-router';
@@ -6,12 +6,17 @@ import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { useAcceptInvite } from '@/hooks/useAcceptInvite';
 import { useDeclineInvite } from '@/hooks/useDeclineInvite';
 import { Notification } from '@/utils/api';
-import { Image } from 'react-native';
 
 const NotificationItem = ({ item }: { item: Notification }) => {
     const { mutate: acceptInvite, isPending: isAccepting } = useAcceptInvite();
     const { mutate: declineInvite, isPending: isDeclining } = useDeclineInvite();
     const isPending = isAccepting || isDeclining;
+
+    // --- THIS IS THE FIX ---
+    // If the sender has been deleted or is otherwise null, don't render this item.
+    if (!item.sender) {
+        return null;
+    }
 
     const renderContent = () => {
         switch(item.type) {
@@ -44,7 +49,7 @@ const NotificationItem = ({ item }: { item: Notification }) => {
     
     return (
         <View className="flex-row items-start p-4 bg-white border-b border-gray-200">
-            <Image source={{ uri: item.sender.profilePicture }} className="w-10 h-10 rounded-full mr-4" />
+            <Image source={{ uri: item.sender.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} className="w-10 h-10 rounded-full mr-4" />
             <View className="flex-1">
                 {renderContent()}
             </View>
@@ -62,7 +67,7 @@ const NotificationsScreen = () => {
 
     return (
         <SafeAreaView className="flex-1 bg-gray-100">
-            <Stack.Screen options={{ headerTitle: "Notifications" }} />
+            <Stack.Screen options={{ headerTitle: "Notifications", headerShown: true }} />
             {isLoading ? (
                 <ActivityIndicator size="large" className="mt-8" />
             ) : (
