@@ -16,5 +16,8 @@ export const ENV = {
     ARCJET_KEY:process.env.ARCJET_KEY,
     STREAM_API_KEY:process.env.STREAM_API_KEY,
     STREAM_API_SECRET:process.env.STREAM_API_SECRET,
-    SERVER_CLIENT:StreamChat.getInstance(STREAM_API_KEY, STREAM_API_SECRET)
+    SERVER_CLIENT:StreamChat.getInstance(
+        process.env.STREAM_API_KEY, 
+        process.env.STREAM_API_SECRET
+    )
 };
