@@ -27,6 +27,7 @@
     "multer": "^2.0.1",
     "prettier": "3.6.2",
     "socket.io": "^4.8.1",
+    "stream-chat": "^9.25.0",
     "svix": "^1.76.1"
   },
   "devDependencies": {

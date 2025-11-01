@@ -208,3 +208,10 @@ export const notificationApi = {
         return response.data;
     },
 };
+
+export const chatApi = {
+  getClientToken: async (api: AxiosInstance): Promise<string> => {
+    const response = await api.post<{ token: string }>("/api/chat/token");
+    return response.data.token;
+  },
+};

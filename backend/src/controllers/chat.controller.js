@@ -1,5 +1,5 @@
 import asyncHandler from "express-async-handler";
-import Message from "../models/message.model.js";
+import Message from "../models/chat.model.js";
 import { getAuth } from "@clerk/express";
 
 // Get all messages for a specific group

@@ -1,4 +1,5 @@
 import dotenv from "dotenv"
+import { StreamChat } from "stream-chat";
 
 dotenv.config();
 
@@ -12,5 +13,8 @@ export const ENV = {
     CLOUDINARY_CLOUD_NAME:process.env.CLOUDINARY_CLOUD_NAME,
     CLOUDINARY_API_KEY:process.env.CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET:process.env.CLOUDINARY_API_SECRET,
-    ARCJET_KEY:process.env.ARCJET_KEY
+    ARCJET_KEY:process.env.ARCJET_KEY,
+    STREAM_API_KEY:process.env.STREAM_API_KEY,
+    STREAM_API_SECRET:process.env.STREAM_API_SECRET,
+    SERVER_CLIENT:StreamChat.getInstance(STREAM_API_KEY, STREAM_API_SECRET)
 };
