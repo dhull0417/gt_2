@@ -6,9 +6,9 @@ import SchedulePicker, { Schedule } from "@/components/SchedulePicker";
 import { Picker } from "@react-native-picker/picker";
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 
-const GroupImage = require('../../assets/images/group-image.jpeg');
+const GroupImage = require('../../assets/images/group-image.png');
 
 const usaTimezones = [
     { label: "Eastern (ET)", value: "America/New_York" },
@@ -32,7 +32,6 @@ const CreateGroupScreen = () => {
 
   const handleCreateGroup = () => {
     const variables = { name: groupName, time: meetTime, schedule, timezone };
-    // On success, the hook now handles navigation back to the tabs
     mutate(variables, {
         onSuccess: () => {
             router.back();
@@ -113,7 +112,6 @@ const CreateGroupScreen = () => {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
-        <Stack.Screen options={{ headerShown: false }} />
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
             <View style={{ padding: 24, flex: 1 }}>
                 {renderStepContent()}

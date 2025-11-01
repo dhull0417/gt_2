@@ -137,7 +137,7 @@ const GroupScreen = () => {
             </View>
             <ScrollView className="px-4">
                 <View className="my-4">
-                    <Link href={"/create-group"} asChild>
+                    <Link href={"/create-group" as any} asChild>
                         <TouchableOpacity 
                             className={`py-4 rounded-lg items-center shadow ${!currentUser ? 'bg-indigo-300' : 'bg-indigo-600'}`} 
                             disabled={!currentUser}

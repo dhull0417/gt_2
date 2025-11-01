@@ -3,13 +3,13 @@ import React from 'react';
 import { TouchableOpacity } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-const EventEditLayout = () => {
+const CreateGroupLayout = () => {
     const router = useRouter();
     
     return (
         <Stack>
             <Stack.Screen 
-                name="[id]" 
+                name="index" 
                 options={{ 
                     headerTitle: 'Create Group',
                     presentation: 'modal',
@@ -24,4 +24,4 @@ const EventEditLayout = () => {
     );
 };
 
-export default EventEditLayout;
+export default CreateGroupLayout;
