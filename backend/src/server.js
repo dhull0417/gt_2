@@ -39,8 +39,7 @@ const startServer = async () => {
   try {
     await connectDB();
     if (ENV.NODE_ENV !== "production") {
-      // 8. Start the http server instead of the express app
-      httpServer.listen(ENV.PORT, () => console.log("Server is up and running on PORT:", ENV.PORT));
+      app.listen(ENV.PORT, () => console.log("Server is up and running on PORT:", ENV.PORT));
     }
   } catch (error) {
     console.error("Failed to start server:", error.message);
