@@ -17,7 +17,6 @@ import User from "./models/user.model.js";
 const app = express();
 
 app.use(cors());
-app.use("/api/webhooks", webhookRoutes);
 app.use(express.json());
 app.use(clerkMiddleware());
 app.use(arcjetMiddleware);
