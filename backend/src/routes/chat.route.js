@@ -2,7 +2,7 @@ import express from 'express';
 import { ClerkExpressRequireAuth } from '@clerk/clerk-sdk-node';
 
 // Import your User model (adjust path if needed)
-import User from '../models/User.js'; 
+import User from '../models/user.model.js'; 
 
 // Import your global ENV object
 import { ENV } from '../config/env.js'; // <-- IMPORT YOUR ENV

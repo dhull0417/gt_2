@@ -16,6 +16,6 @@ router.post("/:groupId/add-member", protectRoute, addMember);
 router.post("/:groupId/leave", protectRoute, leaveGroup);
 router.post("/:groupId/remove-member", protectRoute, removeMember);
 router.post("/:groupId/events", protectRoute, createOneOffEvent);
-router.post("/:groupId/invite", protectRoute, inviteUser); // Add the new invite route
+router.post("/:groupId/invite", protectRoute, inviteUser);
 
 export default router;
