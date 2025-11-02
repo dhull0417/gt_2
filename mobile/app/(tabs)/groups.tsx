@@ -1,5 +1,5 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, TextInput, Keyboard, Alert } from 'react-native';
-import React, { useState, useCallback } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, TextInput, Keyboard, Alert, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useCallback, useEffect } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useRouter, useFocusEffect } from 'expo-router';
@@ -9,10 +9,84 @@ import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { useRemoveMember } from '@/hooks/useRemoveMember';
-import { Group, Schedule, User, useApiClient, userApi } from '@/utils/api'; 
+import { Group, GroupDetails, Schedule, User, useApiClient, userApi } from '@/utils/api'; 
 import { Feather } from '@expo/vector-icons';
 import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
+import { ChatProvider, useChatClient } from '@/components/ChatProvider';
+import type { Channel, ChannelData } from 'stream-chat';
+import { Chat, Channel as ChannelContext, MessageList, MessageInput, OverlayProvider } from 'stream-chat-react-native';
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb', // The 's' has been removed from here
+  },
+  loadingText: {
+    fontSize: 18,
+    color: '#6b7280', 
+    marginTop: 8,
+ },
+  chatContainer: {
+    flex: 1,
+  },
+});
+
+// --- 3. ADD HELPER COMPONENT ---
+/**
+ * Helper component: This contains the actual Stream UI.
+ * It's designed to be rendered *inside* the ChatProvider.
+ */
+const GroupChat = ({ group }: { group: GroupDetails }) => {
+  const { client } = useChatClient(); // Get the connected client from our provider
+  const [channel, setChannel] = useState<Channel | null>(null);
+
+  useEffect(() => {
+    if (!client || !group) return;
+
+    const initChannel = async () => {
+      // Use your group's unique MongoDB _id as the channel ID
+      const channelId = group._id;
+      
+      const newChannel = client.channel('messaging', channelId, {
+        name: group.name,
+        // Ensure all members from your DB are in the Stream channel
+        members: group.members.map(m => m._id),
+      } as ChannelData);
+
+      // watch() gets channel data and listens for real-time updates
+      await newChannel.watch();
+      setChannel(newChannel);
+    };
+
+    initChannel();
+
+    return () => {
+      // Cleanup: stop watching channel when component unmounts
+      if (channel) {
+        channel.stopWatching();
+      }
+    };
+  }, [client, group]); // Re-run if the client, group, or channel state changes
+
+  // Show a loader until the channel is fully initialized
+  if (!channel) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" />
+        <Text style={styles.loadingText}>Joining chat...</Text>
+      </View>
+    );
+  }
+
+  // Render the Stream chat components
+  return (
+    <Chat client={client}><ChannelContext channel={channel}><View style={styles.chatContainer}><MessageList /><MessageInput /></View></ChannelContext></Chat>
+  );
+};
+// --- END HELPER COMPONENT ---
 
 const GroupScreen = () => {
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -137,15 +211,14 @@ const GroupScreen = () => {
             </View>
             <ScrollView className="px-4">
                 <View className="my-4">
-                    <Link href={"/create-group" as any} asChild>
-                        <TouchableOpacity 
-                            className={`py-4 rounded-lg items-center shadow ${!currentUser ? 'bg-indigo-300' : 'bg-indigo-600'}`} 
-                            disabled={!currentUser}
-                        >
+                    <TouchableOpacity 
+                        className={`py-4 rounded-lg items-center shadow ${!currentUser ? 'bg-indigo-300' : 'bg-indigo-600'}`} 
+                        disabled={!currentUser}
+                        onPress={() => router.push('/create-group')}
+                          >
                             <Text className="text-white text-lg font-bold">Create Group</Text>
-                        </TouchableOpacity>
-                    </Link>
-                </View>
+                          </TouchableOpacity>
+                  </View>
                 <View>{renderGroupList()}</View>
             </ScrollView>
             
@@ -174,10 +247,23 @@ const GroupScreen = () => {
                     </View>
 
                     {activeTab === 'Chat' && (
-                        <View className="flex-1 justify-center items-center bg-gray-100">
-                            <Text className="text-lg text-gray-500">Group Chat Coming Soon</Text>
-                        </View>
-                    )}
+                        <KeyboardAvoidingView
+                            style={styles.chatContainer}
+                            behavior={Platform.OS === "ios" ? "padding" : "height"}
+                            // This offset accounts for your modal's header and tab bar
+                            // You may need to adjust the '90' slightly
+                            keyboardVerticalOffset={insets.top + 90} 
+                        >
+                          { (isLoadingDetails || !groupDetails || !currentUser) ? (
+                              <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="large" />
+                              </View>
+                       ) : (
+                              // Collapsed for whitespace fix
+                       <OverlayProvider><ChatProvider user={currentUser}><GroupChat group={groupDetails} /></ChatProvider></OverlayProvider>
+                        ) }
+                        </KeyboardAvoidingView>
+                 )}
 
                     {activeTab === 'Details' && (
                         <ScrollView className="flex-1 p-6 bg-gray-50" keyboardShouldPersistTaps="handled">
@@ -260,7 +346,7 @@ const GroupScreen = () => {
                                         </TouchableOpacity>
                                     </Link>
                                 )}
-                                {currentUser && currentUser._id !== selectedGroup.owner && groupDetails?.members.some(m => m._id === currentUser._id) && (
+                                {currentUser && currentUser._id !== selectedGroup.owner && groupDetails?.members.some((m: User) => m._id === currentUser._id) && (
                                     <TouchableOpacity
                                         onPress={handleLeaveGroup}
                                         disabled={isLeavingGroup}

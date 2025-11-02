@@ -4,48 +4,53 @@ import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useQuery } from '@tanstack/react-query';
 import { GroupDetails, User, userApi, useApiClient } from '@/utils/api';
-
-// --- CHAT IMPORTS ---
 import { ChatProvider, useChatClient } from '@/components/ChatProvider';
-import { Chat, Channel, MessageList, MessageInput } from 'stream-chat-react-native';
+
+// --- FIX: Import types from the core 'stream-chat' package ---
+import type { Channel, ChannelData } from 'stream-chat';
+
+// --- FIX: Renamed 'Channel' component to avoid name conflict with the type ---
+import { Chat, Channel as ChannelContext, MessageList, MessageInput } from 'stream-chat-react-native';
 
 /**
  * Helper component: This contains the actual Stream UI.
- * It's designed to be rendered *inside* the ChatProvider.
  */
 const GroupChatUI = ({ group }: { group: GroupDetails }) => {
-  const { client } = useChatClient(); // Get the connected client from our provider
-  const [channel, setChannel] = useState(null);
+  const { client } = useChatClient();
+  
+  // --- FIX #2: Explicitly type the channel state ---
+  // This tells TypeScript that 'channel' can be 'Channel' or 'null'
+  const [channel, setChannel] = useState<Channel | null>(null);
 
   useEffect(() => {
     if (!client || !group) return;
 
     const initChannel = async () => {
-      // Use your group's unique MongoDB _id as the channel ID
       const channelId = group._id;
       
+      // --- FIX #1: Cast the data object as 'ChannelData' ---
+      // This fixes the error about 'name' not existing
       const newChannel = client.channel('messaging', channelId, {
         name: group.name,
-        // Ensure all members from your DB are in the Stream channel
         members: group.members.map(m => m._id),
-      });
+      } as ChannelData); // Cast to ChannelData
 
-      // watch() gets channel data and listens for real-time updates
       await newChannel.watch();
-      setChannel(newChannel);
+      setChannel(newChannel); // This now works because of Fix #2
     };
 
     initChannel();
 
     return () => {
-      // Cleanup: stop watching channel when component unmounts
+      // Cleanup
       if (channel) {
+        // --- FIX #3: This now works because 'channel' is typed correctly ---
         channel.stopWatching();
       }
     };
-  }, [client, group]); // Re-run if the client or group changes
+  // Added 'channel' to dependency array for correct cleanup
+  }, [client, group, channel]); 
 
-  // Show a loader until the channel is fully initialized
   if (!channel) {
     return (
       <View style={styles.loadingContainer}>
@@ -58,19 +63,20 @@ const GroupChatUI = ({ group }: { group: GroupDetails }) => {
   // Render the Stream chat components
   return (
     <Chat client={client}>
-      <Channel channel={channel}>
+      {/* --- FIX: Use the renamed 'ChannelContext' component --- */}
+      <ChannelContext channel={channel}>
         <View style={styles.chatContainer}>
           <MessageList />
           <MessageInput />
         </View>
-      </Channel>
+      </ChannelContext>
     </Chat>
   );
 };
 
 /**
  * Main Screen Component: GroupChatScreen
- * This fetches all required data (group and user) and sets up the provider.
+ * (No changes needed in this part)
  */
 const GroupChatScreen = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -78,16 +84,13 @@ const GroupChatScreen = () => {
   const navigation = useNavigation();
   const router = useRouter();
 
-  // Fetch Group Details (you already had this)
   const { data: groupDetails, isLoading: isLoadingGroup } = useGetGroupDetails(id);
   
-  // Fetch Current User (this is new, needed for ChatProvider)
   const { data: currentUser, isLoading: isLoadingUser } = useQuery<User, Error>({
     queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
   });
 
-  // Your existing effect to set the header (no changes)
   useEffect(() => {
     if (groupDetails) {
       navigation.setOptions({
@@ -105,7 +108,6 @@ const GroupChatScreen = () => {
     }
   }, [navigation, groupDetails, id, router]);
 
-  // Show a loading indicator until *all* data is ready
   if (isLoadingGroup || isLoadingUser || !groupDetails || !currentUser) {
     return (
       <View style={styles.loadingContainer}>
@@ -114,34 +116,25 @@ const GroupChatScreen = () => {
     );
   }
 
-  // --- Render the Chat ---
-  // All data is loaded, so we can render the chat.
   return (
     <View style={styles.chatContainer}>
-      {/* 1. ChatProvider takes the user and connects to Stream.
-           It will show its own loading spinner until connected.
-      */}
       <ChatProvider user={currentUser}>
-        {/* 2. Once connected, it renders its children: our GroupChatUI component.
-        */}
         <GroupChatUI group={groupDetails} />
       </ChatProvider>
     </View>
   );
 };
 
-// --- STYLES (new) ---
-// Added some styles to replace Tailwind classes
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9fafb', // from "bg-gray-100"
+    backgroundColor: '#f9fafb', 
   },
   loadingText: {
     fontSize: 18,
-    color: '#6b7280', // from "text-gray-500"
+    color: '#6b7280', 
     marginTop: 8,
   },
   chatContainer: {

@@ -75,7 +75,7 @@ export const ChatProvider = ({
       }
       setIsReady(false);
     };
-  }, [token, user, isReady]); // Re-run if token or user changes
+  }, [token, user]); // Re-run if token or user changes
 
   // Show a spinner until the connection is complete
   if (!isReady) {

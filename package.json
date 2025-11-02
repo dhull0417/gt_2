@@ -2,7 +2,7 @@
   "devDependencies": {
     "prettier": "3.6.2",
     "typescript": "~5.8.3",
-    "@types/react": "~19.0.10"
+    "@types/react": "~19.1.1"
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.14.14"

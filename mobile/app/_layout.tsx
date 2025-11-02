@@ -1,3 +1,4 @@
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -103,10 +104,12 @@ export default function RootLayout() {
   const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
   if (!publishableKey) throw new Error('Missing Clerk Publishable Key');
   return (
-    <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
-      <QueryClientProvider client={queryClient}>
-          <InitialLayout />
-      </QueryClientProvider>
-    </ClerkProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
+        <QueryClientProvider client={queryClient}>
+            <InitialLayout />
+        </QueryClientProvider>
+      </ClerkProvider>
+    </GestureHandlerRootView>
   );
 }
