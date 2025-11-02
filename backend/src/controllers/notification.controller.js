@@ -5,6 +5,7 @@ import Group from "../models/group.model.js";
 import Event from "../models/event.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
+import { ENV } from "../config/env.js"; // <-- ADD THIS LINE
 
 // Get all notifications for the logged-in user
 export const getNotifications = asyncHandler(async (req, res) => {
@@ -48,6 +49,24 @@ export const acceptInvite = asyncHandler(async (req, res) => {
         { group: group._id, date: { $gte: new Date() } },
         { $addToSet: { members: user._id, undecided: user._id } }
     );
+
+    // Add the user to the Stream chat channel
+    try {
+        const channelId = group._id.toString();
+        const userIdToAdd = user._id.toString();
+
+        // Get the channel using your global server client
+        const channel = ENV.SERVER_CLIENT.channel('messaging', channelId);
+        
+        // Add the user to the channel's members
+        await channel.addMembers([userIdToAdd]);
+        console.log(`User ${userIdToAdd} successfully added to Stream channel ${channelId}`);
+
+    } catch (err) {
+        console.error("Failed to add user to Stream channel:", err);
+        // We log the error but don't stop the function,
+        // since accepting the invite in the DB is more critical.
+    }
 
     // Update the original invitation
     notification.status = 'accepted';
