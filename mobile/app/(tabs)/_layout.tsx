@@ -42,13 +42,6 @@ const TabsLayout = () => {
           }}
   	  />
       <Tabs.Screen 
-        name='events'
-        options={{
-          title: 'Events',
-          tabBarIcon: ({ color, size }) => <Feather name="calendar" size={size} color={color} />
-        }}
-  	  />
-      <Tabs.Screen 
           name='notifications'
           options={{
           	  title: "Notifications",
