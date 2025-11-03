@@ -12,9 +12,13 @@ const NotificationItem = ({ item }: { item: Notification }) => {
     const { mutate: declineInvite, isPending: isDeclining } = useDeclineInvite();
     const isPending = isAccepting || isDeclining;
 
-    // --- THIS IS THE FIX ---
     // If the sender has been deleted or is otherwise null, don't render this item.
     if (!item.sender) {
+        return null;
+    }
+
+    // If the group has been deleted, don't render this item either.
+    if (!item.group) {
         return null;
     }
 

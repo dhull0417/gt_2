@@ -79,11 +79,11 @@ const InitialLayout = () => {
       }
     }
   }, [isLoaded, isSignedIn, isSuccess]); // Note: No 'segments' or 'router'
-
+  /*
   if (!isLoaded || (isSignedIn && !isSuccess)) {
      return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#4f46e5" /></View>;
   }
-
+  */
   return (
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
