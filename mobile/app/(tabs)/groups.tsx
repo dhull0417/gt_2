@@ -50,11 +50,7 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
       // Use your group's unique MongoDB _id as the channel ID
       const channelId = group._id;
       
-      const newChannel = client.channel('messaging', channelId, {
-        name: group.name,
-        // Ensure all members from your DB are in the Stream channel
-        members: group.members.map(m => m._id),
-      } as ChannelData);
+      const newChannel = client.channel('messaging', channelId);
 
       // watch() gets channel data and listens for real-time updates
       await newChannel.watch();
