@@ -196,25 +196,36 @@ const GroupScreen = () => {
                 onPress={() => handleOpenGroupDetail(group)}
             >
                 <Text className="text-lg font-semibold text-gray-800">{group.name}</Text>
+
+                {/* --- ADDED LAST MESSAGE --- */}
+                {group.lastMessage ? (
+                  <Text className="text-sm text-gray-500 mt-1" numberOfLines={1}>
+                    <Text className="font-semibold">{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
+                  </Text>
+                ) : (
+                  <Text className="text-sm text-gray-400 italic mt-1">
+                    No messages yet
+                  </Text>
+                )}
+                {/* --- END --- */}
             </TouchableOpacity>
         ));
     };
 
     return (
         <SafeAreaView className='flex-1 bg-gray-50'>
-            <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white relative">
+            <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
+                {/* This empty View balances the icon on the right, keeping the title centered */}
+                <View className="w-7" /> 
+                
                 <Text className="text-xl font-bold text-gray-900">Groups</Text>
+
+                {/* This is the new plus icon button */}
+                <TouchableOpacity onPress={() => router.push('/create-group')}>
+                    <Feather name="plus-circle" size={28} color="#4f46e5" />
+                </TouchableOpacity>
             </View>
             <ScrollView className="px-4">
-                <View className="my-4">
-                    <TouchableOpacity 
-                        className={`py-4 rounded-lg items-center shadow ${!currentUser ? 'bg-indigo-300' : 'bg-indigo-600'}`} 
-                        disabled={!currentUser}
-                        onPress={() => router.push('/create-group')}
-                          >
-                            <Text className="text-white text-lg font-bold">Create Group</Text>
-                          </TouchableOpacity>
-                  </View>
                 <View>{renderGroupList()}</View>
             </ScrollView>
             

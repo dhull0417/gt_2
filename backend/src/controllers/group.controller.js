@@ -6,6 +6,7 @@ import Notification from "../models/notification.model.js"; // Import Notificati
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { calculateNextEventDate } from "../utils/date.utils.js";
+import { ENV } from "../config/env.js";
 
 // New function for inviting a user to a group
 export const inviteUser = asyncHandler(async (req, res) => {
@@ -110,11 +111,49 @@ export const updateGroup = asyncHandler(async (req, res) => {
 });
 
 export const getGroups = asyncHandler(async (req, res) => {
-  const { userId } = getAuth(req);
-  const currentUser = await User.findOne({ clerkId: userId }).lean();
-  if (!currentUser) return res.status(404).json({ error: "User not found." });
-  const userGroups = await Group.find({ members: currentUser._id }).select("name _id time schedule owner timezone");
-  res.status(200).json(userGroups);
+    const user = await User.findOne({ clerkId: req.auth.userId }).lean();
+    if (!user) return res.status(404).json({ error: "User not found." });
+
+    // 1. Get groups from MongoDB as plain objects
+    const groups = await Group.find({ members: user._id }).lean();
+    if (!groups.length) {
+        return res.status(200).json([]);
+    }
+
+    // 2. Get the list of channel IDs from your groups
+    const channelIds = groups.map(group => group._id.toString());
+
+    // 3. Query Stream for all channels at once, sorted by last message,
+    //    and include the last message.
+    const channels = await ENV.SERVER_CLIENT.queryChannels(
+        { id: { $in: channelIds } }, // Filter by our channel IDs
+        [ { last_message_at: -1 } ], // Sort by last message
+        { 
+            state: true, // This is required to get channel data
+            messages: 1 // Fetch the 1 most recent message
+        }
+    );
+
+    // 4. Create a simple map of channelId -> lastMessage
+    const lastMessageMap = new Map();
+    channels.forEach(channel => {
+        if (channel.state.messages.length > 0) {
+            const lastMsg = channel.state.messages[0];
+            lastMessageMap.set(channel.cid.split(':')[1], {
+                text: lastMsg.text,
+                user: { name: lastMsg.user.name || lastMsg.user.id } // Use name, fallback to ID
+            });
+        }
+    });
+
+    // 5. Stitch the last message data onto your group objects
+    const hydratedGroups = groups.map(group => ({
+        ...group,
+        lastMessage: lastMessageMap.get(group._id.toString()) || null
+    }));
+
+    // 6. Send the combined data
+    res.status(200).json(hydratedGroups);
 });
 
 export const getGroupDetails = asyncHandler(async (req, res) => {

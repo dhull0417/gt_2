@@ -17,6 +17,12 @@ export interface User {
   lastName?: string;
   profilePicture?: string;
 }
+export interface LastMessage {
+  text: string;
+  user: {
+    name: string;
+  };
+}
 export interface Group {
   _id: string;
   name: string;
@@ -24,6 +30,7 @@ export interface Group {
   schedule: Schedule;
   owner: string;
   timezone: string;
+  lastMessage?: LastMessage | null
 }
 export interface GroupDetails extends Group {
   members: User[];
@@ -215,3 +222,4 @@ export const chatApi = {
     return response.data.token;
   },
 };
+
