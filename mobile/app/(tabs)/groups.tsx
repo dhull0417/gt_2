@@ -182,6 +182,7 @@ const GroupScreen = () => {
         setSelectedGroup(null); 
         setUserIdToAdd(''); 
         setSearchQuery('');
+        refetch(); // <-- THIS IS THE FIX
     };
 
     const renderGroupList = () => {

@@ -152,6 +152,10 @@ export const getGroups = asyncHandler(async (req, res) => {
         lastMessage: lastMessageMap.get(group._id.toString()) || null
     }));
 
+    // Tell Vercel and the browser not to cache this response
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    // --- END FIX ---
+
     // 6. Send the combined data
     res.status(200).json(hydratedGroups);
 });
