@@ -75,7 +75,7 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
 
   // ✅ Sync all group members with Stream
-  await Promise.all(group.members.map(syncStreamUser));
+  await Promise.all(newGroup.members.map(syncStreamUser));
 
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
 });
