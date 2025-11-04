@@ -50,35 +50,30 @@ export const acceptInvite = asyncHandler(async (req, res) => {
         { $addToSet: { members: user._id, undecided: user._id } }
     );
 
-    // --- START: FIX ---
     // Add the user to the Stream chat channel
-    try {
-        const channelId = group._id.toString();
-        const userIdToAdd = user._id.toString();
+    const channelId = group._id.toString();
+    const userIdToAdd = user._id.toString();
 
-        // 1. (NEW) Upsert the user to Stream to ensure they exist *before* adding them.
-        await ENV.SERVER_CLIENT.upsertUser({
-            id: userIdToAdd,
-            name: (user.firstName && user.lastName) 
-                ? `${user.firstName} ${user.lastName}`
-                : user.email, // Use email as fallback
-            username: user.username,
-            image: user.profilePicture,
-            clerkId: user.clerkId,
-        });
+    // 1. Upsert the user to Stream to ensure they exist
+    const name = (user.firstName && user.lastName) 
+      ? `${user.firstName} ${user.lastName}`
+      : user.username || user.email; // Fallback to username, then email
 
-        // 2. Get the channel
-        const channel = ENV.SERVER_CLIENT.channel('messaging', channelId);
-        
-        // 3. Add the user to the channel's members
-        await channel.addMembers([userIdToAdd]);
-        console.log(`User ${userIdToAdd} successfully upserted and added to Stream channel ${channelId}`);
+    await ENV.SERVER_CLIENT.upsertUser({
+        id: userIdToAdd,
+        name: name,
+        username: user.username,
+        image: user.profilePicture,
+        clerkId: user.clerkId,
+    });
 
-    } catch (err) {
-        console.error("Failed to add user to Stream channel:", err);
-        // If this fails, the user might have to re-open the app,
-        // but we shouldn't fail the entire API request.
-    }
+    // 2. Get the channel
+    const channel = ENV.SERVER_CLIENT.channel('messaging', channelId);
+    
+    // 3. Add the user to the channel's members
+    //    If this fails, the entire function will now throw an error
+    await channel.addMembers([userIdToAdd]);
+    console.log(`User ${userIdToAdd} successfully added to Stream channel ${channelId}`);
 
     // Update the original invitation
     notification.status = 'accepted';
