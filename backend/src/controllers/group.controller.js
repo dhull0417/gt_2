@@ -2,7 +2,7 @@ import asyncHandler from "express-async-handler";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
-import Notification from "../models/notification.model.js"; // Import Notification model
+import Notification from "../models/notification.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { calculateNextEventDate } from "../utils/date.utils.js";
@@ -126,20 +126,20 @@ export const getGroups = asyncHandler(async (req, res) => {
     // 3. Query Stream for all channels at once, sorted by last message,
     //    and include the last message.
     const channels = await ENV.SERVER_CLIENT.queryChannels(
-        { id: { $in: channelIds } }, // Filter by our channel IDs
-        [ { last_message_at: -1 } ], // Sort by last message
-        { 
-            state: true, // This is required to get channel data
-            messages: 1 // Fetch the 1 most recent message
-        }
-    );
+    { id: { $in: channelIds } },
+    [{ last_message_at: -1 }],
+    { 
+        state: true,
+        messages: { limit: 1 } // clearer intention
+    }
+);
+
 
     // 4. Create a simple map of channelId -> lastMessage
     const lastMessageMap = new Map();
     channels.forEach(channel => {
         if (channel.state.messages.length > 0) {
-            const lastMsg = channel.state.messages[0];
-            lastMessageMap.set(channel.cid.split(':')[1], {
+        const lastMsg = channel.state.messages[channel.state.messages.length - 1];            lastMessageMap.set(channel.cid.split(':')[1], {
                 text: lastMsg.text,
                 user: { name: lastMsg.user.name || lastMsg.user.id } // Use name, fallback to ID
             });
