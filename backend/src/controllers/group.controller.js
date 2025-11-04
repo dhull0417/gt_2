@@ -7,6 +7,7 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { calculateNextEventDate } from "../utils/date.utils.js";
 import { ENV } from "../config/env.js";
+import { syncStreamUser } from "../utils/stream.js";
 
 // New function for inviting a user to a group
 export const inviteUser = asyncHandler(async (req, res) => {
@@ -72,6 +73,10 @@ export const createGroup = asyncHandler(async (req, res) => {
   } catch (eventError) {
     console.error("Failed to create the first events for the new group:", eventError);
   }
+
+  // ✅ Sync all group members with Stream
+  await Promise.all(group.members.map(syncStreamUser));
+
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
 });
 
@@ -191,6 +196,9 @@ export const addMember = asyncHandler(async (req, res) => {
   } catch (eventError) {
     console.error("Could not update upcoming events with new member:", eventError);
   }
+  // ✅ Ensure the new member exists in Stream
+  await syncStreamUser(newMember);
+
   res.status(200).json({ message: "User added to group successfully." });
 });
 

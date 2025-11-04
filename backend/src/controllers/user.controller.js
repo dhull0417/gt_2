@@ -1,22 +1,21 @@
 import asyncHandler from "express-async-handler";
 import User from "../models/user.model.js";
-import { getAuth } from "@clerk/express";
-import { clerkClient } from "@clerk/express";
+import { getAuth, clerkClient } from "@clerk/express";
+import { syncStreamUser } from "../utils/stream.js"; // ✅ add this import
 
 export const searchUsers = asyncHandler(async (req, res) => {
-    const { userId: clerkId } = getAuth(req);
-    const { username } = req.query;
+  const { userId: clerkId } = getAuth(req);
+  const { username } = req.query;
+  if (!username) return res.status(400).json({ error: "Username query is required." });
 
-    if (!username) {
-        return res.status(400).json({ error: "Username query is required." });
-    }
+  const users = await User.find({
+    username: { $regex: `^${username}`, $options: "i" },
+    clerkId: { $ne: clerkId },
+  })
+    .select("firstName lastName username profilePicture")
+    .limit(10);
 
-    const users = await User.find({
-        username: { $regex: `^${username}`, $options: "i" },
-        clerkId: { $ne: clerkId }
-    }).select("firstName lastName username profilePicture").limit(10);
-
-    res.status(200).json(users);
+  res.status(200).json(users);
 });
 
 export const getUserProfile = asyncHandler(async (req, res) => {
@@ -30,40 +29,47 @@ export const updateProfile = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   const { username } = req.body;
 
-  // If a username is being set or changed, check for uniqueness first.
   if (username) {
-    const existingUser = await User.findOne({ username: username });
-    // If a user with that username exists AND it's not the current user, block the update.
+    const existingUser = await User.findOne({ username });
     if (existingUser && existingUser.clerkId !== userId) {
-        return res.status(409).json({ error: "Username is already taken." });
+      return res.status(409).json({ error: "Username is already taken." });
     }
   }
 
   const user = await User.findOneAndUpdate({ clerkId: userId }, req.body, { new: true });
   if (!user) return res.status(404).json({ error: "User not found" });
+
+  // ✅ Sync Stream user
+  await syncStreamUser(user);
+
   res.status(200).json({ user });
 });
 
 export const syncUser = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
-  const existingUser = await User.findOne({ clerkId: userId });
-  if (existingUser) {
-    return res.status(200).json({ user: existingUser, message: "User already exists" });
+  let user = await User.findOne({ clerkId: userId });
+  if (user) {
+    // ✅ keep Stream data in sync even for existing user
+    await syncStreamUser(user);
+    return res.status(200).json({ user, message: "User already exists" });
   }
 
   const clerkUser = await clerkClient.users.getUser(userId);
 
   const userData = {
     clerkId: userId,
-    email: clerkUser.emailAddresses[0].emailAddress,
-    // Set username to null if not provided by Clerk (e.g., social sign-up)
-    username: clerkUser.username || null, 
+    email: clerkUser.emailAddresses[0]?.emailAddress,
+    username: clerkUser.username || null,
     firstName: clerkUser.firstName || "",
     lastName: clerkUser.lastName || "",
     profilePicture: clerkUser.imageUrl || "",
   };
 
-  const user = await User.create(userData);
+  user = await User.create(userData);
+
+  // ✅ Sync Stream after creating
+  await syncStreamUser(user);
+
   res.status(201).json({ user, message: "User created successfully" });
 });
 
