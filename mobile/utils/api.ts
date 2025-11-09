@@ -16,6 +16,8 @@ export interface User {
   firstName?: string;
   lastName?: string;
   profilePicture?: string;
+  groups?: string[];
+  streamToken: string;
 }
 export interface LastMessage {
   text: string;

@@ -1,7 +1,8 @@
 import asyncHandler from "express-async-handler";
 import User from "../models/user.model.js";
 import { getAuth, clerkClient } from "@clerk/express";
-import { syncStreamUser } from "../utils/stream.js"; // ✅ add this import
+import { syncStreamUser } from "../utils/stream.js"; 
+import { ENV } from '../config/env.js';  
 
 export const searchUsers = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
@@ -77,5 +78,15 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
   const user = await User.findOne({ clerkId }).lean();
   if (!user) return res.status(404).json({ error: "User not found in database." });
-  res.status(200).json({ user });
+
+  // GENERATE STREAM TOKEN ON‑THE‑FLY
+  const streamToken = ENV.SERVER_CLIENT.createToken(user._id.toString());
+
+  // SEND IT WITH THE USER
+  res.status(200).json({
+    user: {
+      ...user,
+      streamToken,   // ← THIS IS THE KEY
+    }
+  });
 });
