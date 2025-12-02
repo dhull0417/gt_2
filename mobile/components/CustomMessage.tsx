@@ -1,53 +1,93 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { MessageSimpleProps } from 'stream-chat-react-native';
+import { useChatContext } from 'stream-chat-react-native';
 
-const CustomMessage: React.FC<MessageSimpleProps> = ({ message, groupStyles }) => {
-  // Early return if message or groupStyles is undefined
-  if (!message || !groupStyles) return null;
+const CustomMessage = (props: MessageSimpleProps) => {
+  const { message, isMyMessage } = props;
+  const { client } = useChatContext(); // Get the client
 
-  const senderName = message.user?.name || 'Unknown';
-  const senderImage = message.user?.image || null;
+  // ✅ FIX: Early return if message is undefined to satisfy TypeScript
+  if (!message) return null;
+
+  const userName = message.user?.name || 'Unknown';
 
   return (
-    <View style={styles.messageContainer}>
-      {(groupStyles[0] === 'single' || groupStyles[0] === 'top') && (
-        <View style={styles.senderRow}>
-          {senderImage && <Image source={{ uri: senderImage }} style={styles.avatar} />}
-          <Text style={styles.senderName}>{senderName}</Text>
-        </View>
+    <View style={[
+      styles.container, 
+      message.user?.id === client.userID ? styles.containerRight : styles.containerLeft
+    ]}>
+      {/* Name Header: Only show for OTHER users */}
+      {message.user?.id !== client.userID && (
+        <Text style={styles.nameText}>
+          {userName}
+        </Text>
       )}
-      <Text style={styles.textMessage}>{message.text}</Text>
+
+      {/* Message Bubble */}
+      <View style={[
+        styles.bubble,
+        message.user?.id === client.userID ? styles.bubbleRight : styles.bubbleLeft
+      ]}>
+        <Text style={message.user?.id === client.userID ? styles.textRight : styles.textLeft}>
+          {message.text}
+        </Text>
+      </View>
+      <Text style={styles.dateText}>
+        {message.created_at 
+          ? new Date(message.created_at as string | Date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : ''}
+      </Text>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  messageContainer: {
-    marginVertical: 2,
+  container: {
+    marginVertical: 4,
+    maxWidth: '80%',
     paddingHorizontal: 8,
   },
-  senderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
+  containerLeft: {
+    alignSelf: 'flex-start',
   },
-  avatar: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginRight: 4,
+  containerRight: {
+    alignSelf: 'flex-end',
   },
-  senderName: {
+  nameText: {
     fontSize: 12,
+    color: '#6B7280', // Gray-500
+    marginLeft: 4,
+    marginBottom: 4,
     fontWeight: '600',
-    color: '#6b7280',
   },
-  textMessage: {
-    fontSize: 14,
-    padding: 6,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 8,
+  bubble: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  bubbleLeft: {
+    backgroundColor: '#E5E7EB', // Gray-200
+    borderBottomLeftRadius: 4,
+  },
+  bubbleRight: {
+    backgroundColor: '#4F46E5', // Indigo-600
+    borderBottomRightRadius: 4,
+  },
+  textLeft: {
+    color: '#111827', // Gray-900
+    fontSize: 16,
+  },
+  textRight: {
+    color: '#FFFFFF', // White text
+    fontSize: 16,
+  },
+  dateText: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginTop: 4,
+    alignSelf: 'flex-end',
+    marginRight: 4,
   },
 });
 

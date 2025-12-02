@@ -15,7 +15,8 @@ import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
 import { ChatProvider, useChatClient } from '@/components/ChatProvider';
 import type { Channel as StreamChannel } from 'stream-chat';
-import { Chat, Channel, MessageList, MessageInput, OverlayProvider } from 'stream-chat-react-native';
+import { Chat, Channel, MessageList, MessageInput, OverlayProvider, MessageSimple } from 'stream-chat-react-native';
+import CustomMessage from '@/components/CustomMessage';
 
 const styles = StyleSheet.create({
   loadingContainer: {
@@ -34,9 +35,24 @@ const styles = StyleSheet.create({
   },
 });
 
-/**
- * FIXED: GroupChat — Now uses <Channel>, not <ChannelContext>
- */
+const TestMessage = (props: any) => {
+  const isMyMessage = props.isMyMessage;
+  const userName = props.message.user?.name || 'Unknown';
+
+  return (
+    <View style={{ marginVertical: 5, padding: 10, alignItems: isMyMessage ? 'flex-end' : 'flex-start' }}>
+      {/* ALWAYS SHOW NAME FOR EVERYONE FOR THIS TEST */}
+      <Text style={{ fontSize: 10, color: 'red', marginBottom: 2 }}>
+        {userName}
+      </Text>
+      <View style={{ backgroundColor: isMyMessage ? '#DBEAFE' : '#E5E7EB', padding: 8, borderRadius: 8 }}>
+        <Text>{props.message.text}</Text>
+      </View>
+    </View>
+  );
+};
+
+
 const GroupChat = ({ group }: { group: GroupDetails }) => {
   const { client, isConnected } = useChatClient(); // ← Get isConnected too
   const [channel, setChannel] = useState<StreamChannel | null>(null);
@@ -71,13 +87,14 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
     );
   }
 
-  // NOW SAFE TO RENDER <Chat> — client is NOT null
   return (
     <OverlayProvider>
       <Chat client={client}>
         <Channel channel={channel}>
           <View style={styles.chatContainer}>
-            <MessageList />
+            <MessageList 
+              Message={CustomMessage}
+            />
             <MessageInput />
           </View>
         </Channel>
@@ -86,7 +103,6 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
   );
 };
 
-// --- REST OF YOUR CODE (UNCHANGED) ---
 const GroupScreen = () => {
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [isGroupDetailVisible, setIsGroupDetailVisible] = useState(false);
@@ -275,7 +291,97 @@ const GroupScreen = () => {
 
           {activeTab === 'Details' && (
             <ScrollView className="flex-1 p-6 bg-gray-50" keyboardShouldPersistTaps="handled">
-              {/* ... your details UI ... */}
+              {/* --- Loading / Error States --- */}
+              {isLoadingDetails && <ActivityIndicator size="large" color="#4f46e5" className="my-8" />}
+              {isErrorDetails && <Text className="text-center text-red-500">Failed to load group details.</Text>}
+
+              {/* --- Main Details Content --- */}
+              {groupDetails && currentUser && (
+                <View className="pb-32">
+                  {/* --- Schedule Info --- */}
+                  {groupDetails.schedule && (
+                    <View className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6">
+                      <Text className="text-lg font-semibold text-gray-800 mb-2">Schedule</Text>
+                      <View className="flex-row items-center">
+                        <Feather name="calendar" size={20} color="#6B7280" />
+                        <Text className="text-base text-gray-700 ml-3">{formatSchedule(groupDetails.schedule)}</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* --- Member List --- */}
+                  <View className="mb-6">
+                    <Text className="text-xl font-bold text-gray-800 mb-3">Members</Text>
+                    {groupDetails.members.map(member => (
+                      <View key={member._id} className="flex-row items-center justify-between bg-white p-3 rounded-lg shadow-sm border border-gray-200 mb-2">
+                        <View className="flex-row items-center">
+                          <Image source={{ uri: member.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} className="w-10 h-10 rounded-full mr-3" />
+                          <Text className="text-base text-gray-700">{member.firstName} {member.lastName}</Text>
+                        </View>
+                        {/* Show Remove button if user is owner AND this is not them */}
+                        {currentUser._id === groupDetails.owner && member._id !== currentUser._id && (
+                          <TouchableOpacity onPress={() => handleRemoveMember(member._id)} disabled={isRemovingMember}>
+                            <Feather name="x-circle" size={22} color="#EF4444" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* --- Owner: Invite Members --- */}
+                  {currentUser._id === groupDetails.owner && (
+                    <View className="mb-8">
+                      <Text className="text-xl font-bold text-gray-800 mb-3">Invite Members</Text>
+                      <TextInput
+                        className="bg-white border border-gray-300 rounded-lg p-3 text-base"
+                        placeholder="Search for users by email..."
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      {searchResults && searchResults.length > 0 && (
+                        <View className="mt-2 border border-gray-200 rounded-lg bg-white">
+                          {searchResults.map(user => (
+                            <TouchableOpacity
+                              key={user._id}
+                              className="flex-row items-center justify-between p-3 border-b border-gray-100"
+                              onPress={() => handleInvite(user._id)}
+                              disabled={isInviting}
+                            >
+                              <Text className="text-base text-gray-700">{user.firstName} {user.lastName} ({user.email})</Text>
+                              {isInviting ? <ActivityIndicator /> : <Feather name="plus" size={22} color="#4f46e5" />}
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* --- Danger Zone --- */}
+                  <View className="border-t border-gray-300 pt-6">
+                    {currentUser._id === groupDetails.owner ? (
+                      // --- Owner Actions ---
+                      <TouchableOpacity
+                        onPress={handleDeleteGroup}
+                        disabled={isDeletingGroup}
+                        className="bg-red-600 rounded-lg p-4 items-center shadow-lg"
+                      >
+                        {isDeletingGroup ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-lg">Delete Group</Text>}
+                      </TouchableOpacity>
+                    ) : (
+                      // --- Member Actions ---
+                      <TouchableOpacity
+                        onPress={handleLeaveGroup}
+                        disabled={isLeavingGroup}
+                        className="bg-red-600 rounded-lg p-4 items-center shadow-lg"
+                      >
+                        {isLeavingGroup ? <ActivityIndicator color="#fff" /> : <Text className="text-white font-bold text-lg">Leave Group</Text>}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              )}
             </ScrollView>
           )}
         </View>
