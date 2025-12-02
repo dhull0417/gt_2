@@ -176,9 +176,8 @@ const DashboardScreen = () => {
         <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#111827' }}>
           Home
         </Text>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/notifications')}>
-          <Feather name="bell" size={24} color="#4B5563" />
-        </TouchableOpacity>
+        {/* The bell icon is removed, and this right spacer keeps the title centered */}
+        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView className="p-4">

@@ -66,7 +66,8 @@ const AuthLayout = () => {
       'schedule-event',
       'create-group',
       'group',
-      'group-details'
+      'group-details',
+      'notifications'
     ].includes(segments[0]);
 
     if (isSignedIn) {
@@ -90,7 +91,7 @@ const AuthLayout = () => {
 
   return (
     <Stack>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
       <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true }} />
@@ -99,6 +100,7 @@ const AuthLayout = () => {
       <Stack.Screen name="schedule-event" options={{ headerShown: false }} />
       <Stack.Screen name="create-group" options={{ presentation: 'modal', headerShown: false }} />
       <Stack.Screen name="group-details" options={{ headerShown: false }} />
+      <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />
     </Stack>
   );
 };

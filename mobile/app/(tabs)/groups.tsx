@@ -236,10 +236,18 @@ const GroupScreen = () => {
   return (
     <SafeAreaView className='flex-1 bg-gray-50'>
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
-        <View className="w-7" />
+        {/* Left side: NEW Bell Icon */}
+        <TouchableOpacity onPress={() => router.push('/notifications')}>
+          <Feather name="bell" size={26} color="#4f46e5" />
+          {/* We will add the red dot here in a later step */}
+        </TouchableOpacity>
+        
+        {/* Center: Title */}
         <Text className="text-xl font-bold text-gray-900">Groups</Text>
+        
+        {/* Right side: Existing Plus Icon */}
         <TouchableOpacity onPress={() => router.push('/create-group')}>
-          <Feather name="plus-circle" size={28} color="#4f46e5" />
+          <Feather name="plus-circle" size={26} color="#4f46e5" />
         </TouchableOpacity>
       </View>
       <ScrollView className="px-4">

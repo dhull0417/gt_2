@@ -125,3 +125,22 @@ export const declineInvite = asyncHandler(async (req, res) => {
 
     res.status(200).json({ message: "Invitation declined." });
 });
+
+// Mark notifications as read
+export const markNotificationsAsRead = asyncHandler(async (req, res) => {
+    // 1. Get the logged-in user, just like in your other controllers
+    const { userId: clerkId } = getAuth(req);
+    const user = await User.findOne({ clerkId }).lean();
+    if (!user) {
+        return res.status(401).json({ error: "User not authenticated." });
+    }
+  
+    // 2. Update all notifications for this user that are currently unread
+    await Notification.updateMany(
+      { recipient: user._id, read: false }, // Find all unread notifications
+      { $set: { read: true } }              // Set them to read
+    );
+  
+    // 3. Send a success response
+    res.status(200).json({ message: "Notifications marked as read" });
+});
