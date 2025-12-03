@@ -12,6 +12,7 @@ export interface User {
   _id: string;
   clerkId: string;
   email: string;
+  phone: string;
   username: string;
   firstName?: string;
   lastName?: string;
@@ -115,7 +116,15 @@ interface RemoveScheduledDayPayload {
 }
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
-  const api = axios.create({ baseURL: API_BASE_URL, headers: { "User-Agent": "GT2MobileApp/1.0" } });
+  const api = axios.create({ 
+    baseURL: API_BASE_URL, 
+    headers: { 
+      // 👇 This header is REQUIRED to pass the Arcjet Bot detection
+      "User-Agent": "GT2MobileApp/1.0",
+      "Content-Type": "application/json"
+    } 
+  });
+  
   api.interceptors.request.use(async (config) => {
     const token = await getToken();
     if (token) config.headers.Authorization = `Bearer ${token}`;

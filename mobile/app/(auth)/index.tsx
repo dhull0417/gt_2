@@ -2,6 +2,7 @@ import { useSocialAuth } from "@/hooks/useSocialAuth";
 import { Text, Image, View, TouchableOpacity, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router"; // 1. Import useRouter
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Feather } from '@expo/vector-icons';
 
 export default function Index() {
   const { handleSocialAuth, isLoading } = useSocialAuth();
@@ -18,6 +19,7 @@ export default function Index() {
             />
           </View>
 
+          {/* Google Button */}
           <View style={styles.buttonGroup}>
             <TouchableOpacity 
               style={[styles.button, styles.shadow]}
@@ -32,6 +34,7 @@ export default function Index() {
               )}
             </TouchableOpacity>
 
+            {/* Apple Button */}
             <TouchableOpacity 
               style={[styles.button, styles.shadow]}
               onPress={() => handleSocialAuth("oauth_apple")}
@@ -43,6 +46,19 @@ export default function Index() {
                   <Text style={styles.buttonText}>Continue with Apple</Text>
                 </View>
               )}
+            </TouchableOpacity>
+
+            {/* Phone Button */}
+            <TouchableOpacity 
+              style={[styles.button, styles.shadow]}
+              onPress={() => router.push('/(auth)/phone-login')}
+              disabled={isLoading}
+            >
+              <View style={styles.buttonContent}>
+                {/* Using Feather icon to match the size/weight of other logos */}
+                <Feather name="phone" size={28} color="#000" style={{ marginRight: 12 }} />
+                <Text style={styles.buttonText}>Continue with Phone</Text>
+              </View>
             </TouchableOpacity>
 
             <View style={styles.separatorContainer}>
