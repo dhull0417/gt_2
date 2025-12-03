@@ -216,6 +216,10 @@ export const notificationApi = {
         const response = await api.post(`/api/notifications/${notificationId}/decline`);
         return response.data;
     },
+    markNotificationsAsRead: async (api: AxiosInstance): Promise<{ message: string }> => {
+        const response = await api.post<{ message: string }>('/api/notifications/mark-read');
+        return response.data;
+    },
 };
 
 export const chatApi = {

@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert, Share } from 'react-native';
 import React, { useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/clerk-expo';
@@ -25,6 +25,28 @@ const HomeScreen = () => {
           await Clipboard.setStringAsync(currentUser._id);
           Alert.alert("Copied!", "Your User ID has been copied to the clipboard.");
       }
+  };
+
+  const handleShareApp = async () => {
+    try {
+      // You can customize this message and URL
+      const result = await Share.share({
+        message:
+          'Join me on GroupThat! Organize groups and events easily. Download the app here: https://your-website-or-store-link.com',
+      });
+
+      if (result.action === Share.sharedAction) {
+        if (result.activityType) {
+          // shared with activity type of result.activityType
+        } else {
+          // shared
+        }
+      } else if (result.action === Share.dismissedAction) {
+        // dismissed
+      }
+    } catch (error: any) {
+      Alert.alert(error.message);
+    }
   };
 
   return (
@@ -69,6 +91,17 @@ const HomeScreen = () => {
                     className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
                 >
                     <Text className="text-indigo-600 text-lg font-bold">Update Account Info</Text>
+                </TouchableOpacity>
+
+                {/* 👇 NEW SHARE BUTTON 👇 */}
+                <TouchableOpacity
+                    onPress={handleShareApp}
+                    className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
+                >
+                    <View className="flex-row items-center">
+                        <Feather name="share-2" size={20} color="#4f46e5" className="mr-2" />
+                        <Text className="text-indigo-600 text-lg font-bold ml-2">Share App</Text>
+                    </View>
                 </TouchableOpacity>
 
                 <TouchableOpacity

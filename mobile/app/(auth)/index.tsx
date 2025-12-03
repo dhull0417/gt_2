@@ -51,14 +51,12 @@ export default function Index() {
                 <View style={styles.separatorLine} />
             </View>
 
-            {/* --- THIS IS THE FIX --- */}
-            {/* Replaced <Link> with a standard TouchableOpacity that uses router.push */}
             <TouchableOpacity 
               style={[styles.button, styles.shadow]}
               onPress={() => router.push('/(auth)/sign-in')}
             >
               <View style={styles.buttonContent}>
-                  <Text style={styles.buttonText}>Continue with Username</Text>
+                  <Text style={styles.buttonText}>Continue with Username or Email</Text>
               </View>
             </TouchableOpacity>
           </View>

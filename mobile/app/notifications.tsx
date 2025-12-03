@@ -5,6 +5,7 @@ import { useFocusEffect, Stack } from 'expo-router';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { useAcceptInvite } from '@/hooks/useAcceptInvite';
 import { useDeclineInvite } from '@/hooks/useDeclineInvite';
+import { useMarkNotificationsAsRead } from '@/hooks/useMarkNotificationsAsRead';
 import { Notification } from '@/utils/api';
 
 const NotificationItem = ({ item }: { item: Notification }) => {
@@ -64,10 +65,14 @@ const NotificationItem = ({ item }: { item: Notification }) => {
 
 const NotificationsScreen = () => {
     const { data: notifications, isLoading, refetch } = useGetNotifications();
+    const { mutate: markAsRead } = useMarkNotificationsAsRead(); // <-- ADD THIS
 
     useFocusEffect(useCallback(() => {
-        refetch();
-    }, [refetch]));
+        // This will call your new API endpoint every time the screen is focused.
+        // On success, the useMarkNotificationsAsRead hook will automatically
+        // invalidate the ['notifications'] query, causing the list to refetch.
+        markAsRead(); 
+    }, [markAsRead])); // <-- Use markAsRead as the dependency
 
     return (
         <SafeAreaView className="flex-1 bg-gray-100">

@@ -17,6 +17,7 @@ import { ChatProvider, useChatClient } from '@/components/ChatProvider';
 import type { Channel as StreamChannel } from 'stream-chat';
 import { Chat, Channel, MessageList, MessageInput, OverlayProvider, MessageSimple } from 'stream-chat-react-native';
 import CustomMessage from '@/components/CustomMessage';
+import { useGetNotifications } from '@/hooks/useGetNotifications';
 
 const styles = StyleSheet.create({
   loadingContainer: {
@@ -123,6 +124,8 @@ const GroupScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const { data: searchResults } = useSearchUsers(searchQuery);
   const { mutate: inviteUser, isPending: isInviting } = useInviteUser();
+  const { data: notifications } = useGetNotifications();
+  const hasUnreadNotifications = notifications?.some(n => !n.read);
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
@@ -239,7 +242,9 @@ const GroupScreen = () => {
         {/* Left side: NEW Bell Icon */}
         <TouchableOpacity onPress={() => router.push('/notifications')}>
           <Feather name="bell" size={26} color="#4f46e5" />
-          {/* We will add the red dot here in a later step */}
+          {hasUnreadNotifications && (
+            <View className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+  )}
         </TouchableOpacity>
         
         {/* Center: Title */}
