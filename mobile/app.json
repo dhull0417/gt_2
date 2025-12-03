@@ -5,13 +5,18 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.jpg",
-    "scheme": "mobile",
+    "scheme": "groupthat",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dallinhull.groupthat", 
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "GroupThat needs camera access to let you take a profile picture.",
+        "NSPhotoLibraryUsageDescription": "GroupThat needs access to your photos to let you choose a profile picture.",
+        "NSContactsUsageDescription": "GroupThat needs access to your contacts to let you invite friends to your groups."
+      }
     },
 
     "android": {
@@ -20,7 +25,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.mobile"
+      "package": "com.dallinhull.groupthat"
     },
     "web": {
       "bundler": "metro",
