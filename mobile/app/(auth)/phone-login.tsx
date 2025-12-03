@@ -73,33 +73,41 @@ export default function PhoneLogin() {
 
     try {
       if (isSigningUp) {
-        // Verify for Sign Up
-        // FIXED: Added strategy: 'phone_code' which was missing
+        console.log("Verifying Sign Up...");
         const completeSignUp = await signUp.attemptVerification({ 
           strategy: 'phone_code',
           code 
         });
 
+        // 👇 LOGGING THE RESULT HERE
+        console.log("Sign Up Result Status:", completeSignUp.status);
+        if (completeSignUp.status !== 'complete') {
+            console.log("Incomplete Details:", JSON.stringify(completeSignUp, null, 2));
+        }
+
         if (completeSignUp.status === 'complete') {
           await setSignUpActive({ session: completeSignUp.createdSessionId });
-          // Router will automatically redirect based on _layout auth state
         } else {
-          Alert.alert("Error", "Verification failed. Please try again.");
+          Alert.alert("Error", `Verification failed. Status: ${completeSignUp.status}`);
         }
       } else {
-        // Verify for Sign In
+        console.log("Verifying Sign In...");
         const completeSignIn = await signIn.attemptFirstFactor({
           strategy: 'phone_code',
           code,
         });
+
+        // 👇 LOGGING THE RESULT HERE
+        console.log("Sign In Result Status:", completeSignIn.status);
+        
         if (completeSignIn.status === 'complete') {
           await setSignInActive({ session: completeSignIn.createdSessionId });
-          // Router will automatically redirect
         } else {
-          Alert.alert("Error", "Verification failed. Please try again.");
+          Alert.alert("Error", `Verification failed. Status: ${completeSignIn.status}`);
         }
       }
     } catch (err: any) {
+      console.error("Verification Catch Error:", JSON.stringify(err, null, 2));
       Alert.alert("Error", err.errors?.[0]?.message || "Invalid code.");
     } finally {
       setIsLoading(false);
