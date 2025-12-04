@@ -15,7 +15,7 @@ import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
 import { ChatProvider, useChatClient } from '@/components/ChatProvider';
 import type { Channel as StreamChannel } from 'stream-chat';
-import { Chat, Channel, MessageList, MessageInput, OverlayProvider, MessageSimple } from 'stream-chat-react-native';
+import { Chat, Channel, MessageList, MessageInput, OverlayProvider, MessageSimple } from 'stream-chat-expo';
 import CustomMessage from '@/components/CustomMessage';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 

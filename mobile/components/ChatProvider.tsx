@@ -1,4 +1,3 @@
-// mobile/components/ChatProvider.tsx
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { StreamChat } from 'stream-chat';
 import { User } from '@/utils/api';

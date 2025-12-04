@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { MessageSimpleProps } from 'stream-chat-react-native';
-import { useChatContext } from 'stream-chat-react-native';
+import { MessageSimpleProps } from 'stream-chat-expo';
+import { useChatContext } from 'stream-chat-expo';
 
 const CustomMessage = (props: MessageSimpleProps) => {
   const { message, isMyMessage } = props;

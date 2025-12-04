@@ -5,9 +5,10 @@ import { useRouter } from "expo-router";
 
 // Include username in the variables
 interface UpdateProfileVariables {
-  firstName: string;
-  lastName: string;
-  username: string;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  profilePicture?: string;
 }
 
 export const useUpdateProfile = () => {
