@@ -10,15 +10,15 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dallinhull.groupthat", 
+      "bundleIdentifier": "com.dallinhull.groupthat",
       "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "GroupThat needs camera access to let you take a profile picture.",
         "NSPhotoLibraryUsageDescription": "GroupThat needs access to your photos to let you choose a profile picture.",
-        "NSContactsUsageDescription": "GroupThat needs access to your contacts to let you invite friends to your groups."
+        "NSContactsUsageDescription": "GroupThat needs access to your contacts to let you invite friends to your groups.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
-
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.jpg",
@@ -46,6 +46,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1fdd5250-331a-446a-a605-e00c3f56055f"
+      }
     }
   }
 }
