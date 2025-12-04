@@ -17,6 +17,9 @@
         "NSPhotoLibraryUsageDescription": "GroupThat needs access to your photos to let you choose a profile picture.",
         "NSContactsUsageDescription": "GroupThat needs access to your contacts to let you invite friends to your groups.",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "runtimeVersion": {
+        "policy": "appVersion"
       }
     },
     "android": {
@@ -25,7 +28,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.dallinhull.groupthat"
+      "package": "com.dallinhull.groupthat",
+      "runtimeVersion": "1.0.0"
     },
     "web": {
       "bundler": "metro",
@@ -53,6 +57,9 @@
       "eas": {
         "projectId": "1fdd5250-331a-446a-a605-e00c3f56055f"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/1fdd5250-331a-446a-a605-e00c3f56055f"
     }
   }
 }

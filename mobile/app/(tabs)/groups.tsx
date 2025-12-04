@@ -93,6 +93,13 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
       <Chat client={client}>
         <Channel channel={channel}>
           <View style={styles.chatContainer}>
+          {/* 👇 DEBUG INDICATOR START */}
+            <View style={{ padding: 10, backgroundColor: isConnected ? '#dcfce7' : '#fee2e2' }}>
+               <Text style={{ textAlign: 'center', color: isConnected ? '#166534' : '#991b1b' }}>
+                  DEBUG STATUS: {isConnected ? "CONNECTED ✅" : "DISCONNECTED ❌"}
+               </Text>
+            </View>
+            {/* 👆 DEBUG INDICATOR END */}
             <MessageList 
               Message={CustomMessage}
             />
