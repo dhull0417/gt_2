@@ -15,7 +15,7 @@ import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
 import { ChatProvider, useChatClient } from '@/components/ChatProvider';
 import type { Channel as StreamChannel } from 'stream-chat';
-import { Chat, Channel, MessageList, MessageInput, OverlayProvider, MessageSimple } from 'stream-chat-expo';
+import { Chat, Channel, MessageList, MessageInput, OverlayProvider, MessageSimple, useMessageInputContext } from 'stream-chat-expo';
 import CustomMessage from '@/components/CustomMessage';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 
@@ -53,10 +53,54 @@ const TestMessage = (props: any) => {
   );
 };
 
+const CustomSendButton = () => {
+  // 1. Grab the function directly from the library's brain (Context)
+  const { sendMessage, text, sending } = useMessageInputContext() as any;
+
+  const handlePress = async () => {
+    if (sending) return; // Prevent double taps
+
+    if (!sendMessage) {
+      Alert.alert("ERROR", "Even the Hook couldn't find sendMessage!");
+      return;
+    }
+
+    try {
+      // 2. We trigger the send manually
+      await sendMessage();
+      // Note: Stream clears the text box automatically on success
+    } catch (error: any) {
+      Alert.alert("CRASH", `Send failed: ${error.message || error}`);
+    }
+  };
+
+  // Disable button if text is empty (optional, but good UX)
+  const isDisabled = !text || text.trim().length === 0;
+
+  return (
+    <TouchableOpacity 
+      onPress={handlePress} 
+      disabled={isDisabled}
+      style={{ padding: 10, justifyContent: 'center' }}
+    >
+      <Feather 
+        name="send" 
+        size={24} 
+        color={isDisabled ? "gray" : "blue"} 
+      />
+    </TouchableOpacity>
+  );
+};
+
+// mobile/app/(tabs)/groups.tsx
 
 const GroupChat = ({ group }: { group: GroupDetails }) => {
-  const { client, isConnected } = useChatClient(); // ← Get isConnected too
+  const { client, isConnected } = useChatClient();
   const [channel, setChannel] = useState<StreamChannel | null>(null);
+  
+  // 👇 1. Add local state for our raw input
+  const [text, setText] = useState('');
+  const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
     if (!client || !group) return;
@@ -78,7 +122,22 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
     };
   }, [client, group]);
 
-  // SHOW LOADING UNTIL CLIENT + CHANNEL ARE READY
+  // 👇 2. The Direct Send Function (No library UI involved)
+  const handleRawSend = async () => {
+    if (!channel || !text.trim()) return;
+    
+    setIsSending(true);
+    try {
+        // We talk directly to the SDK
+        await channel.sendMessage({ text: text });
+        setText(''); // Clear box on success
+    } catch (error: any) {
+        Alert.alert("FAILED", `Raw send error: ${error.message}`);
+    } finally {
+        setIsSending(false);
+    }
+  };
+
   if (!client || !isConnected || !channel) {
     return (
       <View style={styles.loadingContainer}>
@@ -93,17 +152,38 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
       <Chat client={client}>
         <Channel channel={channel}>
           <View style={styles.chatContainer}>
-          {/* 👇 DEBUG INDICATOR START */}
-            <View style={{ padding: 10, backgroundColor: isConnected ? '#dcfce7' : '#fee2e2' }}>
-               <Text style={{ textAlign: 'center', color: isConnected ? '#166534' : '#991b1b' }}>
-                  DEBUG STATUS: {isConnected ? "CONNECTED ✅" : "DISCONNECTED ❌"}
-               </Text>
+
+            <MessageList Message={CustomMessage} />
+            
+            {/* 👇 3. THE RAW INPUT REPLACEMENT */}
+            <View className="flex-row items-center p-3 border-t border-gray-200 bg-white pb-6"> 
+                {/* Optional: Add an attachment button here later */}
+                
+                <View className="flex-1 flex-row items-center bg-gray-100 rounded-full px-4 py-2 mr-3 border border-gray-300">
+                    <TextInput 
+                        value={text}
+                        onChangeText={setText}
+                        placeholder="Type a message..."
+                        placeholderTextColor="#9CA3AF"
+                        multiline
+                        className="flex-1 text-base text-gray-900 max-h-24 pt-0 pb-0" // limited height growth
+                        style={{ paddingTop: Platform.OS === 'ios' ? 6 : 0 }} 
+                    />
+                </View>
+
+                <TouchableOpacity 
+                    onPress={handleRawSend} 
+                    disabled={isSending || !text.trim()}
+                    className={`p-3 rounded-full ${!text.trim() ? 'bg-gray-200' : 'bg-indigo-600'}`}
+                >
+                    {isSending ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                        <Feather name="send" size={20} color={!text.trim() ? "#9CA3AF" : "white"} />
+                    )}
+                </TouchableOpacity>
             </View>
-            {/* 👆 DEBUG INDICATOR END */}
-            <MessageList 
-              Message={CustomMessage}
-            />
-            <MessageInput />
+
           </View>
         </Channel>
       </Chat>
@@ -292,21 +372,21 @@ const GroupScreen = () => {
 
             {activeTab === 'Chat' && (
             <KeyboardAvoidingView
-                style={styles.chatContainer}
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                keyboardVerticalOffset={insets.top + 90}
+              style={styles.chatContainer}
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              keyboardVerticalOffset={insets.top + 90}
             >
-                {(isLoadingDetails || !groupDetails || !currentUser) ? (
+              {(isLoadingDetails || !groupDetails || !currentUser) ? (
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" />
+                  <ActivityIndicator size="large" />
                 </View>
-                ) : (
+              ) : (
                 <ChatProvider user={currentUser}>
-                    <GroupChat group={groupDetails} />
+                  <GroupChat group={groupDetails} />
                 </ChatProvider>
-                )}
+              )}
             </KeyboardAvoidingView>
-            )}
+          )}
 
           {activeTab === 'Details' && (
           <ScrollView className="flex-1 p-6 bg-gray-50" keyboardShouldPersistTaps="handled">

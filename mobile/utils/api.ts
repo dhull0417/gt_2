@@ -5,8 +5,9 @@ import { useMemo } from "react";
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export interface Schedule {
-  frequency: 'weekly' | 'monthly';
+  frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
   days: number[];
+  rules?: any[];
 }
 export interface User {
   _id: string;
@@ -112,7 +113,8 @@ interface CreateOneOffEventPayload {
 interface RemoveScheduledDayPayload {
     groupId: string;
     day: number;
-    frequency: 'weekly' | 'monthly';
+    frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
+    rules?: any[];
 }
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {

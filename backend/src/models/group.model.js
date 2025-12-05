@@ -1,10 +1,13 @@
 import mongoose from "mongoose";
 
 const scheduleSchema = new mongoose.Schema({
-  frequency: { type: String, required: true, enum: ['weekly', 'monthly'] },
+  frequency: { frequency: {
+      type: String,
+      enum: ['daily', 'weekly', 'biweekly', 'monthly', 'custom'], 
+      default: 'weekly'
+    },},
     days: [{ 
     type: Number, 
-    required: true 
   }], 
 }, { _id: false });
 
