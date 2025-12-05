@@ -1,14 +1,27 @@
 import mongoose from "mongoose";
 
 const scheduleSchema = new mongoose.Schema({
-  frequency: { frequency: {
-      type: String,
-      enum: ['daily', 'weekly', 'biweekly', 'monthly', 'custom'], 
-      default: 'weekly'
-    },},
-    days: [{ 
-    type: Number, 
-  }], 
+  frequency: {
+    type: String,
+    // Added 'biweekly' and 'custom' here to match frontend
+    enum: ['daily', 'weekly', 'biweekly', 'monthly', 'custom'], 
+    default: 'weekly'
+  },
+  days: [{ type: Number }], // Used for Weekly (0-6) or Monthly (1-31)
+  
+  // 👇 NEW: This stores your Custom Routine logic
+  rules: [{
+    type: { 
+      type: String, 
+      enum: ['byDay', 'byDate'] 
+    },
+    // For "byDay" (e.g., "Every 2nd Tuesday")
+    occurrence: { type: String, enum: ['1st', '2nd', '3rd', '4th', '5th', 'Last'] },
+    day: Number, // 0-6
+    
+    // For "byDate" (e.g., "Every 15th")
+    dates: [Number] 
+  }]
 }, { _id: false });
 
 const groupSchema = new mongoose.Schema({
