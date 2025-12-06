@@ -29,6 +29,12 @@ const groupSchema = new mongoose.Schema({
   time: { type: String },
   schedule: { type: scheduleSchema, required: false },
   timezone: { type: String },
+  eventsToDisplay: { 
+    type: Number, 
+    default: 1, 
+    min: 1, 
+    max: 14 
+  },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 }, { timestamps: true });

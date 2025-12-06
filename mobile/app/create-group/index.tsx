@@ -63,6 +63,7 @@ const CreateGroupScreen = () => {
       { id: Date.now().toString(), type: null, data: { occurrence: '1st', dayIndex: 0, dates: [] } }
   ]);
   const [currentPage, setCurrentPage] = useState(0);
+  const [eventsToDisplay, setEventsToDisplay] = useState("1"); // String for TextInput
 
   // Modal State for Dropdowns
   const [modalVisible, setModalVisible] = useState(false);
@@ -103,11 +104,18 @@ const CreateGroupScreen = () => {
         }));
     }
 
+    const limit = parseInt(eventsToDisplay);
+    if (isNaN(limit) || limit < 1 || limit > 14) {
+        Alert.alert("Invalid Input", "Please enter a number between 1 and 14 for displayed events.");
+        return;
+    }
+
     const variables = { 
         name: groupName, 
         time: meetTime, 
         schedule: finalSchedule, 
-        timezone 
+        timezone,
+        eventsToDisplay: limit // 👈 Send to backend
     };
 
     mutate(variables, {
@@ -508,8 +516,12 @@ const CreateGroupScreen = () => {
 
   const renderStep4_Time = () => (
     <View style={styles.stepContainer}>
-        <Text style={styles.headerTitle}>Choose a time for your group</Text>
+        <Text style={styles.headerTitle}>Choose a time & details</Text>
+        
+        {/* TIME PICKER */}
         <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
+        
+        {/* TIMEZONE */}
         <View style={styles.timezoneContainer}>
             <Text style={styles.pickerTitle}>Select Timezone</Text>
             <View style={styles.pickerWrapper}>
@@ -518,6 +530,23 @@ const CreateGroupScreen = () => {
                 </Picker>
             </View>
         </View>
+
+        {/* 👇 NEW INPUT FIELD */}
+        <View style={{ marginBottom: 20 }}>
+            <Text style={styles.pickerTitle}>How many upcoming events to display?</Text>
+            <Text style={{ textAlign: 'center', color: '#6B7280', marginBottom: 8 }}>(Enter 1 - 14)</Text>
+            <TextInput
+                style={{ 
+                    borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, padding: 12, 
+                    backgroundColor: 'white', fontSize: 18, textAlign: 'center' 
+                }}
+                keyboardType="number-pad"
+                value={eventsToDisplay}
+                onChangeText={setEventsToDisplay}
+                maxLength={2}
+            />
+        </View>
+
         <View style={styles.footerNavSpread}>
             <TouchableOpacity onPress={handleBack}>
                 <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
