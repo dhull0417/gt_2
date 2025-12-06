@@ -52,29 +52,49 @@ export const inviteUser = asyncHandler(async (req, res) => {
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   const { name, time, schedule, timezone } = req.body;
-  if (!name || !time || !schedule || !timezone || !schedule.days || schedule.days.length === 0) {
-    return res.status(400).json({ error: "All group details, including at least one day, are required." });
+
+  // Validation
+  if (!name || !time || !schedule || !timezone) {
+     return res.status(400).json({ error: "Required fields missing." });
   }
+
+  // NOTE: We allow days to be empty IF custom rules exist
+  if (schedule.frequency !== 'custom' && (!schedule.days || schedule.days.length === 0)) {
+     return res.status(400).json({ error: "Days are required for this schedule type." });
+  }
+
   const owner = await User.findOne({ clerkId: userId });
   if (!owner) return res.status(404).json({ error: "User not found." });
+
   const groupData = { name, time, schedule, timezone, owner: owner._id, members: [owner._id] };
   const newGroup = await Group.create(groupData);
   await owner.updateOne({ $addToSet: { groups: newGroup._id } });
 
   try {
-    for (const day of newGroup.schedule.days) {
-      const eventDate = calculateNextEventDate(day, newGroup.time, newGroup.timezone, newGroup.schedule.frequency);
+    // 👇 LOGIC SPLIT: Custom vs Standard
+    const itemsToIterate = newGroup.schedule.frequency === 'custom' 
+        ? newGroup.schedule.rules // Iterate Rules
+        : newGroup.schedule.days; // Iterate Integers
+
+    for (const item of itemsToIterate) {
+      // Pass the item (Rule Object or Integer) to the calculator
+      const eventDate = calculateNextEventDate(item, newGroup.time, newGroup.timezone, newGroup.schedule.frequency);
+      
       await Event.create({
-        group: newGroup._id, name: newGroup.name, date: eventDate, time: newGroup.time,
+        group: newGroup._id, 
+        name: newGroup.name, 
+        date: eventDate, 
+        time: newGroup.time,
         timezone: newGroup.timezone,
-        members: newGroup.members, undecided: newGroup.members,
+        members: newGroup.members, 
+        undecided: newGroup.members,
       });
     }
   } catch (eventError) {
-    console.error("Failed to create the first events for the new group:", eventError);
+    console.error("Failed to create the first events:", eventError);
   }
 
-  // ✅ Sync all group members with Stream
+  // ✅ Sync with Stream
   await Promise.all(newGroup.members.map(syncStreamUser));
 
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
@@ -84,34 +104,84 @@ export const updateGroup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
     const { name, time, schedule, timezone } = req.body;
-    if ((name && name.trim() === '') || !time || !schedule || !timezone || !schedule.days || schedule.days.length === 0) {
-        return res.status(400).json({ error: "Time, schedule, and timezone are required. Name cannot be empty." });
+
+    // 1. Validate Input
+    // We check if basic fields are missing.
+    // For Schedule: If it's NOT custom, we insist on having 'days'.
+    if ((name && name.trim() === '') || !time || !schedule || !timezone) {
+        return res.status(400).json({ error: "Name, time, schedule, and timezone are required." });
     }
+
+    if (schedule.frequency !== 'custom' && (!schedule.days || schedule.days.length === 0)) {
+        return res.status(400).json({ error: "Days are required for standard schedules." });
+    }
+
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
+
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
+
+    // 2. Ownership Check
     if (group.owner.toString() !== requester._id.toString()) {
         return res.status(403).json({ error: "Only the group owner can edit the group." });
     }
+
+    // 3. Update Fields
     if (name) group.name = name;
     group.time = time;
     group.schedule = schedule;
     group.timezone = timezone;
+
     const updatedGroup = await group.save();
+
+    // 4. Regenerate Future Events
     try {
         const today = new Date();
         today.setUTCHours(0, 0, 0, 0);
-        await Event.deleteMany({ group: group._id, isOverride: false, date: { $gte: today } });
-        for (const day of updatedGroup.schedule.days) {
-            const nextEventDate = calculateNextEventDate(day, updatedGroup.time, updatedGroup.timezone, updatedGroup.schedule.frequency);
+
+        // A. Delete existing future events (except manual overrides)
+        await Event.deleteMany({ 
+            group: group._id, 
+            isOverride: false, 
+            date: { $gte: today } 
+        });
+
+        // B. Determine what to iterate over (Rules vs Days)
+        let itemsToIterate = [];
+        
+        if (updatedGroup.schedule.frequency === 'custom') {
+            itemsToIterate = updatedGroup.schedule.rules || [];
+        } else if (updatedGroup.schedule.frequency === 'daily') {
+            // For Daily, we just need to trigger the generator once to get the "Next" event
+            itemsToIterate = [0]; 
+        } else {
+            // Weekly, Monthly, Bi-weekly
+            itemsToIterate = updatedGroup.schedule.days || [];
+        }
+
+        // C. Create the next instance for each rule/day
+        for (const item of itemsToIterate) {
+            const nextEventDate = calculateNextEventDate(
+                item, 
+                updatedGroup.time, 
+                updatedGroup.timezone, 
+                updatedGroup.schedule.frequency
+            );
+
             await Event.create({
-                group: updatedGroup._id, name: updatedGroup.name, date: nextEventDate, time: updatedGroup.time,
-                timezone: updatedGroup.timezone, members: updatedGroup.members, undecided: updatedGroup.members,
+                group: updatedGroup._id, 
+                name: updatedGroup.name, 
+                date: nextEventDate, 
+                time: updatedGroup.time,
+                timezone: updatedGroup.timezone, 
+                members: updatedGroup.members, 
+                undecided: updatedGroup.members,
             });
         }
     } catch (eventError) {
         console.error("Failed to regenerate event after group update:", eventError);
     }
+
     res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
 });
 

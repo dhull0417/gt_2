@@ -5,7 +5,7 @@ import { Alert } from "react-native";
 interface RemoveScheduledDayVariables {
   groupId: string;
   day: number;
-  frequency: 'weekly' | 'monthly';
+  frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
 }
 
 export const useRemoveScheduledDay = () => {

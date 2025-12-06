@@ -4,10 +4,17 @@ import { useMemo } from "react";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
+export interface CustomRule {
+  type: 'byDay' | 'byDate';
+  occurrence?: '1st' | '2nd' | '3rd' | '4th' | '5th' | 'Last';
+  day?: number;   // 0-6
+  dates?: number[]; // 1-31
+}
+
 export interface Schedule {
   frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
   days: number[];
-  rules?: any[];
+  rules?: CustomRule[]; // 👈 Updated from any[] to CustomRule[]
 }
 export interface User {
   _id: string;
