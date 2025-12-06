@@ -9,6 +9,20 @@ import { calculateNextEventDate } from "../utils/date.utils.js";
 import { ENV } from "../config/env.js";
 import { syncStreamUser } from "../utils/stream.js";
 
+// --- Helper to determine what to iterate over ---
+const getScheduleItems = (schedule) => {
+    if (schedule.frequency === 'daily') {
+        // Daily only needs 1 iteration to create the next event
+        return [0]; 
+    }
+    if (schedule.frequency === 'custom') {
+        // Custom iterates over rules
+        return schedule.rules || [];
+    }
+    // Weekly, Monthly, Bi-weekly iterate over the specific days selected
+    return schedule.days || [];
+};
+
 // New function for inviting a user to a group
 export const inviteUser = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
@@ -52,34 +66,30 @@ export const inviteUser = asyncHandler(async (req, res) => {
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   const { name, time, schedule, timezone } = req.body;
-
+  
   // Validation
   if (!name || !time || !schedule || !timezone) {
-     return res.status(400).json({ error: "Required fields missing." });
+    return res.status(400).json({ error: "All group details are required." });
   }
 
-  // NOTE: We allow days to be empty IF custom rules exist
+  // Ensure days exist unless it's a custom schedule
   if (schedule.frequency !== 'custom' && (!schedule.days || schedule.days.length === 0)) {
-     return res.status(400).json({ error: "Days are required for this schedule type." });
+    return res.status(400).json({ error: "At least one day must be selected." });
   }
 
   const owner = await User.findOne({ clerkId: userId });
   if (!owner) return res.status(404).json({ error: "User not found." });
-
+  
   const groupData = { name, time, schedule, timezone, owner: owner._id, members: [owner._id] };
   const newGroup = await Group.create(groupData);
   await owner.updateOne({ $addToSet: { groups: newGroup._id } });
 
   try {
-    // 👇 LOGIC SPLIT: Custom vs Standard
-    const itemsToIterate = newGroup.schedule.frequency === 'custom' 
-        ? newGroup.schedule.rules // Iterate Rules
-        : newGroup.schedule.days; // Iterate Integers
+    // 👇 FIX: Use helper to avoid 7 duplicates for 'daily'
+    const itemsToIterate = getScheduleItems(newGroup.schedule);
 
     for (const item of itemsToIterate) {
-      // Pass the item (Rule Object or Integer) to the calculator
       const eventDate = calculateNextEventDate(item, newGroup.time, newGroup.timezone, newGroup.schedule.frequency);
-      
       await Event.create({
         group: newGroup._id, 
         name: newGroup.name, 
@@ -91,10 +101,10 @@ export const createGroup = asyncHandler(async (req, res) => {
       });
     }
   } catch (eventError) {
-    console.error("Failed to create the first events:", eventError);
+    console.error("Failed to create the first events for the new group:", eventError);
   }
 
-  // ✅ Sync with Stream
+  // Sync with Stream
   await Promise.all(newGroup.members.map(syncStreamUser));
 
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
@@ -104,62 +114,39 @@ export const updateGroup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
     const { name, time, schedule, timezone } = req.body;
-
-    // 1. Validate Input
-    // We check if basic fields are missing.
-    // For Schedule: If it's NOT custom, we insist on having 'days'.
+    
     if ((name && name.trim() === '') || !time || !schedule || !timezone) {
-        return res.status(400).json({ error: "Name, time, schedule, and timezone are required." });
+        return res.status(400).json({ error: "Time, schedule, and timezone are required. Name cannot be empty." });
     }
 
     if (schedule.frequency !== 'custom' && (!schedule.days || schedule.days.length === 0)) {
-        return res.status(400).json({ error: "Days are required for standard schedules." });
+        return res.status(400).json({ error: "At least one day is required." });
     }
 
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
-
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
-
-    // 2. Ownership Check
+    
     if (group.owner.toString() !== requester._id.toString()) {
         return res.status(403).json({ error: "Only the group owner can edit the group." });
     }
-
-    // 3. Update Fields
+    
     if (name) group.name = name;
     group.time = time;
     group.schedule = schedule;
     group.timezone = timezone;
-
+    
     const updatedGroup = await group.save();
-
-    // 4. Regenerate Future Events
+    
     try {
         const today = new Date();
         today.setUTCHours(0, 0, 0, 0);
-
-        // A. Delete existing future events (except manual overrides)
-        await Event.deleteMany({ 
-            group: group._id, 
-            isOverride: false, 
-            date: { $gte: today } 
-        });
-
-        // B. Determine what to iterate over (Rules vs Days)
-        let itemsToIterate = [];
+        // Delete old future events (non-overrides)
+        await Event.deleteMany({ group: group._id, isOverride: false, date: { $gte: today } });
         
-        if (updatedGroup.schedule.frequency === 'custom') {
-            itemsToIterate = updatedGroup.schedule.rules || [];
-        } else if (updatedGroup.schedule.frequency === 'daily') {
-            // For Daily, we just need to trigger the generator once to get the "Next" event
-            itemsToIterate = [0]; 
-        } else {
-            // Weekly, Monthly, Bi-weekly
-            itemsToIterate = updatedGroup.schedule.days || [];
-        }
+        // 👇 FIX: Use helper here too
+        const itemsToIterate = getScheduleItems(updatedGroup.schedule);
 
-        // C. Create the next instance for each rule/day
         for (const item of itemsToIterate) {
             const nextEventDate = calculateNextEventDate(
                 item, 
@@ -167,7 +154,7 @@ export const updateGroup = asyncHandler(async (req, res) => {
                 updatedGroup.timezone, 
                 updatedGroup.schedule.frequency
             );
-
+            
             await Event.create({
                 group: updatedGroup._id, 
                 name: updatedGroup.name, 
@@ -181,7 +168,6 @@ export const updateGroup = asyncHandler(async (req, res) => {
     } catch (eventError) {
         console.error("Failed to regenerate event after group update:", eventError);
     }
-
     res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
 });
 
@@ -198,17 +184,15 @@ export const getGroups = asyncHandler(async (req, res) => {
     // 2. Get the list of channel IDs from your groups
     const channelIds = groups.map(group => group._id.toString());
 
-    // 3. Query Stream for all channels at once, sorted by last message,
-    //    and include the last message.
+    // 3. Query Stream for all channels at once
     const channels = await ENV.SERVER_CLIENT.queryChannels(
-    { id: { $in: channelIds } },
-    [{ last_message_at: -1 }],
-    { 
-        state: true,
-        messages: { limit: 1 } // clearer intention
-    }
-);
-
+        { id: { $in: channelIds } },
+        [{ last_message_at: -1 }],
+        { 
+            state: true,
+            messages: { limit: 1 } 
+        }
+    );
 
     // 4. Create a simple map of channelId -> lastMessage
     const lastMessageMap = new Map();
@@ -266,8 +250,7 @@ export const addMember = asyncHandler(async (req, res) => {
   } catch (eventError) {
     console.error("Could not update upcoming events with new member:", eventError);
   }
-  // ✅ Ensure the new member exists in Stream
-  await syncStreamUser(newMember);
+  await syncStreamUser(userToAdd); // Sync added user
 
   res.status(200).json({ message: "User added to group successfully." });
 });
@@ -344,12 +327,17 @@ export const createOneOffEvent = asyncHandler(async (req, res) => {
         return res.status(400).json({ error: "Date, time, and timezone are required." });
     }
     
-    const { hours, minutes } = parseTime(time);
-    const eventDateTime = DateTime.fromJSDate(new Date(date), { zone: timezone }).set({ hour: hours, minute: minutes });
-    const now = DateTime.now().setZone(timezone);
-
-    if (eventDateTime < now) {
-        return res.status(400).json({ error: "Cannot schedule an event in the past." });
+    // Simple parse helper for local check
+    const [t, p] = time.split(' ');
+    let [h, m] = t.split(':').map(Number);
+    if (p === 'PM' && h !== 12) h += 12;
+    if (p === 'AM' && h === 12) h = 0;
+    
+    // We can rely on frontend validation mostly, but basic backend check:
+    const eventDate = new Date(date);
+    eventDate.setHours(h, m, 0, 0);
+    if (eventDate < new Date()) {
+         return res.status(400).json({ error: "Cannot schedule an event in the past." });
     }
 
     const group = await Group.findById(groupId);

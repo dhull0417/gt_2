@@ -2,9 +2,12 @@ import { DateTime } from "luxon";
 
 /**
  * Calculates the next event date based on a schedule rule.
+ * @param {number|object} dayOrRule - Integer (0-6 / 1-31) OR Rule Object ({ type: 'byDay', ... })
+ * @param {string} time - Time string (e.g., "05:00 PM")
+ * @param {string} timezone - Timezone string (e.g., "America/Denver")
+ * @param {string} frequency - 'daily', 'weekly', 'biweekly', 'monthly', 'custom'
  */
 export const calculateNextEventDate = (dayOrRule, time, timezone, frequency) => {
-  // 🔍 MODIFICATION 1: SPY LOGS (Check your terminal when you run this!)
   console.log(`[DateUtil] Input Freq: "${frequency}" | Day/Rule: ${JSON.stringify(dayOrRule)}`);
 
   const now = DateTime.now().setZone(timezone);
@@ -20,10 +23,7 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency) => 
   let eventDate = now.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
   // --- 1. DAILY ---
-  // 🔍 MODIFICATION 2: Strict Daily Check
   if (frequency === 'daily') {
-    // Note: We ignore 'dayOrRule' here because Daily doesn't care about the index (0-6)
-    
     // If time has passed today, move to tomorrow
     if (eventDate <= now) {
         console.log('[DateUtil] Daily: Time passed, moving to tomorrow');
@@ -55,8 +55,6 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency) => 
   // --- 3. MONTHLY (Standard Numeric Input) ---
   if (typeof dayOrRule === 'number' && frequency === 'monthly') {
       const targetDate = dayOrRule; // 1-31
-      
-      // 🔍 MODIFICATION 3: Explicit Monthly Log
       console.log(`[DateUtil] Processing Monthly logic for date: ${targetDate}`);
 
       // Set to target date of current month
