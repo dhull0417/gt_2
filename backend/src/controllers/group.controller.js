@@ -16,7 +16,6 @@ const getScheduleItems = (schedule) => {
     return schedule.days || [];
 };
 
-// 👇 RE-ADDED MISSING FUNCTION
 export const inviteUser = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
@@ -65,13 +64,11 @@ export const createGroup = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "All details required." });
   }
 
-  // Validate the new limit field
   const limit = eventsToDisplay ? parseInt(eventsToDisplay) : 1;
   if (limit < 1 || limit > 14) {
       return res.status(400).json({ error: "Display events must be between 1 and 14." });
   }
 
-  // Ensure days exist unless it's a custom schedule
   if (schedule.frequency !== 'custom' && (!schedule.days || schedule.days.length === 0)) {
     return res.status(400).json({ error: "At least one day must be selected." });
   }
@@ -90,35 +87,43 @@ export const createGroup = asyncHandler(async (req, res) => {
 
   try {
     const itemsToIterate = getScheduleItems(newGroup.schedule);
+    let potentialEvents = [];
 
-    // 👇 THE CHAINING LOOP
+    // 1. Generate enough candidates for EACH rule independently
     for (const item of itemsToIterate) {
-        let lastGeneratedDate = null; // Start from "Now" (default)
-
-        // Loop N times to create the sequence
+        let lastGeneratedDate = null;
         for (let i = 0; i < limit; i++) {
             const nextEventDate = calculateNextEventDate(
                 item, 
                 newGroup.time, 
                 newGroup.timezone, 
                 newGroup.schedule.frequency,
-                lastGeneratedDate // Pass previous date as anchor
+                lastGeneratedDate
             );
-
-            await Event.create({
-                group: newGroup._id, 
-                name: newGroup.name, 
-                date: nextEventDate, 
-                time: newGroup.time,
-                timezone: newGroup.timezone,
-                members: newGroup.members, 
-                undecided: newGroup.members,
-            });
-
-            // Update anchor for next iteration
+            potentialEvents.push(nextEventDate);
             lastGeneratedDate = nextEventDate;
         }
     }
+
+    // 2. Sort all candidates chronologically
+    potentialEvents.sort((a, b) => new Date(a) - new Date(b));
+
+    // 3. Slice the top N events requested
+    const finalEvents = potentialEvents.slice(0, limit);
+
+    // 4. Create them in DB
+    for (const date of finalEvents) {
+        await Event.create({
+            group: newGroup._id, 
+            name: newGroup.name, 
+            date: date, 
+            time: newGroup.time,
+            timezone: newGroup.timezone,
+            members: newGroup.members, 
+            undecided: newGroup.members,
+        });
+    }
+
   } catch (eventError) {
     console.error("Failed to create events:", eventError);
   }
@@ -167,11 +172,11 @@ export const updateGroup = asyncHandler(async (req, res) => {
         await Event.deleteMany({ group: group._id, isOverride: false, date: { $gte: today } });
         
         const itemsToIterate = getScheduleItems(updatedGroup.schedule);
+        let potentialEvents = [];
 
-        // 👇 THE CHAINING LOOP
+        // 1. Generate candidates
         for (const item of itemsToIterate) {
-            let lastGeneratedDate = null; 
-
+            let lastGeneratedDate = null;
             for (let i = 0; i < limit; i++) {
                 const nextEventDate = calculateNextEventDate(
                     item, 
@@ -180,19 +185,28 @@ export const updateGroup = asyncHandler(async (req, res) => {
                     updatedGroup.schedule.frequency,
                     lastGeneratedDate
                 );
-                
-                await Event.create({
-                    group: updatedGroup._id, 
-                    name: updatedGroup.name, 
-                    date: nextEventDate, 
-                    time: updatedGroup.time,
-                    timezone: updatedGroup.timezone, 
-                    members: updatedGroup.members, 
-                    undecided: updatedGroup.members,
-                });
-
+                potentialEvents.push(nextEventDate);
                 lastGeneratedDate = nextEventDate;
             }
+        }
+
+        // 2. Sort
+        potentialEvents.sort((a, b) => new Date(a) - new Date(b));
+
+        // 3. Slice
+        const finalEvents = potentialEvents.slice(0, limit);
+
+        // 4. Save
+        for (const date of finalEvents) {
+            await Event.create({
+                group: updatedGroup._id, 
+                name: updatedGroup.name, 
+                date: date, 
+                time: updatedGroup.time,
+                timezone: updatedGroup.timezone, 
+                members: updatedGroup.members, 
+                undecided: updatedGroup.members,
+            });
         }
     } catch (eventError) {
         console.error("Failed to regenerate events:", eventError);
