@@ -9,12 +9,52 @@ import { calculateNextEventDate } from "../utils/date.utils.js";
 import { ENV } from "../config/env.js";
 import { syncStreamUser } from "../utils/stream.js";
 
-
+// --- Helper to determine what to iterate over ---
 const getScheduleItems = (schedule) => {
     if (schedule.frequency === 'daily') return [0]; 
     if (schedule.frequency === 'custom') return schedule.rules || [];
     return schedule.days || [];
 };
+
+// 👇 RE-ADDED MISSING FUNCTION
+export const inviteUser = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+    const { userIdToInvite } = req.body;
+
+    const requester = await User.findOne({ clerkId }).lean();
+    const group = await Group.findById(groupId);
+    const userToInvite = await User.findById(userIdToInvite);
+
+    if (!requester || !group || !userToInvite) return res.status(404).json({ error: "Resource not found." });
+
+    if (group.owner.toString() !== requester._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can send invitations." });
+    }
+    
+    if (group.members.includes(userToInvite._id)) {
+        return res.status(400).json({ error: "User is already a member of this group." });
+    }
+
+    const existingInvite = await Notification.findOne({
+        recipient: userToInvite._id,
+        group: group._id,
+        type: 'group-invite',
+        status: 'pending',
+    });
+    if (existingInvite) {
+        return res.status(400).json({ error: "This user already has a pending invitation to this group." });
+    }
+
+    await Notification.create({
+        recipient: userToInvite._id,
+        sender: requester._id,
+        type: 'group-invite',
+        group: group._id,
+    });
+
+    res.status(200).json({ message: "Invitation sent successfully." });
+});
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
@@ -25,12 +65,13 @@ export const createGroup = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "All details required." });
   }
 
-  // 👇 Validation for the new field
+  // Validate the new limit field
   const limit = eventsToDisplay ? parseInt(eventsToDisplay) : 1;
   if (limit < 1 || limit > 14) {
       return res.status(400).json({ error: "Display events must be between 1 and 14." });
   }
 
+  // Ensure days exist unless it's a custom schedule
   if (schedule.frequency !== 'custom' && (!schedule.days || schedule.days.length === 0)) {
     return res.status(400).json({ error: "At least one day must be selected." });
   }
@@ -40,7 +81,7 @@ export const createGroup = asyncHandler(async (req, res) => {
   
   const groupData = { 
       name, time, schedule, timezone, 
-      eventsToDisplay: limit, // 👈 Save it
+      eventsToDisplay: limit, 
       owner: owner._id, members: [owner._id] 
   };
   
@@ -89,9 +130,8 @@ export const createGroup = asyncHandler(async (req, res) => {
 export const updateGroup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
-    const { name, time, schedule, timezone, eventsToDisplay } = req.body; // 👈 Extract
+    const { name, time, schedule, timezone, eventsToDisplay } = req.body;
     
-    // ... (Keep existing basic validation) ...
     if ((name && name.trim() === '') || !time || !schedule || !timezone) {
         return res.status(400).json({ error: "Required fields missing." });
     }
@@ -117,7 +157,7 @@ export const updateGroup = asyncHandler(async (req, res) => {
     group.time = time;
     group.schedule = schedule;
     group.timezone = timezone;
-    group.eventsToDisplay = limit; // 👈 Update
+    group.eventsToDisplay = limit;
     
     const updatedGroup = await group.save();
     
@@ -128,7 +168,7 @@ export const updateGroup = asyncHandler(async (req, res) => {
         
         const itemsToIterate = getScheduleItems(updatedGroup.schedule);
 
-        // 👇 THE CHAINING LOOP (Same as create)
+        // 👇 THE CHAINING LOOP
         for (const item of itemsToIterate) {
             let lastGeneratedDate = null; 
 
@@ -164,16 +204,13 @@ export const getGroups = asyncHandler(async (req, res) => {
     const user = await User.findOne({ clerkId: req.auth.userId }).lean();
     if (!user) return res.status(404).json({ error: "User not found." });
 
-    // 1. Get groups from MongoDB as plain objects
     const groups = await Group.find({ members: user._id }).lean();
     if (!groups.length) {
         return res.status(200).json([]);
     }
 
-    // 2. Get the list of channel IDs from your groups
     const channelIds = groups.map(group => group._id.toString());
 
-    // 3. Query Stream for all channels at once
     const channels = await ENV.SERVER_CLIENT.queryChannels(
         { id: { $in: channelIds } },
         [{ last_message_at: -1 }],
@@ -183,24 +220,21 @@ export const getGroups = asyncHandler(async (req, res) => {
         }
     );
 
-    // 4. Create a simple map of channelId -> lastMessage
     const lastMessageMap = new Map();
     channels.forEach(channel => {
         if (channel.state.messages.length > 0) {
         const lastMsg = channel.state.messages[channel.state.messages.length - 1];            lastMessageMap.set(channel.cid.split(':')[1], {
                 text: lastMsg.text,
-                user: { name: lastMsg.user.name || lastMsg.user.id } // Use name, fallback to ID
+                user: { name: lastMsg.user.name || lastMsg.user.id }
             });
         }
     });
 
-    // 5. Stitch the last message data onto your group objects
     const hydratedGroups = groups.map(group => ({
         ...group,
         lastMessage: lastMessageMap.get(group._id.toString()) || null
     }));
 
-    // 6. Send the combined data
     res.status(200).json(hydratedGroups);
 });
 
@@ -239,7 +273,7 @@ export const addMember = asyncHandler(async (req, res) => {
   } catch (eventError) {
     console.error("Could not update upcoming events with new member:", eventError);
   }
-  await syncStreamUser(userToAdd); // Sync added user
+  await syncStreamUser(userToAdd);
 
   res.status(200).json({ message: "User added to group successfully." });
 });
@@ -322,7 +356,6 @@ export const createOneOffEvent = asyncHandler(async (req, res) => {
     if (p === 'PM' && h !== 12) h += 12;
     if (p === 'AM' && h === 12) h = 0;
     
-    // We can rely on frontend validation mostly, but basic backend check:
     const eventDate = new Date(date);
     eventDate.setHours(h, m, 0, 0);
     if (eventDate < new Date()) {
