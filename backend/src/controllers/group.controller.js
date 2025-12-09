@@ -57,9 +57,8 @@ export const inviteUser = asyncHandler(async (req, res) => {
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
-  const { name, time, schedule, timezone, eventsToDisplay } = req.body;
+  const { name, time, schedule, timezone, eventsToDisplay, members } = req.body; // 👈 Destructure members
   
-  // Validation
   if (!name || !time || !schedule || !timezone) {
     return res.status(400).json({ error: "All details required." });
   }
@@ -76,20 +75,34 @@ export const createGroup = asyncHandler(async (req, res) => {
   const owner = await User.findOne({ clerkId: userId });
   if (!owner) return res.status(404).json({ error: "User not found." });
   
+  // 👇 PREPARE INITIAL MEMBERS
+  // Start with Owner, add selected members (if any), remove duplicates
+  let initialMemberIds = [owner._id.toString()];
+  if (members && Array.isArray(members)) {
+      initialMemberIds = [...initialMemberIds, ...members];
+  }
+  // Ensure unique IDs using Set
+  const uniqueMemberIds = [...new Set(initialMemberIds)];
+
   const groupData = { 
       name, time, schedule, timezone, 
       eventsToDisplay: limit, 
-      owner: owner._id, members: [owner._id] 
+      owner: owner._id, 
+      members: uniqueMemberIds // 👈 Use the combined list
   };
   
   const newGroup = await Group.create(groupData);
-  await owner.updateOne({ $addToSet: { groups: newGroup._id } });
+
+  // 👇 UPDATE ALL MEMBERS (Owner + Invited)
+  // We add this Group ID to the 'groups' array of every user in the list
+  await User.updateMany(
+      { _id: { $in: uniqueMemberIds } },
+      { $addToSet: { groups: newGroup._id } }
+  );
 
   try {
     const itemsToIterate = getScheduleItems(newGroup.schedule);
-    let potentialEvents = [];
 
-    // 1. Generate enough candidates for EACH rule independently
     for (const item of itemsToIterate) {
         let lastGeneratedDate = null;
         for (let i = 0; i < limit; i++) {
@@ -100,35 +113,28 @@ export const createGroup = asyncHandler(async (req, res) => {
                 newGroup.schedule.frequency,
                 lastGeneratedDate
             );
-            potentialEvents.push(nextEventDate);
+
+            await Event.create({
+                group: newGroup._id, 
+                name: newGroup.name, 
+                date: nextEventDate, 
+                time: newGroup.time,
+                timezone: newGroup.timezone,
+                // 👇 EVENTS INCLUDE ALL MEMBERS
+                members: uniqueMemberIds, 
+                undecided: uniqueMemberIds,
+            });
+
             lastGeneratedDate = nextEventDate;
         }
     }
-
-    // 2. Sort all candidates chronologically
-    potentialEvents.sort((a, b) => new Date(a) - new Date(b));
-
-    // 3. Slice the top N events requested
-    const finalEvents = potentialEvents.slice(0, limit);
-
-    // 4. Create them in DB
-    for (const date of finalEvents) {
-        await Event.create({
-            group: newGroup._id, 
-            name: newGroup.name, 
-            date: date, 
-            time: newGroup.time,
-            timezone: newGroup.timezone,
-            members: newGroup.members, 
-            undecided: newGroup.members,
-        });
-    }
-
   } catch (eventError) {
     console.error("Failed to create events:", eventError);
   }
 
-  await Promise.all(newGroup.members.map(syncStreamUser));
+  // Sync everyone with Stream so they can chat immediately
+  await Promise.all(uniqueMemberIds.map(id => syncStreamUser({ _id: id })));
+
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
 });
 

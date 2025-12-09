@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Image, StyleSheet, Alert, Dimensions, Modal, FlatList, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Image, StyleSheet, Alert, Dimensions, Modal, FlatList, Platform, Share, Keyboard, ActivityIndicator } from "react-native";
 import { useCreateGroup } from "@/hooks/useCreateGroup";
+import { useSearchUsers } from "@/hooks/useSearchUsers";
 import TimePicker from "@/components/TimePicker";
 import { Picker } from "@react-native-picker/picker";
 import { Feather } from '@expo/vector-icons';
@@ -10,8 +11,8 @@ import { useRouter } from "expo-router";
 const GroupImage = require('../../assets/images/group-image.png');
 const { width } = Dimensions.get('window');
 
-// 👇 CARD MATH (Now calculated for FULL WIDTH)
-const CARD_WIDTH = width * 0.85; 
+// Card Math
+const CARD_WIDTH = width * 0.90; 
 const SIDE_INSET = (width - CARD_WIDTH) / 2; 
 
 // --- Types ---
@@ -25,6 +26,17 @@ interface CustomRoutine {
         dayIndex?: number;   
         dates?: number[];    
     };
+}
+
+// 👇 UPDATED INTERFACE: Added 'name' as optional to fix TS error
+interface UserStub {
+    _id: string;
+    firstName?: string;
+    lastName?: string;
+    username: string;
+    name?: string; // Added this to prevent the "Property does not exist" error
+    email?: string;
+    profilePicture?: string;
 }
 
 const usaTimezones = [
@@ -58,6 +70,13 @@ const CreateGroupScreen = () => {
   const [groupName, setGroupName] = useState("");
   const [eventsToDisplay, setEventsToDisplay] = useState("1");
   
+  // Member Selection State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedMembers, setSelectedMembers] = useState<UserStub[]>([]);
+  
+  // Search Hook
+  const { data: searchResults, isLoading: isSearchingUsers } = useSearchUsers(searchQuery);
+
   // Scheduling State
   const [frequency, setFrequency] = useState<Frequency>(null);
   const [selectedDays, setSelectedDays] = useState<number[]>([]); 
@@ -68,7 +87,7 @@ const CreateGroupScreen = () => {
   ]);
   const [currentPage, setCurrentPage] = useState(0);
 
-  // Modal State for Dropdowns
+  // Modal State
   const [modalVisible, setModalVisible] = useState(false);
   const [modalConfig, setModalConfig] = useState<{ 
       type: 'occurrence' | 'dayIndex', 
@@ -80,6 +99,18 @@ const CreateGroupScreen = () => {
   const [timezone, setTimezone] = useState("America/Denver");
   
   const { mutate, isPending } = useCreateGroup();
+
+  // --- Helpers ---
+  const getDisplayName = (user: UserStub) => {
+      if (user.firstName) return `${user.firstName} ${user.lastName || ''}`.trim();
+      if (user.name) return user.name;
+      return user.username;
+  };
+
+  const getDisplayInitials = (user: UserStub) => {
+      const name = getDisplayName(user);
+      return name.charAt(0).toUpperCase();
+  };
 
   // --- Logic ---
 
@@ -108,12 +139,15 @@ const CreateGroupScreen = () => {
         }));
     }
 
+const memberIds = selectedMembers.map(m => m._id);
+
     const variables = { 
         name: groupName, 
         time: meetTime, 
         schedule: finalSchedule, 
         timezone,
-        eventsToDisplay: limit
+        eventsToDisplay: limit,
+        members: memberIds // 👈 Send to backend
     };
 
     mutate(variables, {
@@ -124,11 +158,11 @@ const CreateGroupScreen = () => {
   };
 
   const handleNext = () => {
-    if (step === 2) {
+    if (step === 3) { 
         if (frequency === 'daily') {
-            setStep(4);
+            setStep(5); 
         } else {
-            setStep(3);
+            setStep(4); 
         }
     } else {
         setStep(prev => prev + 1);
@@ -136,8 +170,8 @@ const CreateGroupScreen = () => {
   };
 
   const handleBack = () => {
-    if (step === 4 && frequency === 'daily') {
-        setStep(2);
+    if (step === 5 && frequency === 'daily') {
+        setStep(3); 
     } else {
         setStep(prev => prev - 1);
     }
@@ -160,20 +194,33 @@ const CreateGroupScreen = () => {
     });
   };
 
-  // --- Custom Routine Logic ---
+  const toggleMember = (user: UserStub) => {
+      if (selectedMembers.some(m => m._id === user._id)) {
+          setSelectedMembers(prev => prev.filter(m => m._id !== user._id));
+      } else {
+          setSelectedMembers(prev => [...prev, user]);
+          setSearchQuery(""); 
+          Keyboard.dismiss();
+      }
+  };
+
+  const handleShareLink = async () => {
+      try {
+          await Share.share({
+              message: `Join my new group "${groupName}" on the app!`,
+          });
+      } catch (error: any) {
+          Alert.alert(error.message);
+      }
+  };
 
   const addRoutine = () => {
       if (customRoutines.length >= 5) return;
-      
       const newRoutine: CustomRoutine = { 
-          id: Date.now().toString(), 
-          type: null, 
-          data: { occurrence: '1st', dayIndex: 0, dates: [] } 
+          id: Date.now().toString(), type: null, data: { occurrence: '1st', dayIndex: 0, dates: [] } 
       };
-
       const newRoutines = [...customRoutines, newRoutine];
       setCustomRoutines(newRoutines);
-      
       setTimeout(() => {
           scrollRef.current?.scrollTo({ x: newRoutines.length * CARD_WIDTH, animated: true });
           setCurrentPage(newRoutines.length - 1);
@@ -187,9 +234,7 @@ const CreateGroupScreen = () => {
       }
       const newRoutines = customRoutines.filter((_, i) => i !== index);
       setCustomRoutines(newRoutines);
-      if (currentPage >= newRoutines.length) {
-          setCurrentPage(newRoutines.length - 1);
-      }
+      if (currentPage >= newRoutines.length) setCurrentPage(newRoutines.length - 1);
   };
 
   const updateRoutine = (index: number, updates: Partial<CustomRoutine>) => {
@@ -227,26 +272,17 @@ const CreateGroupScreen = () => {
 
   const renderDropdownModal = () => {
       if (!modalVisible || !modalConfig) return null;
-
-      const options = modalConfig.type === 'occurrence' 
-        ? occurrences.map(o => ({ label: o, value: o }))
-        : daysOfWeek; 
-
+      const options = modalConfig.type === 'occurrence' ? occurrences.map(o => ({ label: o, value: o })) : daysOfWeek; 
       return (
           <Modal transparent visible={modalVisible} animationType="fade">
               <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setModalVisible(false)}>
                   <View style={styles.modalContent}>
-                      <Text style={styles.modalTitle}>
-                          Select {modalConfig.type === 'occurrence' ? 'Occurrence' : 'Day'}
-                      </Text>
+                      <Text style={styles.modalTitle}>Select {modalConfig.type === 'occurrence' ? 'Occurrence' : 'Day'}</Text>
                       <FlatList 
                         data={options as any}
                         keyExtractor={(item) => item.label}
                         renderItem={({ item }) => (
-                            <TouchableOpacity 
-                                style={styles.modalItem}
-                                onPress={() => handleModalSelect(item.value)}
-                            >
+                            <TouchableOpacity style={styles.modalItem} onPress={() => handleModalSelect(item.value)}>
                                 <Text style={styles.modalItemText}>{item.label}</Text>
                             </TouchableOpacity>
                         )}
@@ -259,50 +295,40 @@ const CreateGroupScreen = () => {
 
   const renderRoutineCard = (routine: CustomRoutine, index: number) => {
       return (
-          // 🔴 Removed Debug Border, Added small padding for card spacing
           <View key={routine.id} style={styles.cardContainer}>
               <View style={styles.card}>
-                  
                   {routine.type === null && (
                       <View style={styles.cardContentCentered}>
                           <TouchableOpacity style={styles.selectionButton} onPress={() => updateRoutine(index, { type: 'byDay' })}>
                               <Text style={styles.selectionButtonText}>Schedule By Day</Text>
                               <Text style={styles.selectionButtonSubtext}>Example: Every 2nd Thursday</Text>
                           </TouchableOpacity>
-
                           <TouchableOpacity style={styles.selectionButton} onPress={() => updateRoutine(index, { type: 'byDate' })}>
                               <Text style={styles.selectionButtonText}>Schedule By Date</Text>
                               <Text style={styles.selectionButtonSubtext}>Example: Every 15th of the month</Text>
                           </TouchableOpacity>
                       </View>
                   )}
-
                   {routine.type === 'byDay' && (
                       <View style={styles.cardContent}>
                           <Text style={styles.cardLabel}>Every</Text>
-                          
                           <TouchableOpacity style={styles.dropdownButton} onPress={() => openDropdown('occurrence', index)}>
                                 <Text style={styles.dropdownButtonText}>{routine.data.occurrence || 'Select'}</Text>
                                 <Feather name="chevron-down" size={20} color="#4F46E5" />
                           </TouchableOpacity>
-
                           <View style={{ height: 10 }} />
-
                           <TouchableOpacity style={styles.dropdownButton} onPress={() => openDropdown('dayIndex', index)}>
                                 <Text style={styles.dropdownButtonText}>
                                     {daysOfWeek.find(d => d.value === routine.data.dayIndex)?.label || 'Select Day'}
                                 </Text>
                                 <Feather name="chevron-down" size={20} color="#4F46E5" />
                           </TouchableOpacity>
-
                           <Text style={styles.cardLabel}>of the month</Text>
-
                           <TouchableOpacity onPress={() => updateRoutine(index, { type: null })} style={{marginTop: 20}}>
                               <Text style={{color: '#6B7280', textDecorationLine: 'underline'}}>Change Type</Text>
                           </TouchableOpacity>
                       </View>
                   )}
-
                   {routine.type === 'byDate' && (
                        <View style={styles.cardContent}>
                            <Text style={[styles.cardLabel, { marginBottom: 10 }]}>Select Date(s)</Text>
@@ -315,9 +341,7 @@ const CreateGroupScreen = () => {
                                            style={[styles.miniDateBox, isSelected && styles.dateBoxSelected]}
                                            onPress={() => {
                                                const currentDates = routine.data.dates || [];
-                                               const newDates = currentDates.includes(date) 
-                                                  ? currentDates.filter(d => d !== date)
-                                                  : [...currentDates, date];
+                                               const newDates = currentDates.includes(date) ? currentDates.filter(d => d !== date) : [...currentDates, date];
                                                updateRoutineData(index, 'dates', newDates);
                                            }}
                                        >
@@ -331,9 +355,7 @@ const CreateGroupScreen = () => {
                           </TouchableOpacity>
                        </View>
                   )}
-
               </View>
-
               <TouchableOpacity style={styles.deleteButton} onPress={() => removeRoutine(index)}>
                   <Text style={styles.deleteButtonText}>Delete this routine</Text>
               </TouchableOpacity>
@@ -341,7 +363,6 @@ const CreateGroupScreen = () => {
       );
   };
 
-  // 👇 ADDED PADDING TO INDIVIDUAL STEPS
   const renderStep1_Name = () => (
     <View style={styles.stepContainerPadded}> 
       <Text style={styles.headerTitle}>What's your Group name?</Text>
@@ -364,7 +385,136 @@ const CreateGroupScreen = () => {
     </View>
   );
 
-  const renderStep2_Frequency = () => {
+  const renderStep2_AddMembers = () => {
+    const isSearching = searchQuery.length > 0;
+    
+    // Use real API data
+    const filteredUsers = (searchResults as UserStub[]) || [];
+
+    return (
+        <View style={styles.stepContainerPadded}>
+            <View>
+                <Text style={styles.headerTitle}>Who should be in this group?</Text>
+                
+                {/* SEARCH BOX */}
+                <View style={{ marginBottom: 16 }}>
+                    <Text style={styles.pickerTitle}>Search for members</Text>
+                    <View style={styles.searchBox}>
+                        <Feather name="search" size={20} color="#9CA3AF" />
+                        <TextInput 
+                            style={styles.searchInput}
+                            placeholder="Search users by name..."
+                            placeholderTextColor="#9CA3AF"
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                        />
+                        {/* Loading Indicator */}
+                        {isSearchingUsers && <ActivityIndicator size="small" color="#4F46E5" style={{marginRight: 8}} />}
+                        
+                        {/* Clear Button */}
+                        {isSearching && (
+                            <TouchableOpacity onPress={() => setSearchQuery("")}>
+                                <Feather name="x-circle" size={20} color="#9CA3AF" />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </View>
+            </View>
+
+            {isSearching ? (
+                // SEARCH RESULTS LIST
+                <FlatList 
+                    data={filteredUsers}
+                    keyExtractor={(item) => item._id}
+                    keyboardDismissMode="on-drag"
+                    keyboardShouldPersistTaps="handled"
+                    style={{ flex: 1, marginHorizontal: -24 }} 
+                    contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 20 }}
+                    renderItem={({ item }) => (
+                        <TouchableOpacity 
+                            style={styles.resultItem} 
+                            onPress={() => toggleMember(item)}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Image 
+                                    source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=' + (item.firstName?.[0] || 'U') }} 
+                                    style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#E0E7FF' }} 
+                                />
+                                <View style={{ marginLeft: 12 }}>
+                                    {/* 👇 UPDATED: Safe display name logic */}
+                                    <Text style={styles.resultText}>{getDisplayName(item)}</Text>
+                                    <Text style={styles.resultSubtext}>@{item.username}</Text>
+                                </View>
+                            </View>
+                            {selectedMembers.some(m => m._id === item._id) && (
+                                <Feather name="check" size={20} color="#4F46E5" />
+                            )}
+                        </TouchableOpacity>
+                    )}
+                    ListEmptyComponent={
+                        !isSearchingUsers ? (
+                            <View style={{ padding: 20, alignItems: 'center' }}>
+                                <Text style={{ color: '#9CA3AF' }}>No users found matching "{searchQuery}"</Text>
+                            </View>
+                        ) : null
+                    }
+                />
+            ) : (
+                // NORMAL CONTENT (Share Link + Selected List)
+                <View style={{ flex: 1 }}>
+                    <View>
+                        <Text style={styles.pickerTitle}>Or invite via link</Text>
+                        <TouchableOpacity style={styles.shareLinkButton} onPress={handleShareLink}>
+                            <Feather name="share" size={20} color="#4F46E5" />
+                            <Text style={styles.shareLinkText}>Share Invite Link</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* SELECTED MEMBERS LIST */}
+                    <View style={{ flex: 1, marginTop: 24 }}>
+                        {selectedMembers.length > 0 && (
+                            <>
+                                <Text style={[styles.pickerTitle, { marginBottom: 8 }]}>Selected Members ({selectedMembers.length})</Text>
+                                <ScrollView style={styles.selectedListContainer}>
+                                    {selectedMembers.map(member => (
+                                        <View key={member._id} style={styles.selectedRow}>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                <Image 
+                                                    source={{ uri: member.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=' + (member.firstName?.[0] || 'U') }} 
+                                                    style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#E0E7FF' }}
+                                                />
+                                                <View style={{ marginLeft: 12 }}>
+                                                    {/* 👇 UPDATED: Safe display name logic */}
+                                                    <Text style={styles.selectedName}>{getDisplayName(member)}</Text>
+                                                    <Text style={styles.selectedUsername}>@{member.username}</Text>
+                                                </View>
+                                            </View>
+                                            <TouchableOpacity onPress={() => toggleMember(member)}>
+                                                <Feather name="trash-2" size={20} color="#EF4444" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    ))}
+                                </ScrollView>
+                            </>
+                        )}
+                    </View>
+                </View>
+            )}
+
+            {/* Footer Navigation */}
+            <View style={styles.footerNavSpread}>
+                <TouchableOpacity onPress={handleBack}>
+                    <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleNext}>
+                    <Feather name="arrow-right-circle" size={48} color="#4F46E5" />
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+  };
+
+  const renderStep3_Frequency = () => { 
     const options: { label: string, value: Frequency }[] = [
         { label: "Daily", value: 'daily' },
         { label: "Weekly", value: 'weekly' },
@@ -405,10 +555,9 @@ const CreateGroupScreen = () => {
     );
   };
 
-  const renderStep3_Details = () => {
+  const renderStep4_Details = () => { 
     if (frequency === 'custom') {
         const canAdd = customRoutines.length < 5;
-        // 👇 PADDING ONLY ON HEADER/FOOTER, NOT SCROLLVIEW
         return (
             <View style={styles.stepContainer}> 
                 <View style={{ paddingHorizontal: 24 }}>
@@ -427,20 +576,15 @@ const CreateGroupScreen = () => {
                     </View>
                 </View>
 
-                <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
+                <View style={{flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                     <ScrollView 
                         ref={scrollRef}
                         horizontal 
                         showsHorizontalScrollIndicator={false}
-                        
                         snapToInterval={CARD_WIDTH} 
-                        snapToAlignment="start" // Start is correct now that we removed parent padding
+                        snapToAlignment="start"
                         decelerationRate="fast" 
-                        
-                        contentContainerStyle={{ 
-                            paddingHorizontal: SIDE_INSET 
-                        }}
-
+                        contentContainerStyle={{ paddingHorizontal: SIDE_INSET }}
                         onMomentumScrollEnd={handleScroll}
                         style={{ flex: 1 }}
                     >
@@ -464,7 +608,6 @@ const CreateGroupScreen = () => {
         );
     }
 
-    // Monthly/Weekly Logic (Needs Padding)
     const isMonthly = frequency === 'monthly';
     const isValid = isMonthly ? selectedDates.length > 0 : selectedDays.length > 0;
 
@@ -523,7 +666,7 @@ const CreateGroupScreen = () => {
     );
   };
 
-  const renderStep4_Time = () => (
+  const renderStep5_Time = () => (
     <View style={styles.stepContainerPadded}>
         <Text style={styles.headerTitle}>Choose a time & details</Text>
         <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
@@ -568,12 +711,12 @@ const CreateGroupScreen = () => {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
-        {/* 👇 REMOVED GLOBAL PADDING HERE */}
         <View style={{ flex: 1 }}>
             {step === 1 && renderStep1_Name()}
-            {step === 2 && renderStep2_Frequency()}
-            {step === 3 && renderStep3_Details()}
-            {step === 4 && renderStep4_Time()}
+            {step === 2 && renderStep2_AddMembers()}
+            {step === 3 && renderStep3_Frequency()}
+            {step === 4 && renderStep4_Details()}
+            {step === 5 && renderStep5_Time()}
         </View>
         {renderDropdownModal()}
     </SafeAreaView>
@@ -582,7 +725,6 @@ const CreateGroupScreen = () => {
 
 const styles = StyleSheet.create({
     stepContainer: { flex: 1, justifyContent: 'space-between' },
-    // 👇 NEW STYLE FOR NORMAL STEPS
     stepContainerPadded: { flex: 1, justifyContent: 'space-between', padding: 24 },
     
     headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#1F2937', textAlign: 'center', marginBottom: 24 },
@@ -590,6 +732,25 @@ const styles = StyleSheet.create({
     image: { width: '100%', height: '100%', borderRadius: 8 },
     textInput: { width: '100%', padding: 16, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, backgroundColor: '#FFFFFF', fontSize: 16 },
     
+    // Member Selection Styles
+    searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, paddingHorizontal: 16, height: 50 },
+    searchInput: { flex: 1, marginLeft: 10, fontSize: 16, color: '#374151' },
+    
+    resultItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+    resultText: { fontSize: 16, color: '#374151', fontWeight: '500' },
+    resultSubtext: { fontSize: 14, color: '#9CA3AF' },
+
+    shareLinkButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#EEF2FF', borderRadius: 8, borderWidth: 1, borderColor: '#C7D2FE' },
+    shareLinkText: { color: '#4F46E5', fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
+
+    // Selected List Styles
+    selectedListContainer: { flex: 1, backgroundColor: '#FFF', borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 12 },
+    selectedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+    selectedName: { fontSize: 16, fontWeight: '500', color: '#1F2937' },
+    selectedUsername: { fontSize: 14, color: '#6B7280' },
+    avatarPlaceholder: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E0E7FF', alignItems: 'center', justifyContent: 'center' },
+    avatarText: { color: '#4F46E5', fontWeight: 'bold', fontSize: 16 },
+
     // Frequency Button Styles
     frequencyButton: { flexDirection: 'row', alignItems: 'center', padding: 16, marginBottom: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8 },
     frequencyButtonSelected: { backgroundColor: '#E0E7FF', borderColor: '#4F46E5' },
@@ -611,7 +772,6 @@ const styles = StyleSheet.create({
     dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#D1D5DB', marginHorizontal: 4 },
     activeDot: { backgroundColor: '#4F46E5', width: 20 },
     
-    // Header Add Button (New)
     headerAddButton: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#4F46E5', justifyContent: 'center', alignItems: 'center', marginLeft: 12 },
 
     cardContainer: { width: CARD_WIDTH, alignItems: 'center', paddingHorizontal: 5 }, 

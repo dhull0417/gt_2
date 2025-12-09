@@ -78,6 +78,7 @@ interface CreateGroupPayload {
   schedule: Schedule;
   timezone: string;
   eventsToDisplay: number;
+  members?: string[];
 }
 interface UpdateGroupPayload {
     groupId: string;
