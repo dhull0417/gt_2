@@ -66,7 +66,7 @@ export interface Notification {
     _id: string;
     recipient: string;
     sender: User;
-    type: 'group-invite' | 'invite-accepted' | 'invite-declined';
+    type: 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added';
     group: Group;
     status: 'pending' | 'accepted' | 'declined' | 'read';
     read: boolean;

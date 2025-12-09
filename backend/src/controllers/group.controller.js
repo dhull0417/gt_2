@@ -57,7 +57,7 @@ export const inviteUser = asyncHandler(async (req, res) => {
 
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
-  const { name, time, schedule, timezone, eventsToDisplay, members } = req.body; // 👈 Destructure members
+  const { name, time, schedule, timezone, eventsToDisplay, members } = req.body;
   
   if (!name || !time || !schedule || !timezone) {
     return res.status(400).json({ error: "All details required." });
@@ -75,34 +75,55 @@ export const createGroup = asyncHandler(async (req, res) => {
   const owner = await User.findOne({ clerkId: userId });
   if (!owner) return res.status(404).json({ error: "User not found." });
   
-  // 👇 PREPARE INITIAL MEMBERS
-  // Start with Owner, add selected members (if any), remove duplicates
+  // Prepare Members
   let initialMemberIds = [owner._id.toString()];
   if (members && Array.isArray(members)) {
       initialMemberIds = [...initialMemberIds, ...members];
   }
-  // Ensure unique IDs using Set
   const uniqueMemberIds = [...new Set(initialMemberIds)];
 
   const groupData = { 
       name, time, schedule, timezone, 
       eventsToDisplay: limit, 
       owner: owner._id, 
-      members: uniqueMemberIds // 👈 Use the combined list
+      members: uniqueMemberIds 
   };
   
   const newGroup = await Group.create(groupData);
 
-  // 👇 UPDATE ALL MEMBERS (Owner + Invited)
-  // We add this Group ID to the 'groups' array of every user in the list
+  // Update Users
   await User.updateMany(
       { _id: { $in: uniqueMemberIds } },
       { $addToSet: { groups: newGroup._id } }
   );
 
+  // 👇 NEW: Send Notifications to added members (excluding the owner)
+  const membersToNotify = uniqueMemberIds.filter(id => id !== owner._id.toString());
+  
+  if (membersToNotify.length > 0) {
+      const notifications = membersToNotify.map(memberId => ({
+          recipient: memberId,
+          sender: owner._id,
+          type: 'group-added', // The new type
+          group: newGroup._id,
+          status: 'read',      // It's informational, no action needed
+          read: false
+      }));
+      
+      try {
+          await Notification.insertMany(notifications);
+      } catch (error) {
+          console.error("Failed to create notifications:", error);
+          // We don't fail the request if notifications fail, just log it
+      }
+  }
+
+  // Create Events
   try {
     const itemsToIterate = getScheduleItems(newGroup.schedule);
+    let potentialEvents = [];
 
+    // 1. Generate
     for (const item of itemsToIterate) {
         let lastGeneratedDate = null;
         for (let i = 0; i < limit; i++) {
@@ -113,26 +134,32 @@ export const createGroup = asyncHandler(async (req, res) => {
                 newGroup.schedule.frequency,
                 lastGeneratedDate
             );
-
-            await Event.create({
-                group: newGroup._id, 
-                name: newGroup.name, 
-                date: nextEventDate, 
-                time: newGroup.time,
-                timezone: newGroup.timezone,
-                // 👇 EVENTS INCLUDE ALL MEMBERS
-                members: uniqueMemberIds, 
-                undecided: uniqueMemberIds,
-            });
-
+            potentialEvents.push(nextEventDate);
             lastGeneratedDate = nextEventDate;
         }
+    }
+
+    // 2. Sort & Slice
+    potentialEvents.sort((a, b) => new Date(a) - new Date(b));
+    const finalEvents = potentialEvents.slice(0, limit);
+
+    // 3. Save
+    for (const date of finalEvents) {
+        await Event.create({
+            group: newGroup._id, 
+            name: newGroup.name, 
+            date: date, 
+            time: newGroup.time,
+            timezone: newGroup.timezone,
+            members: uniqueMemberIds, 
+            undecided: uniqueMemberIds,
+        });
     }
   } catch (eventError) {
     console.error("Failed to create events:", eventError);
   }
 
-  // Sync everyone with Stream so they can chat immediately
+  // Sync Stream
   await Promise.all(uniqueMemberIds.map(id => syncStreamUser({ _id: id })));
 
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
