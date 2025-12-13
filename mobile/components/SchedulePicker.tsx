@@ -1,102 +1,146 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, FlatList, Alert } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+// 👇 CHANGED: Import the official Schedule type from your API definition
+import { Schedule } from '@/utils/api';
 
-export interface Schedule {
-  frequency: 'weekly' | 'monthly';
-  days: number[];
-}
-
+// 👇 CHANGED: Use the imported type for props
 interface SchedulePickerProps {
-    onScheduleChange: (schedule: Schedule) => void;
-    initialValue?: Schedule;
+    onScheduleChange: (schedule: Schedule) => void;
+    initialValue?: Schedule;
 }
 
-const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const daysOfMonth = Array.from({ length: 31 }, (_, i) => i + 1);
+const daysOfWeek = [
+    { label: "Sunday", value: 0 },
+    { label: "Monday", value: 1 },
+    { label: "Tuesday", value: 2 },
+    { label: "Wednesday", value: 3 },
+    { label: "Thursday", value: 4 },
+    { label: "Friday", value: 5 },
+    { label: "Saturday", value: 6 },
+];
 
 const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange, initialValue }) => {
-  const [schedule, setSchedule] = useState<Schedule>(initialValue || { frequency: 'weekly', days: [1] });
+    // We default to 'weekly' if the initial value is complex or missing, 
+    // but we respect 'daily', 'biweekly', etc. if provided.
+    const [frequency, setFrequency] = useState<Schedule['frequency']>(initialValue?.frequency || 'weekly');
+    const [selectedDays, setSelectedDays] = useState<number[]>(initialValue?.days || []);
+    
+    // For simplicity, we are reusing the 'days' array for monthly dates (1-31) as well
+    const [selectedDates, setSelectedDates] = useState<number[]>(initialValue?.frequency === 'monthly' ? (initialValue.days || []) : []);
 
-  useEffect(() => {
-    onScheduleChange(schedule);
-  }, [schedule, onScheduleChange]);
+useEffect(() => {
+        // 👇 FIX: Initialize with 'days: []' to satisfy the required type
+        const newSchedule: Schedule = { 
+            frequency, 
+            days: [] 
+        };
+        
+        if (frequency === 'weekly' || frequency === 'biweekly') {
+            newSchedule.days = selectedDays;
+        } else if (frequency === 'monthly') {
+            newSchedule.days = selectedDates;
+        } else if (frequency === 'daily') {
+            // Even though daily implies every day, we often send [0-6] 
+            // or an empty array depending on your backend logic. 
+            // Let's stick to the convention we used in create-group:
+            newSchedule.days = [0, 1, 2, 3, 4, 5, 6];
+        } 
 
-  const setFrequency = (frequency: 'weekly' | 'monthly') => {
-    const newDays = frequency === 'weekly' ? [1] : [15];
-    setSchedule({ frequency, days: newDays });
-  };
+        onScheduleChange(newSchedule);
+    }, [frequency, selectedDays, selectedDates]);
 
-  const toggleDay = (dayValue: number) => {
-    const newDays = [...schedule.days];
-    const index = newDays.indexOf(dayValue);
+    const toggleDay = (dayIndex: number) => {
+        setSelectedDays(prev => 
+            prev.includes(dayIndex) ? prev.filter(d => d !== dayIndex) : [...prev, dayIndex]
+        );
+    };
 
-    if (index > -1) {
-      // If the day is already selected, remove it (unless it's the last one)
-      if (newDays.length > 1) {
-          newDays.splice(index, 1);
-      }
-    } else {
-      // If the day is not selected, check the limit before adding it
-      if (schedule.frequency === 'monthly' && newDays.length >= 10) {
-          Alert.alert("Limit Reached", "You can select up to 10 dates for monthly events.");
-          return; // Stop the function here
-      }
-      newDays.push(dayValue);
-    }
-    setSchedule({ ...schedule, days: newDays.sort((a, b) => a - b) });
-  };
+    const toggleDate = (date: number) => {
+        setSelectedDates(prev => {
+            if (prev.includes(date)) return prev.filter(d => d !== date);
+            if (prev.length >= 10) {
+                Alert.alert("Limit Reached", "You can only select up to 10 dates.");
+                return prev;
+            }
+            return [...prev, date];
+        });
+    };
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Set Recurring Schedule</Text>
-      <View>
-        <View style={styles.freqContainer}>
-          <TouchableOpacity onPress={() => setFrequency('weekly')} style={[styles.freqButton, schedule.frequency === 'weekly' && styles.freqButtonActive]}>
-            <Text style={[styles.freqText, schedule.frequency === 'weekly' && styles.freqTextActive]}>Weekly</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setFrequency('monthly')} style={[styles.freqButton, schedule.frequency === 'monthly' && styles.freqButtonActive]}>
-            <Text style={[styles.freqText, schedule.frequency === 'monthly' && styles.freqTextActive]}>Monthly</Text>
-          </TouchableOpacity>
-        </View>
-        
-        {/* Conditionally render the limit text for monthly selection */}
-        {schedule.frequency === 'monthly' && (
-            <Text style={styles.limitText}>Up to 10 dates may be selected</Text>
-        )}
+    return (
+        <View>
+            {/* Frequency Selector */}
+            <View style={styles.row}>
+                {(['daily', 'weekly', 'biweekly', 'monthly'] as const).map((freq) => (
+                    <TouchableOpacity 
+                        key={freq} 
+                        style={[styles.freqButton, frequency === freq && styles.freqActive]}
+                        onPress={() => setFrequency(freq)}
+                    >
+                        <Text style={[styles.freqText, frequency === freq && styles.textActive]}>
+                            {freq.charAt(0).toUpperCase() + freq.slice(1)}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {(schedule.frequency === 'weekly' ? daysOfWeek : daysOfMonth).map((dayLabel, index) => {
-            const dayValue = schedule.frequency === 'weekly' ? index : (dayLabel as number);
-            const isSelected = schedule.days.includes(dayValue);
-            return (
-              <TouchableOpacity
-                key={dayValue}
-                onPress={() => toggleDay(dayValue)}
-                style={[styles.dayButton, isSelected && styles.dayButtonSelected]}
-              >
-                <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>{dayLabel}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-    </View>
-  );
+            {/* Weekly / Bi-Weekly UI */}
+            {(frequency === 'weekly' || frequency === 'biweekly') && (
+                <View style={styles.daysContainer}>
+                    {daysOfWeek.map((day) => (
+                        <TouchableOpacity 
+                            key={day.value}
+                            style={[styles.dayButton, selectedDays.includes(day.value) && styles.dayActive]}
+                            onPress={() => toggleDay(day.value)}
+                        >
+                            <Text style={[styles.dayText, selectedDays.includes(day.value) && styles.textActive]}>
+                                {day.label.slice(0, 3)}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
+
+            {/* Monthly UI */}
+            {frequency === 'monthly' && (
+                <View style={styles.calendarGrid}>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((date) => (
+                        <TouchableOpacity 
+                            key={date}
+                            style={[styles.dateBox, selectedDates.includes(date) && styles.dayActive]}
+                            onPress={() => toggleDate(date)}
+                        >
+                            <Text style={[styles.dateText, selectedDates.includes(date) && styles.textActive]}>{date}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
+            
+            {/* Daily UI */}
+            {frequency === 'daily' && (
+                <Text style={styles.infoText}>Event will occur every day.</Text>
+            )}
+        </View>
+    );
 };
 
 const styles = StyleSheet.create({
-  container: { width: '100%', marginVertical: 16, padding: 16, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, backgroundColor: '#F9FAFB' },
-  title: { fontSize: 18, lineHeight: 28, fontWeight: '600', color: '#374151', marginBottom: 16, textAlign: 'center' },
-  freqContainer: { flexDirection: 'row', justifyContent: 'center', backgroundColor: '#E5E7EB', borderRadius: 8, padding: 4, marginBottom: 16 },
-  freqButton: { flex: 1, paddingVertical: 8, borderRadius: 6, alignItems: 'center' },
-  freqButtonActive: { backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41, elevation: 2 },
-  freqText: { fontWeight: '600', color: '#4B5563' },
-  freqTextActive: { color: '#4F46E5' },
-  limitText: { textAlign: 'center', color: '#6B7280', fontSize: 12, marginBottom: 12 },
-  dayButton: { height: 48, width: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginRight: 8, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB' },
-  dayButtonSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
-  dayText: { fontWeight: 'bold', fontSize: 14, color: '#374151' },
-  dayTextSelected: { color: '#FFFFFF' },
+    row: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 16 },
+    freqButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#D1D5DB', marginRight: 8, marginBottom: 8, backgroundColor: '#FFF' },
+    freqActive: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    freqText: { color: '#374151', fontSize: 14, fontWeight: '500' },
+    textActive: { color: '#FFF' },
+    
+    daysContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
+    dayButton: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', margin: 4, backgroundColor: '#FFF' },
+    dayActive: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    dayText: { fontSize: 12, color: '#374151' },
+
+    calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
+    dateBox: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', margin: 3, backgroundColor: '#FFF' },
+    dateText: { fontSize: 12, color: '#374151' },
+    
+    infoText: { textAlign: 'center', color: '#6B7280', marginTop: 8, fontStyle: 'italic' }
 });
 
 export default SchedulePicker;

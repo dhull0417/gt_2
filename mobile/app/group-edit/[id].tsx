@@ -1,19 +1,22 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, TextInput, Image, Dimensions } from 'react-native'; // Import Dimensions
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, TextInput, Image, Dimensions } from 'react-native'; 
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useUpdateGroup } from '@/hooks/useUpdateGroup';
 import TimePicker from '@/components/TimePicker';
-import SchedulePicker, { Schedule } from '@/components/SchedulePicker';
+// 👇 CHANGED: Only import the component default, not the type
+import SchedulePicker from '@/components/SchedulePicker';
+// 👇 NEW: Import the correct Schedule type from your API definition
+import { Schedule } from '@/utils/api';
 import { Picker } from '@react-native-picker/picker';
 import { Feather } from '@expo/vector-icons';
 
-const GroupImage = require('../../assets/images/group-image.jpeg');
+const GroupImage = require('../../assets/images/group-image.png'); // Ensure extension matches your file (.jpeg vs .png)
 
-const { width } = Dimensions.get('window'); // Get screen width for responsive sizing
-const IMAGE_WIDTH = width * 0.7; // 70% of screen width, adjust as needed
-const IMAGE_HEIGHT = IMAGE_WIDTH * (9 / 16); // Calculate 16:9 height
+const { width } = Dimensions.get('window'); 
+const IMAGE_WIDTH = width * 0.7; 
+const IMAGE_HEIGHT = IMAGE_WIDTH * (9 / 16); 
 
 const usaTimezones = [
     { label: "Eastern (ET)", value: "America/New_York" },
@@ -36,6 +39,8 @@ const GroupEditScreen = () => {
     const [groupName, setGroupName] = useState('');
     const [meetTime, setMeetTime] = useState<string | undefined>();
     const [timezone, setTimezone] = useState<string | undefined>();
+    
+    // Now this state accepts the full API Schedule type
     const [schedule, setSchedule] = useState<Schedule | undefined>();
 
     useEffect(() => {
@@ -68,7 +73,7 @@ const GroupEditScreen = () => {
                             onChangeText={setGroupName}
                             placeholder="Enter new group name"
                         />
-                        {/* --- DISPLAY THE IMAGE HERE WITH 16:9 ASPECT RATIO --- */}
+                        
                         <View style={[styles.imagePlaceholder, { width: IMAGE_WIDTH, height: IMAGE_HEIGHT }]}>
                             <Image source={GroupImage} style={{ width: '100%', height: '100%', borderRadius: 8 }} resizeMode="cover" />
                         </View>
@@ -84,6 +89,7 @@ const GroupEditScreen = () => {
                  return (
                     <View style={styles.stepContainer}>
                         <Text style={styles.headerTitle}>How often will you meet?</Text>
+                        {/* Ensure SchedulePicker accepts the API Schedule type in its props */}
                         <SchedulePicker onScheduleChange={setSchedule} initialValue={schedule} />
                         <View style={styles.footerNav}>
                             <TouchableOpacity onPress={() => setStep(1)}>
@@ -150,7 +156,6 @@ const styles = StyleSheet.create({
         borderBottomWidth: 2,
         borderBottomColor: '#D1D5DB'
     },
-    // Only marginVertical is kept, width and height are dynamically set
     imagePlaceholder: { marginVertical: 24, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
     footerNav: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 },
     title: { fontSize: 18, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
