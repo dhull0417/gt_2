@@ -13,13 +13,7 @@ const NotificationItem = ({ item }: { item: Notification }) => {
     const { mutate: declineInvite, isPending: isDeclining } = useDeclineInvite();
     const isPending = isAccepting || isDeclining;
 
-    // If the sender has been deleted or is otherwise null, don't render this item.
-    if (!item.sender) {
-        return null;
-    }
-
-    // If the group has been deleted, don't render this item either.
-    if (!item.group) {
+    if (!item.sender || !item.group) {
         return null;
     }
 
@@ -43,11 +37,23 @@ const NotificationItem = ({ item }: { item: Notification }) => {
                         {item.status === 'declined' && <Text className="text-red-600 font-semibold mt-1">You declined this invitation.</Text>}
                     </>
                 );
+            
+            // 👇 FIX: Added the missing case for 'group-added'
+            case 'group-added':
+                return (
+                    <Text className="text-gray-800">
+                        <Text className="font-bold">{item.sender.firstName} {item.sender.lastName}</Text> added you to the group <Text className="font-bold">{item.group.name}</Text>.
+                    </Text>
+                );
+
             case 'invite-accepted':
                  return <Text className="text-gray-800"><Text className="font-bold">{item.sender.firstName} {item.sender.lastName}</Text> accepted your invitation to join <Text className="font-bold">{item.group.name}</Text>.</Text>;
+            
             case 'invite-declined':
                 return <Text className="text-gray-800"><Text className="font-bold">{item.sender.firstName} {item.sender.lastName}</Text> declined your invitation to join <Text className="font-bold">{item.group.name}</Text>.</Text>;
+            
             default:
+                // This is why it was blank before!
                 return null;
         }
     };
@@ -65,14 +71,14 @@ const NotificationItem = ({ item }: { item: Notification }) => {
 
 const NotificationsScreen = () => {
     const { data: notifications, isLoading, refetch } = useGetNotifications();
-    const { mutate: markAsRead } = useMarkNotificationsAsRead(); // <-- ADD THIS
+    const { mutate: markAsRead } = useMarkNotificationsAsRead();
+
+    // 👇 SPY LOG IS HERE
+    console.log("NOTIFICATIONS SPY:", JSON.stringify(notifications, null, 2));
 
     useFocusEffect(useCallback(() => {
-        // This will call your new API endpoint every time the screen is focused.
-        // On success, the useMarkNotificationsAsRead hook will automatically
-        // invalidate the ['notifications'] query, causing the list to refetch.
         markAsRead(); 
-    }, [markAsRead])); // <-- Use markAsRead as the dependency
+    }, [markAsRead]));
 
     return (
         <SafeAreaView className="flex-1 bg-gray-100">
