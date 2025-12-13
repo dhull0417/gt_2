@@ -8,7 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
-const GroupImage = require('../../assets/images/group-image.png');
+const GroupImage = require('../../assets/images/group-image.jpeg');
 const { width } = Dimensions.get('window');
 
 // Card Math
