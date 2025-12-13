@@ -12,7 +12,7 @@ import { Schedule } from '@/utils/api';
 import { Picker } from '@react-native-picker/picker';
 import { Feather } from '@expo/vector-icons';
 
-const GroupImage = require('../../assets/images/group-image.png'); // Ensure extension matches your file (.jpeg vs .png)
+const GroupImage = require('../../assets/images/group-image.jpeg'); 
 
 const { width } = Dimensions.get('window'); 
 const IMAGE_WIDTH = width * 0.7; 
