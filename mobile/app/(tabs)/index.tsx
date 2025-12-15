@@ -17,25 +17,13 @@ type GroupedEvents = {
   'Future': Event[];
 };
 
-const EventCard = ({
-  event,
-  onPress,
-  showRsvpButtons,
-  onRsvp,
-  isRsvping
-}: {
-  event: Event;
-  onPress: () => void;
-  showRsvpButtons: boolean;
-  onRsvp: (status: 'in' | 'out') => void;
-  isRsvping: boolean;
-}) => {
-  const formatDate = (dateString: string, timezone: string) => {
+// --- Helper Functions ---
+const formatDate = (dateString: string, timezone: string) => {
     const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: timezone };
     return new Date(dateString).toLocaleDateString(undefined, options);
-  };
+};
 
-  const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
+const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
     try {
       const options: Intl.DateTimeFormatOptions = { timeZone: timezone, timeZoneName: 'shortGeneric' };
       const date = new Date(dateString);
@@ -46,17 +34,87 @@ const EventCard = ({
     } catch (e) {
       return timezone.split('/').pop()?.replace('_', ' ') || '';
     }
-  };
+};
 
+// --- Components ---
+
+// 1. Status Dot Component
+const RsvpStatusDot = ({ event, userId }: { event: Event; userId: string }) => {
+    let dotColor = '#FBBF24'; // Yellow (Undecided) default
+
+    if (event.in.includes(userId)) {
+        dotColor = '#10B981'; // Green (In)
+    } else if (event.out.includes(userId)) {
+        dotColor = '#EF4444'; // Red (Out)
+    }
+
+    return (
+        <View 
+            style={{ 
+                width: 12, 
+                height: 12, 
+                borderRadius: 6, 
+                backgroundColor: dotColor,
+                position: 'absolute',
+                top: 12,
+                right: 12,
+                borderWidth: 1,
+                borderColor: 'white' // Optional: adds a crisp edge
+            }} 
+        />
+    );
+};
+
+// 2. Counts Component
+const RsvpCounts = ({ event }: { event: Event }) => {
+    return (
+        <View className="flex-row items-center mt-3">
+            {/* Green Count (In) */}
+            <View className="flex-row items-center mr-4">
+                <View className="w-2 h-2 rounded-full bg-green-500 mr-1.5" />
+                <Text className="text-gray-600 font-medium">{event.in.length}</Text>
+            </View>
+
+            {/* Red Count (Out) */}
+            <View className="flex-row items-center">
+                <View className="w-2 h-2 rounded-full bg-red-500 mr-1.5" />
+                <Text className="text-gray-600 font-medium">{event.out.length}</Text>
+            </View>
+        </View>
+    );
+};
+
+
+const EventCard = ({
+  event,
+  onPress,
+  showRsvpButtons,
+  onRsvp,
+  isRsvping,
+  currentUser
+}: {
+  event: Event;
+  onPress: () => void;
+  showRsvpButtons: boolean;
+  onRsvp: (status: 'in' | 'out') => void;
+  isRsvping: boolean;
+  currentUser: User | undefined;
+}) => {
   return (
-    <View className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200">
+    <View className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200 relative">
       <TouchableOpacity onPress={onPress}>
-        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1F2937' }}>
+        {/* Status Dot */}
+        {currentUser && <RsvpStatusDot event={event} userId={currentUser._id} />}
+
+        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1F2937', paddingRight: 20 }}>
           {event.name}
         </Text>
         <Text style={{ fontSize: 16, color: '#4B5563', marginTop: 4 }}>
           {formatDate(event.date, event.timezone)} at {event.time} {getTimezoneAbbreviation(event.date, event.timezone)}
         </Text>
+
+        {/* Counts Display */}
+        <RsvpCounts event={event} />
       </TouchableOpacity>
 
       {showRsvpButtons && (
@@ -129,27 +187,6 @@ const DashboardScreen = () => {
     return groups;
   }, [events]);
 
-  const formatDate = (dateString: string, timezone: string) => {
-    const options: Intl.DateTimeFormatOptions = {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-      timeZone: timezone,
-    };
-    return new Date(dateString).toLocaleDateString(undefined, options);
-  };
-
-  const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
-    try {
-      const options: Intl.DateTimeFormatOptions = { timeZone: timezone, timeZoneName: 'shortGeneric' };
-      const date = new Date(dateString);
-      const formatter = new Intl.DateTimeFormat('en-US', options);
-      const parts = formatter.formatToParts(date);
-      const tzPart = parts.find(part => part.type === 'timeZoneName');
-      return tzPart ? tzPart.value : '';
-    } catch (e) {
-      return timezone.split('/').pop()?.replace('_', ' ') || '';
-    }
-  };
-
   const handleOpenModal = (event: Event) => {
     setSelectedEvent(event);
     setIsModalVisible(true);
@@ -176,7 +213,6 @@ const DashboardScreen = () => {
         <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#111827' }}>
           Home
         </Text>
-        {/* The bell icon is removed, and this right spacer keeps the title centered */}
         <View style={{ width: 24 }} />
       </View>
 
@@ -201,6 +237,7 @@ const DashboardScreen = () => {
                   showRsvpButtons={true}
                   onRsvp={(status) => handleDashboardRsvp(nextUndecidedEvent._id, status)}
                   isRsvping={isRsvping}
+                  currentUser={currentUser} // Pass currentUser
                 />
               ) : (
                 <View className="bg-white p-5 my-2 rounded-lg items-center">
@@ -236,14 +273,21 @@ const DashboardScreen = () => {
                       <TouchableOpacity
                         key={event._id}
                         onPress={() => handleOpenModal(event)}
-                        className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200"
+                        className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200 relative"
                       >
-                        <Text style={{ fontSize: 18, fontWeight: '600', color: '#1F2937' }}>
+                         {/* 👇 1. Status Dot */}
+                        {currentUser && <RsvpStatusDot event={event} userId={currentUser._id} />}
+
+                        <Text style={{ fontSize: 18, fontWeight: '600', color: '#1F2937', paddingRight: 20 }}>
                           {event.name}
                         </Text>
                         <Text style={{ fontSize: 16, color: '#4B5563', marginTop: 4 }}>
                           {formatDate(event.date, event.timezone)} at {event.time} {getTimezoneAbbreviation(event.date, event.timezone)}
                         </Text>
+                        
+                        {/* 👇 2. Counts Display */}
+                        <RsvpCounts event={event} />
+
                       </TouchableOpacity>
                     ))}
                   </View>
