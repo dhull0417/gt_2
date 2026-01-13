@@ -50,38 +50,55 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
   let regeneratedCount = 0;
 
   for (const group of groups) {
-    if (group.schedule && group.schedule.days) {
+    if (group.schedule) {
+      // 1. Fetch existing future events sorted by date
       const existingFutureEvents = await Event.find({ 
         group: group._id, 
         isOverride: false, 
         date: { $gte: now } 
-      }).lean();
+      }).sort({ date: 1 }).lean();
 
-      const existingEventDays = new Set(existingFutureEvents.map(event => {
-        const eventDate = DateTime.fromJSDate(event.date, { zone: group.timezone });
-        const val = group.schedule.frequency === 'weekly' 
-          ? (eventDate.weekday === 7 ? 0 : eventDate.weekday)
-          : eventDate.day;
-          return val;
-      }));
-
-      // ADD THESE LOGS HERE:
+      // --- Troubleshooting Logs ---
       console.log(`--- Troubleshooting Group: ${group.name} ---`);
       console.log(`Frequency: ${group.schedule.frequency}`);
-      console.log(`Schedule Days (Target):`, group.schedule.days);
-      console.log(`Existing Event Values (In Set):`, Array.from(existingEventDays));
-      console.log(`Number of Future Events Found:`, existingFutureEvents.length);
+      console.log(`Desired Count (eventsToDisplay): ${group.eventsToDisplay}`);
+      console.log(`Current Future Count: ${existingFutureEvents.length}`);
 
-      for (const targetDay of group.schedule.days) {
-        if (!existingEventDays.has(targetDay)) {
-          console.log(`Decision: Value ${targetDay} not found in Set. Creating new event...`);
-          const nextEventDate = calculateNextEventDate(targetDay, group.time, group.timezone, group.schedule.frequency);
-          await Event.create({
-            group: group._id, name: group.name, date: nextEventDate, time: group.time,
-            timezone: group.timezone, members: group.members, undecided: group.members,
-          });
-          regeneratedCount++;
-          console.log(`Regenerated event for group '${group.name}' on day ${targetDay}`);
+      if (existingFutureEvents.length > 0) {
+        const latestEvent = existingFutureEvents[existingFutureEvents.length - 1];
+        console.log(`Latest Event Date: ${latestEvent.date} at ${latestEvent.time}`);
+      } else {
+        console.log(`No future events found. Anchor will be NOW.`);
+      }
+      // ----------------------------
+
+      // Temporarily keeping your existing logic below to see how it compares to the logs above
+      const existingEventDays = new Set(existingFutureEvents.map(event => {
+        const eventDate = DateTime.fromJSDate(event.date, { zone: group.timezone });
+        return group.schedule.frequency === 'weekly' 
+          ? (eventDate.weekday === 7 ? 0 : eventDate.weekday)
+          : eventDate.day;
+      }));
+
+      if (group.schedule.days) {
+        for (const targetDay of group.schedule.days) {
+          if (!existingEventDays.has(targetDay)) {
+            const nextEventDate = calculateNextEventDate(targetDay, group.time, group.timezone, group.schedule.frequency);
+            
+            // Log exactly what's being attempted
+            console.log(`Action: Attempting to create missing event for value ${targetDay} on date: ${nextEventDate}`);
+            
+            await Event.create({
+              group: group._id, 
+              name: group.name, 
+              date: nextEventDate, 
+              time: group.time,
+              timezone: group.timezone, 
+              members: group.members, 
+              undecided: group.members,
+            });
+            regeneratedCount++;
+          }
         }
       }
     }
