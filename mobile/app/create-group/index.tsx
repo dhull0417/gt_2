@@ -1,5 +1,25 @@
-import React, { useState, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Image, StyleSheet, Alert, Dimensions, Modal, FlatList, Platform, Share, Keyboard, ActivityIndicator } from "react-native";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { 
+    View, 
+    Text, 
+    TextInput, 
+    TouchableOpacity, 
+    ScrollView, 
+    Image, 
+    StyleSheet, 
+    Alert, 
+    Dimensions, 
+    Modal, 
+    FlatList, 
+    Platform, 
+    Share, 
+    Keyboard, 
+    ActivityIndicator,
+    Animated,
+    KeyboardAvoidingView,
+    ViewStyle,
+    StyleProp
+} from "react-native";
 import { useCreateGroup } from "@/hooks/useCreateGroup";
 import { useSearchUsers } from "@/hooks/useSearchUsers";
 import TimePicker from "@/components/TimePicker";
@@ -28,13 +48,12 @@ interface CustomRoutine {
     };
 }
 
-// 👇 UPDATED INTERFACE: Added 'name' as optional to fix TS error
 interface UserStub {
     _id: string;
     firstName?: string;
     lastName?: string;
     username: string;
-    name?: string; // Added this to prevent the "Property does not exist" error
+    name?: string; 
     email?: string;
     profilePicture?: string;
 }
@@ -61,6 +80,46 @@ const daysOfWeek = [
 
 const occurrences = ['1st', '2nd', '3rd', '4th', '5th', 'Last'];
 
+// --- Animation Helper ---
+interface FadeInViewProps {
+  children: React.ReactNode;
+  delay?: number;
+  duration?: number;
+  style?: StyleProp<ViewStyle>;
+}
+
+const FadeInView = ({ children, delay = 0, duration = 400, style }: FadeInViewProps) => {
+  const fadeAnim = useMemo(() => new Animated.Value(0), []);
+  const slideAnim = useMemo(() => new Animated.Value(-15), []);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: duration,
+        delay: delay,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: duration,
+        delay: delay,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [delay, duration]);
+
+  return (
+    <Animated.View style={[{ 
+      opacity: fadeAnim, 
+      transform: [{ translateY: slideAnim }],
+      width: '100%' 
+    }, style]}>
+      {children}
+    </Animated.View>
+  );
+};
+
 const CreateGroupScreen = () => {
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
@@ -68,33 +127,28 @@ const CreateGroupScreen = () => {
   // --- State ---
   const [step, setStep] = useState(1);
   const [groupName, setGroupName] = useState("");
-  const [eventsToDisplay, setEventsToDisplay] = useState("1");
   
-  // Member Selection State
+  // Hardcoded to 3 as requested for default behavior
+  const [eventsToDisplay] = useState("3"); 
+  
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<UserStub[]>([]);
-  
-  // Search Hook
   const { data: searchResults, isLoading: isSearchingUsers } = useSearchUsers(searchQuery);
 
-  // Scheduling State
   const [frequency, setFrequency] = useState<Frequency>(null);
   const [selectedDays, setSelectedDays] = useState<number[]>([]); 
   const [selectedDates, setSelectedDates] = useState<number[]>([]); 
-  
   const [customRoutines, setCustomRoutines] = useState<CustomRoutine[]>([
       { id: Date.now().toString(), type: null, data: { occurrence: '1st', dayIndex: 0, dates: [] } }
   ]);
   const [currentPage, setCurrentPage] = useState(0);
 
-  // Modal State
   const [modalVisible, setModalVisible] = useState(false);
   const [modalConfig, setModalConfig] = useState<{ 
       type: 'occurrence' | 'dayIndex', 
       routineIndex: number 
   } | null>(null);
 
-  // Time State
   const [meetTime, setMeetTime] = useState("05:00 PM");
   const [timezone, setTimezone] = useState("America/Denver");
   
@@ -113,23 +167,14 @@ const CreateGroupScreen = () => {
   };
 
   // --- Logic ---
-
   const handleCreateGroup = () => {
     const limit = parseInt(eventsToDisplay);
-    if (isNaN(limit) || limit < 1 || limit > 14) {
-        Alert.alert("Invalid Input", "Please enter a number between 1 and 14 for displayed events.");
-        return;
-    }
-
+    
     let finalSchedule: any = { frequency };
-
-    if (frequency === 'weekly' || frequency === 'biweekly') {
-        finalSchedule.days = selectedDays;
-    } else if (frequency === 'monthly') {
-        finalSchedule.days = selectedDates;
-    } else if (frequency === 'daily') {
-        finalSchedule.days = [0, 1, 2, 3, 4, 5, 6]; 
-    } else if (frequency === 'custom') {
+    if (frequency === 'weekly' || frequency === 'biweekly') finalSchedule.days = selectedDays;
+    else if (frequency === 'monthly') finalSchedule.days = selectedDates;
+    else if (frequency === 'daily') finalSchedule.days = [0, 1, 2, 3, 4, 5, 6]; 
+    else if (frequency === 'custom') {
         finalSchedule.days = [0]; 
         finalSchedule.rules = customRoutines.map(r => ({
             type: r.type,
@@ -139,79 +184,63 @@ const CreateGroupScreen = () => {
         }));
     }
 
-const memberIds = selectedMembers.map(m => m._id);
-
     const variables = { 
         name: groupName, 
         time: meetTime, 
         schedule: finalSchedule, 
         timezone,
         eventsToDisplay: limit,
-        members: memberIds // 👈 Send to backend
+        members: selectedMembers.map(m => m._id) 
     };
 
-    mutate(variables, {
-        onSuccess: () => {
-            router.back();
-        }
-    });
+    mutate(variables, { onSuccess: () => router.back() });
   };
 
   const handleNext = () => {
-    if (step === 3) { 
-        if (frequency === 'daily') {
-            setStep(5); 
-        } else {
-            setStep(4); 
-        }
-    } else {
-        setStep(prev => prev + 1);
-    }
+    if (step === 3 && frequency === 'daily') setStep(5);
+    else setStep(prev => prev + 1);
   };
 
   const handleBack = () => {
-    if (step === 5 && frequency === 'daily') {
-        setStep(3); 
-    } else {
-        setStep(prev => prev - 1);
-    }
+    if (step === 1) {
+      Alert.alert("Discard Changes?", "Are you sure you want to exit?", [
+        { text: "Stay", style: "cancel" },
+        { text: "Exit", style: "destructive", onPress: () => router.back() }
+      ]);
+    } else if (step === 5 && frequency === 'daily') setStep(3);
+    else setStep(prev => prev - 1);
   };
 
   const toggleDaySelection = (dayIndex: number) => {
-    setSelectedDays(prev => 
-        prev.includes(dayIndex) ? prev.filter(d => d !== dayIndex) : [...prev, dayIndex]
-    );
+    setSelectedDays(prev => prev.includes(dayIndex) ? prev.filter(d => d !== dayIndex) : [...prev, dayIndex]);
   };
 
   const toggleDateSelection = (date: number) => {
     setSelectedDates(prev => {
         if (prev.includes(date)) return prev.filter(d => d !== date);
-        if (prev.length >= 10) {
-            Alert.alert("Limit Reached", "You can only select up to 10 dates.");
-            return prev;
-        }
+        if (prev.length >= 10) { Alert.alert("Limit Reached", "Max 10 dates."); return prev; }
         return [...prev, date];
     });
   };
 
   const toggleMember = (user: UserStub) => {
-      if (selectedMembers.some(m => m._id === user._id)) {
-          setSelectedMembers(prev => prev.filter(m => m._id !== user._id));
-      } else {
-          setSelectedMembers(prev => [...prev, user]);
-          setSearchQuery(""); 
-          Keyboard.dismiss();
-      }
+    if (selectedMembers.some(m => m._id === user._id)) {
+        setSelectedMembers(prev => prev.filter(m => m._id !== user._id));
+    } else {
+        setSelectedMembers(prev => [...prev, user]);
+        setSearchQuery(""); 
+        Keyboard.dismiss();
+    }
   };
 
-  const handleShareLink = async () => {
-      try {
-          await Share.share({
-              message: `Join my new group "${groupName}" on the app!`,
-          });
-      } catch (error: any) {
-          Alert.alert(error.message);
+  const handleModalSelect = (value: any) => {
+      if (modalConfig) {
+          const newRoutines = [...customRoutines];
+          newRoutines[modalConfig.routineIndex].data = { ...newRoutines[modalConfig.routineIndex].data, [modalConfig.type]: value };
+          setCustomRoutines(newRoutines);
       }
+      setModalVisible(false);
+      setModalConfig(null);
   };
 
   const addRoutine = () => {
@@ -229,7 +258,9 @@ const memberIds = selectedMembers.map(m => m._id);
 
   const removeRoutine = (index: number) => {
       if (customRoutines.length === 1) {
-          updateRoutine(index, { type: null, data: { occurrence: '1st', dayIndex: 0, dates: [] } });
+          const newRoutines = [...customRoutines];
+          newRoutines[index] = { ...newRoutines[index], type: null, data: { occurrence: '1st', dayIndex: 0, dates: [] } };
+          setCustomRoutines(newRoutines);
           return;
       }
       const newRoutines = customRoutines.filter((_, i) => i !== index);
@@ -252,14 +283,6 @@ const memberIds = selectedMembers.map(m => m._id);
   const openDropdown = (type: 'occurrence' | 'dayIndex', routineIndex: number) => {
       setModalConfig({ type, routineIndex });
       setModalVisible(true);
-  };
-
-  const handleModalSelect = (value: any) => {
-      if (modalConfig) {
-          updateRoutineData(modalConfig.routineIndex, modalConfig.type, value);
-      }
-      setModalVisible(false);
-      setModalConfig(null);
   };
 
   const handleScroll = (event: any) => {
@@ -364,153 +387,136 @@ const memberIds = selectedMembers.map(m => m._id);
   };
 
   const renderStep1_Name = () => (
-    <View style={styles.stepContainerPadded}> 
-      <Text style={styles.headerTitle}>What's your Group name?</Text>
-      <View style={styles.imagePlaceholder}>
-          <Image source={GroupImage} style={styles.image} resizeMode="cover" />
-      </View>
-      <TextInput
-        style={styles.textInput}
-        placeholder="Your group name here"
-        placeholderTextColor="#999"
-        value={groupName}
-        onChangeText={setGroupName}
-        maxLength={30}
-      />
-      <View style={styles.footerNavRight}>
-          <TouchableOpacity onPress={handleNext} disabled={groupName.trim().length === 0}>
-              <Feather name="arrow-right-circle" size={48} color={groupName.trim().length === 0 ? "#D1D5DB" : "#4F46E5"} />
-          </TouchableOpacity>
-      </View>
-    </View>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={styles.stepContainerPadded} keyboardShouldPersistTaps="handled"> 
+        <FadeInView delay={100}><Text style={styles.headerTitle}>What's your Group name?</Text></FadeInView>
+        <FadeInView delay={300}>
+          <View style={styles.imagePlaceholder}>
+              <Image source={GroupImage} style={styles.image} resizeMode="cover" />
+          </View>
+        </FadeInView>
+        <FadeInView delay={500}>
+          <TextInput
+            style={styles.textInput}
+            placeholder="Your group name here"
+            placeholderTextColor="#999"
+            value={groupName}
+            onChangeText={setGroupName}
+            maxLength={30}
+          />
+        </FadeInView>
+        <FadeInView delay={650}>
+          <View style={styles.footerNavRight}>
+              <TouchableOpacity onPress={handleNext} disabled={groupName.trim().length === 0}>
+                  <Feather name="arrow-right-circle" size={48} color={groupName.trim().length === 0 ? "#D1D5DB" : "#4F46E5"} />
+              </TouchableOpacity>
+          </View>
+        </FadeInView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 
   const renderStep2_AddMembers = () => {
     const isSearching = searchQuery.length > 0;
-    
-    // Use real API data
     const filteredUsers = (searchResults as UserStub[]) || [];
 
     return (
-        <View style={styles.stepContainerPadded}>
-            <View>
-                <Text style={styles.headerTitle}>Who should be in this group?</Text>
-                
-                {/* SEARCH BOX */}
-                <View style={{ marginBottom: 16 }}>
-                    <Text style={styles.pickerTitle}>Search for members</Text>
-                    <View style={styles.searchBox}>
-                        <Feather name="search" size={20} color="#9CA3AF" />
-                        <TextInput 
-                            style={styles.searchInput}
-                            placeholder="Search users by name..."
-                            placeholderTextColor="#9CA3AF"
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                        />
-                        {/* Loading Indicator */}
-                        {isSearchingUsers && <ActivityIndicator size="small" color="#4F46E5" style={{marginRight: 8}} />}
-                        
-                        {/* Clear Button */}
-                        {isSearching && (
-                            <TouchableOpacity onPress={() => setSearchQuery("")}>
-                                <Feather name="x-circle" size={20} color="#9CA3AF" />
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                </View>
+      <View style={styles.stepContainerPadded}>
+        <View style={{ flex: 1 }}>
+          <FadeInView delay={100}>
+            <Text style={styles.headerTitle}>Who should be in this group?</Text>
+          </FadeInView>
+          
+          <FadeInView delay={250}>
+            <View style={{ marginBottom: 16 }}>
+              <Text style={styles.pickerTitle}>Search for members</Text>
+              <View style={styles.searchBox}>
+                <Feather name="search" size={20} color="#9CA3AF" />
+                <TextInput 
+                  style={styles.searchInput}
+                  placeholder="Search users by name..."
+                  placeholderTextColor="#9CA3AF"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                {isSearchingUsers && <ActivityIndicator size="small" color="#4F46E5" style={{marginRight: 8}} />}
+              </View>
             </View>
+          </FadeInView>
 
-            {isSearching ? (
-                // SEARCH RESULTS LIST
+          <FadeInView delay={400} style={{ flex: 1 }}>
+            <View style={{ flex: 1 }}> 
+              {isSearching ? (
                 <FlatList 
-                    data={filteredUsers}
-                    keyExtractor={(item) => item._id}
-                    keyboardDismissMode="on-drag"
-                    keyboardShouldPersistTaps="handled"
-                    style={{ flex: 1, marginHorizontal: -24 }} 
-                    contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 20 }}
-                    renderItem={({ item }) => (
-                        <TouchableOpacity 
-                            style={styles.resultItem} 
-                            onPress={() => toggleMember(item)}
-                        >
+                  data={filteredUsers}
+                  keyExtractor={(item) => item._id}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => (
+                    <TouchableOpacity style={styles.resultItem} onPress={() => toggleMember(item)}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Image 
+                          source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=' + (item.firstName?.[0] || 'U') }} 
+                          style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#E0E7FF' }} 
+                        />
+                        <View style={{ marginLeft: 12 }}>
+                          <Text style={styles.resultText}>{getDisplayName(item)}</Text>
+                          <Text style={styles.resultSubtext}>@{item.username}</Text>
+                        </View>
+                      </View>
+                      {selectedMembers.some(m => m._id === item._id) ? <Feather name="check" size={20} color="#4F46E5" /> : null}
+                    </TouchableOpacity>
+                  )}
+                />
+              ) : (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View>
+                    <Text style={styles.pickerTitle}>Or invite via link</Text>
+                    <TouchableOpacity style={styles.shareLinkButton} onPress={() => Share.share({ message: `Join my new group "${groupName}"!` })}>
+                      <Feather name="share" size={20} color="#4F46E5" />
+                      <Text style={styles.shareLinkText}>Share Invite Link</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {!!selectedMembers.length && (
+                    <View style={{ marginTop: 24 }}>
+                      <Text style={[styles.pickerTitle, { marginBottom: 8 }]}>Selected Members ({selectedMembers.length})</Text>
+                      <View style={styles.selectedListContainer}>
+                        {selectedMembers.map(member => (
+                          <View key={member._id} style={styles.selectedRow}>
                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Image 
-                                    source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=' + (item.firstName?.[0] || 'U') }} 
-                                    style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#E0E7FF' }} 
-                                />
+                                <View style={styles.avatarPlaceholder}>
+                                  <Text style={styles.avatarText}>{getDisplayInitials(member)}</Text>
+                                </View>
                                 <View style={{ marginLeft: 12 }}>
-                                    {/* 👇 UPDATED: Safe display name logic */}
-                                    <Text style={styles.resultText}>{getDisplayName(item)}</Text>
-                                    <Text style={styles.resultSubtext}>@{item.username}</Text>
+                                    <Text style={styles.selectedName}>{getDisplayName(member)}</Text>
+                                    <Text style={styles.selectedUsername}>@{member.username}</Text>
                                 </View>
                             </View>
-                            {selectedMembers.some(m => m._id === item._id) && (
-                                <Feather name="check" size={20} color="#4F46E5" />
-                            )}
-                        </TouchableOpacity>
-                    )}
-                    ListEmptyComponent={
-                        !isSearchingUsers ? (
-                            <View style={{ padding: 20, alignItems: 'center' }}>
-                                <Text style={{ color: '#9CA3AF' }}>No users found matching "{searchQuery}"</Text>
-                            </View>
-                        ) : null
-                    }
-                />
-            ) : (
-                // NORMAL CONTENT (Share Link + Selected List)
-                <View style={{ flex: 1 }}>
-                    <View>
-                        <Text style={styles.pickerTitle}>Or invite via link</Text>
-                        <TouchableOpacity style={styles.shareLinkButton} onPress={handleShareLink}>
-                            <Feather name="share" size={20} color="#4F46E5" />
-                            <Text style={styles.shareLinkText}>Share Invite Link</Text>
-                        </TouchableOpacity>
+                            <TouchableOpacity onPress={() => toggleMember(member)}>
+                                <Feather name="trash-2" size={20} color="#EF4444" />
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                      </View>
                     </View>
-
-                    {/* SELECTED MEMBERS LIST */}
-                    <View style={{ flex: 1, marginTop: 24 }}>
-                        {selectedMembers.length > 0 && (
-                            <>
-                                <Text style={[styles.pickerTitle, { marginBottom: 8 }]}>Selected Members ({selectedMembers.length})</Text>
-                                <ScrollView style={styles.selectedListContainer}>
-                                    {selectedMembers.map(member => (
-                                        <View key={member._id} style={styles.selectedRow}>
-                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                <Image 
-                                                    source={{ uri: member.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=' + (member.firstName?.[0] || 'U') }} 
-                                                    style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#E0E7FF' }}
-                                                />
-                                                <View style={{ marginLeft: 12 }}>
-                                                    {/* 👇 UPDATED: Safe display name logic */}
-                                                    <Text style={styles.selectedName}>{getDisplayName(member)}</Text>
-                                                    <Text style={styles.selectedUsername}>@{member.username}</Text>
-                                                </View>
-                                            </View>
-                                            <TouchableOpacity onPress={() => toggleMember(member)}>
-                                                <Feather name="trash-2" size={20} color="#EF4444" />
-                                            </TouchableOpacity>
-                                        </View>
-                                    ))}
-                                </ScrollView>
-                            </>
-                        )}
-                    </View>
-                </View>
-            )}
-
-            {/* Footer Navigation */}
-            <View style={styles.footerNavSpread}>
-                <TouchableOpacity onPress={handleBack}>
-                    <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleNext}>
-                    <Feather name="arrow-right-circle" size={48} color="#4F46E5" />
-                </TouchableOpacity>
+                  )}
+                </ScrollView>
+              )}
             </View>
+          </FadeInView>
         </View>
+
+        <FadeInView delay={550}>
+          <View style={styles.footerNavSpread}>
+            <TouchableOpacity onPress={handleBack}>
+              <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleNext}>
+              <Feather name="arrow-right-circle" size={48} color="#4F46E5" />
+            </TouchableOpacity>
+          </View>
+        </FadeInView>
+      </View>
     );
   };
 
@@ -525,32 +531,35 @@ const memberIds = selectedMembers.map(m => m._id);
 
     return (
         <View style={styles.stepContainerPadded}>
-            <Text style={styles.headerTitle}>How often will you meet?</Text>
+            <FadeInView delay={100}><Text style={styles.headerTitle}>How often will you meet?</Text></FadeInView>
             <View style={{ flex: 1, justifyContent: 'center' }}>
-                {options.map((option) => {
+                {options.map((option, idx) => {
                     const isSelected = frequency === option.value;
                     return (
-                        <TouchableOpacity 
-                            key={option.value}
-                            style={[styles.frequencyButton, isSelected && styles.frequencyButtonSelected]}
-                            onPress={() => setFrequency(option.value)}
-                        >
-                            <View style={[styles.radioCircle, isSelected && styles.radioCircleSelected]} />
-                            <Text style={[styles.frequencyText, isSelected && styles.frequencyTextSelected]}>
-                                {option.label}
-                            </Text>
-                        </TouchableOpacity>
+                        <FadeInView key={option.value || 'null'} delay={200 + (idx * 50)}>
+                            <TouchableOpacity 
+                                style={[styles.frequencyButton, isSelected && styles.frequencyButtonSelected]}
+                                onPress={() => setFrequency(option.value)}
+                            >
+                                <View style={[styles.radioCircle, isSelected && styles.radioCircleSelected]} />
+                                <Text style={[styles.frequencyText, isSelected && styles.frequencyTextSelected]}>
+                                    {option.label}
+                                </Text>
+                            </TouchableOpacity>
+                        </FadeInView>
                     );
                 })}
             </View>
-            <View style={styles.footerNavSpread}>
-                <TouchableOpacity onPress={handleBack}>
-                    <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleNext} disabled={!frequency}>
-                    <Feather name="arrow-right-circle" size={48} color={!frequency ? "#D1D5DB" : "#4F46E5"} />
-                </TouchableOpacity>
-            </View>
+            <FadeInView delay={600}>
+                <View style={styles.footerNavSpread}>
+                    <TouchableOpacity onPress={handleBack}>
+                        <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleNext} disabled={!frequency}>
+                        <Feather name="arrow-right-circle" size={48} color={!frequency ? "#D1D5DB" : "#4F46E5"} />
+                    </TouchableOpacity>
+                </View>
+            </FadeInView>
         </View>
     );
   };
@@ -560,50 +569,58 @@ const memberIds = selectedMembers.map(m => m._id);
         const canAdd = customRoutines.length < 5;
         return (
             <View style={styles.stepContainer}> 
-                <View style={{ paddingHorizontal: 24 }}>
-                    <Text style={styles.headerTitle}>Add up to 5 routines</Text>
-                    <View style={styles.paginationRow}>
-                        <View style={styles.paginationDotsContainer}>
-                            {customRoutines.map((_, i) => (
-                                <View key={i} style={[styles.dot, currentPage === i && styles.activeDot]} />
-                            ))}
+                <View style={{ paddingHorizontal: 24, marginTop: 24 }}>
+                    <FadeInView delay={100}>
+                        <Text style={styles.headerTitle}>Add up to 5 routines</Text>
+                    </FadeInView>
+                    <FadeInView delay={200}>
+                        <View style={styles.paginationRow}>
+                            <View style={styles.paginationDotsContainer}>
+                                {customRoutines.map((_, i) => (
+                                    <View key={i} style={[styles.dot, currentPage === i && styles.activeDot]} />
+                                ))}
+                            </View>
+                            {canAdd && (
+                                <TouchableOpacity style={styles.headerAddButton} onPress={addRoutine}>
+                                    <Feather name="plus" size={18} color="#FFF" />
+                                </TouchableOpacity>
+                            )}
                         </View>
-                        {canAdd && (
-                            <TouchableOpacity style={styles.headerAddButton} onPress={addRoutine}>
-                                <Feather name="plus" size={18} color="#FFF" />
-                            </TouchableOpacity>
-                        )}
+                    </FadeInView>
+                </View>
+
+                <FadeInView delay={350} style={{ flex: 1 }}>
+                    <View style={{flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                        <ScrollView 
+                            ref={scrollRef}
+                            horizontal 
+                            showsHorizontalScrollIndicator={false}
+                            snapToInterval={CARD_WIDTH} 
+                            snapToAlignment="start"
+                            decelerationRate="fast" 
+                            contentContainerStyle={{ paddingHorizontal: SIDE_INSET }}
+                            onMomentumScrollEnd={handleScroll}
+                            style={{ flex: 1 }}
+                        >
+                            {customRoutines.map((routine, index) => renderRoutineCard(routine, index))}
+                        </ScrollView>
                     </View>
-                </View>
+                </FadeInView>
 
-                <View style={{flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                    <ScrollView 
-                        ref={scrollRef}
-                        horizontal 
-                        showsHorizontalScrollIndicator={false}
-                        snapToInterval={CARD_WIDTH} 
-                        snapToAlignment="start"
-                        decelerationRate="fast" 
-                        contentContainerStyle={{ paddingHorizontal: SIDE_INSET }}
-                        onMomentumScrollEnd={handleScroll}
-                        style={{ flex: 1 }}
-                    >
-                        {customRoutines.map((routine, index) => renderRoutineCard(routine, index))}
-                    </ScrollView>
-                </View>
-
-                <View style={[styles.footerNavSpread, { paddingHorizontal: 24 }]}>
-                    <TouchableOpacity onPress={handleBack}>
-                        <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={styles.doneButton}
-                        onPress={handleNext}
-                        disabled={customRoutines.some(r => r.type === null)}
-                    >
-                        <Text style={styles.doneButtonText}>Done</Text>
-                    </TouchableOpacity>
-                </View>
+                <FadeInView delay={500}>
+                    <View style={[styles.footerNavSpread, { paddingHorizontal: 24, marginBottom: 24 }]}>
+                        <TouchableOpacity onPress={handleBack}>
+                            <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={styles.doneButton}
+                            onPress={handleNext}
+                            disabled={customRoutines.some(r => r.type === null)}
+                        >
+                            <Text style={styles.doneButtonText}>Done</Text>
+                        </TouchableOpacity>
+                    </View>
+                </FadeInView>
             </View>
         );
     }
@@ -613,99 +630,98 @@ const memberIds = selectedMembers.map(m => m._id);
 
     return (
         <View style={styles.stepContainerPadded}>
-            <Text style={styles.headerTitle}>
-                {isMonthly ? "Which day(s) will you meet?" : "Which day(s) will you meet?"}
-            </Text>
+            <FadeInView delay={100}>
+                <Text style={styles.headerTitle}>Which day(s) will you meet?</Text>
+            </FadeInView>
             
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20 }}>
-                {isMonthly ? (
-                    <View style={styles.calendarGrid}>
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map((date) => {
-                            const isSelected = selectedDates.includes(date);
-                            return (
-                                <TouchableOpacity 
-                                    key={date}
-                                    style={[styles.dateBox, isSelected && styles.dateBoxSelected]}
-                                    onPress={() => toggleDateSelection(date)}
-                                >
-                                    <Text style={[styles.dateText, isSelected && styles.dateTextSelected]}>{date}</Text>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </View>
-                ) : (
-                    <View>
-                        {daysOfWeek.map((day) => {
-                            const isSelected = selectedDays.includes(day.value);
-                            return (
-                                <TouchableOpacity 
-                                    key={day.value}
-                                    style={[styles.frequencyButton, isSelected && styles.frequencyButtonSelected]}
-                                    onPress={() => toggleDaySelection(day.value)}
-                                >
-                                    <View style={[styles.radioCircle, isSelected && styles.radioCircleSelected]} />
-                                    <Text style={[styles.frequencyText, isSelected && styles.frequencyTextSelected]}>
-                                        {day.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </View>
-                )}
-            </ScrollView>
-
-            <View style={styles.footerNavSpread}>
-                <TouchableOpacity onPress={handleBack}>
-                    <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleNext} disabled={!isValid}>
-                    <Feather name="arrow-right-circle" size={48} color={!isValid ? "#D1D5DB" : "#4F46E5"} />
-                </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <FadeInView delay={250}>
+                <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+                    {isMonthly ? (
+                        <View style={styles.calendarGrid}>
+                            {Array.from({ length: 31 }, (_, i) => i + 1).map((date) => {
+                                const isSelected = selectedDates.includes(date);
+                                return (
+                                    <TouchableOpacity 
+                                        key={date}
+                                        style={[styles.dateBox, isSelected && styles.dateBoxSelected]}
+                                        onPress={() => toggleDateSelection(date)}
+                                    >
+                                        <Text style={[styles.dateText, isSelected && styles.dateTextSelected]}>{date}</Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    ) : (
+                        <View>
+                            {daysOfWeek.map((day) => {
+                                const isSelected = selectedDays.includes(day.value);
+                                return (
+                                    <TouchableOpacity 
+                                        key={day.value}
+                                        style={[styles.frequencyButton, isSelected && styles.frequencyButtonSelected]}
+                                        onPress={() => toggleDaySelection(day.value)}
+                                    >
+                                        <View style={[styles.radioCircle, isSelected && styles.radioCircleSelected]} />
+                                        <Text style={[styles.frequencyText, isSelected && styles.frequencyTextSelected]}>
+                                            {day.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    )}
+                </ScrollView>
+              </FadeInView>
             </View>
+
+            <FadeInView delay={400}>
+                <View style={styles.footerNavSpread}>
+                    <TouchableOpacity onPress={handleBack}>
+                        <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleNext} disabled={!isValid}>
+                        <Feather name="arrow-right-circle" size={48} color={!isValid ? "#D1D5DB" : "#4F46E5"} />
+                    </TouchableOpacity>
+                </View>
+            </FadeInView>
         </View>
     );
   };
 
   const renderStep5_Time = () => (
     <View style={styles.stepContainerPadded}>
-        <Text style={styles.headerTitle}>Choose a time & details</Text>
-        <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
-        <View style={styles.timezoneContainer}>
-            <Text style={styles.pickerTitle}>Select Timezone</Text>
-            <View style={styles.pickerWrapper}>
-                <Picker selectedValue={timezone} onValueChange={setTimezone} itemStyle={styles.pickerItem}>
-                    {usaTimezones.map(tz => <Picker.Item key={tz.value} label={tz.label} value={tz.value} />)}
-                </Picker>
+        <FadeInView delay={100}><Text style={styles.headerTitle}>Choose a time & details</Text></FadeInView>
+        
+        <FadeInView delay={250}><TimePicker onTimeChange={setMeetTime} initialValue={meetTime} /></FadeInView>
+        
+        <FadeInView delay={400}>
+            <View style={styles.timezoneContainer}>
+                <Text style={styles.pickerTitle}>Select Timezone</Text>
+                <View style={styles.pickerWrapper}>
+                    <Picker selectedValue={timezone} onValueChange={setTimezone} itemStyle={styles.pickerItem}>
+                        {usaTimezones.map(tz => <Picker.Item key={tz.value} label={tz.label} value={tz.value} />)}
+                    </Picker>
+                </View>
             </View>
-        </View>
+        </FadeInView>
 
-        <View style={{ marginBottom: 20 }}>
-            <Text style={styles.pickerTitle}>How many upcoming events to display?</Text>
-            <Text style={{ textAlign: 'center', color: '#6B7280', marginBottom: 8 }}>(Enter 1 - 14)</Text>
-            <TextInput
-                style={{ 
-                    borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, padding: 12, 
-                    backgroundColor: 'white', fontSize: 18, textAlign: 'center' 
-                }}
-                keyboardType="number-pad"
-                value={eventsToDisplay}
-                onChangeText={setEventsToDisplay}
-                maxLength={2}
-            />
-        </View>
+        {/* Removed Section: Décide event display count. Now defaulted to 3 in state. */}
 
-        <View style={styles.footerNavSpread}>
-            <TouchableOpacity onPress={handleBack}>
-                <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
-            </TouchableOpacity>
-            <TouchableOpacity
-                style={[styles.createButton, isPending && { backgroundColor: '#A5B4FC' }]}
-                onPress={handleCreateGroup}
-                disabled={isPending}
-            >
-                <Text style={styles.createButtonText}>{isPending ? "Creating..." : "Create Group"}</Text>
-            </TouchableOpacity>
-        </View>
+        <FadeInView delay={550}>
+            <View style={styles.footerNavSpread}>
+                <TouchableOpacity onPress={handleBack}>
+                    <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={[styles.createButton, isPending && { backgroundColor: '#A5B4FC' }]}
+                    onPress={handleCreateGroup}
+                    disabled={isPending}
+                >
+                    <Text style={styles.createButtonText}>{isPending ? "Creating..." : "Create Group"}</Text>
+                </TouchableOpacity>
+            </View>
+        </FadeInView>
     </View>
   );
 
@@ -726,86 +742,62 @@ const memberIds = selectedMembers.map(m => m._id);
 const styles = StyleSheet.create({
     stepContainer: { flex: 1, justifyContent: 'space-between' },
     stepContainerPadded: { flex: 1, justifyContent: 'space-between', padding: 24 },
-    
     headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#1F2937', textAlign: 'center', marginBottom: 24 },
     imagePlaceholder: { width: '80%', aspectRatio: 16/9, marginVertical: 24, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
     image: { width: '100%', height: '100%', borderRadius: 8 },
-    textInput: { width: '100%', padding: 16, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, backgroundColor: '#FFFFFF', fontSize: 16 },
-    
-    // Member Selection Styles
+    textInput: { width: '100%', padding: 16, borderBottomWidth: 1, borderColor: '#D1D5DB', backgroundColor: '#FFFFFF', fontSize: 16 },
     searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, paddingHorizontal: 16, height: 50 },
     searchInput: { flex: 1, marginLeft: 10, fontSize: 16, color: '#374151' },
-    
     resultItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     resultText: { fontSize: 16, color: '#374151', fontWeight: '500' },
     resultSubtext: { fontSize: 14, color: '#9CA3AF' },
-
     shareLinkButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#EEF2FF', borderRadius: 8, borderWidth: 1, borderColor: '#C7D2FE' },
     shareLinkText: { color: '#4F46E5', fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
-
-    // Selected List Styles
-    selectedListContainer: { flex: 1, backgroundColor: '#FFF', borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 12 },
+    selectedListContainer: { backgroundColor: '#FFF', borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 12 },
     selectedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     selectedName: { fontSize: 16, fontWeight: '500', color: '#1F2937' },
     selectedUsername: { fontSize: 14, color: '#6B7280' },
     avatarPlaceholder: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E0E7FF', alignItems: 'center', justifyContent: 'center' },
     avatarText: { color: '#4F46E5', fontWeight: 'bold', fontSize: 16 },
-
-    // Frequency Button Styles
     frequencyButton: { flexDirection: 'row', alignItems: 'center', padding: 16, marginBottom: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8 },
     frequencyButtonSelected: { backgroundColor: '#E0E7FF', borderColor: '#4F46E5' },
     frequencyText: { fontSize: 18, color: '#374151', marginLeft: 12 },
     frequencyTextSelected: { color: '#4F46E5', fontWeight: '600' },
     radioCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#D1D5DB', backgroundColor: '#FFF' },
     radioCircleSelected: { borderColor: '#4F46E5', backgroundColor: '#4F46E5' },
-
-    // Calendar Styles
     calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
     dateBox: { width: width / 7 - 12, height: width / 7 - 12, justifyContent: 'center', alignItems: 'center', margin: 4, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
     dateBoxSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
     dateText: { fontSize: 16, color: '#374151' },
     dateTextSelected: { color: '#FFF', fontWeight: 'bold' },
-
-    // Custom Routine Styles
     paginationRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
     paginationDotsContainer: { flexDirection: 'row', alignItems: 'center' },
     dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#D1D5DB', marginHorizontal: 4 },
     activeDot: { backgroundColor: '#4F46E5', width: 20 },
-    
     headerAddButton: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#4F46E5', justifyContent: 'center', alignItems: 'center', marginLeft: 12 },
-
     cardContainer: { width: CARD_WIDTH, alignItems: 'center', paddingHorizontal: 5 }, 
     card: { width: '100%', height: 400, backgroundColor: 'white', borderRadius: 16, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4, justifyContent: 'center' },
     cardContentCentered: { alignItems: 'center', justifyContent: 'center', width: '100%' },
     cardContent: { alignItems: 'center', width: '100%' },
     cardLabel: { fontSize: 18, fontWeight: '600', color: '#374151', marginVertical: 10 },
-    
     selectionButton: { width: '100%', padding: 16, backgroundColor: '#F3F4F6', borderRadius: 12, marginBottom: 16, alignItems: 'center', borderBottomWidth: 1, borderColor: '#E5E7EB' },
     selectionButtonText: { fontSize: 18, fontWeight: 'bold', color: '#4F46E5', marginBottom: 4 },
     selectionButtonSubtext: { fontSize: 14, color: '#6B7280' },
-
     dropdownButton: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: '#F9FAFB', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB' },
     dropdownButtonText: { fontSize: 16, color: '#374151' },
-    
     miniDateBox: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center', margin: 3, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
     miniDateText: { fontSize: 12, color: '#374151' },
-
     deleteButton: { marginTop: 12, padding: 8 },
     deleteButtonText: { color: '#EF4444', fontSize: 14, fontWeight: '500' },
-    
     doneButton: { paddingVertical: 12, paddingHorizontal: 24, backgroundColor: '#4F46E5', borderRadius: 8 },
     doneButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-
-    // Modal Styles
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
     modalContent: { width: '80%', maxHeight: '50%', backgroundColor: 'white', borderRadius: 16, padding: 20 },
     modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' },
     modalItem: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     modalItemText: { fontSize: 18, color: '#374151', textAlign: 'center' },
-
     footerNavRight: { width: '100%', flexDirection: 'row', justifyContent: 'flex-end', marginTop: 24 },
     footerNavSpread: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 },
-    
     pickerTitle: { fontSize: 18, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
     timezoneContainer: { width: '100%', marginVertical: 16 },
     pickerWrapper: { backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB', overflow: 'hidden' },
