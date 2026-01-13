@@ -227,7 +227,7 @@ const DashboardScreen = () => {
           <>
             {/* You coming? Section */}
             <View className="mb-8">
-              <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#1F2937', paddingHorizontal: 8, marginBottom: 8 }}>
+              <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#2b528a', paddingHorizontal: 8, marginBottom: 8 }}>
                 You coming?
               </Text>
               {nextUndecidedEvent ? (
@@ -241,7 +241,7 @@ const DashboardScreen = () => {
                 />
               ) : (
                 <View className="bg-white p-5 my-2 rounded-lg items-center">
-                  <Text style={{ fontSize: 16, color: '#6B7280' }}>
+                  <Text style={{ fontSize: 16, color: '#2b528a' }}>
                     You're all caught up! No pending RSVPs.
                   </Text>
                 </View>
@@ -250,7 +250,7 @@ const DashboardScreen = () => {
 
             {/* Upcoming Events Section */}
             <View>
-              <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#1F2937', paddingHorizontal: 8, marginBottom: 8 }}>
+              <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#2b528a', paddingHorizontal: 8, marginBottom: 8 }}>
                 Upcoming Events
               </Text>
 
