@@ -59,13 +59,22 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
       const existingEventDays = new Set(existingFutureEvents.map(event => {
         const eventDate = DateTime.fromJSDate(event.date, { zone: group.timezone });
-        return group.schedule.frequency === 'weekly' 
+        const val = group.schedule.frequency === 'weekly' 
           ? (eventDate.weekday === 7 ? 0 : eventDate.weekday)
           : eventDate.day;
+          return val;
       }));
+
+      // ADD THESE LOGS HERE:
+      console.log(`--- Troubleshooting Group: ${group.name} ---`);
+      console.log(`Frequency: ${group.schedule.frequency}`);
+      console.log(`Schedule Days (Target):`, group.schedule.days);
+      console.log(`Existing Event Values (In Set):`, Array.from(existingEventDays));
+      console.log(`Number of Future Events Found:`, existingFutureEvents.length);
 
       for (const targetDay of group.schedule.days) {
         if (!existingEventDays.has(targetDay)) {
+          console.log(`Decision: Value ${targetDay} not found in Set. Creating new event...`);
           const nextEventDate = calculateNextEventDate(targetDay, group.time, group.timezone, group.schedule.frequency);
           await Event.create({
             group: group._id, name: group.name, date: nextEventDate, time: group.time,
