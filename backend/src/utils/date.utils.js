@@ -36,24 +36,31 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     const targetDay = dayOrRule; // 0=Sun, 6=Sat
     const luxonTarget = targetDay === 0 ? 7 : targetDay;
 
-    // Fix for bi-weekly replenishment:
+    // --- ADD DIAGNOSTIC LOG 1 ---
+    console.log(`[DateUtil] START - Freq: ${frequency}, TargetDay: ${targetDay}`);
+    console.log(`[DateUtil] Base Candidate (Anchor Time): ${eventDate.toISO()}`);
+    console.log(`[DateUtil] Anchor (Now): ${now.toISO()}`);
+
     // If the frequency is bi-weekly, we shift the search start by one week.
-    // This ensures we jump over the "off-week" and land in the correct next cycle.
     if (frequency === 'biweekly') {
       eventDate = eventDate.plus({ weeks: 1 });
+      console.log(`[DateUtil] Bi-weekly Shift applied: ${eventDate.toISO()}`);
     }
 
     // Advance until we hit the target weekday
     while (eventDate.weekday !== luxonTarget) { 
       eventDate = eventDate.plus({ days: 1 });
     }
+    console.log(`[DateUtil] Weekday Match Found: ${eventDate.toISO()}`);
 
     // Fallback jump: If the calculated date is still in the past or on the anchor, jump forward.
     if (eventDate <= now) {
       const weeksToAdd = frequency === 'biweekly' ? 2 : 1; 
+      console.log(`[DateUtil] Fallback trigger (Date <= Now). Adding ${weeksToAdd} weeks.`);
       eventDate = eventDate.plus({ weeks: weeksToAdd });
     }
     
+    console.log(`[DateUtil] FINAL RESULT: ${eventDate.toISODate()}`);
     return eventDate.toJSDate();
   }
 
