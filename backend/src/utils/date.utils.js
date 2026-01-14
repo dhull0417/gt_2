@@ -36,16 +36,12 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     const targetDay = dayOrRule; // 0=Sun, 6=Sat
     const luxonTarget = targetDay === 0 ? 7 : targetDay;
 
-    // --- ADD DIAGNOSTIC LOG 1 ---
     console.log(`[DateUtil] START - Freq: ${frequency}, TargetDay: ${targetDay}`);
     console.log(`[DateUtil] Base Candidate (Anchor Time): ${eventDate.toISO()}`);
     console.log(`[DateUtil] Anchor (Now): ${now.toISO()}`);
 
-    // If the frequency is bi-weekly, we shift the search start by one week.
-    if (frequency === 'biweekly') {
-      eventDate = eventDate.plus({ weeks: 1 });
-      console.log(`[DateUtil] Bi-weekly Shift applied: ${eventDate.toISO()}`);
-    }
+    // UNCONDITIONAL SHIFT REMOVED
+    // We now start the search directly from the anchor time
 
     // Advance until we hit the target weekday
     while (eventDate.weekday !== luxonTarget) { 
@@ -53,10 +49,12 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     }
     console.log(`[DateUtil] Weekday Match Found: ${eventDate.toISO()}`);
 
-    // Fallback jump: If the calculated date is still in the past or on the anchor, jump forward.
+    // If the calculated date is in the past (initial creation) 
+    // or same as the anchor (replenishment), jump forward.
+    // frequency === 'biweekly' correctly adds 2 weeks here.
     if (eventDate <= now) {
       const weeksToAdd = frequency === 'biweekly' ? 2 : 1; 
-      console.log(`[DateUtil] Fallback trigger (Date <= Now). Adding ${weeksToAdd} weeks.`);
+      console.log(`[DateUtil] Event <= Anchor. Adding ${weeksToAdd} week(s).`);
       eventDate = eventDate.plus({ weeks: weeksToAdd });
     }
     
