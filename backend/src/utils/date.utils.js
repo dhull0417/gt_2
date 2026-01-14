@@ -44,12 +44,20 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
       eventDate = eventDate.plus({ days: 1 });
     }
 
+    // --- ADD THESE DIAGNOSTIC LOGS ---
+    console.log(`[DateUtil Debug] Freq received: "${frequency}"`);
+    console.log(`[DateUtil Debug] Candidate Date: ${eventDate.toISO()}`);
+    console.log(`[DateUtil Debug] Anchor (now): ${now.toISO()}`);
+    console.log(`[DateUtil Debug] Is Candidate <= Anchor? ${eventDate <= now}`);
+    // ---------------------------------
+
     // If the calculated date is in the past (or same as anchor), jump forward.
-    // 👇 FIX: This determines if we jump 1 week or 2 weeks
     if (eventDate <= now) {
       const weeksToAdd = frequency === 'biweekly' ? 2 : 1; 
+      console.log(`[DateUtil Debug] Applying jump: +${weeksToAdd} weeks`);
       eventDate = eventDate.plus({ weeks: weeksToAdd });
     }
+    
     return eventDate.toJSDate();
   }
 
