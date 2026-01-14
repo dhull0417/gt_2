@@ -6,7 +6,7 @@ import { calculateNextEventDate } from "../utils/date.utils.js";
 
 const parseTime = (timeString) => {
     if (!timeString || typeof timeString !== 'string' || !timeString.includes(':')) {
-        return { hours: 0, minutes: 0 }; // Return a default/safe value
+        return { hours: 0, minutes: 0 }; 
     }
     const [time, period] = timeString.split(' ');
     let [hours, minutes] = time.split(':').map(Number);
@@ -26,9 +26,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
   const allEvents = await Event.find({ isOverride: false }).lean();
   
   const expiredEvents = allEvents.filter(event => {
-    if (!event.date || !event.time) {
-      return false;
-    }
+    if (!event.date || !event.time) return false;
     const eventDateTime = new Date(event.date);
     const { hours, minutes } = parseTime(event.time);
     eventDateTime.setUTCHours(hours, minutes);
@@ -51,44 +49,57 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
   for (const group of groups) {
     if (group.schedule) {
-      // 1. Fetch existing future events sorted by date
       const existingFutureEvents = await Event.find({ 
         group: group._id, 
         isOverride: false, 
         date: { $gte: now } 
       }).sort({ date: 1 }).lean();
 
-      // 2. Determine how many events are missing
-      // We use the group's specific setting, or default to 3
       const desiredCount = group.eventsToDisplay || 3;
       const currentCount = existingFutureEvents.length;
       const needed = desiredCount - currentCount;
 
       console.log(`--- Troubleshooting Group: ${group.name} ---`);
-      console.log(`Frequency: ${group.schedule.frequency} | Count: ${currentCount}/${desiredCount}. Needs: ${needed}`);
+      console.log(`Frequency: ${group.schedule.frequency} | Needs: ${needed}`);
 
       if (needed > 0) {
-        // 3. Establish the "Anchor"
-        // If we have future events, start calculating from the date of the latest one.
-        // Otherwise, start calculating from right now.
         let anchorDate = currentCount > 0 
           ? existingFutureEvents[currentCount - 1].date 
           : now;
 
         for (let i = 0; i < needed; i++) {
-          // For Daily groups, the utility logic finds the next chronological day.
-          // We pass the first day in the schedule as a placeholder.
-          const targetDay = group.schedule.days[0]; 
+          let targetDay;
+          
+          if (group.schedule.frequency === 'daily' || !group.schedule.days || group.schedule.days.length === 0) {
+            targetDay = (group.schedule.days && group.schedule.days[0]) || 0;
+          } else {
+            const anchorDateTime = DateTime.fromJSDate(anchorDate).setZone(group.timezone);
+            const currentWeekday = anchorDateTime.weekday === 7 ? 0 : anchorDateTime.weekday;
+            const sortedDays = [...group.schedule.days].sort((a, b) => a - b);
+            
+            // --- DIAGNOSTIC LOGS ---
+            console.log(`[TargetSelection] Anchor: ${anchorDateTime.toISODate()} (Weekday: ${currentWeekday})`);
+            console.log(`[TargetSelection] Schedule: ${JSON.stringify(sortedDays)}`);
+            
+            targetDay = sortedDays.find(d => d > currentWeekday);
+            
+            if (targetDay === undefined) {
+              console.log(`[TargetSelection] Wrapping to start of week: ${sortedDays[0]}`);
+              targetDay = sortedDays[0];
+            } else {
+              console.log(`[TargetSelection] Found next day in sequence: ${targetDay}`);
+            }
+          }
 
           const nextDate = calculateNextEventDate(
             targetDay, 
             group.time, 
             group.timezone, 
             group.schedule.frequency,
-            anchorDate // This passes the rolling anchor to the utility
+            anchorDate
           );
 
-          console.log(`Creating event ${i + 1}/${needed} for group '${group.name}' on: ${nextDate}`);
+          console.log(`Creating event ${i + 1}/${needed} (TargetDay: ${targetDay}) on: ${nextDate}`);
 
           await Event.create({
             group: group._id,
@@ -100,13 +111,9 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
             undecided: group.members,
           });
 
-          // 4. Update the rolling anchor
-          // This ensures the next iteration of this loop calculates the date AFTER the one we just made.
           anchorDate = nextDate;
           regeneratedCount++;
         }
-      } else {
-        console.log(`Group '${group.name}' already has enough events.`);
       }
     }
   }
