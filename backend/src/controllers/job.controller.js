@@ -49,6 +49,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
   for (const group of groups) {
     if (group.schedule) {
+      // 1. Fetch existing future events
       const existingFutureEvents = await Event.find({ 
         group: group._id, 
         isOverride: false, 
@@ -59,47 +60,40 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
       const currentCount = existingFutureEvents.length;
       const needed = desiredCount - currentCount;
 
-      console.log(`--- Troubleshooting Group: ${group.name} ---`);
-      console.log(`Frequency: ${group.schedule.frequency} | Needs: ${needed}`);
-
       if (needed > 0) {
+        console.log(`--- Regenerating Group: ${group.name} ---`);
+        
         let anchorDate = currentCount > 0 
           ? existingFutureEvents[currentCount - 1].date 
           : now;
 
         for (let i = 0; i < needed; i++) {
-          let targetDay;
+          let dayOrRule;
           
-          if (group.schedule.frequency === 'daily' || !group.schedule.days || group.schedule.days.length === 0) {
-            targetDay = (group.schedule.days && group.schedule.days[0]) || 0;
+          // 2. Handle Custom vs Standard frequencies
+          if (group.schedule.frequency === 'custom' && group.schedule.rules?.length > 0) {
+            // For Custom, we rotate through the rules based on the current iteration
+            // This works best for replenishment.
+            dayOrRule = group.schedule.rules[i % group.schedule.rules.length];
+          } else if (group.schedule.frequency === 'daily' || !group.schedule.days || group.schedule.days.length === 0) {
+            dayOrRule = (group.schedule.days && group.schedule.days[0]) || 0;
           } else {
+            // Weekly / Bi-weekly multi-day logic
             const anchorDateTime = DateTime.fromJSDate(anchorDate).setZone(group.timezone);
             const currentWeekday = anchorDateTime.weekday === 7 ? 0 : anchorDateTime.weekday;
             const sortedDays = [...group.schedule.days].sort((a, b) => a - b);
             
-            // --- DIAGNOSTIC LOGS ---
-            console.log(`[TargetSelection] Anchor: ${anchorDateTime.toISODate()} (Weekday: ${currentWeekday})`);
-            console.log(`[TargetSelection] Schedule: ${JSON.stringify(sortedDays)}`);
-            
-            targetDay = sortedDays.find(d => d > currentWeekday);
-            
-            if (targetDay === undefined) {
-              console.log(`[TargetSelection] Wrapping to start of week: ${sortedDays[0]}`);
-              targetDay = sortedDays[0];
-            } else {
-              console.log(`[TargetSelection] Found next day in sequence: ${targetDay}`);
-            }
+            let nextDay = sortedDays.find(d => d > currentWeekday);
+            dayOrRule = nextDay !== undefined ? nextDay : sortedDays[0];
           }
 
           const nextDate = calculateNextEventDate(
-            targetDay, 
+            dayOrRule, 
             group.time, 
             group.timezone, 
             group.schedule.frequency,
             anchorDate
           );
-
-          console.log(`Creating event ${i + 1}/${needed} (TargetDay: ${targetDay}) on: ${nextDate}`);
 
           await Event.create({
             group: group._id,
@@ -110,6 +104,8 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
             members: group.members,
             undecided: group.members,
           });
+
+          console.log(`Created ${group.schedule.frequency} event (Day/Rule: ${typeof dayOrRule === 'object' ? 'Custom' : dayOrRule}) on: ${nextDate}`);
 
           anchorDate = nextDate;
           regeneratedCount++;
