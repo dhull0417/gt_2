@@ -9,9 +9,6 @@ import { DateTime } from "luxon";
  * @param {Date} [fromDate=null] - Anchor date to calculate from (defaults to NOW)
  */
 export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fromDate = null) => {
-  // Spy Log
-  // console.log(`[DateUtil] Freq: ${frequency} | From: ${fromDate ? fromDate.toISOString() : 'NOW'} | Input: ${JSON.stringify(dayOrRule)}`);
-
   // Determine start point. If chaining, start 1 second after the last event to avoid finding the same slot.
   const now = fromDate 
     ? DateTime.fromJSDate(fromDate).setZone(timezone).plus({ seconds: 1 })
@@ -39,22 +36,21 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     const targetDay = dayOrRule; // 0=Sun, 6=Sat
     const luxonTarget = targetDay === 0 ? 7 : targetDay;
 
+    // Fix for bi-weekly replenishment:
+    // If the frequency is bi-weekly, we shift the search start by one week.
+    // This ensures we jump over the "off-week" and land in the correct next cycle.
+    if (frequency === 'biweekly') {
+      eventDate = eventDate.plus({ weeks: 1 });
+    }
+
     // Advance until we hit the target weekday
     while (eventDate.weekday !== luxonTarget) { 
       eventDate = eventDate.plus({ days: 1 });
     }
 
-    // --- ADD THESE DIAGNOSTIC LOGS ---
-    console.log(`[DateUtil Debug] Freq received: "${frequency}"`);
-    console.log(`[DateUtil Debug] Candidate Date: ${eventDate.toISO()}`);
-    console.log(`[DateUtil Debug] Anchor (now): ${now.toISO()}`);
-    console.log(`[DateUtil Debug] Is Candidate <= Anchor? ${eventDate <= now}`);
-    // ---------------------------------
-
-    // If the calculated date is in the past (or same as anchor), jump forward.
+    // Fallback jump: If the calculated date is still in the past or on the anchor, jump forward.
     if (eventDate <= now) {
       const weeksToAdd = frequency === 'biweekly' ? 2 : 1; 
-      console.log(`[DateUtil Debug] Applying jump: +${weeksToAdd} weeks`);
       eventDate = eventDate.plus({ weeks: weeksToAdd });
     }
     
