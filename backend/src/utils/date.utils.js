@@ -39,26 +39,21 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     const anchorDateTime = now; 
     const anchorWeekday = anchorDateTime.weekday === 7 ? 0 : anchorDateTime.weekday;
 
-    // --- ADD THESE LOGS ---
-    console.log(`[DateUtil] --- Bi-weekly Time Check ---`);
-    console.log(`[DateUtil] Target Day Index: ${targetDay}`);
-    console.log(`[DateUtil] Anchor Day Index: ${anchorWeekday}`);
-    console.log(`[DateUtil] Event Date (Candidate): ${eventDate.toISO()}`);
-    console.log(`[DateUtil] Anchor (Now): ${now.toISO()}`);
-    console.log(`[DateUtil] Is Event in Future? ${eventDate > now}`);
-    // -----------------------
+    console.log(`[DateUtil] START ${frequency.toUpperCase()} - Target: ${targetDay}, AnchorDay: ${anchorWeekday}`);
 
     if (frequency === 'biweekly') {
-      // Current Logic: Jumps if target is earlier or same as anchor day
-      if (targetDay <= anchorWeekday) {
-        console.log(`[DateUtil] Wrap-around/Same day detected: ${targetDay} <= ${anchorWeekday}`);
-        
-        // We need to see if we should skip this jump if the event is later TODAY
-        eventDate = eventDate.plus({ weeks: 2 });
-      }
-      
+      // First, find the target day within the CURRENT week of the anchor
       while (eventDate.weekday !== luxonTarget) {
         eventDate = eventDate.plus({ days: 1 });
+      }
+
+      // Logic: Only jump 2 weeks if the resulting date is in the past 
+      // relative to our anchor (same logic we use for daily/weekly)
+      if (eventDate <= now) {
+        console.log(`[DateUtil] Event is past/on anchor. Jumping 2 weeks.`);
+        eventDate = eventDate.plus({ weeks: 2 });
+      } else {
+        console.log(`[DateUtil] Event is in the future. Staying in current cycle.`);
       }
     } else {
       // STANDARD WEEKLY LOGIC
