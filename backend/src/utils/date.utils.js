@@ -31,29 +31,20 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     return eventDate.toJSDate();
   }
 
-// --- 2. WEEKLY / BI-WEEKLY ---
+  // --- 2. WEEKLY / BI-WEEKLY ---
   if (typeof dayOrRule === 'number' && (frequency === 'weekly' || frequency === 'biweekly')) {
     const targetDay = dayOrRule; // 0=Sun, 6=Sat
     const luxonTarget = targetDay === 0 ? 7 : targetDay;
-    
-    const anchorDateTime = now; 
-    const anchorWeekday = anchorDateTime.weekday === 7 ? 0 : anchorDateTime.weekday;
-
-    console.log(`[DateUtil] START ${frequency.toUpperCase()} - Target: ${targetDay}, AnchorDay: ${anchorWeekday}`);
 
     if (frequency === 'biweekly') {
-      // First, find the target day within the CURRENT week of the anchor
+      // Find the target day within the CURRENT week of the anchor first
       while (eventDate.weekday !== luxonTarget) {
         eventDate = eventDate.plus({ days: 1 });
       }
 
-      // Logic: Only jump 2 weeks if the resulting date is in the past 
-      // relative to our anchor (same logic we use for daily/weekly)
+      // Only jump 2 weeks if the resulting date is in the past or on the anchor
       if (eventDate <= now) {
-        console.log(`[DateUtil] Event is past/on anchor. Jumping 2 weeks.`);
         eventDate = eventDate.plus({ weeks: 2 });
-      } else {
-        console.log(`[DateUtil] Event is in the future. Staying in current cycle.`);
       }
     } else {
       // STANDARD WEEKLY LOGIC
@@ -65,7 +56,6 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
       }
     }
     
-    console.log(`[DateUtil] FINAL RESULT: ${eventDate.toISODate()}`);
     return eventDate.toJSDate();
   }
 
@@ -90,12 +80,10 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     // A. By Date
     if (rule.type === 'byDate') {
       const sortedDates = rule.dates.sort((a, b) => a - b);
-      // 1. Check current month
       for (const dateNum of sortedDates) {
         let candidate = now.set({ day: dateNum, hour: hours, minute: minutes, second: 0, millisecond: 0 });
         if (candidate > now) return candidate.toJSDate();
       }
-      // 2. Move to next month
       let nextMonth = now.plus({ months: 1 }).set({ day: sortedDates[0], hour: hours, minute: minutes, second: 0, millisecond: 0 });
       return nextMonth.toJSDate();
     }
