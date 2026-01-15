@@ -31,26 +31,32 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     return eventDate.toJSDate();
   }
 
-  // --- 2. WEEKLY / BI-WEEKLY ---
+// --- 2. WEEKLY / BI-WEEKLY ---
   if (typeof dayOrRule === 'number' && (frequency === 'weekly' || frequency === 'biweekly')) {
     const targetDay = dayOrRule; // 0=Sun, 6=Sat
     const luxonTarget = targetDay === 0 ? 7 : targetDay;
     
-    const anchorDateTime = now; // 'now' is already set from fromDate or current time
+    const anchorDateTime = now; 
     const anchorWeekday = anchorDateTime.weekday === 7 ? 0 : anchorDateTime.weekday;
 
-    console.log(`[DateUtil] START ${frequency.toUpperCase()} - Target: ${targetDay}, AnchorDay: ${anchorWeekday}`);
+    // --- ADD THESE LOGS ---
+    console.log(`[DateUtil] --- Bi-weekly Time Check ---`);
+    console.log(`[DateUtil] Target Day Index: ${targetDay}`);
+    console.log(`[DateUtil] Anchor Day Index: ${anchorWeekday}`);
+    console.log(`[DateUtil] Event Date (Candidate): ${eventDate.toISO()}`);
+    console.log(`[DateUtil] Anchor (Now): ${now.toISO()}`);
+    console.log(`[DateUtil] Is Event in Future? ${eventDate > now}`);
+    // -----------------------
 
     if (frequency === 'biweekly') {
-      // BI-WEEKLY SPECIFIC LOGIC
-      // If target is later in the week than anchor, we stay in this week.
-      // If target is earlier or the same (wrap-around), we jump 2 weeks.
+      // Current Logic: Jumps if target is earlier or same as anchor day
       if (targetDay <= anchorWeekday) {
-        console.log(`[DateUtil] Wrap-around/Same day detected. Jumping 2 weeks.`);
+        console.log(`[DateUtil] Wrap-around/Same day detected: ${targetDay} <= ${anchorWeekday}`);
+        
+        // We need to see if we should skip this jump if the event is later TODAY
         eventDate = eventDate.plus({ weeks: 2 });
       }
       
-      // Now find the specific weekday in whatever week we landed in
       while (eventDate.weekday !== luxonTarget) {
         eventDate = eventDate.plus({ days: 1 });
       }
@@ -59,7 +65,6 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
       while (eventDate.weekday !== luxonTarget) { 
         eventDate = eventDate.plus({ days: 1 });
       }
-      // Standard "already passed today" check
       if (eventDate <= now) {
         eventDate = eventDate.plus({ weeks: 1 });
       }
