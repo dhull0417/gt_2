@@ -36,24 +36,22 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     const targetDay = dayOrRule; // 0=Sun, 6=Sat
     const luxonTarget = targetDay === 0 ? 7 : targetDay;
 
-    // --- TROUBLESHOOTING LOGS ---
-    console.log(`[DateUtil] START - Freq: ${frequency}, TargetDay: ${targetDay}`);
-    console.log(`[DateUtil] Anchor (Now/FromDate): ${now.toISO()}`);
-    console.log(`[DateUtil] Initial Candidate: ${eventDate.toISO()}`);
+    // FIX: Start the search from the beginning of the anchor's week (Monday).
+    // This allows the logic to find days earlier in the week than the anchor,
+    // which correctly triggers the 1-week or 2-week jump.
+    eventDate = now.startOf('week').set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
     if (frequency === 'biweekly') {
-      // Find the target day within the CURRENT week of the anchor first
+      // Find the target day within the cycle starting from the anchor's week
       while (eventDate.weekday !== luxonTarget) {
         eventDate = eventDate.plus({ days: 1 });
       }
-      console.log(`[DateUtil] Weekday Match: ${eventDate.toISO()}`);
 
-      // Only jump 2 weeks if the resulting date is in the past or on the anchor
+      // If that day is in the past (or is the anchor itself), jump 2 weeks.
+      // If the anchor was Saturday and target is Thursday, the 'while' loop lands
+      // on the Thursday PRIOR to the Saturday. This correctly triggers the jump.
       if (eventDate <= now) {
-        console.log(`[DateUtil] Candidate is past/on anchor. Adding 2 weeks.`);
         eventDate = eventDate.plus({ weeks: 2 });
-      } else {
-        console.log(`[DateUtil] Candidate is in the future. Returning as is.`);
       }
     } else {
       // STANDARD WEEKLY LOGIC
@@ -65,7 +63,6 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
       }
     }
     
-    console.log(`[DateUtil] FINAL RESULT: ${eventDate.toISODate()}`);
     return eventDate.toJSDate();
   }
 
