@@ -12,7 +12,7 @@ console.log(">>> [TEST-777] GROUP ROUTE FILE INITIALIZING <<<");
 const router = express.Router();
 
 router.use((req, res, next) => {
-    console.log(`>>> [TEST-777] Incoming: ${req.method} ${req.originalUrl} <<<`);
+    console.log(`>>> [TEST-777] Global Incoming: ${req.method} ${req.originalUrl} <<<`);
     next();
 });
 
@@ -21,8 +21,14 @@ router.post("/create", protectRoute, createGroup);
 router.get("/:groupId", protectRoute, getGroupDetails);
 router.put("/:groupId", protectRoute, updateGroup);
 
-// Ensure this matches the method and path used in the frontend
-router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
+// Troubleshooting Step: Add tracing to verify if request clears authentication
+router.patch("/:groupId/schedule", (req, res, next) => {
+    console.log(`>>> [TEST-777] Tracing: PATCH /schedule reached BEFORE protectRoute <<<`);
+    next();
+}, protectRoute, (req, res, next) => {
+    console.log(`>>> [TEST-777] Tracing: PATCH /schedule reached AFTER protectRoute (Auth Passed) <<<`);
+    next();
+}, updateGroupSchedule);
 
 router.delete("/:groupId", protectRoute, deleteGroup);
 router.post("/:groupId/add-member", protectRoute, addMember);
