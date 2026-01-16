@@ -5,12 +5,14 @@ import {
 } from "../controllers/group.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
-console.log(">>> GROUP ROUTE FILE LOADED <<<"); // Test if file is even seen by the app
+// TEST ID: 777 - If you don't see this exact number in Vercel, 
+// the server is running an older or different file.
+console.log(">>> [TEST-777] GROUP ROUTE FILE INITIALIZING <<<");
 
 const router = express.Router();
 
 router.use((req, res, next) => {
-    console.log(`>>> Incoming Request: ${req.method} ${req.originalUrl} <<<`);
+    console.log(`>>> [TEST-777] Incoming: ${req.method} ${req.originalUrl} <<<`);
     next();
 });
 
@@ -18,7 +20,10 @@ router.get("/", protectRoute, getGroups);
 router.post("/create", protectRoute, createGroup);
 router.get("/:groupId", protectRoute, getGroupDetails);
 router.put("/:groupId", protectRoute, updateGroup);
+
+// Ensure this matches the method and path used in the frontend
 router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
+
 router.delete("/:groupId", protectRoute, deleteGroup);
 router.post("/:groupId/add-member", protectRoute, addMember);
 router.post("/:groupId/leave", protectRoute, leaveGroup);
