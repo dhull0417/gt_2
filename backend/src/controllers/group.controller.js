@@ -24,45 +24,58 @@ const getScheduleItems = (schedule) => {
  * @access  Private (Owner Only)
  */
 export const updateGroupSchedule = asyncHandler(async (req, res) => {
+    console.log("--- START: updateGroupSchedule ---");
     const { groupId } = req.params;
     const { schedule, time, timezone } = req.body;
     const { userId: clerkId } = getAuth(req);
 
+    console.log("Payload Received:", { groupId, clerkId, time, timezone });
+    console.log("Schedule Object:", JSON.stringify(schedule));
+
     const group = await Group.findById(groupId);
     const user = await User.findOne({ clerkId });
 
-    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!group || !user) {
+        console.log("Failure: Resource not found.", { groupFound: !!group, userFound: !!user });
+        return res.status(404).json({ error: "Resource not found." });
+    }
 
     // 1. Verify Ownership
+    console.log("Checking Ownership...");
     if (group.owner.toString() !== user._id.toString()) {
+        console.log("Failure: Not an owner.", { groupOwner: group.owner, userId: user._id });
         return res.status(403).json({ error: "Only the group owner can update the schedule." });
     }
 
     // 2. Validate Inputs
     if (!schedule || !schedule.frequency || !time || !timezone) {
+        console.log("Failure: Missing required fields.");
         return res.status(400).json({ error: "Schedule, time, and timezone are required." });
     }
 
     // 3. Update Group Metadata
+    console.log("Updating Group Metadata...");
     group.schedule = schedule;
     group.time = time;
     group.timezone = timezone;
     await group.save();
+    console.log("Success: Group saved.");
 
     // 4. Wipe Future Recurring Events
-    // We only delete events that are NOT manual overrides (isOverride: false) 
-    // and occur from 'now' onwards.
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-
+    
+    console.log("Deleting future standard events...");
     const deleteResult = await Event.deleteMany({ 
         group: group._id, 
         isOverride: false, 
         date: { $gte: today } 
     });
+    console.log(`Deleted ${deleteResult.deletedCount} events.`);
 
-    // 5. Regenerate Replenishment Queue
+    // 5. Regenerate New Events
     try {
+        console.log("Starting regeneration...");
         const limit = group.eventsToDisplay || 3;
         const itemsToIterate = getScheduleItems(group.schedule);
         let potentialEvents = [];
@@ -82,10 +95,10 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
             }
         }
 
-        // Sort chronologically and slice to the group's desired display limit
         potentialEvents.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
         const finalEvents = potentialEvents.slice(0, limit);
 
+        console.log(`Creating ${finalEvents.length} new events...`);
         for (const date of finalEvents) {
             await Event.create({
                 group: group._id, 
@@ -97,10 +110,12 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                 undecided: group.members,
             });
         }
+        console.log("Regeneration complete.");
     } catch (eventError) {
-        console.error("Failed to regenerate events during schedule update:", eventError);
+        console.error("Critical Error during regeneration:", eventError);
     }
 
+    console.log("--- FINISH: updateGroupSchedule ---");
     res.status(200).json({ 
         message: "Schedule updated and events regenerated successfully.",
         deletedCount: deleteResult.deletedCount
