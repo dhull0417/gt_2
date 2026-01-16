@@ -1,7 +1,7 @@
 import express from "express";
 import {
   createGroup, getGroups, getGroupDetails, addMember, deleteGroup, updateGroup,
-  leaveGroup, removeMember, createOneOffEvent, inviteUser,
+  leaveGroup, removeMember, createOneOffEvent, inviteUser, updateGroupSchedule
 } from "../controllers/group.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
@@ -11,6 +11,7 @@ router.get("/", protectRoute, getGroups);
 router.post("/create", protectRoute, createGroup);
 router.get("/:groupId", protectRoute, getGroupDetails);
 router.put("/:groupId", protectRoute, updateGroup);
+router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
 router.delete("/:groupId", protectRoute, deleteGroup);
 router.post("/:groupId/add-member", protectRoute, addMember);
 router.post("/:groupId/leave", protectRoute, leaveGroup);

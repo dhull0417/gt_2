@@ -16,6 +16,89 @@ const getScheduleItems = (schedule) => {
     return schedule.days || [];
 };
 
+export const updateGroupSchedule = asyncHandler(async (req, res) => {
+    const { groupId } = req.params;
+    const { schedule, time, timezone } = req.body;
+    const { userId: clerkId } = getAuth(req);
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+
+    // 1. Verify Ownership
+    if (group.owner.toString() !== user._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can update the schedule." });
+    }
+
+    // 2. Validate Input
+    if (!schedule || !schedule.frequency || !time || !timezone) {
+        return res.status(400).json({ error: "Schedule, time, and timezone are required." });
+    }
+
+    // 3. Update Group Metadata
+    group.schedule = schedule;
+    group.time = time;
+    group.timezone = timezone;
+    await group.save();
+
+    // 4. Wipe Future Standard Events
+    // We only delete events that are NOT overrides and are scheduled for today or later.
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    
+    const deleteResult = await Event.deleteMany({ 
+        group: group._id, 
+        isOverride: false, 
+        date: { $gte: today } 
+    });
+
+    // 5. Regenerate New Events
+    try {
+        const limit = group.eventsToDisplay || 3;
+        const itemsToIterate = getScheduleItems(group.schedule);
+        let potentialEvents = [];
+
+        for (const item of itemsToIterate) {
+            let lastGeneratedDate = null;
+            for (let i = 0; i < limit; i++) {
+                const nextEventDate = calculateNextEventDate(
+                    item, 
+                    group.time, 
+                    group.timezone, 
+                    group.schedule.frequency,
+                    lastGeneratedDate
+                );
+                potentialEvents.push(nextEventDate);
+                lastGeneratedDate = nextEventDate;
+            }
+        }
+
+        // Sort and slice to ensure we only create the requested number of events
+        potentialEvents.sort((a, b) => new Date(a) - new Date(b));
+        const finalEvents = potentialEvents.slice(0, limit);
+
+        for (const date of finalEvents) {
+            await Event.create({
+                group: group._id, 
+                name: group.name, 
+                date: date, 
+                time: group.time,
+                timezone: group.timezone,
+                members: group.members, 
+                undecided: group.members,
+            });
+        }
+    } catch (eventError) {
+        console.error("Failed to regenerate events during schedule update:", eventError);
+    }
+
+    res.status(200).json({ 
+        message: "Schedule updated and events regenerated successfully.",
+        deletedCount: deleteResult.deletedCount
+    });
+});
+
 export const inviteUser = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;

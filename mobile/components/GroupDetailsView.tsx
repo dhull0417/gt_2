@@ -8,7 +8,7 @@ interface GroupDetailsViewProps {
   groupDetails: GroupDetails;
   currentUser: User;
   isRemovingMember: boolean;
-  onRemoveMember: (id: string) => void;
+  onRemoveMember: (memberIdToRemove: string) => void;
   searchQuery: string;
   onSearchChange: (text: string) => void;
   searchResults: User[] | undefined;
@@ -18,13 +18,9 @@ interface GroupDetailsViewProps {
   isDeletingGroup: boolean;
   onLeaveGroup: () => void;
   isLeavingGroup: boolean;
+  onEditSchedule?: () => void; // This solves the "Property does not exist" error
 }
 
-/**
- * Reusable component to display group information, members,
- * and management tools. 
- * * IMPORTANT: Ensure this file is saved as .tsx to support JSX syntax.
- */
 export const GroupDetailsView = ({
   groupDetails,
   currentUser,
@@ -38,16 +34,25 @@ export const GroupDetailsView = ({
   onDeleteGroup,
   isDeletingGroup,
   onLeaveGroup,
-  isLeavingGroup
+  isLeavingGroup,
+  onEditSchedule
 }: GroupDetailsViewProps) => {
   const isOwner = currentUser._id === groupDetails.owner;
 
   return (
-    <View style={{ paddingBottom: 120 }}>
+    <View className="pb-32">
       {/* --- Schedule Section --- */}
       {groupDetails.schedule && (
         <View className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
-          <Text className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">Schedule</Text>
+          <View className="flex-row justify-between items-center mb-2 px-1">
+             <Text className="text-sm font-bold text-gray-400 uppercase tracking-widest">Schedule</Text>
+             {isOwner && onEditSchedule && (
+               <TouchableOpacity onPress={onEditSchedule} className="flex-row items-center">
+                 <Feather name="edit-2" size={14} color="#4F46E5" />
+                 <Text className="text-indigo-600 text-xs font-bold ml-1">Edit</Text>
+               </TouchableOpacity>
+             )}
+          </View>
           <View className="flex-row items-center">
             <View className="w-10 h-10 bg-indigo-50 rounded-full items-center justify-center mr-3">
               <Feather name="calendar" size={20} color="#4F46E5" />
@@ -75,11 +80,7 @@ export const GroupDetailsView = ({
               </View>
             </View>
             {isOwner && member._id !== currentUser._id && (
-              <TouchableOpacity 
-                onPress={() => onRemoveMember(member._id)} 
-                disabled={isRemovingMember} 
-                className="p-2"
-              >
+              <TouchableOpacity onPress={() => onRemoveMember(member._id)} disabled={isRemovingMember} className="p-2">
                 <Feather name="x-circle" size={22} color="#EF4444" />
               </TouchableOpacity>
             )}
@@ -87,7 +88,7 @@ export const GroupDetailsView = ({
         ))}
       </View>
 
-      {/* --- Owner: Invitation Section --- */}
+      {/* --- Invitation Section (Owner Only) --- */}
       {isOwner && (
         <View className="mb-8">
           <Text className="text-xl font-bold text-gray-800 mb-3 px-1">Invite Members</Text>
@@ -102,47 +103,34 @@ export const GroupDetailsView = ({
               autoCorrect={false}
             />
           </View>
-
           {searchQuery.length > 0 && searchResults && (
             <View className="mt-2 border border-gray-100 rounded-2xl bg-white overflow-hidden shadow-lg">
-              {searchResults.length > 0 ? (
-                searchResults.map(user => {
-                  const isJoined = groupDetails.members.some(m => m._id === user._id);
-                  return (
-                    <TouchableOpacity
-                      key={user._id}
-                      className="flex-row items-center justify-between p-4 border-b border-gray-50"
-                      onPress={() => onInvite(user._id)}
-                      disabled={isInviting || isJoined}
-                    >
-                      <View className="flex-row items-center">
-                        <Image 
-                          source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0] || '?'}` }} 
-                          className="w-8 h-8 rounded-full mr-3" 
-                        />
-                        <Text className="text-base text-gray-700 font-medium">@{user.username}</Text>
-                      </View>
-                      {isJoined ? (
-                        <Text className="text-gray-400 font-bold italic">Joined</Text>
-                      ) : isInviting ? (
-                        <ActivityIndicator size="small" color="#4F46E5" />
-                      ) : (
-                        <Text className="text-indigo-600 font-bold">Invite</Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })
-              ) : (
-                <View className="p-4 items-center">
-                  <Text className="text-gray-500 italic">No users found.</Text>
-                </View>
-              )}
+              {searchResults.map(user => (
+                <TouchableOpacity
+                  key={user._id}
+                  className="flex-row items-center justify-between p-4 border-b border-gray-50"
+                  onPress={() => onInvite(user._id)}
+                  disabled={isInviting || groupDetails.members.some(m => m._id === user._id)}
+                >
+                  <View className="flex-row items-center">
+                    <Image source={{ uri: user.profilePicture }} className="w-8 h-8 rounded-full mr-3" />
+                    <Text className="text-base text-gray-700 font-medium">@{user.username}</Text>
+                  </View>
+                  {groupDetails.members.some(m => m._id === user._id) ? (
+                    <Text className="text-gray-400 font-bold italic">Joined</Text>
+                  ) : isInviting ? (
+                    <ActivityIndicator size="small" color="#4F46E5" />
+                  ) : (
+                    <Text className="text-indigo-600 font-bold">Invite</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </View>
       )}
 
-      {/* --- Action Section --- */}
+      {/* --- Danger Zone --- */}
       <View className="border-t border-gray-200 pt-6 mt-4">
         {isOwner ? (
           <TouchableOpacity
