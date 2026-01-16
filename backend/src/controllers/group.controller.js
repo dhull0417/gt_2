@@ -16,6 +16,13 @@ const getScheduleItems = (schedule) => {
     return schedule.days || [];
 };
 
+/**
+ * @desc    Update group schedule, meeting time, and timezone.
+ * Automatically deletes future standard recurring events and
+ * regenerates new ones based on the updated logic.
+ * @route   PATCH /api/groups/:groupId/schedule
+ * @access  Private (Owner Only)
+ */
 export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const { schedule, time, timezone } = req.body;
@@ -31,7 +38,7 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
         return res.status(403).json({ error: "Only the group owner can update the schedule." });
     }
 
-    // 2. Validate Input
+    // 2. Validate Inputs
     if (!schedule || !schedule.frequency || !time || !timezone) {
         return res.status(400).json({ error: "Schedule, time, and timezone are required." });
     }
@@ -42,18 +49,19 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     group.timezone = timezone;
     await group.save();
 
-    // 4. Wipe Future Standard Events
-    // We only delete events that are NOT overrides and are scheduled for today or later.
+    // 4. Wipe Future Recurring Events
+    // We only delete events that are NOT manual overrides (isOverride: false) 
+    // and occur from 'now' onwards.
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    
+
     const deleteResult = await Event.deleteMany({ 
         group: group._id, 
         isOverride: false, 
         date: { $gte: today } 
     });
 
-    // 5. Regenerate New Events
+    // 5. Regenerate Replenishment Queue
     try {
         const limit = group.eventsToDisplay || 3;
         const itemsToIterate = getScheduleItems(group.schedule);
@@ -74,8 +82,8 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
             }
         }
 
-        // Sort and slice to ensure we only create the requested number of events
-        potentialEvents.sort((a, b) => new Date(a) - new Date(b));
+        // Sort chronologically and slice to the group's desired display limit
+        potentialEvents.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
         const finalEvents = potentialEvents.slice(0, limit);
 
         for (const date of finalEvents) {
@@ -98,6 +106,8 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
         deletedCount: deleteResult.deletedCount
     });
 });
+
+// --- Existing Controllers ---
 
 export const inviteUser = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
@@ -151,14 +161,9 @@ export const createGroup = asyncHandler(async (req, res) => {
       return res.status(400).json({ error: "Display events must be between 1 and 14." });
   }
 
-  if (schedule.frequency !== 'custom' && (!schedule.days || schedule.days.length === 0)) {
-    return res.status(400).json({ error: "At least one day must be selected." });
-  }
-
   const owner = await User.findOne({ clerkId: userId });
   if (!owner) return res.status(404).json({ error: "User not found." });
   
-  // Prepare Members
   let initialMemberIds = [owner._id.toString()];
   if (members && Array.isArray(members)) {
       initialMemberIds = [...initialMemberIds, ...members];
@@ -174,22 +179,20 @@ export const createGroup = asyncHandler(async (req, res) => {
   
   const newGroup = await Group.create(groupData);
 
-  // Update Users
   await User.updateMany(
       { _id: { $in: uniqueMemberIds } },
       { $addToSet: { groups: newGroup._id } }
   );
 
-  // 👇 NEW: Send Notifications to added members (excluding the owner)
   const membersToNotify = uniqueMemberIds.filter(id => id !== owner._id.toString());
   
   if (membersToNotify.length > 0) {
       const notifications = membersToNotify.map(memberId => ({
           recipient: memberId,
           sender: owner._id,
-          type: 'group-added', // The new type
+          type: 'group-added', 
           group: newGroup._id,
-          status: 'read',      // It's informational, no action needed
+          status: 'read',
           read: false
       }));
       
@@ -197,16 +200,13 @@ export const createGroup = asyncHandler(async (req, res) => {
           await Notification.insertMany(notifications);
       } catch (error) {
           console.error("Failed to create notifications:", error);
-          // We don't fail the request if notifications fail, just log it
       }
   }
 
-  // Create Events
   try {
     const itemsToIterate = getScheduleItems(newGroup.schedule);
     let potentialEvents = [];
 
-    // 1. Generate
     for (const item of itemsToIterate) {
         let lastGeneratedDate = null;
         for (let i = 0; i < limit; i++) {
@@ -222,11 +222,9 @@ export const createGroup = asyncHandler(async (req, res) => {
         }
     }
 
-    // 2. Sort & Slice
     potentialEvents.sort((a, b) => new Date(a) - new Date(b));
     const finalEvents = potentialEvents.slice(0, limit);
 
-    // 3. Save
     for (const date of finalEvents) {
         await Event.create({
             group: newGroup._id, 
@@ -242,7 +240,6 @@ export const createGroup = asyncHandler(async (req, res) => {
     console.error("Failed to create events:", eventError);
   }
 
-  // Sync Stream
   await Promise.all(uniqueMemberIds.map(id => syncStreamUser({ _id: id })));
 
   res.status(201).json({ group: newGroup, message: "Group created successfully." });
@@ -258,14 +255,6 @@ export const updateGroup = asyncHandler(async (req, res) => {
     }
     
     const limit = eventsToDisplay ? parseInt(eventsToDisplay) : 1;
-    if (limit < 1 || limit > 14) {
-        return res.status(400).json({ error: "Display events must be between 1 and 14." });
-    }
-
-    if (schedule.frequency !== 'custom' && (!schedule.days || schedule.days.length === 0)) {
-        return res.status(400).json({ error: "At least one day is required." });
-    }
-
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
@@ -290,7 +279,6 @@ export const updateGroup = asyncHandler(async (req, res) => {
         const itemsToIterate = getScheduleItems(updatedGroup.schedule);
         let potentialEvents = [];
 
-        // 1. Generate candidates
         for (const item of itemsToIterate) {
             let lastGeneratedDate = null;
             for (let i = 0; i < limit; i++) {
@@ -306,13 +294,9 @@ export const updateGroup = asyncHandler(async (req, res) => {
             }
         }
 
-        // 2. Sort
         potentialEvents.sort((a, b) => new Date(a) - new Date(b));
-
-        // 3. Slice
         const finalEvents = potentialEvents.slice(0, limit);
 
-        // 4. Save
         for (const date of finalEvents) {
             await Event.create({
                 group: updatedGroup._id, 
@@ -371,7 +355,7 @@ export const getGroups = asyncHandler(async (req, res) => {
 export const getGroupDetails = asyncHandler(async (req, res) => {
   const { groupId } = req.params;
   if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid Group ID format." });
-  const group = await Group.findById(groupId).populate({ path: "members", select: "firstName lastName _id profilePicture" }).lean();
+  const group = await Group.findById(groupId).populate({ path: "members", select: "firstName lastName _id profilePicture username" }).lean();
   if (!group) return res.status(404).json({ error: "Group not found." });
   res.status(200).json(group);
 });
@@ -480,7 +464,6 @@ export const createOneOffEvent = asyncHandler(async (req, res) => {
         return res.status(400).json({ error: "Date, time, and timezone are required." });
     }
     
-    // Simple parse helper for local check
     const [t, p] = time.split(' ');
     let [h, m] = t.split(':').map(Number);
     if (p === 'PM' && h !== 12) h += 12;
