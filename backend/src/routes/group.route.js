@@ -5,7 +5,14 @@ import {
 } from "../controllers/group.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
+console.log(">>> GROUP ROUTE FILE LOADED <<<"); // Test if file is even seen by the app
+
 const router = express.Router();
+
+router.use((req, res, next) => {
+    console.log(`>>> Incoming Request: ${req.method} ${req.originalUrl} <<<`);
+    next();
+});
 
 router.get("/", protectRoute, getGroups);
 router.post("/create", protectRoute, createGroup);
