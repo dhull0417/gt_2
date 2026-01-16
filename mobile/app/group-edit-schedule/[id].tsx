@@ -41,7 +41,6 @@ const daysOfWeek = [
     { label: "Wednesday", value: 3 }, { label: "Thursday", value: 4 }, { label: "Friday", value: 5 }, { label: "Saturday", value: 6 },
 ];
 
-// --- Animation Helper (Matching Create Group) ---
 const FadeInView = ({ children, delay = 0, duration = 400, style }: { children: React.ReactNode, delay?: number, duration?: number, style?: StyleProp<ViewStyle> }) => {
   const fadeAnim = useMemo(() => new Animated.Value(0), []);
   const slideAnim = useMemo(() => new Animated.Value(-15), []);
@@ -95,25 +94,31 @@ const EditScheduleScreen = () => {
 
     const handleUpdateSchedule = async () => {
         setIsUpdating(true);
-        try {
-            let finalSchedule: any = { frequency };
-            if (frequency === 'weekly' || frequency === 'biweekly') finalSchedule.days = selectedDays;
-            else if (frequency === 'monthly') finalSchedule.days = selectedDates;
-            else if (frequency === 'daily') finalSchedule.days = [0, 1, 2, 3, 4, 5, 6];
+        
+        let finalSchedule: any = { frequency };
+        if (frequency === 'weekly' || frequency === 'biweekly') finalSchedule.days = selectedDays;
+        else if (frequency === 'monthly') finalSchedule.days = selectedDates;
+        else if (frequency === 'daily') finalSchedule.days = [0, 1, 2, 3, 4, 5, 6];
 
-            await api.patch(`/groups/${id}/schedule`, {
+        // TYPO FIX: Added /api prefix to match backend route mounting
+        const targetUrl = `/api/groups/${id}/schedule`;
+
+        try {
+            const response = await api.patch(targetUrl, {
                 schedule: finalSchedule,
                 time: meetTime,
                 timezone: timezone
             });
 
+            console.log(">>> Frontend Success:", response.data);
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
             queryClient.invalidateQueries({ queryKey: ['events'] });
             
-            Alert.alert("Success", "Schedule updated and future events regenerated.");
+            Alert.alert("Success", "Schedule updated.");
             router.back();
         } catch (error: any) {
-            Alert.alert("Update Error", error.response?.data?.message || "Failed to update schedule.");
+            console.error(">>> PATCH ERROR DETAILS:", error.response?.status, error.message);
+            Alert.alert("Update Error", `Status: ${error.response?.status}\nMsg: ${error.message}`);
         } finally {
             setIsUpdating(false);
         }
@@ -125,7 +130,7 @@ const EditScheduleScreen = () => {
     if (loadingGroup || !currentUser) return <SafeAreaView style={styles.center}><ActivityIndicator size="large" color="#4F46E5" /></SafeAreaView>;
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()}><Feather name="x" size={24} color="#374151" /></TouchableOpacity>
                 <Text style={styles.headerTitle}>Update Schedule</Text>
@@ -154,7 +159,7 @@ const EditScheduleScreen = () => {
                         <FadeInView delay={600}>
                             <View style={styles.footerNavRight}>
                                 <TouchableOpacity onPress={() => frequency === 'daily' ? setStep(3) : setStep(2)} disabled={!frequency}>
-                                    <Feather name="arrow-right-circle" size={48} color={!frequency ? "#D1D5DB" : "#4F46E5"} />
+                                    <Feather name="arrow-right-circle" size={54} color={!frequency ? "#D1D5DB" : "#4F46E5"} />
                                 </TouchableOpacity>
                             </View>
                         </FadeInView>
@@ -192,9 +197,9 @@ const EditScheduleScreen = () => {
                         </View>
                         <FadeInView delay={400}>
                             <View style={styles.footerNavSpread}>
-                                <TouchableOpacity onPress={() => setStep(1)}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+                                <TouchableOpacity onPress={() => setStep(1)}><Feather name="arrow-left-circle" size={54} color="#4F46E5" /></TouchableOpacity>
                                 <TouchableOpacity onPress={() => setStep(3)} disabled={(frequency === 'monthly' ? selectedDates.length : selectedDays.length) === 0}>
-                                    <Feather name="arrow-right-circle" size={48} color={(frequency === 'monthly' ? selectedDates.length : selectedDays.length) === 0 ? "#D1D5DB" : "#4F46E5"} />
+                                    <Feather name="arrow-right-circle" size={54} color={(frequency === 'monthly' ? selectedDates.length : selectedDays.length) === 0 ? "#D1D5DB" : "#4F46E5"} />
                                 </TouchableOpacity>
                             </View>
                         </FadeInView>
@@ -203,34 +208,43 @@ const EditScheduleScreen = () => {
 
                 {step === 3 && (
                     <View style={styles.stepContainerPadded}>
-                        <FadeInView delay={100}><Text style={styles.title}>Choose a time & details</Text></FadeInView>
-                        
-                        <FadeInView delay={250}>
-                            <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
-                        </FadeInView>
-                        
-                        <FadeInView delay={400}>
-                            <View style={styles.timezoneContainer}>
+                        <View style={{ flex: 1 }}>
+                            <FadeInView delay={100}><Text style={styles.title}>Choose a time & details</Text></FadeInView>
+                            
+                            <FadeInView delay={300} style={styles.finalCardSection}>
+                                <Text style={styles.pickerTitle}>Meeting Time</Text>
+                                <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
+                            </FadeInView>
+                            
+                            <FadeInView delay={500} style={styles.finalCardSection}>
                                 <Text style={styles.pickerTitle}>Select Timezone</Text>
                                 <View style={styles.pickerWrapper}>
-                                    <Picker selectedValue={timezone} onValueChange={setTimezone} itemStyle={styles.pickerItem}>
+                                    <Picker 
+                                        selectedValue={timezone} 
+                                        onValueChange={setTimezone} 
+                                        itemStyle={styles.pickerItem}
+                                    >
                                         {usaTimezones.map(tz => <Picker.Item key={tz.value} label={tz.label} value={tz.value} />)}
                                     </Picker>
                                 </View>
-                            </View>
-                        </FadeInView>
+                            </FadeInView>
+                        </View>
 
-                        <FadeInView delay={550}>
+                        <FadeInView delay={700}>
                             <View style={styles.footerNavSpread}>
                                 <TouchableOpacity onPress={() => frequency === 'daily' ? setStep(1) : setStep(2)}>
-                                    <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                                    <Feather name="arrow-left-circle" size={54} color="#4F46E5" />
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    style={[styles.createButton, isUpdating && { backgroundColor: '#A5B4FC' }]}
+                                    style={[styles.createButton, isUpdating && { opacity: 0.7 }]}
                                     onPress={handleUpdateSchedule}
                                     disabled={isUpdating}
                                 >
-                                    <Text style={styles.createButtonText}>{isUpdating ? "Saving..." : "Save Changes"}</Text>
+                                    {isUpdating ? (
+                                        <ActivityIndicator color="#FFF" />
+                                    ) : (
+                                        <Text style={styles.createButtonText}>Save Changes</Text>
+                                    )}
                                 </TouchableOpacity>
                             </View>
                         </FadeInView>
@@ -244,29 +258,83 @@ const EditScheduleScreen = () => {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#F9FAFB' },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+    header: { 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        padding: 16, 
+        backgroundColor: 'white', 
+        borderBottomWidth: 1, 
+        borderBottomColor: '#E5E7EB' 
+    },
     headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
-    stepContainerPadded: { flex: 1, justifyContent: 'space-between', padding: 24 },
-    title: { fontSize: 24, fontWeight: 'bold', color: '#1F2937', textAlign: 'center', marginBottom: 24 },
-    frequencyButton: { flexDirection: 'row', alignItems: 'center', padding: 16, marginBottom: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8 },
-    frequencyButtonSelected: { backgroundColor: '#E0E7FF', borderColor: '#4F46E5' },
-    frequencyText: { fontSize: 18, color: '#374151', marginLeft: 12 },
-    frequencyTextSelected: { color: '#4F46E5', fontWeight: '600' },
+    stepContainerPadded: { flex: 1, padding: 24 },
+    title: { fontSize: 26, fontWeight: '800', color: '#111827', textAlign: 'center', marginBottom: 32 },
+    frequencyButton: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        padding: 20, 
+        marginBottom: 16, 
+        backgroundColor: '#FFFFFF', 
+        borderWidth: 1.5, 
+        borderColor: '#E5E7EB', 
+        borderRadius: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+        elevation: 2
+    },
+    frequencyButtonSelected: { backgroundColor: '#F5F7FF', borderColor: '#4F46E5' },
+    frequencyText: { fontSize: 18, color: '#374151', marginLeft: 16, fontWeight: '500' },
+    frequencyTextSelected: { color: '#4F46E5', fontWeight: '700' },
     radioCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#D1D5DB', backgroundColor: '#FFF' },
     radioCircleSelected: { borderColor: '#4F46E5', backgroundColor: '#4F46E5' },
     calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
-    dateBox: { width: width / 7 - 12, height: width / 7 - 12, justifyContent: 'center', alignItems: 'center', margin: 4, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
+    dateBox: { 
+        width: width / 7 - 12, 
+        height: width / 7 - 12, 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        margin: 4, 
+        borderRadius: 12, 
+        borderWidth: 1.5, 
+        borderColor: '#E5E7EB', 
+        backgroundColor: '#FFF' 
+    },
     dateBoxSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
-    dateText: { fontSize: 16, color: '#374151' },
+    dateText: { fontSize: 16, color: '#374151', fontWeight: '600' },
     dateTextSelected: { color: '#FFF', fontWeight: 'bold' },
     footerNavRight: { width: '100%', flexDirection: 'row', justifyContent: 'flex-end', marginTop: 24 },
     footerNavSpread: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 },
-    timezoneContainer: { width: '100%', marginVertical: 16 },
-    pickerTitle: { fontSize: 18, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
-    pickerWrapper: { backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB', overflow: 'hidden' },
-    pickerItem: { color: 'black', fontSize: 18, height: 120 },
-    createButton: { paddingVertical: 16, paddingHorizontal: 32, borderRadius: 8, alignItems: 'center', backgroundColor: '#4F46E5', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41, elevation: 2 },
-    createButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
+    finalCardSection: { width: '100%', marginBottom: 32 },
+    pickerTitle: { fontSize: 18, fontWeight: '700', color: '#374151', marginBottom: 12, textAlign: 'center' },
+    pickerWrapper: { 
+        backgroundColor: '#FFFFFF', 
+        borderRadius: 16, 
+        borderWidth: 1.5, 
+        borderColor: '#E5E7EB', 
+        overflow: 'hidden',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+        elevation: 2
+    },
+    pickerItem: { color: '#111827', fontSize: 18, height: 120 },
+    createButton: { 
+        paddingVertical: 18, 
+        paddingHorizontal: 36, 
+        borderRadius: 16, 
+        alignItems: 'center', 
+        backgroundColor: '#4F46E5', 
+        shadowColor: '#4F46E5', 
+        shadowOffset: { width: 0, height: 4 }, 
+        shadowOpacity: 0.3, 
+        shadowRadius: 6, 
+        elevation: 5 
+    },
+    createButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
 });
 
 export default EditScheduleScreen;
