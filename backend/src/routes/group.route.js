@@ -11,7 +11,7 @@ router.get("/", protectRoute, getGroups);
 router.post("/create", protectRoute, createGroup);
 router.get("/:groupId", protectRoute, getGroupDetails);
 router.put("/:groupId", protectRoute, updateGroup);
-router.push("/:groupId/schedule", protectRoute, updateGroupSchedule);
+router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
 router.delete("/:groupId", protectRoute, deleteGroup);
 router.post("/:groupId/add-member", protectRoute, addMember);
 router.post("/:groupId/leave", protectRoute, leaveGroup);
