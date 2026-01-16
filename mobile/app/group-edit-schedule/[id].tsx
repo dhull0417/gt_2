@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
     View, 
     Text, 
@@ -7,12 +7,11 @@ import {
     StyleSheet, 
     Alert, 
     Dimensions, 
-    Modal, 
-    FlatList, 
     Animated,
     ActivityIndicator,
     StyleProp,
-    ViewStyle
+    ViewStyle,
+    Platform
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -24,10 +23,6 @@ import { useApiClient, User, userApi } from "@/utils/api";
 import TimePicker from "@/components/TimePicker";
 
 const { width } = Dimensions.get('window');
-
-// Wizard Math
-const CARD_WIDTH = width * 0.90; 
-const SIDE_INSET = (width - CARD_WIDTH) / 2; 
 
 type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom' | null;
 
@@ -46,12 +41,23 @@ const daysOfWeek = [
     { label: "Wednesday", value: 3 }, { label: "Thursday", value: 4 }, { label: "Friday", value: 5 }, { label: "Saturday", value: 6 },
 ];
 
-const FadeInView = ({ children, delay = 0, style }: { children: React.ReactNode, delay?: number, style?: StyleProp<ViewStyle> }) => {
+// --- Animation Helper (Matching Create Group) ---
+const FadeInView = ({ children, delay = 0, duration = 400, style }: { children: React.ReactNode, delay?: number, duration?: number, style?: StyleProp<ViewStyle> }) => {
   const fadeAnim = useMemo(() => new Animated.Value(0), []);
+  const slideAnim = useMemo(() => new Animated.Value(-15), []);
+
   useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 400, delay, useNativeDriver: true }).start();
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration, delay, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration, delay, useNativeDriver: true })
+    ]).start();
   }, [delay]);
-  return <Animated.View style={[{ opacity: fadeAnim, width: '100%' }, style]}>{children}</Animated.View>;
+
+  return (
+    <Animated.View style={[{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], width: '100%' }, style]}>
+      {children}
+    </Animated.View>
+  );
 };
 
 const EditScheduleScreen = () => {
@@ -60,14 +66,12 @@ const EditScheduleScreen = () => {
     const api = useApiClient();
     const queryClient = useQueryClient();
 
-    // Data Fetching
     const { data: group, isLoading: loadingGroup } = useGetGroupDetails(id);
     const { data: currentUser } = useQuery<User, Error>({ 
         queryKey: ['currentUser'], 
         queryFn: () => userApi.getCurrentUser(api) 
     });
 
-    // Wizard State
     const [step, setStep] = useState(1);
     const [frequency, setFrequency] = useState<Frequency>(null);
     const [selectedDays, setSelectedDays] = useState<number[]>([]); 
@@ -76,7 +80,6 @@ const EditScheduleScreen = () => {
     const [timezone, setTimezone] = useState("America/Denver");
     const [isUpdating, setIsUpdating] = useState(false);
 
-    // Pre-populate state from existing group data
     useEffect(() => {
         if (group?.schedule) {
             setFrequency(group.schedule.frequency);
@@ -104,7 +107,6 @@ const EditScheduleScreen = () => {
                 timezone: timezone
             });
 
-            // Invalidate queries so the details overlay and dashboard reflect changes
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
             queryClient.invalidateQueries({ queryKey: ['events'] });
             
@@ -122,18 +124,6 @@ const EditScheduleScreen = () => {
 
     if (loadingGroup || !currentUser) return <SafeAreaView style={styles.center}><ActivityIndicator size="large" color="#4F46E5" /></SafeAreaView>;
 
-    // Permission Check
-    if (group && group.owner !== currentUser._id) {
-        return (
-            <SafeAreaView style={styles.center}>
-                <Text style={{ color: '#EF4444', fontWeight: 'bold' }}>Access Denied: Only owners can edit schedules.</Text>
-                <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
-                    <Text style={{ color: '#4F46E5' }}>Go Back</Text>
-                </TouchableOpacity>
-            </SafeAreaView>
-        );
-    }
-
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
@@ -142,76 +132,108 @@ const EditScheduleScreen = () => {
                 <View style={{ width: 24 }} />
             </View>
 
-            <View style={styles.content}>
+            <View style={{ flex: 1 }}>
                 {step === 1 && (
-                    <View style={styles.stepBox}>
+                    <View style={styles.stepContainerPadded}>
                         <FadeInView delay={100}><Text style={styles.title}>How often will you meet?</Text></FadeInView>
                         <View style={{ flex: 1, justifyContent: 'center' }}>
-                            {['daily', 'weekly', 'biweekly', 'monthly'].map((f) => (
-                                <TouchableOpacity key={f} style={[styles.option, frequency === f && styles.optionSelected]} onPress={() => setFrequency(f as any)}>
-                                    <View style={[styles.radio, frequency === f && styles.radioActive]} />
-                                    <Text style={[styles.optionText, frequency === f && styles.optionTextActive]}>
-                                        {f === 'biweekly' ? 'Every 2 Weeks' : f.charAt(0).toUpperCase() + f.slice(1)}
-                                    </Text>
-                                </TouchableOpacity>
+                            {['daily', 'weekly', 'biweekly', 'monthly'].map((f, idx) => (
+                                <FadeInView key={f} delay={200 + (idx * 50)}>
+                                    <TouchableOpacity 
+                                        style={[styles.frequencyButton, frequency === f && styles.frequencyButtonSelected]} 
+                                        onPress={() => setFrequency(f as any)}
+                                    >
+                                        <View style={[styles.radioCircle, frequency === f && styles.radioCircleSelected]} />
+                                        <Text style={[styles.frequencyText, frequency === f && styles.frequencyTextSelected]}>
+                                            {f === 'biweekly' ? 'Every 2 Weeks' : f.charAt(0).toUpperCase() + f.slice(1)}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </FadeInView>
                             ))}
                         </View>
-                        <TouchableOpacity style={styles.nextBtn} onPress={() => frequency === 'daily' ? setStep(3) : setStep(2)} disabled={!frequency}>
-                            <Feather name="arrow-right" size={24} color="white" />
-                        </TouchableOpacity>
+                        <FadeInView delay={600}>
+                            <View style={styles.footerNavRight}>
+                                <TouchableOpacity onPress={() => frequency === 'daily' ? setStep(3) : setStep(2)} disabled={!frequency}>
+                                    <Feather name="arrow-right-circle" size={48} color={!frequency ? "#D1D5DB" : "#4F46E5"} />
+                                </TouchableOpacity>
+                            </View>
+                        </FadeInView>
                     </View>
                 )}
 
                 {step === 2 && (
-                    <View style={styles.stepBox}>
-                        <FadeInView delay={100}><Text style={styles.title}>Which days/dates?</Text></FadeInView>
-                        <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
-                            {frequency === 'monthly' ? (
-                                <View style={styles.grid}>
-                                    {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
-                                        <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d) && styles.dateBoxActive]} onPress={() => toggleDate(d)}>
-                                            <Text style={[styles.dateText, selectedDates.includes(d) && styles.dateTextActive]}>{d}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            ) : (
-                                daysOfWeek.map(d => (
-                                    <TouchableOpacity key={d.value} style={[styles.option, selectedDays.includes(d.value) && styles.optionSelected]} onPress={() => toggleDay(d.value)}>
-                                        <View style={[styles.radio, selectedDays.includes(d.value) && styles.radioActive]} />
-                                        <Text style={[styles.optionText, selectedDays.includes(d.value) && styles.optionTextActive]}>{d.label}</Text>
-                                    </TouchableOpacity>
-                                ))
-                            )}
-                        </ScrollView>
-                        <View style={styles.navRow}>
-                            <TouchableOpacity style={styles.backBtn} onPress={() => setStep(1)}><Feather name="arrow-left" size={24} color="#4F46E5" /></TouchableOpacity>
-                            <TouchableOpacity style={styles.nextBtn} onPress={() => setStep(3)} disabled={(frequency === 'monthly' ? selectedDates.length : selectedDays.length) === 0}>
-                                <Feather name="arrow-right" size={24} color="white" />
-                            </TouchableOpacity>
+                    <View style={styles.stepContainerPadded}>
+                        <FadeInView delay={100}><Text style={styles.title}>Which day(s) will you meet?</Text></FadeInView>
+                        <View style={{ flex: 1 }}>
+                            <FadeInView delay={250}>
+                                <ScrollView contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+                                    {frequency === 'monthly' ? (
+                                        <View style={styles.calendarGrid}>
+                                            {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                                                <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d) && styles.dateBoxSelected]} onPress={() => toggleDate(d)}>
+                                                    <Text style={[styles.dateText, selectedDates.includes(d) && styles.dateTextSelected]}>{d}</Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    ) : (
+                                        daysOfWeek.map(d => (
+                                            <TouchableOpacity 
+                                                key={d.value} 
+                                                style={[styles.frequencyButton, selectedDays.includes(d.value) && styles.frequencyButtonSelected]} 
+                                                onPress={() => toggleDay(d.value)}
+                                            >
+                                                <View style={[styles.radioCircle, selectedDays.includes(d.value) && styles.radioCircleSelected]} />
+                                                <Text style={[styles.frequencyText, selectedDays.includes(d.value) && styles.frequencyTextSelected]}>{d.label}</Text>
+                                            </TouchableOpacity>
+                                        ))
+                                    )}
+                                </ScrollView>
+                            </FadeInView>
                         </View>
+                        <FadeInView delay={400}>
+                            <View style={styles.footerNavSpread}>
+                                <TouchableOpacity onPress={() => setStep(1)}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+                                <TouchableOpacity onPress={() => setStep(3)} disabled={(frequency === 'monthly' ? selectedDates.length : selectedDays.length) === 0}>
+                                    <Feather name="arrow-right-circle" size={48} color={(frequency === 'monthly' ? selectedDates.length : selectedDays.length) === 0 ? "#D1D5DB" : "#4F46E5"} />
+                                </TouchableOpacity>
+                            </View>
+                        </FadeInView>
                     </View>
                 )}
 
                 {step === 3 && (
-                    <View style={styles.stepBox}>
-                        <FadeInView delay={100}><Text style={styles.title}>Final Details</Text></FadeInView>
-                        <ScrollView>
-                            <Text style={styles.label}>Choose Meeting Time</Text>
+                    <View style={styles.stepContainerPadded}>
+                        <FadeInView delay={100}><Text style={styles.title}>Choose a time & details</Text></FadeInView>
+                        
+                        <FadeInView delay={250}>
                             <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
-                            
-                            <Text style={[styles.label, { marginTop: 24 }]}>Select Timezone</Text>
-                            <View style={styles.pickerWrap}>
-                                <Picker selectedValue={timezone} onValueChange={setTimezone}>
-                                    {usaTimezones.map(tz => <Picker.Item key={tz.value} label={tz.label} value={tz.value} />)}
-                                </Picker>
+                        </FadeInView>
+                        
+                        <FadeInView delay={400}>
+                            <View style={styles.timezoneContainer}>
+                                <Text style={styles.pickerTitle}>Select Timezone</Text>
+                                <View style={styles.pickerWrapper}>
+                                    <Picker selectedValue={timezone} onValueChange={setTimezone} itemStyle={styles.pickerItem}>
+                                        {usaTimezones.map(tz => <Picker.Item key={tz.value} label={tz.label} value={tz.value} />)}
+                                    </Picker>
+                                </View>
                             </View>
-                        </ScrollView>
-                        <View style={styles.navRow}>
-                            <TouchableOpacity style={styles.backBtn} onPress={() => frequency === 'daily' ? setStep(1) : setStep(2)}><Feather name="arrow-left" size={24} color="#4F46E5" /></TouchableOpacity>
-                            <TouchableOpacity style={styles.saveBtn} onPress={handleUpdateSchedule} disabled={isUpdating}>
-                                {isUpdating ? <ActivityIndicator color="white" /> : <Text style={styles.saveText}>Save Changes</Text>}
-                            </TouchableOpacity>
-                        </View>
+                        </FadeInView>
+
+                        <FadeInView delay={550}>
+                            <View style={styles.footerNavSpread}>
+                                <TouchableOpacity onPress={() => frequency === 'daily' ? setStep(1) : setStep(2)}>
+                                    <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.createButton, isUpdating && { backgroundColor: '#A5B4FC' }]}
+                                    onPress={handleUpdateSchedule}
+                                    disabled={isUpdating}
+                                >
+                                    <Text style={styles.createButtonText}>{isUpdating ? "Saving..." : "Save Changes"}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </FadeInView>
                     </View>
                 )}
             </View>
@@ -224,27 +246,27 @@ const styles = StyleSheet.create({
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
     headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
-    content: { flex: 1 },
-    stepBox: { flex: 1, padding: 24 },
-    title: { fontSize: 24, fontWeight: 'bold', color: '#1F2937', textAlign: 'center', marginBottom: 32 },
-    option: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: 'white', borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#D1D5DB' },
-    optionSelected: { backgroundColor: '#EEF2FF', borderColor: '#4F46E5' },
-    optionText: { fontSize: 18, color: '#374151', marginLeft: 12 },
-    optionTextActive: { color: '#4F46E5', fontWeight: 'bold' },
-    radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#D1D5DB' },
-    radioActive: { borderColor: '#4F46E5', backgroundColor: '#4F46E5' },
-    grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
-    dateBox: { width: width/7 - 12, height: width/7 - 12, justifyContent: 'center', alignItems: 'center', margin: 4, borderRadius: 20, backgroundColor: 'white', borderWidth: 1, borderColor: '#E5E7EB' },
-    dateBoxActive: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
-    dateText: { color: '#374151' },
-    dateTextActive: { color: 'white', fontWeight: 'bold' },
-    navRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 },
-    nextBtn: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#4F46E5', justifyContent: 'center', alignItems: 'center' },
-    backBtn: { width: 56, height: 56, borderRadius: 28, borderWidth: 1, borderColor: '#4F46E5', justifyContent: 'center', alignItems: 'center' },
-    saveBtn: { flex: 1, height: 56, borderRadius: 28, backgroundColor: '#4F46E5', justifyContent: 'center', alignItems: 'center', marginLeft: 16 },
-    saveText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-    label: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 8 },
-    pickerWrap: { backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#D1D5DB', overflow: 'hidden' }
+    stepContainerPadded: { flex: 1, justifyContent: 'space-between', padding: 24 },
+    title: { fontSize: 24, fontWeight: 'bold', color: '#1F2937', textAlign: 'center', marginBottom: 24 },
+    frequencyButton: { flexDirection: 'row', alignItems: 'center', padding: 16, marginBottom: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8 },
+    frequencyButtonSelected: { backgroundColor: '#E0E7FF', borderColor: '#4F46E5' },
+    frequencyText: { fontSize: 18, color: '#374151', marginLeft: 12 },
+    frequencyTextSelected: { color: '#4F46E5', fontWeight: '600' },
+    radioCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#D1D5DB', backgroundColor: '#FFF' },
+    radioCircleSelected: { borderColor: '#4F46E5', backgroundColor: '#4F46E5' },
+    calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
+    dateBox: { width: width / 7 - 12, height: width / 7 - 12, justifyContent: 'center', alignItems: 'center', margin: 4, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
+    dateBoxSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    dateText: { fontSize: 16, color: '#374151' },
+    dateTextSelected: { color: '#FFF', fontWeight: 'bold' },
+    footerNavRight: { width: '100%', flexDirection: 'row', justifyContent: 'flex-end', marginTop: 24 },
+    footerNavSpread: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 },
+    timezoneContainer: { width: '100%', marginVertical: 16 },
+    pickerTitle: { fontSize: 18, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
+    pickerWrapper: { backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB', overflow: 'hidden' },
+    pickerItem: { color: 'black', fontSize: 18, height: 120 },
+    createButton: { paddingVertical: 16, paddingHorizontal: 32, borderRadius: 8, alignItems: 'center', backgroundColor: '#4F46E5', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41, elevation: 2 },
+    createButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
 });
 
 export default EditScheduleScreen;

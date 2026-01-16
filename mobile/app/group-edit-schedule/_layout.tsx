@@ -11,7 +11,8 @@ const GroupEditLayout = () => {
             <Stack.Screen 
                 name="[id]" 
                 options={{ 
-                    headerTitle: 'Edit Group',
+                    headerTitle: 'Edit Group Schedule',
+                    headerShown: false,
                     presentation: 'modal',
                     headerLeft: () => (
                         <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
