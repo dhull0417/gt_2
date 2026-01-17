@@ -8,6 +8,8 @@ import mongoose from "mongoose";
 import { calculateNextEventDate } from "../utils/date.utils.js";
 import { ENV } from "../config/env.js";
 import { syncStreamUser } from "../utils/stream.js";
+// Project 4: Import the push notification utility
+import { notifyUsers } from "../utils/push.notifications.js";
 
 // --- Helpers ---
 
@@ -72,9 +74,9 @@ export const createGroup = asyncHandler(async (req, res) => {
       { $addToSet: { groups: newGroup._id } }
   );
 
-  const membersToNotify = uniqueMemberIds.filter(id => id !== owner._id.toString());
-  if (membersToNotify.length > 0) {
-      const notifications = membersToNotify.map(memberId => ({
+  const membersToNotifyIds = uniqueMemberIds.filter(id => id !== owner._id.toString());
+  if (membersToNotifyIds.length > 0) {
+      const notifications = membersToNotifyIds.map(memberId => ({
           recipient: memberId,
           sender: owner._id,
           type: 'group-added', 
@@ -85,8 +87,16 @@ export const createGroup = asyncHandler(async (req, res) => {
       
       try {
           await Notification.insertMany(notifications);
+          
+          // Project 4: Push Alert for users added during group creation
+          const usersToNotify = await User.find({ _id: { $in: membersToNotifyIds } });
+          await notifyUsers(usersToNotify, {
+              title: "New Group",
+              body: `${owner.firstName} added you to the group "${name}".`,
+              data: { groupId: newGroup._id.toString(), type: 'group-added' }
+          });
       } catch (error) {
-          console.error("Failed to create notifications:", error);
+          console.error("Failed to create notifications or send push alerts:", error);
       }
   }
 
@@ -347,6 +357,9 @@ export const getGroupDetails = asyncHandler(async (req, res) => {
     res.status(200).json(group);
 });
 
+/**
+ * @desc    Directly add a member (Owner or Moderator)
+ */
 export const addMember = asyncHandler(async (req, res) => {
   const { userId: requesterClerkId } = getAuth(req);
   const { groupId } = req.params;
@@ -381,14 +394,25 @@ export const addMember = asyncHandler(async (req, res) => {
         { group: group._id, date: { $gte: today } }, 
         { $addToSet: { members: userToAdd._id, undecided: userToAdd._id } }
     );
+    
+    // Project 4: Push Alert for direct addition
+    await notifyUsers([userToAdd], {
+        title: "Added to Group",
+        body: `${requester.firstName} added you to "${group.name}".`,
+        data: { groupId: group._id.toString(), type: 'group-added' }
+    });
+
   } catch (eventError) {
-    console.error("Event update error:", eventError);
+    console.error("Event update or push error:", eventError);
   }
   
   await syncStreamUser(userToAdd);
   res.status(200).json({ message: "User added successfully." });
 });
 
+/**
+ * @desc    Invite User (Owner or Moderator)
+ */
 export const inviteUser = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
@@ -421,6 +445,13 @@ export const inviteUser = asyncHandler(async (req, res) => {
         sender: requester._id,
         type: 'group-invite',
         group: group._id,
+    });
+
+    // Project 4: Push Alert for invitation
+    await notifyUsers([userToInvite], {
+        title: "Group Invitation",
+        body: `${requester.firstName} invited you to join "${group.name}".`,
+        data: { groupId: group._id.toString(), type: 'group-invite' }
     });
 
     res.status(200).json({ message: "Invitation sent." });

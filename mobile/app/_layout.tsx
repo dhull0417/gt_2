@@ -8,6 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 import { User, useApiClient, userApi } from '@/utils/api';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { usePushNotifications } from '@/hooks/usePushNotifications'; // 1. Import the hook
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -43,13 +44,18 @@ const AuthLayout = () => {
   const segments = useSegments();
   const router = useRouter();
   const api = useApiClient();
+  
+  // 2. Initialize Push Notifications
+  // This hook handles the permission request and POSTs the token to 
+  // the endpoint we added in the Canvas routes.
+  const { expoPushToken } = usePushNotifications();
+
   useUserSync();
 
-  // ALWAYS call useQuery — but disable when not signed in
   const { data: currentUser, isSuccess } = useQuery<User, Error>({
     queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
-    enabled: isSignedIn, // Only runs when signed in
+    enabled: isSignedIn,
   });
 
   // === ROUTING LOGIC ===

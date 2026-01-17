@@ -6,8 +6,8 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { DateTime } from "luxon";
 import { calculateNextEventDate } from "../utils/date.utils.js";
-// FIXED: Imported shared permission helper
 import { canManageGroup } from "./group.controller.js";
+import { notifyUsers } from "../utils/push.notifications.js";
 
 const parseTime = (timeString) => {
     const [time, period] = timeString.split(' ');
@@ -43,7 +43,7 @@ export const getEvents = asyncHandler(async (req, res) => {
   })
   .populate({
       path: "group",
-      select: "owner moderators", // Added moderators to population for permission checks if needed elsewhere
+      select: "owner moderators",
   })
   .sort({ date: "asc" });
 
@@ -75,7 +75,6 @@ export const updateEvent = asyncHandler(async (req, res) => {
     
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
-    // FIXED: Changed from strict owner check to canManageGroup check
     if (!canManageGroup(requester._id, event.group)) {
         return res.status(403).json({ error: "Permission denied. Only owners or moderators can edit events." });
     }
@@ -137,9 +136,20 @@ export const handleRsvp = asyncHandler(async (req, res) => {
   } else if (status === 'out') {
     event.out.push(userId);
 
+    // Project 4: Notify users promoted from the waitlist
     if (event.capacity > 0 && event.waitlist.length > 0) {
-      const nextUser = event.waitlist.shift(); 
-      event.in.push(nextUser);
+      const nextUserId = event.waitlist.shift(); 
+      event.in.push(nextUserId);
+
+      // Find the user to access their expoPushToken
+      const promotedUser = await User.findById(nextUserId);
+      if (promotedUser) {
+          await notifyUsers([promotedUser], {
+              title: "You're off the waitlist!",
+              body: `A spot opened up for ${event.name}. You are now confirmed!`,
+              data: { eventId: event._id.toString(), type: 'waitlist_promotion' }
+          });
+      }
     }
   }
 
@@ -160,7 +170,6 @@ export const cancelEvent = asyncHandler(async (req, res) => {
 
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
-    // FIXED: Changed from strict owner check to canManageGroup check
     if (!canManageGroup(requester._id, event.group)) {
         return res.status(403).json({ error: "Permission denied. Only owners or moderators can cancel events." });
     }
@@ -168,6 +177,16 @@ export const cancelEvent = asyncHandler(async (req, res) => {
     event.status = 'cancelled';
     event.isOverride = true;
     await event.save();
+
+    // Project 4: Notify all group members about the cancellation
+    const membersToNotify = await User.find({ _id: { $in: event.members } });
+    if (membersToNotify.length > 0) {
+        await notifyUsers(membersToNotify, {
+            title: "Meeting Cancelled",
+            body: `The meeting "${event.name}" on ${new Date(event.date).toLocaleDateString()} has been cancelled.`,
+            data: { eventId: event._id.toString(), type: 'event_cancellation' }
+        });
+    }
 
     res.status(200).json({ message: "Event cancelled successfully.", event });
 });
@@ -187,7 +206,6 @@ export const deleteEvent = asyncHandler(async (req, res) => {
     const requester = await User.findOne({ clerkId }).lean();
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
-    // FIXED: Changed from strict owner check to canManageGroup check
     if (!canManageGroup(requester._id, event.group)) {
         return res.status(403).json({ error: "Permission denied. Only owners or moderators can delete events." });
     }
