@@ -184,18 +184,18 @@ const EventCard = ({
   );
 };
 
+// --- Main Dashboard Screen ---
+
 const DashboardScreen = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { data: events, isLoading, isError, refetch } = useGetEvents();
-  const { data: currentUser } = useQuery<User, Error>({
-    queryKey: ['currentUser'],
-    queryFn: () => userApi.getCurrentUser(api),
-  });
-  const { mutate: rsvp, isPending: isRsvping } = useRsvp();
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
+
+  const { data: events, isLoading, isError, refetch } = useGetEvents();
+  const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
+  const { mutate: rsvp, isPending: isRsvping } = useRsvp();
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
@@ -332,10 +332,11 @@ const DashboardScreen = () => {
       <Modal
         visible={isModalVisible}
         animationType="slide"
+        presentationStyle="pageSheet"
         onRequestClose={handleCloseModal}
       >
-        {/* Fixed: Use SafeAreaView inside the modal to keep the top visible */}
-        <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }}>
+        {/* Use SafeAreaView with edges explicitly defined to protect the top of the details screen */}
+        <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top', 'bottom']}>
             <EventDetailModal event={selectedEvent} onClose={handleCloseModal} />
         </SafeAreaView>
       </Modal>

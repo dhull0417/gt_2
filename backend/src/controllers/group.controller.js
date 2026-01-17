@@ -26,7 +26,8 @@ const getScheduleItems = (schedule) => {
  */
 export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
-    const { schedule, time, timezone } = req.body;
+    // EXTRACT defaultCapacity from body
+    const { schedule, time, timezone, defaultCapacity } = req.body;
     const { userId: clerkId } = getAuth(req);
 
     const group = await Group.findById(groupId);
@@ -35,18 +36,22 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     if (!group || !user) return res.status(404).json({ error: "Resource not found." });
 
     if (group.owner.toString() !== user._id.toString()) {
-        return res.status(403).json({ error: "Only the group owner can update the schedule." });
+        return res.status(403).json({ error: "Only the owner can update settings." });
     }
 
-    if (!schedule || !schedule.frequency || !time || !timezone) {
-        return res.status(400).json({ error: "Schedule, time, and timezone are required." });
+    // 1. Update Group settings
+    if (schedule) group.schedule = schedule;
+    if (time) group.time = time;
+    if (timezone) group.timezone = timezone;
+    
+    // SAVE the defaultCapacity to the group model
+    if (defaultCapacity !== undefined) {
+        group.defaultCapacity = Number(defaultCapacity);
     }
-
-    group.schedule = schedule;
-    group.time = time;
-    group.timezone = timezone;
+    
     await group.save();
 
+    // 2. Clear future standard events to apply new capacity immediately
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     
@@ -56,12 +61,14 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
         date: { $gte: today } 
     });
 
+    // 3. Regenerate events with the NEW capacity
     try {
         const limit = group.eventsToDisplay || 3;
-        const itemsToIterate = getScheduleItems(group.schedule);
+        // Helper to get days/items to iterate over
+        const items = group.schedule.frequency === 'daily' ? [0] : (group.schedule.days || []);
         let potentialEvents = [];
 
-        for (const item of itemsToIterate) {
+        for (const item of items) {
             let lastGeneratedDate = null;
             for (let i = 0; i < limit; i++) {
                 const nextEventDate = calculateNextEventDate(
@@ -77,9 +84,9 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
         }
 
         potentialEvents.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-        const finalEvents = potentialEvents.slice(0, limit);
+        const finalDates = potentialEvents.slice(0, limit);
 
-        for (const date of finalEvents) {
+        for (const date of finalDates) {
             await Event.create({
                 group: group._id, 
                 name: group.name, 
@@ -88,15 +95,15 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                 timezone: group.timezone,
                 members: group.members, 
                 undecided: group.members,
+                // APPLY the new default capacity to the event
+                capacity: group.defaultCapacity 
             });
         }
     } catch (eventError) {
-        console.error("Critical Error during regeneration:", eventError);
+        console.error("Regeneration Error:", eventError);
     }
 
-    res.status(200).json({ 
-        message: "Schedule updated successfully.",
-    });
+    res.status(200).json({ message: "Settings updated.", group });
 });
 
 export const inviteUser = asyncHandler(async (req, res) => {
