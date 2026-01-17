@@ -20,9 +20,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 
 /**
- * PROJECT 2: EVENT-SPECIFIC CAPACITY MANAGEMENT
- * This component allows owners to override the default group capacity
- * for a single specific meeting instance and manages waitlist queues.
+ * PROJECT 2 & 3: EVENT MANAGEMENT & MODERATOR PERMISSIONS
+ * Allowing both owners and assigned moderators to manage specific 
+ * event instances (capacity, cancellation, etc.)
  */
 
 interface EventDetailModalProps {
@@ -55,10 +55,22 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     if (!event || !currentUser) return null;
 
     // --- Logic Helpers ---
-    // Ensure we handle both populated objects and ID strings for the group field
+    
+    // Check if user is the group owner
     const isOwner = typeof event.group === 'object' 
         ? event.group.owner === currentUser._id 
         : false; 
+
+    // FIXED: Added type casting to resolve 'moderators' property missing on Event.group type
+    const groupData = event.group as any;
+    const isMod = typeof event.group === 'object' && Array.isArray(groupData.moderators)
+        ? groupData.moderators.some((m: any) => 
+            typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id
+          )
+        : false;
+
+    // New permission constant for UI visibility
+    const canManage = isOwner || isMod;
     
     const isCancelled = event.status === 'cancelled';
     const isFull = event.capacity > 0 && (event.in?.length || 0) >= event.capacity;
@@ -88,17 +100,14 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
 
         setIsUpdatingCap(true);
         try {
-            // Using the helper from eventApi for better consistency
-            const response = await eventApi.updateEvent(api, { 
+            await eventApi.updateEvent(api, { 
                 eventId: event._id, 
                 capacity: capInt,
-                // Passing existing values to satisfy the payload requirements if necessary
                 date: new Date(event.date),
                 time: event.time,
                 timezone: event.timezone
             });
             
-            // Re-fetch events to ensure all components have the latest populated data
             await queryClient.invalidateQueries({ queryKey: ['events'] });
             
             setIsCapModalVisible(false);
@@ -123,7 +132,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                     try {
                         await eventApi.cancelEvent(api, event._id);
                         queryClient.invalidateQueries({ queryKey: ['events'] });
-                        if (!isCancelled) onClose(); // Close only on cancellation
+                        if (!isCancelled) onClose(); 
                     } catch (e: any) {
                         const serverMessage = e.response?.data?.error || e.message;
                         Alert.alert("Error", `Could not ${action.toLowerCase()} event: ${serverMessage}`);
@@ -185,7 +194,12 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         {/* Max Capacity Section */}
                         <View style={styles.capacityCard}>
                             <View style={styles.infoRowCompact}>
-                                <View style={[styles.iconBox, isFull && !isCancelled && { backgroundColor: '#FFF7ED' }]}>
+                                <View 
+                                    style={[
+                                        styles.iconBox, 
+                                        { backgroundColor: isFull && !isCancelled ? '#FFF7ED' : '#F5F7FF' }
+                                    ]}
+                                >
                                     <Feather name="users" size={18} color={isFull && !isCancelled ? "#EA580C" : "#4F46E5"} />
                                 </View>
                                 <View style={styles.infoTextContainer}>
@@ -195,7 +209,8 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                                     <Text style={styles.infoLabel}>Max Capacity</Text>
                                 </View>
                             </View>
-                            {isOwner && !isCancelled && (
+                            {/* FIXED: Using canManage instead of isOwner */}
+                            {canManage && !isCancelled && (
                                 <TouchableOpacity 
                                     onPress={() => {
                                         setNewCapacity(event.capacity.toString());
@@ -283,8 +298,9 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                     )}
                 </View>
 
-                {/* Owner Specific Actions */}
-                {isOwner && (
+                {/* Management Specific Actions */}
+                {/* FIXED: Using canManage instead of isOwner */}
+                {canManage && (
                     <View style={styles.ownerSection}>
                         <TouchableOpacity 
                             onPress={handleCancelEvent}
@@ -338,60 +354,8 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     );
 };
 
-interface Styles {
-    container: ViewStyle;
-    header: ViewStyle;
-    closeButton: ViewStyle;
-    headerTitleContainer: ViewStyle;
-    headerTitle: TextStyle;
-    content: ViewStyle;
-    cancelBanner: ViewStyle;
-    cancelBannerText: TextStyle;
-    eventTitle: TextStyle;
-    strikeThrough: TextStyle;
-    infoSection: ViewStyle;
-    infoRow: ViewStyle;
-    infoRowCompact: ViewStyle;
-    iconBox: ViewStyle;
-    infoTextContainer: ViewStyle;
-    infoValue: TextStyle;
-    infoLabel: TextStyle;
-    capacityCard: ViewStyle;
-    adjustButton: ViewStyle;
-    rsvpRow: ViewStyle;
-    rsvpButton: ViewStyle;
-    rsvpIn: ViewStyle;
-    rsvpOut: ViewStyle;
-    rsvpButtonText: TextStyle;
-    sectionTitle: TextStyle;
-    memberRow: ViewStyle;
-    avatar: ImageStyle;
-    avatarSmall: ImageStyle;
-    memberInfo: ViewStyle;
-    memberName: TextStyle;
-    memberUsername: TextStyle;
-    waitlistBadge: ViewStyle;
-    waitlistBadgeText: TextStyle;
-    emptyText: TextStyle;
-    ownerSection: ViewStyle;
-    cancelToggle: ViewStyle;
-    cancelToggleText: TextStyle;
-    modalOverlay: ViewStyle;
-    modalContent: ViewStyle;
-    modalHeader: ViewStyle;
-    modalTitle: TextStyle;
-    modalSub: TextStyle;
-    modalBody: ViewStyle;
-    capInput: TextStyle;
-    modalActions: ViewStyle;
-    modalBtn: ViewStyle;
-    modalBtnSecondary: ViewStyle;
-    modalBtnPrimary: ViewStyle;
-    modalBtnTextSec: TextStyle;
-    modalBtnTextPri: TextStyle;
-}
-
-const styles = StyleSheet.create<Styles>({
+// Styles remain identical to previous version
+const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: 'white' },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     closeButton: { padding: 4 },
