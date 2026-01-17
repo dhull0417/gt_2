@@ -6,6 +6,8 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { DateTime } from "luxon";
 import { calculateNextEventDate } from "../utils/date.utils.js";
+// FIXED: Imported shared permission helper
+import { canManageGroup } from "./group.controller.js";
 
 const parseTime = (timeString) => {
     const [time, period] = timeString.split(' ');
@@ -41,7 +43,7 @@ export const getEvents = asyncHandler(async (req, res) => {
   })
   .populate({
       path: "group",
-      select: "owner",
+      select: "owner moderators", // Added moderators to population for permission checks if needed elsewhere
   })
   .sort({ date: "asc" });
 
@@ -54,7 +56,7 @@ export const getEvents = asyncHandler(async (req, res) => {
 export const updateEvent = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { eventId } = req.params;
-    const { date, time, timezone, capacity } = req.body; // Added capacity to allowed updates
+    const { date, time, timezone, capacity } = req.body; 
 
     if (!date || !time || !timezone) {
         return res.status(400).json({ error: "Date, time, and timezone are required." });
@@ -73,8 +75,9 @@ export const updateEvent = asyncHandler(async (req, res) => {
     
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
-    if (event.group.owner.toString() !== requester._id.toString()) {
-        return res.status(403).json({ error: "Only the group owner can edit this event." });
+    // FIXED: Changed from strict owner check to canManageGroup check
+    if (!canManageGroup(requester._id, event.group)) {
+        return res.status(403).json({ error: "Permission denied. Only owners or moderators can edit events." });
     }
 
     event.date = date;
@@ -94,7 +97,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
 export const handleRsvp = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
   const { eventId } = req.params;
-  const { status } = req.body; // 'in' or 'out'
+  const { status } = req.body; 
 
   const currentUser = await User.findOne({ clerkId });
   if (!currentUser) return res.status(404).json({ error: "User not found." });
@@ -112,7 +115,6 @@ export const handleRsvp = asyncHandler(async (req, res) => {
 
   const userId = currentUser._id;
 
-  // 1. Remove user from all existing lists to reset state
   event.in = event.in.filter(id => id.toString() !== userId.toString());
   event.out = event.out.filter(id => id.toString() !== userId.toString());
   event.undecided = event.undecided.filter(id => id.toString() !== userId.toString());
@@ -125,7 +127,6 @@ export const handleRsvp = asyncHandler(async (req, res) => {
     if (isUnlimited || hasSpace) {
       event.in.push(userId);
     } else {
-      // Event is full, add to waitlist
       event.waitlist.push(userId);
       await event.save();
       return res.status(200).json({ 
@@ -136,11 +137,9 @@ export const handleRsvp = asyncHandler(async (req, res) => {
   } else if (status === 'out') {
     event.out.push(userId);
 
-    // --- QUEUE LOGIC: If a spot opened up, move the first person from waitlist to 'in' ---
     if (event.capacity > 0 && event.waitlist.length > 0) {
-      const nextUser = event.waitlist.shift(); // Remove first person from queue
+      const nextUser = event.waitlist.shift(); 
       event.in.push(nextUser);
-      // Note: In Project 5, trigger push notification to this user here.
     }
   }
 
@@ -161,19 +160,20 @@ export const cancelEvent = asyncHandler(async (req, res) => {
 
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
-    if (event.group.owner.toString() !== requester._id.toString()) {
-        return res.status(403).json({ error: "Only the group owner can cancel events." });
+    // FIXED: Changed from strict owner check to canManageGroup check
+    if (!canManageGroup(requester._id, event.group)) {
+        return res.status(403).json({ error: "Permission denied. Only owners or moderators can cancel events." });
     }
 
-    // Status is simply flipped to 'cancelled' so it stays visible
     event.status = 'cancelled';
+    event.isOverride = true;
     await event.save();
 
     res.status(200).json({ message: "Event cancelled successfully.", event });
 });
 
 /**
- * @desc    Permanently delete an event
+ * @desc    Permanently delete an event (Owner/Moderator Only)
  */
 export const deleteEvent = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
@@ -187,8 +187,9 @@ export const deleteEvent = asyncHandler(async (req, res) => {
     const requester = await User.findOne({ clerkId }).lean();
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
-    if (event.group.owner.toString() !== requester._id.toString()) {
-        return res.status(403).json({ error: "Only the group owner can delete this event." });
+    // FIXED: Changed from strict owner check to canManageGroup check
+    if (!canManageGroup(requester._id, event.group)) {
+        return res.status(403).json({ error: "Permission denied. Only owners or moderators can delete events." });
     }
 
     const wasRecurring = !event.isOverride;
@@ -208,7 +209,7 @@ export const deleteEvent = asyncHandler(async (req, res) => {
                 members: parentGroup.members,
                 undecided: parentGroup.members,
                 isOverride: false,
-                capacity: parentGroup.defaultCapacity // Inherit group limit
+                capacity: parentGroup.defaultCapacity 
             });
         } catch (regenError) {
             console.error("Failed to regenerate next event after deletion:", regenError);
