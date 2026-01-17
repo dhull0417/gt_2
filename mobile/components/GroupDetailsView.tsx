@@ -1,289 +1,346 @@
-import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, TextInput, ActivityIndicator, Modal, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { 
+    View, 
+    Text, 
+    Image, 
+    TouchableOpacity, 
+    TextInput, 
+    ActivityIndicator, 
+    Modal, 
+    Alert, 
+    StyleSheet, 
+    ScrollView,
+    Dimensions
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { GroupDetails, User, useApiClient } from '@/utils/api';
 import { formatSchedule } from '@/utils/schedule';
 import { useQueryClient } from '@tanstack/react-query';
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+/**
+ * FIXED: Made 'moderators' optional in the extended interface.
+ * This prevents compilation errors in parent components that pass a standard
+ * 'GroupDetails' object which may not yet have this field populated from the API.
+ */
+interface ExtendedGroupDetails extends GroupDetails {
+    moderators?: (User | string)[];
+}
+
 interface GroupDetailsViewProps {
-  groupDetails: GroupDetails;
-  currentUser: User;
-  isRemovingMember: boolean;
-  onRemoveMember: (memberIdToRemove: string) => void;
-  searchQuery: string;
-  onSearchChange: (text: string) => void;
-  searchResults: User[] | undefined;
-  onInvite: (id: string) => void;
-  isInviting: boolean;
-  onDeleteGroup: () => void;
-  isDeletingGroup: boolean;
-  onLeaveGroup: () => void;
-  isLeavingGroup: boolean;
-  onEditSchedule?: () => void;
-  onAddOneOffEvent?: () => void;
+    groupDetails: ExtendedGroupDetails;
+    currentUser: User;
+    isRemovingMember: boolean;
+    onRemoveMember: (memberIdToRemove: string) => void;
+    searchQuery: string;
+    onSearchChange: (text: string) => void;
+    searchResults: User[] | undefined;
+    onInvite: (id: string) => void;
+    isInviting: boolean;
+    onDeleteGroup: () => void;
+    isDeletingGroup: boolean;
+    onLeaveGroup: () => void;
+    isLeavingGroup: boolean;
+    onEditSchedule?: () => void;
+    onAddOneOffEvent?: () => void;
 }
 
 export const GroupDetailsView = ({
-  groupDetails,
-  currentUser,
-  isRemovingMember,
-  onRemoveMember,
-  searchQuery,
-  onSearchChange,
-  searchResults,
-  onInvite,
-  isInviting,
-  onDeleteGroup,
-  isDeletingGroup,
-  onLeaveGroup,
-  isLeavingGroup,
-  onEditSchedule,
-  onAddOneOffEvent
+    groupDetails,
+    currentUser,
+    isRemovingMember,
+    onRemoveMember,
+    searchQuery,
+    onSearchChange,
+    searchResults,
+    onInvite,
+    isInviting,
+    onDeleteGroup,
+    isDeletingGroup,
+    onLeaveGroup,
+    isLeavingGroup,
+    onEditSchedule,
+    onAddOneOffEvent
 }: GroupDetailsViewProps) => {
-  const isOwner = currentUser._id === groupDetails.owner;
-  const api = useApiClient();
-  const queryClient = useQueryClient();
+    const isOwner = currentUser._id === groupDetails.owner;
+    
+    // Check if current user is a moderator
+    const isMod = groupDetails.moderators?.some((m: User | string) => 
+        typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id
+    ) ?? false;
 
-  // State for Default Capacity Modal
-  const [isCapModalVisible, setIsCapModalVisible] = useState(false);
-  const [newDefaultCapacity, setNewDefaultCapacity] = useState('');
-  const [isUpdatingCap, setIsUpdatingCap] = useState(false);
+    const canManage = isOwner || isMod;
 
-  const handleUpdateDefaultCapacity = async () => {
-    const capInt = parseInt(newDefaultCapacity);
-    if (isNaN(capInt) || capInt < 0 || capInt > 1000000) {
-        Alert.alert("Invalid Input", "Please enter a number between 0 and 1,000,000 (0 for unlimited).");
-        return;
-    }
+    const api = useApiClient();
+    const queryClient = useQueryClient();
 
-    setIsUpdatingCap(true);
-    try {
-        // We use the patch endpoint designed for schedule/settings updates
-        await api.patch(`/api/groups/${groupDetails._id}/schedule`, {
-            schedule: groupDetails.schedule,
-            time: groupDetails.time,
-            timezone: groupDetails.timezone,
-            defaultCapacity: capInt
-        });
-        
-        queryClient.invalidateQueries({ queryKey: ['groupDetails', groupDetails._id] });
-        setIsCapModalVisible(false);
-        setNewDefaultCapacity('');
-        Alert.alert("Success", "Default capacity updated. Future events will use this limit.");
-    } catch (error) {
-        Alert.alert("Error", "Failed to update default capacity.");
-    } finally {
-        setIsUpdatingCap(false);
-    }
-  };
+    // --- Moderator Management State ---
+    const [isModModalVisible, setIsModModalVisible] = useState(false);
+    const [selectedModIds, setSelectedModIds] = useState<string[]>([]);
+    const [isSavingMods, setIsSavingMods] = useState(false);
 
-  return (
-    <View style={{ paddingBottom: 100 }}>
-      {/* --- Schedule Section --- */}
-      {groupDetails.schedule && (
-        <View className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
-          <View className="flex-row justify-between items-center mb-2 px-1">
-            <Text className="text-sm font-bold text-gray-400 uppercase tracking-widest">Schedule & Capacity</Text>
+    // Sync internal modal state with group data when opening
+    useEffect(() => {
+        if (isModModalVisible) {
+            const currentModIds = (groupDetails.moderators || []).map((m: User | string) => 
+                typeof m === 'string' ? m : m._id
+            );
+            setSelectedModIds(currentModIds);
+        }
+    }, [isModModalVisible, groupDetails.moderators]);
+
+    const handleToggleModSelection = (userId: string) => {
+        setSelectedModIds(prev => 
+            prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+        );
+    };
+
+    const handleSaveModerators = async () => {
+        setIsSavingMods(true);
+        try {
+            await api.patch(`/api/groups/${groupDetails._id}/moderators`, { 
+                moderatorIds: selectedModIds 
+            });
+            queryClient.invalidateQueries({ queryKey: ['groupDetails', groupDetails._id] });
+            setIsModModalVisible(false);
+            Alert.alert("Success", "Moderator list updated.");
+        } catch (error: any) {
+            Alert.alert("Error", error.response?.data?.error || "Failed to update moderators.");
+        } finally {
+            setIsSavingMods(false);
+        }
+    };
+
+    return (
+        <View style={{ paddingBottom: 100 }}>
+            {/* Schedule & Capacity Card */}
+            {groupDetails.schedule && (
+                <View style={styles.card}>
+                    <View style={styles.cardHeader}>
+                        <Text style={styles.cardTitle}>Schedule & Capacity</Text>
+                        {canManage && (
+                            <View style={{ flexDirection: 'row' }}>
+                                <TouchableOpacity onPress={onAddOneOffEvent} style={styles.badgeBtnGreen}>
+                                    <Feather name="plus" size={12} color="#10B981" />
+                                    <Text style={styles.badgeBtnTextGreen}>Meeting</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={onEditSchedule} style={styles.badgeBtnBlue}>
+                                    <Feather name="edit-2" size={12} color="#4F46E5" />
+                                    <Text style={styles.badgeBtnTextBlue}>Edit</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                    </View>
+                    <View style={styles.infoRow}>
+                        <Feather name="calendar" size={18} color="#4F46E5" />
+                        <Text style={styles.infoText}>{formatSchedule(groupDetails.schedule)}</Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                        <Feather name="users" size={18} color="#4F46E5" />
+                        <Text style={styles.infoText}>Default Limit: {groupDetails.defaultCapacity === 0 ? "Unlimited" : groupDetails.defaultCapacity}</Text>
+                    </View>
+                </View>
+            )}
+
+            {/* Moderator Management Trigger (Owner Only) */}
             {isOwner && (
-                <View className="flex-row">
-                    {onAddOneOffEvent && (
-                        <TouchableOpacity 
-                            onPress={onAddOneOffEvent} 
-                            className="flex-row items-center bg-green-50 px-2 py-1 rounded-lg mr-2"
-                        >
-                            <Feather name="plus" size={12} color="#10B981" />
-                            <Text className="text-green-700 text-xs font-bold ml-1">Add Meeting</Text>
-                        </TouchableOpacity>
-                    )}
-                    {onEditSchedule && (
-                        <TouchableOpacity 
-                            onPress={onEditSchedule} 
-                            className="flex-row items-center bg-indigo-50 px-2 py-1 rounded-lg"
-                        >
-                            <Feather name="edit-2" size={12} color="#4F46E5" />
-                            <Text className="text-indigo-600 text-xs font-bold ml-1">Edit</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
+                <TouchableOpacity 
+                    onPress={() => setIsModModalVisible(true)}
+                    style={styles.manageModsBtn}
+                    activeOpacity={0.7}
+                >
+                    <View style={styles.manageModsIcon}>
+                        <Feather name="shield" size={18} color="white" />
+                    </View>
+                    <Text style={styles.manageModsText}>Manage Moderators</Text>
+                    <Feather name="chevron-right" size={20} color="#4F46E5" />
+                </TouchableOpacity>
             )}
-          </View>
-          <View className="flex-row items-center mb-3">
-            <View className="w-10 h-10 bg-indigo-50 rounded-full items-center justify-center mr-3">
-              <Feather name="calendar" size={20} color="#4F46E5" />
-            </View>
-            <Text className="text-base text-gray-800 font-semibold flex-1">
-              {formatSchedule(groupDetails.schedule)}
-            </Text>
-          </View>
-          <View className="flex-row items-center">
-            <View className="w-10 h-10 bg-indigo-50 rounded-full items-center justify-center mr-3">
-              <Feather name="users" size={20} color="#4F46E5" />
-            </View>
-            <Text className="text-base text-gray-800 font-semibold flex-1">
-              Default Limit: {groupDetails.defaultCapacity === 0 ? "Unlimited" : groupDetails.defaultCapacity}
-            </Text>
-          </View>
-        </View>
-      )}
 
-      {/* --- Members Section --- */}
-      <View className="mb-6">
-        <Text className="text-xl font-bold text-gray-800 mb-3 px-1">Members ({groupDetails.members.length})</Text>
-        {groupDetails.members.map(member => (
-          <View key={member._id} className="flex-row items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-gray-100 mb-2">
-            <View className="flex-row items-center">
-              <Image 
-                source={{ uri: member.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${member.firstName?.[0] || '?'}` }} 
-                className="w-12 h-12 rounded-full mr-3" 
-              />
-              <View>
-                <Text className="text-base font-bold text-gray-800">{member.firstName} {member.lastName}</Text>
-                <Text className="text-xs text-gray-500">@{member.username}</Text>
-              </View>
-            </View>
-            {isOwner && member._id !== currentUser._id && (
-              <TouchableOpacity onPress={() => onRemoveMember(member._id)} disabled={isRemovingMember} className="p-2">
-                <Feather name="x-circle" size={22} color="#EF4444" />
-              </TouchableOpacity>
-            )}
-          </View>
-        ))}
-      </View>
+            {/* Members Section */}
+            <View style={{ marginBottom: 24 }}>
+                <Text style={styles.sectionTitle}>Members ({groupDetails.members.length})</Text>
+                {groupDetails.members.map(member => {
+                    const isMemberOwner = member._id === groupDetails.owner;
+                    const isMemberMod = groupDetails.moderators?.some((m: User | string) => 
+                        typeof m === 'string' ? m === member._id : m._id === member._id
+                    );
+                    
+                    return (
+                        <View key={member._id} style={styles.memberCard}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                                <Image 
+                                    source={{ uri: member.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${member.username?.[0]}` }} 
+                                    style={styles.avatar} 
+                                />
+                                <View>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <Text style={styles.memberName}>{member.firstName} {member.lastName}</Text>
+                                        {isMemberOwner && <View style={styles.ownerBadge}><Text style={styles.badgeText}>Owner</Text></View>}
+                                        {isMemberMod && !isMemberOwner && <View style={styles.modBadge}><Text style={styles.modBadgeText}>Mod</Text></View>}
+                                    </View>
+                                    <Text style={styles.memberHandle}>@{member.username}</Text>
+                                </View>
+                            </View>
 
-      {/* --- Invite Section --- */}
-      {isOwner && (
-        <View className="mb-8">
-          <Text className="text-xl font-bold text-gray-800 mb-3 px-1">Invite Members</Text>
-          <View className="flex-row items-center bg-white border border-gray-200 rounded-2xl px-4 py-1 shadow-sm">
-            <Feather name="search" size={18} color="#9CA3AF" />
-            <TextInput
-              className="flex-1 p-3 text-base text-gray-900"
-              placeholder="Search by username..."
-              value={searchQuery}
-              onChangeText={onSearchChange}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-          {searchQuery.length > 0 && searchResults && (
-            <View className="mt-2 border border-gray-100 rounded-2xl bg-white overflow-hidden shadow-lg">
-              {searchResults.length > 0 ? (
-                searchResults.map(user => {
-                  const isJoined = groupDetails.members.some(m => m._id === user._id);
-                  return (
-                    <TouchableOpacity
-                      key={user._id}
-                      className="flex-row items-center justify-between p-4 border-b border-gray-50"
-                      onPress={() => onInvite(user._id)}
-                      disabled={isInviting || isJoined}
-                    >
-                      <View className="flex-row items-center">
-                        <Image 
-                          source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0] || '?'}` }} 
-                          className="w-8 h-8 rounded-full mr-3" 
+                            {/* Removal logic: Owners can remove anyone but self. Mods can remove standard members. */}
+                            {(isOwner && !isMemberOwner) || (isMod && !isMemberOwner && !isMemberMod) ? (
+                                <TouchableOpacity onPress={() => onRemoveMember(member._id)} disabled={isRemovingMember}>
+                                    <Feather name="x-circle" size={20} color="#EF4444" />
+                                </TouchableOpacity>
+                            ) : null}
+                        </View>
+                    );
+                })}
+            </View>
+
+            {/* Invite Section */}
+            {canManage && (
+                <View style={{ marginBottom: 32 }}>
+                    <Text style={styles.sectionTitle}>Invite Members</Text>
+                    <View style={styles.searchBox}>
+                        <Feather name="search" size={18} color="#9CA3AF" />
+                        <TextInput
+                            style={styles.searchInput}
+                            placeholder="Search by username..."
+                            value={searchQuery}
+                            onChangeText={onSearchChange}
+                            autoCapitalize="none"
                         />
-                        <Text className="text-base text-gray-700 font-medium">@{user.username}</Text>
-                      </View>
-                      {isJoined ? (
-                        <Text className="text-gray-400 font-bold italic">Joined</Text>
-                      ) : isInviting ? (
-                        <ActivityIndicator size="small" color="#4F46E5" />
-                      ) : (
-                        <Text className="text-indigo-600 font-bold">Invite</Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })
-              ) : (
-                <View className="p-4 items-center">
-                  <Text className="text-gray-500 italic">No users found.</Text>
+                    </View>
+                    {searchQuery.length > 0 && searchResults?.map(user => (
+                         <TouchableOpacity key={user._id} style={styles.searchResult} onPress={() => onInvite(user._id)}>
+                             <Text style={{ fontWeight: '600' }}>@{user.username}</Text>
+                             <Text style={{ color: '#4F46E5', fontWeight: 'bold' }}>Invite</Text>
+                         </TouchableOpacity>
+                    ))}
                 </View>
-              )}
-            </View>
-          )}
-        </View>
-      )}
+            )}
 
-      {/* --- Action Section --- */}
-      <View className="border-t border-gray-200 pt-6 mt-4">
-        {isOwner && (
-            <TouchableOpacity
-                onPress={() => {
-                    setNewDefaultCapacity(groupDetails.defaultCapacity.toString());
-                    setIsCapModalVisible(true);
-                }}
-                className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex-row items-center justify-center shadow-sm mb-3"
+            {/* Moderator Selection Modal */}
+            <Modal 
+                visible={isModModalVisible} 
+                animationType="slide" 
+                transparent={true}
+                onRequestClose={() => setIsModModalVisible(false)}
             >
-                <Feather name="settings" size={20} color="#4F46E5" />
-                <Text className="text-indigo-600 font-bold text-lg ml-2">Set Default Capacity</Text>
-            </TouchableOpacity>
-        )}
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContainer}>
+                        <View style={styles.modalHeader}>
+                            <TouchableOpacity onPress={() => setIsModModalVisible(false)} style={styles.headerIconButton}>
+                                <Feather name="x" size={24} color="#9CA3AF" />
+                            </TouchableOpacity>
+                            <Text style={styles.modalTitle}>Assign Moderators</Text>
+                            <TouchableOpacity onPress={handleSaveModerators} disabled={isSavingMods} style={styles.headerIconButton}>
+                                {isSavingMods ? (
+                                    <ActivityIndicator size="small" color="#4F46E5" />
+                                ) : (
+                                    <Text style={styles.saveBtnText}>Save</Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <Text style={styles.modalSubtitle}>Selected members will be able to manage schedules, meetings, and standard members.</Text>
 
-        {isOwner ? (
-          <TouchableOpacity
-            onPress={onDeleteGroup}
-            disabled={isDeletingGroup}
-            className="bg-red-50 border border-red-100 rounded-2xl p-4 flex-row items-center justify-center shadow-sm"
-          >
-            {isDeletingGroup ? <ActivityIndicator color="#EF4444" /> : (
-                <>
-                    <Feather name="trash-2" size={20} color="#EF4444" />
-                    <Text className="text-red-600 font-bold text-lg ml-2">Delete Group</Text>
-                </>
-            )}
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            onPress={onLeaveGroup}
-            disabled={isLeavingGroup}
-            className="bg-red-50 border border-red-100 rounded-2xl p-4 flex-row items-center justify-center shadow-sm"
-          >
-            {isLeavingGroup ? <ActivityIndicator color="#EF4444" /> : (
-                <>
-                    <Feather name="log-out" size={20} color="#EF4444" />
-                    <Text className="text-red-600 font-bold text-lg ml-2">Leave Group</Text>
-                </>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
+                        <ScrollView style={styles.memberList} showsVerticalScrollIndicator={false}>
+                            {groupDetails.members.filter(m => m._id !== groupDetails.owner).map(member => {
+                                const isSelected = selectedModIds.includes(member._id);
+                                return (
+                                    <TouchableOpacity 
+                                        key={member._id} 
+                                        style={[styles.selectMemberRow, isSelected && styles.selectMemberRowActive]}
+                                        onPress={() => handleToggleModSelection(member._id)}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Image 
+                                            source={{ uri: member.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${member.username?.[0]}` }} 
+                                            style={styles.avatarSmall} 
+                                        />
+                                        <View style={{ flex: 1, marginLeft: 12 }}>
+                                            <Text style={[styles.selectMemberName, isSelected && styles.textWhite]}>{member.firstName} {member.lastName}</Text>
+                                            <Text style={[styles.selectMemberHandle, isSelected && styles.textWhite70]}>@{member.username}</Text>
+                                        </View>
+                                        <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
+                                            {isSelected && <Feather name="check" size={14} color="white" />}
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                            {groupDetails.members.length <= 1 && (
+                                <Text style={{ textAlign: 'center', color: '#9CA3AF', marginTop: 40 }}>No other members to assign.</Text>
+                            )}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
 
-      {/* Capacity Update Modal */}
-      <Modal transparent visible={isCapModalVisible} animationType="fade">
-          <View className="flex-1 bg-black/60 justify-center items-center p-6">
-              <View className="bg-white w-full rounded-3xl overflow-hidden shadow-2xl">
-                  <View className="bg-indigo-600 p-6">
-                      <Text className="text-white text-xl font-black text-center">Group Default Capacity</Text>
-                      <Text className="text-indigo-100 text-center text-xs mt-1">This limit will apply to all future recurring events.</Text>
-                  </View>
-                  <View className="p-6">
-                      <TextInput
-                          className="bg-gray-100 p-4 rounded-xl text-center text-2xl font-black text-gray-800"
-                          keyboardType="numeric"
-                          placeholder="0 = Unlimited"
-                          value={newDefaultCapacity}
-                          onChangeText={setNewDefaultCapacity}
-                          autoFocus
-                      />
-                      <View className="flex-row space-x-3 mt-6">
-                          <TouchableOpacity 
-                              onPress={() => setIsCapModalVisible(false)}
-                              className="flex-1 bg-gray-200 py-4 rounded-xl items-center"
-                          >
-                              <Text className="text-gray-600 font-bold">Cancel</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity 
-                              onPress={handleUpdateDefaultCapacity}
-                              disabled={isUpdatingCap}
-                              className="flex-1 bg-indigo-600 py-4 rounded-xl items-center"
-                          >
-                              {isUpdatingCap ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold">Save</Text>}
-                          </TouchableOpacity>
-                      </View>
-                  </View>
-              </View>
-          </View>
-      </Modal>
-    </View>
-  );
+            {/* Admin Actions Footer */}
+            <View style={{ borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 24 }}>
+                {isOwner ? (
+                    <TouchableOpacity onPress={onDeleteGroup} style={[styles.actionBtn, styles.deleteBtn]}>
+                        <Feather name="trash-2" size={20} color="#EF4444" />
+                        <Text style={styles.deleteBtnText}>Delete Group</Text>
+                    </TouchableOpacity>
+                ) : (
+                    <TouchableOpacity onPress={onLeaveGroup} style={[styles.actionBtn, styles.deleteBtn]}>
+                        <Feather name="log-out" size={20} color="#EF4444" />
+                        <Text style={styles.deleteBtnText}>Leave Group</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
+        </View>
+    );
 };
+
+const styles = StyleSheet.create({
+    card: { backgroundColor: 'white', padding: 20, borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, marginBottom: 24 },
+    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    cardTitle: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
+    infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+    infoText: { marginLeft: 12, fontSize: 16, fontWeight: '600', color: '#374151' },
+    badgeBtnGreen: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, marginRight: 8 },
+    badgeBtnTextGreen: { color: '#10B981', fontSize: 10, fontWeight: 'bold', marginLeft: 4 },
+    badgeBtnBlue: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF2FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+    badgeBtnTextBlue: { color: '#4F46E5', fontSize: 10, fontWeight: 'bold', marginLeft: 4 },
+    
+    manageModsBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 16, borderRadius: 20, marginBottom: 32, borderWidth: 1, borderColor: '#EEF2FF', shadowColor: '#4F46E5', shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
+    manageModsIcon: { backgroundColor: '#4F46E5', width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    manageModsText: { flex: 1, marginLeft: 12, fontSize: 16, fontWeight: 'bold', color: '#1F2937' },
+    
+    sectionTitle: { fontSize: 20, fontWeight: '900', color: '#111827', marginBottom: 16 },
+    memberCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+    avatar: { width: 44, height: 44, borderRadius: 14, marginRight: 12, backgroundColor: '#F3F4F6' },
+    memberName: { fontSize: 16, fontWeight: '800', color: '#374151' },
+    memberHandle: { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
+    ownerBadge: { backgroundColor: '#F5F3FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 6 },
+    badgeText: { fontSize: 8, fontWeight: 'bold', color: '#7C3AED', textTransform: 'uppercase' },
+    modBadge: { backgroundColor: '#EFF6FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 6 },
+    modBadgeText: { fontSize: 8, fontWeight: 'bold', color: '#2563EB', textTransform: 'uppercase' },
+    
+    searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14, paddingHorizontal: 12, height: 50 },
+    searchInput: { flex: 1, marginLeft: 10, fontSize: 15 },
+    searchResult: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+    
+    actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F7FF', padding: 16, borderRadius: 16, marginBottom: 12 },
+    deleteBtn: { backgroundColor: '#FEF2F2' },
+    deleteBtnText: { marginLeft: 10, color: '#EF4444', fontWeight: 'bold', fontSize: 16 },
+    
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalContainer: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, height: SCREEN_HEIGHT * 0.8, padding: 24, paddingBottom: 40 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+    headerIconButton: { padding: 4 },
+    modalTitle: { fontSize: 20, fontWeight: '900', color: '#111827' },
+    modalSubtitle: { fontSize: 13, color: '#6B7280', marginBottom: 24, lineHeight: 18, textAlign: 'center' },
+    saveBtnText: { color: '#4F46E5', fontWeight: '900', fontSize: 16 },
+    memberList: { flex: 1 },
+    selectMemberRow: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 18, marginBottom: 10, backgroundColor: '#F9FAFB' },
+    selectMemberRowActive: { backgroundColor: '#4F46E5' },
+    avatarSmall: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#E5E7EB' },
+    selectMemberName: { fontSize: 16, fontWeight: 'bold', color: '#374151' },
+    selectMemberHandle: { fontSize: 12, color: '#9CA3AF' },
+    textWhite: { color: 'white' },
+    textWhite70: { color: 'rgba(255,255,255,0.7)' },
+    checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
+    checkboxActive: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: 'white' },
+});

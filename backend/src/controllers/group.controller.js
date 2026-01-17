@@ -9,7 +9,19 @@ import { calculateNextEventDate } from "../utils/date.utils.js";
 import { ENV } from "../config/env.js";
 import { syncStreamUser } from "../utils/stream.js";
 
-// --- Helper to determine what to iterate over ---
+// --- Helpers ---
+
+/**
+ * HELPER: canManageGroup
+ * Checks if the user is the primary owner or in the moderator list.
+ */
+const canManageGroup = (userId, group) => {
+    if (!userId || !group) return false;
+    const isOwner = group.owner.toString() === userId.toString();
+    const isMod = group.moderators?.some(id => id.toString() === userId.toString());
+    return isOwner || isMod;
+};
+
 const getScheduleItems = (schedule) => {
     if (schedule.frequency === 'daily') return [0]; 
     if (schedule.frequency === 'custom') return schedule.rules || [];
@@ -18,143 +30,19 @@ const getScheduleItems = (schedule) => {
 };
 
 /**
- * @desc    Update group schedule, meeting time, and timezone.
- * Automatically deletes future standard recurring events and
- * regenerates new ones based on the updated logic.
- * @route   PATCH /api/groups/:groupId/schedule
- * @access  Private (Owner Only)
+ * @desc    Create a new group
+ * @route   POST /api/groups/create
  */
-export const updateGroupSchedule = asyncHandler(async (req, res) => {
-    const { groupId } = req.params;
-    // EXTRACT defaultCapacity from body
-    const { schedule, time, timezone, defaultCapacity } = req.body;
-    const { userId: clerkId } = getAuth(req);
-
-    const group = await Group.findById(groupId);
-    const user = await User.findOne({ clerkId });
-
-    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
-
-    if (group.owner.toString() !== user._id.toString()) {
-        return res.status(403).json({ error: "Only the owner can update settings." });
-    }
-
-    // 1. Update Group settings
-    if (schedule) group.schedule = schedule;
-    if (time) group.time = time;
-    if (timezone) group.timezone = timezone;
-    
-    // SAVE the defaultCapacity to the group model
-    if (defaultCapacity !== undefined) {
-        group.defaultCapacity = Number(defaultCapacity);
-    }
-    
-    await group.save();
-
-    // 2. Clear future standard events to apply new capacity immediately
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    
-    await Event.deleteMany({ 
-        group: group._id, 
-        isOverride: false, 
-        date: { $gte: today } 
-    });
-
-    // 3. Regenerate events with the NEW capacity
-    try {
-        const limit = group.eventsToDisplay || 3;
-        // Helper to get days/items to iterate over
-        const items = group.schedule.frequency === 'daily' ? [0] : (group.schedule.days || []);
-        let potentialEvents = [];
-
-        for (const item of items) {
-            let lastGeneratedDate = null;
-            for (let i = 0; i < limit; i++) {
-                const nextEventDate = calculateNextEventDate(
-                    item, 
-                    group.time, 
-                    group.timezone, 
-                    group.schedule.frequency,
-                    lastGeneratedDate
-                );
-                potentialEvents.push(nextEventDate);
-                lastGeneratedDate = nextEventDate;
-            }
-        }
-
-        potentialEvents.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-        const finalDates = potentialEvents.slice(0, limit);
-
-        for (const date of finalDates) {
-            await Event.create({
-                group: group._id, 
-                name: group.name, 
-                date: date, 
-                time: group.time,
-                timezone: group.timezone,
-                members: group.members, 
-                undecided: group.members,
-                // APPLY the new default capacity to the event
-                capacity: group.defaultCapacity 
-            });
-        }
-    } catch (eventError) {
-        console.error("Regeneration Error:", eventError);
-    }
-
-    res.status(200).json({ message: "Settings updated.", group });
-});
-
-export const inviteUser = asyncHandler(async (req, res) => {
-    const { userId: clerkId } = getAuth(req);
-    const { groupId } = req.params;
-    const { userIdToInvite } = req.body;
-
-    const requester = await User.findOne({ clerkId }).lean();
-    const group = await Group.findById(groupId);
-    const userToInvite = await User.findById(userIdToInvite);
-
-    if (!requester || !group || !userToInvite) return res.status(404).json({ error: "Resource not found." });
-
-    if (group.owner.toString() !== requester._id.toString()) {
-        return res.status(403).json({ error: "Only the group owner can send invitations." });
-    }
-    
-    if (group.members.includes(userToInvite._id)) {
-        return res.status(400).json({ error: "User is already a member of this group." });
-    }
-
-    const existingInvite = await Notification.findOne({
-        recipient: userToInvite._id,
-        group: group._id,
-        type: 'group-invite',
-        status: 'pending',
-    });
-    if (existingInvite) {
-        return res.status(400).json({ error: "This user already has a pending invitation to this group." });
-    }
-
-    await Notification.create({
-        recipient: userToInvite._id,
-        sender: requester._id,
-        type: 'group-invite',
-        group: group._id,
-    });
-
-    res.status(200).json({ message: "Invitation sent successfully." });
-});
-
 export const createGroup = asyncHandler(async (req, res) => {
-  const { userId } = getAuth(req);
-  const { name, time, schedule, timezone, eventsToDisplay, members } = req.body;
+  const { userId: clerkId } = getAuth(req);
+  const { name, time, schedule, timezone, eventsToDisplay, members, defaultCapacity } = req.body;
   
   if (!name || !time || !schedule || !timezone) {
     return res.status(400).json({ error: "All details required." });
   }
 
-  const limit = eventsToDisplay ? parseInt(eventsToDisplay) : 1;
-  const owner = await User.findOne({ clerkId: userId });
+  const limit = eventsToDisplay ? parseInt(eventsToDisplay) : 3;
+  const owner = await User.findOne({ clerkId });
   if (!owner) return res.status(404).json({ error: "User not found." });
   
   let initialMemberIds = [owner._id.toString()];
@@ -164,10 +52,15 @@ export const createGroup = asyncHandler(async (req, res) => {
   const uniqueMemberIds = [...new Set(initialMemberIds)];
 
   const groupData = { 
-      name, time, schedule, timezone, 
+      name, 
+      time, 
+      schedule, 
+      timezone, 
       eventsToDisplay: limit, 
       owner: owner._id, 
-      members: uniqueMemberIds 
+      members: uniqueMemberIds,
+      defaultCapacity: defaultCapacity || 0,
+      moderators: [] // Initialize empty moderators list
   };
   
   const newGroup = await Group.create(groupData);
@@ -203,7 +96,6 @@ export const createGroup = asyncHandler(async (req, res) => {
 
     for (const item of itemsToIterate) {
         let lastGeneratedDate = null;
-        // For 'once', the limit is always 1
         const generationLimit = newGroup.schedule.frequency === 'once' ? 1 : limit;
 
         for (let i = 0; i < generationLimit; i++) {
@@ -231,10 +123,11 @@ export const createGroup = asyncHandler(async (req, res) => {
             timezone: newGroup.timezone,
             members: uniqueMemberIds, 
             undecided: uniqueMemberIds,
+            capacity: newGroup.defaultCapacity
         });
     }
   } catch (eventError) {
-    console.error("Failed to create events:", eventError);
+    console.error("Failed to create initial events:", eventError);
   }
 
   await Promise.all(uniqueMemberIds.map(id => syncStreamUser({ _id: id })));
@@ -242,48 +135,80 @@ export const createGroup = asyncHandler(async (req, res) => {
   res.status(201).json({ group: newGroup, message: "Created successfully." });
 });
 
+/**
+ * @desc    Update group basic info (Owner or Moderator)
+ * @route   PUT /api/groups/:groupId
+ */
 export const updateGroup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
-    const { name, time, schedule, timezone, eventsToDisplay } = req.body;
+    const { name, eventsToDisplay } = req.body;
     
-    if ((name && name.trim() === '') || !time || !schedule || !timezone) {
-        return res.status(400).json({ error: "Required fields missing." });
-    }
-    
-    const limit = eventsToDisplay ? parseInt(eventsToDisplay) : 1;
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
     
-    if (group.owner.toString() !== requester._id.toString()) {
-        return res.status(403).json({ error: "Only the group owner can edit the group." });
+    // Permission check: Owner or Moderator
+    if (!canManageGroup(requester._id, group)) {
+        return res.status(403).json({ error: "Permission denied." });
     }
     
     if (name) group.name = name;
-    group.time = time;
-    group.schedule = schedule;
-    group.timezone = timezone;
-    group.eventsToDisplay = limit;
+    if (eventsToDisplay) group.eventsToDisplay = parseInt(eventsToDisplay);
     
     const updatedGroup = await group.save();
+    res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
+});
+
+/**
+ * @desc    Update group schedule and capacity (Owner or Moderator)
+ * @route   PATCH /api/groups/:groupId/schedule
+ */
+export const updateGroupSchedule = asyncHandler(async (req, res) => {
+    const { groupId } = req.params;
+    const { schedule, time, timezone, defaultCapacity } = req.body;
+    const { userId: clerkId } = getAuth(req);
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+
+    // Permission check: Owner or Moderator
+    if (!canManageGroup(user._id, group)) {
+        return res.status(403).json({ error: "Permission denied." });
+    }
+
+    if (schedule) group.schedule = schedule;
+    if (time) group.time = time;
+    if (timezone) group.timezone = timezone;
+    if (defaultCapacity !== undefined) group.defaultCapacity = Number(defaultCapacity);
     
+    await group.save();
+
+    // Clear and regenerate future standard events
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    
+    await Event.deleteMany({ 
+        group: group._id, 
+        isOverride: false, 
+        date: { $gte: today } 
+    });
+
     try {
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
-        await Event.deleteMany({ group: group._id, isOverride: false, date: { $gte: today } });
-        
-        const itemsToIterate = getScheduleItems(updatedGroup.schedule);
+        const limit = group.eventsToDisplay || 3;
+        const items = getScheduleItems(group.schedule);
         let potentialEvents = [];
 
-        for (const item of itemsToIterate) {
+        for (const item of items) {
             let lastGeneratedDate = null;
             for (let i = 0; i < limit; i++) {
                 const nextEventDate = calculateNextEventDate(
                     item, 
-                    updatedGroup.time, 
-                    updatedGroup.timezone, 
-                    updatedGroup.schedule.frequency,
+                    group.time, 
+                    group.timezone, 
+                    group.schedule.frequency,
                     lastGeneratedDate
                 );
                 potentialEvents.push(nextEventDate);
@@ -291,28 +216,109 @@ export const updateGroup = asyncHandler(async (req, res) => {
             }
         }
 
-        potentialEvents.sort((a, b) => new Date(a) - new Date(b));
-        const finalEvents = potentialEvents.slice(0, limit);
+        potentialEvents.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+        const finalDates = potentialEvents.slice(0, limit);
 
-        for (const date of finalEvents) {
+        for (const date of finalDates) {
             await Event.create({
-                group: updatedGroup._id, 
-                name: updatedGroup.name, 
+                group: group._id, 
+                name: group.name, 
                 date: date, 
-                time: updatedGroup.time,
-                timezone: updatedGroup.timezone, 
-                members: updatedGroup.members, 
-                undecided: updatedGroup.members,
+                time: group.time,
+                timezone: group.timezone,
+                members: group.members, 
+                undecided: group.members,
+                capacity: group.defaultCapacity 
             });
         }
     } catch (eventError) {
-        console.error("Failed to regenerate events:", eventError);
+        console.error("Regeneration Error:", eventError);
     }
-    res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
+
+    res.status(200).json({ message: "Schedule updated.", group });
 });
 
+/**
+ * @desc    Set the entire list of moderators (Owner Only)
+ * @route   PATCH /api/groups/:groupId/moderators
+ * This replaces the array with the newly selected list from the UI.
+ */
+export const updateModerators = asyncHandler(async (req, res) => {
+    const { groupId } = req.params;
+    const { moderatorIds } = req.body; // Array of user IDs
+    const { userId: clerkId } = getAuth(req);
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+
+    if (!group || !user) return res.status(404).json({ error: "Group not found." });
+
+    // Only the primary owner can perform this bulk update
+    if (group.owner.toString() !== user._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can manage the moderator list." });
+    }
+
+    // Ensure we don't include the owner in the moderator list (they are super-admin by default)
+    // and ensure all IDs are valid members.
+    const validModeratorIds = moderatorIds.filter(id => 
+        id !== group.owner.toString() && 
+        group.members.some(m => m.toString() === id)
+    );
+
+    group.moderators = validModeratorIds;
+    await group.save();
+
+    res.status(200).json({ 
+        message: "Moderator list updated successfully.", 
+        group 
+    });
+});
+
+/**
+ * @desc    Toggle Moderator status for a member (Owner Only)
+ * @route   PATCH /api/groups/:groupId/moderator
+ */
+export const toggleModerator = asyncHandler(async (req, res) => {
+    const { groupId } = req.params;
+    const { userIdToToggle } = req.body;
+    const { userId: clerkId } = getAuth(req);
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+
+    if (!group || !user) return res.status(404).json({ error: "Not found." });
+
+    // Only the primary owner can manage moderators
+    if (group.owner.toString() !== user._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can manage moderators." });
+    }
+
+    if (group.owner.toString() === userIdToToggle) {
+        return res.status(400).json({ error: "The owner cannot be demoted." });
+    }
+
+    const isCurrentlyMod = group.moderators.some(id => id.toString() === userIdToToggle);
+
+    if (isCurrentlyMod) {
+        group.moderators = group.moderators.filter(id => id.toString() !== userIdToToggle);
+    } else {
+        group.moderators.push(userIdToToggle);
+    }
+
+    await group.save();
+    res.status(200).json({ 
+        message: isCurrentlyMod ? "Moderator permissions removed." : "Member promoted to Moderator.",
+        group 
+    });
+});
+
+/**
+ * @desc    Get all groups for the current user with Stream hydration
+ * @route   GET /api/groups
+ */
 export const getGroups = asyncHandler(async (req, res) => {
-    const user = await User.findOne({ clerkId: req.auth.userId }).lean();
+    const { userId: clerkId } = getAuth(req);
+    const user = await User.findOne({ clerkId }).lean();
     if (!user) return res.status(404).json({ error: "User not found." });
 
     const groups = await Group.find({ members: user._id }).lean();
@@ -334,7 +340,8 @@ export const getGroups = asyncHandler(async (req, res) => {
     const lastMessageMap = new Map();
     channels.forEach(channel => {
         if (channel.state.messages.length > 0) {
-        const lastMsg = channel.state.messages[channel.state.messages.length - 1];            lastMessageMap.set(channel.cid.split(':')[1], {
+            const lastMsg = channel.state.messages[channel.state.messages.length - 1];
+            lastMessageMap.set(channel.cid.split(':')[1], {
                 text: lastMsg.text,
                 user: { name: lastMsg.user.name || lastMsg.user.id }
             });
@@ -349,145 +356,244 @@ export const getGroups = asyncHandler(async (req, res) => {
     res.status(200).json(hydratedGroups);
 });
 
+/**
+ * @desc    Get group details
+ * @route   GET /api/groups/:groupId
+ */
 export const getGroupDetails = asyncHandler(async (req, res) => {
-  const { groupId } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid Group ID format." });
-  const group = await Group.findById(groupId).populate({ path: "members", select: "firstName lastName _id profilePicture username" }).lean();
-  if (!group) return res.status(404).json({ error: "Group not found." });
-  res.status(200).json(group);
+    const { groupId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid Group ID format." });
+    
+    const group = await Group.findById(groupId)
+        .populate("members", "firstName lastName _id profilePicture username")
+        .populate("moderators", "firstName lastName username profilePicture _id")
+        .lean();
+        
+    if (!group) return res.status(404).json({ error: "Group not found." });
+    res.status(200).json(group);
 });
 
+/**
+ * @desc    Directly add a member (Owner or Moderator)
+ * @route   POST /api/groups/:groupId/add-member
+ */
 export const addMember = asyncHandler(async (req, res) => {
   const { userId: requesterClerkId } = getAuth(req);
   const { groupId } = req.params;
   const { userId: userIdToAdd } = req.body;
+  
   const sanitizedUserId = String(userIdToAdd || '').replace(/[^a-f0-9]/gi, '');
   if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(sanitizedUserId)) {
     return res.status(400).json({ error: "Invalid ID format provided." });
   }
+
   const group = await Group.findById(groupId);
   const requester = await User.findOne({ clerkId: requesterClerkId });
   const userToAdd = await User.findById(sanitizedUserId);
+
   if (!group || !requester || !userToAdd) return res.status(404).json({ error: "Resource not found." });
-  if (group.owner.toString() !== requester._id.toString()) {
-    return res.status(403).json({ error: "Only the group owner can add new members." });
+  
+  // Permission check: Owner or Moderator
+  if (!canManageGroup(requester._id, group)) {
+    return res.status(403).json({ error: "Permission denied." });
   }
+
   if (group.members.includes(userToAdd._id)) {
-    return res.status(409).json({ message: "User is already a member of this group." });
+    return res.status(409).json({ message: "User is already a member." });
   }
+
   await group.updateOne({ $addToSet: { members: userToAdd._id } });
   await userToAdd.updateOne({ $addToSet: { groups: group._id } });
+
   try {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    await Event.updateMany({ group: group._id, date: { $gte: today } }, { $addToSet: { members: userToAdd._id, undecided: userToAdd._id } });
+    await Event.updateMany(
+        { group: group._id, date: { $gte: today } }, 
+        { $addToSet: { members: userToAdd._id, undecided: userToAdd._id } }
+    );
   } catch (eventError) {
-    console.error("Could not update upcoming events with new member:", eventError);
+    console.error("Event update error:", eventError);
   }
+  
   await syncStreamUser(userToAdd);
-
-  res.status(200).json({ message: "User added to group successfully." });
+  res.status(200).json({ message: "User added successfully." });
 });
 
-export const deleteGroup = asyncHandler(async (req, res) => {
-  const { userId: clerkId } = getAuth(req);
-  const { groupId } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid Group ID." });
-  const group = await Group.findById(groupId);
-  const requester = await User.findOne({ clerkId }).lean();
-  if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
-  if (group.owner.toString() !== requester._id.toString()) {
-      return res.status(403).json({ error: "Only the group owner can delete the group." });
-  }
-  await Event.deleteMany({ group: groupId });
-  await User.updateMany({ _id: { $in: group.members } }, { $pull: { groups: groupId } });
-  await Group.findByIdAndDelete(groupId);
-  res.status(200).json({ message: "Group and all associated events have been deleted." });
-});
-
-export const leaveGroup = asyncHandler(async (req, res) => {
+/**
+ * @desc    Invite User (Owner or Moderator)
+ * @route   POST /api/groups/:groupId/invite
+ */
+export const inviteUser = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(groupId)) {
-        return res.status(400).json({ error: "Invalid Group ID." });
-    }
+    const { userIdToInvite } = req.body;
+
+    const requester = await User.findOne({ clerkId }).lean();
     const group = await Group.findById(groupId);
-    const user = await User.findOne({ clerkId }).lean();
-    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
-    if (group.owner.toString() === user._id.toString()) {
-        return res.status(403).json({ error: "Owner cannot leave the group. Please delete the group instead." });
+    const userToInvite = await User.findById(userIdToInvite);
+
+    if (!requester || !group || !userToInvite) return res.status(404).json({ error: "Resource not found." });
+
+    // Permission check: Owner or Moderator
+    if (!canManageGroup(requester._id, group)) {
+        return res.status(403).json({ error: "Permission denied." });
     }
-    await group.updateOne({ $pull: { members: user._id } });
-    await User.updateOne({ _id: user._id }, { $pull: { groups: group._id } });
-    await Event.updateMany(
-        { group: group._id, date: { $gte: new Date() } },
-        { $pull: { members: user._id, in: user._id, out: user._id, undecided: user._id } }
-    );
-    res.status(200).json({ message: "You have successfully left the group." });
+    
+    if (group.members.includes(userToInvite._id)) {
+        return res.status(400).json({ error: "User is already a member." });
+    }
+
+    const existingInvite = await Notification.findOne({
+        recipient: userToInvite._id,
+        group: group._id,
+        type: 'group-invite',
+        status: 'pending',
+    });
+    if (existingInvite) return res.status(400).json({ error: "Invite already pending." });
+
+    await Notification.create({
+        recipient: userToInvite._id,
+        sender: requester._id,
+        type: 'group-invite',
+        group: group._id,
+    });
+
+    res.status(200).json({ message: "Invitation sent." });
 });
 
+/**
+ * @desc    Remove Member (Owner or Moderator)
+ * @route   POST /api/groups/:groupId/remove-member
+ */
 export const removeMember = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
     const { memberIdToRemove } = req.body;
-    if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(memberIdToRemove)) {
-        return res.status(400).json({ error: "Invalid ID format provided." });
-    }
+
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
     const memberToRemove = await User.findById(memberIdToRemove);
+
     if (!group || !requester || !memberToRemove) return res.status(404).json({ error: "Resource not found." });
-    if (group.owner.toString() !== requester._id.toString()) {
-        return res.status(403).json({ error: "Only the group owner can remove members." });
+
+    // Permission check: Owner or Moderator
+    if (!canManageGroup(requester._id, group)) {
+        return res.status(403).json({ error: "Permission denied." });
     }
-    if (group.owner.toString() === memberToRemove._id.toString()) {
-        return res.status(400).json({ error: "Owner cannot be removed from their own group." });
+
+    // SECURITY RULES
+    const isTargetOwner = group.owner.toString() === memberIdToRemove;
+    const isTargetMod = group.moderators.some(id => id.toString() === memberIdToRemove);
+    const isRequesterOwner = group.owner.toString() === requester._id.toString();
+
+    if (isTargetOwner) return res.status(400).json({ error: "Cannot remove the owner." });
+    
+    // Moderators can remove standard members, but NOT the owner or other moderators
+    if (isTargetMod && !isRequesterOwner) {
+        return res.status(403).json({ error: "Moderators cannot remove other moderators." });
     }
-    await group.updateOne({ $pull: { members: memberToRemove._id } });
+
+    await group.updateOne({ $pull: { members: memberToRemove._id, moderators: memberToRemove._id } });
     await memberToRemove.updateOne({ $pull: { groups: group._id } });
+
     await Event.updateMany(
         { group: group._id, date: { $gte: new Date() } },
-        { $pull: { members: memberToRemove._id, in: memberToRemove._id, out: memberToRemove._id, undecided: memberToRemove._id } }
+        { $pull: { members: memberToRemove._id, in: memberToRemove._id, out: memberToRemove._id, undecided: memberToRemove._id, waitlist: memberToRemove._id } }
     );
-    res.status(200).json({ message: "Member successfully removed from the group." });
+
+    res.status(200).json({ message: "Member successfully removed." });
 });
 
+/**
+ * @desc    Create a one-off event (Owner or Moderator)
+ * @route   POST /api/groups/:groupId/events
+ */
 export const createOneOffEvent = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
-    const { date, time, timezone } = req.body;
-
-    if (!date || !time || !timezone) {
-        return res.status(400).json({ error: "Date, time, and timezone are required." });
-    }
+    const { date, time, timezone, capacity, name } = req.body;
 
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
 
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
 
-    if (group.owner.toString() !== requester._id.toString()) {
-        return res.status(403).json({ error: "Only the group owner can schedule events." });
+    // Permission check: Owner or Moderator
+    if (!canManageGroup(requester._id, group)) {
+        return res.status(403).json({ error: "Permission denied." });
     }
 
-    // FIXED: Now calls the utility instead of doing inline new Date() calculation
     const eventDate = calculateNextEventDate(date, time, timezone, 'once');
 
-    // Validation
     if (eventDate < new Date()) {
          return res.status(400).json({ error: "Cannot schedule an event in the past." });
     }
 
     const newEvent = await Event.create({
         group: group._id,
-        name: group.name,
-        date: eventDate, // Now uses the date returned by the utility
+        name: name || group.name,
+        date: eventDate,
         time: time,
         timezone: timezone,
         members: group.members,
         undecided: group.members,
+        capacity: capacity !== undefined ? capacity : group.defaultCapacity,
         isOverride: true,
     });
 
     res.status(201).json({ event: newEvent, message: "One-off event scheduled successfully." });
+});
+
+/**
+ * @desc    Leave Group
+ * @route   POST /api/groups/:groupId/leave
+ */
+export const leaveGroup = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId }).lean();
+
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    
+    if (group.owner.toString() === user._id.toString()) {
+        return res.status(403).json({ error: "Owner cannot leave. Please delete the group or transfer ownership." });
+    }
+
+    await group.updateOne({ $pull: { members: user._id, moderators: user._id } });
+    await User.updateOne({ _id: user._id }, { $pull: { groups: group._id } });
+
+    await Event.updateMany(
+        { group: group._id, date: { $gte: new Date() } },
+        { $pull: { members: user._id, in: user._id, out: user._id, undecided: user._id, waitlist: user._id } }
+    );
+
+    res.status(200).json({ message: "You have left the group." });
+});
+
+/**
+ * @desc    Delete Group (Owner Only)
+ * @route   DELETE /api/groups/:groupId
+ */
+export const deleteGroup = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+
+    const group = await Group.findById(groupId);
+    const requester = await User.findOne({ clerkId }).lean();
+
+    if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
+    
+    if (group.owner.toString() !== requester._id.toString()) {
+        return res.status(403).json({ error: "Only the owner can delete the group." });
+    }
+
+    await Event.deleteMany({ group: groupId });
+    await Notification.deleteMany({ group: groupId });
+    await User.updateMany({ _id: { $in: group.members } }, { $pull: { groups: groupId } });
+    await Group.findByIdAndDelete(groupId);
+
+    res.status(200).json({ message: "Group and all data deleted." });
 });

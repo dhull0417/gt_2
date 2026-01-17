@@ -10,7 +10,8 @@ import {
   removeMember, 
   createOneOffEvent, 
   inviteUser, 
-  updateGroupSchedule
+  updateGroupSchedule,
+  toggleModerator
 } from "../controllers/group.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
@@ -22,6 +23,9 @@ router.post("/create", protectRoute, createGroup);
 router.get("/:groupId", protectRoute, getGroupDetails);
 router.put("/:groupId", protectRoute, updateGroup);
 router.delete("/:groupId", protectRoute, deleteGroup);
+
+// --- Moderator Assignment ---
+router.patch("/:groupId/moderator", protectRoute, toggleModerator);
 
 // --- Schedule & Events ---
 // This route handles recurring schedule updates and automatic event regeneration
