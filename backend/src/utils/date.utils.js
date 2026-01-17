@@ -2,33 +2,41 @@ import { DateTime } from "luxon";
 
 /**
  * Calculates the next event date based on a schedule rule.
- * Chaining logic included for replenishment.
+ * TROUBLESHOOTING STEP 1: Entrance Logging
  */
 export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fromDate = null) => {
+  // Log every call to see exactly what strings are being received
+  console.log(`[DEBUG] Utility Called: frequency="${frequency}", time="${time}", timezone="${timezone}"`);
+  console.log(`[DEBUG] dayOrRule:`, dayOrRule);
+
   // 1. Parse common time components
-  const [timeStr, period] = time.split(' ');
+  if (!time || typeof time !== 'string') {
+    console.log(`[DEBUG] Error: 'time' is missing or not a string`);
+    return new Date();
+  }
+
+  const parts = time.split(' ');
+  const [timeStr, period] = parts;
   let [hours, minutes] = timeStr.split(':').map(Number);
   
-  if (period.toUpperCase() === 'PM' && hours !== 12) hours += 12;
-  if (period.toUpperCase() === 'AM' && hours === 12) hours = 0;
+  if (period && period.toUpperCase() === 'PM' && hours !== 12) hours += 12;
+  if (period && period.toUpperCase() === 'AM' && hours === 12) hours = 0;
 
-  // --- A. ONE-OFF EVENTS (Troubleshooting Step 1) ---
-  if (frequency === 'once') {
-    // Troubleshooting: Log exactly what is being received and how Luxon sees it
-    const dtInitial = DateTime.fromISO(dayOrRule, { zone: timezone });
-    const dtFinal = dtInitial.set({ 
+  // --- A. ONE-OFF EVENTS ---
+  // Using .toLowerCase() and .trim() to ensure string comparison doesn't fail on hidden characters
+  if (frequency && frequency.toString().trim().toLowerCase() === 'once') {
+    console.log(`[DEBUG] Entered 'once' block`);
+    
+    // dayOrRule contains the ISO date string (e.g. "2026-01-17")
+    const dtFinal = DateTime.fromISO(dayOrRule, { zone: timezone }).set({ 
         hour: hours, 
         minute: minutes, 
         second: 0, 
         millisecond: 0 
     });
 
-    console.log(`[DEBUG] frequency: 'once'`);
-    console.log(`[DEBUG] Input date string: "${dayOrRule}"`);
-    console.log(`[DEBUG] Target Timezone: "${timezone}"`);
-    console.log(`[DEBUG] Parsed Time: ${hours}:${minutes}`);
-    console.log(`[DEBUG] Luxon Local: ${dtFinal.toString()}`);
-    console.log(`[DEBUG] Resulting UTC: ${dtFinal.toUTC().toString()}`);
+    console.log(`[DEBUG] Luxon Local Interpretation: ${dtFinal.toString()}`);
+    console.log(`[DEBUG] Resulting UTC for DB: ${dtFinal.toUTC().toString()}`);
 
     return dtFinal.toJSDate();
   }
@@ -103,5 +111,6 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     }
   }
 
-  return new Date();
-}
+  console.log(`[DEBUG] Fallthrough: No frequency match found for "${frequency}"`);
+  return new Date(); 
+};
