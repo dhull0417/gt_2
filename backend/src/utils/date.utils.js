@@ -102,5 +102,6 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
       }
     }
   }
-}
+
   return new Date();
+}
