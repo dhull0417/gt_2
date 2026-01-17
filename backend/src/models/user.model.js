@@ -45,6 +45,15 @@ const userSchema = new mongoose.Schema(
                 ref: "Group",
             },
         ],
+        /**
+         * Project 4: Push Notifications
+         * Storing the unique Expo Push Token for this user's device
+         * to allow the backend to send real-time alerts.
+         */
+        expoPushToken: {
+            type: String,
+            required: false,
+        },
     },
     { timestamps: true}
 );

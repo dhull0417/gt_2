@@ -4,6 +4,31 @@ import { getAuth, clerkClient } from "@clerk/express";
 import { syncStreamUser } from "../utils/stream.js"; 
 import { ENV } from '../config/env.js';  
 
+/**
+ * @desc    Save/Update User's Expo Push Token
+ * @route   POST /api/users/push-token
+ */
+export const updatePushToken = asyncHandler(async (req, res) => {
+  const { userId: clerkId } = getAuth(req);
+  const { token } = req.body;
+
+  if (!token) {
+    return res.status(400).json({ error: "Push token is required." });
+  }
+
+  const user = await User.findOneAndUpdate(
+    { clerkId },
+    { expoPushToken: token },
+    { new: true }
+  );
+
+  if (!user) {
+    return res.status(404).json({ error: "User not found." });
+  }
+
+  res.status(200).json({ message: "Push token updated successfully." });
+});
+
 export const searchUsers = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
   const { username } = req.query;
