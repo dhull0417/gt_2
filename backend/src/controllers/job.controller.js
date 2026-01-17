@@ -4,45 +4,36 @@ import Group from "../models/group.model.js";
 import { DateTime } from "luxon";
 import { calculateNextEventDate } from "../utils/date.utils.js";
 
-const parseTime = (timeString) => {
-    if (!timeString || typeof timeString !== 'string' || !timeString.includes(':')) {
-        return { hours: 0, minutes: 0 }; 
-    }
-    const [time, period] = timeString.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-    if (period && period.toUpperCase() === 'PM' && hours !== 12) {
-        hours += 12;
-    }
-    if (period && period.toUpperCase() === 'AM' && hours === 12) {
-        hours = 0;
-    }
-    return { hours, minutes };
-};
-
+/**
+ * @desc    Cron job to clean up expired events and replenish recurring schedules.
+ * Handles both standard recurring events and one-off overrides.
+ */
 export const regenerateEvents = asyncHandler(async (req, res) => {
   console.log("Cron job started: Regenerating events...");
   const now = new Date();
   
   // 1. Process Expired Events First (Cleanup)
-  // We clean up all standard recurring events and one-off events that have passed.
-  const allEvents = await Event.find({ isOverride: false }).lean();
+  // FIX: We fetch ALL events. Previously, this filtered for { isOverride: false },
+  // which caused one-off events to be ignored by the cleanup logic.
+  const allEvents = await Event.find({}).lean(); 
   
   const expiredEvents = allEvents.filter(event => {
-    if (!event.date || !event.time) return false;
+    if (!event.date) return false;
+    
+    // Convert stored date to JS Date for comparison.
+    // Our updated utility ensures 'once' events have the exact time set.
     const eventDateTime = new Date(event.date);
-    const { hours, minutes } = parseTime(event.time);
-    eventDateTime.setUTCHours(hours, minutes);
     return eventDateTime < now;
   });
 
   if (expiredEvents.length > 0) {
     const expiredEventIds = expiredEvents.map(e => e._id);
     await Event.deleteMany({ _id: { $in: expiredEventIds } });
-    console.log(`Deleted ${expiredEventIds.length} expired events.`);
+    console.log(`Deleted ${expiredEventIds.length} expired events (including one-offs).`);
   }
 
   // 2. Replenish Recurring Groups Only (Self-Healing)
-  // FIX: We add $ne: 'once' to ensure one-off events are never replenished.
+  // We explicitly exclude groups with frequency 'once' to prevent infinite replenishment.
   const groups = await Group.find({ 
     "schedule.frequency": { $exists: true, $ne: 'once' } 
   });
@@ -51,6 +42,9 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
   for (const group of groups) {
     if (group.schedule) {
+      // For replenishment logic, we only count standard future events.
+      // We don't want a manual one-off (isOverride: true) to prevent 
+      // the standard recurring events from generating.
       const existingFutureEvents = await Event.find({ 
         group: group._id, 
         isOverride: false, 
@@ -71,6 +65,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
         for (let i = 0; i < needed; i++) {
           let dayOrRule;
           
+          // Determine the correct day index or rule object for the utility
           if (group.schedule.frequency === 'custom' && group.schedule.rules?.length > 0) {
             dayOrRule = group.schedule.rules[i % group.schedule.rules.length];
           } else if (group.schedule.frequency === 'daily' || !group.schedule.days || group.schedule.days.length === 0) {
@@ -100,6 +95,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
             timezone: group.timezone,
             members: group.members,
             undecided: group.members,
+            isOverride: false // These are standard recurring instances
           });
 
           console.log(`Created ${group.schedule.frequency} event on: ${nextDate}`);

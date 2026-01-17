@@ -3,6 +3,9 @@ import { DateTime } from "luxon";
 /**
  * Calculates the next event date based on a schedule rule.
  * Handles 'once' frequency for one-off events and various recurring patterns.
+ * * NOTE: For 'once' events, the returned Date object represents the exact
+ * UTC point in time, allowing the cron job to accurately delete it 
+ * immediately after it passes.
  * * @param {number|object|string} dayOrRule - Day index, rule object, or ISO date string
  * @param {string} time - Time string (e.g., "05:00 PM")
  * @param {string} timezone - Target timezone (e.g., "America/Denver")
