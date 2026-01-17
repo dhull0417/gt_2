@@ -2,34 +2,46 @@ import { DateTime } from "luxon";
 
 /**
  * Calculates the next event date based on a schedule rule.
- * * TROUBLESHOOTING STEP 1: Existence Proof
- * We are forcing a date in the far future to see if the server is actually
- * using this logic.
+ * Handles 'once' frequency for one-off events and various recurring patterns.
+ * * @param {number|object|string} dayOrRule - Day index, rule object, or ISO date string
+ * @param {string} time - Time string (e.g., "05:00 PM")
+ * @param {string} timezone - Target timezone (e.g., "America/Denver")
+ * @param {string} frequency - 'daily', 'weekly', 'biweekly', 'monthly', 'custom', or 'once'
+ * @param {Date} [fromDate=null] - Anchor date to calculate from (for chaining)
  */
 export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fromDate = null) => {
+  // 1. Parse common time components
+  const [timeStr, period] = time.split(' ');
+  let [hours, minutes] = timeStr.split(':').map(Number);
   
-  // --- TEST OVERRIDE ---
-  // If this code is running, one-off events will ALWAYS succeed and be set to the year 2126.
+  if (period && period.toUpperCase() === 'PM' && hours !== 12) hours += 12;
+  if (period && period.toUpperCase() === 'AM' && hours === 12) hours = 0;
+
+  // --- A. ONE-OFF EVENTS ---
   if (frequency === 'once') {
-    console.error("!!! [CRITICAL DEBUG] calculateNextEventDate reached with frequency 'once' !!!");
-    return new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000); 
+    // dayOrRule contains the ISO date string (e.g. "2026-01-17")
+    // We parse it in the target timezone to ensure local day alignment, 
+    // then apply the selected time.
+    return DateTime.fromISO(dayOrRule, { zone: timezone })
+      .set({ 
+        hour: hours, 
+        minute: minutes, 
+        second: 0, 
+        millisecond: 0 
+      })
+      .toJSDate();
   }
 
-  // Determine start point. If chaining, start 1 second after the last event to avoid finding the same slot.
+  // --- B. RECURRING EVENTS ---
+  // Determine start point. If chaining (replenishing), start 1 second after the last event.
   const now = fromDate 
     ? DateTime.fromJSDate(fromDate).setZone(timezone).plus({ seconds: 1 })
     : DateTime.now().setZone(timezone);
   
-  const [timeStr, period] = time.split(' ');
-  let [hours, minutes] = timeStr.split(':').map(Number);
-  
-  if (period.toUpperCase() === 'PM' && hours !== 12) hours += 12;
-  if (period.toUpperCase() === 'AM' && hours === 12) hours = 0;
-
   // Base candidate: 'Now' at the correct time
   let eventDate = now.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
-  // --- 1. DAILY ---
+  // 1. DAILY
   if (frequency === 'daily') {
     if (eventDate <= now) {
         return eventDate.plus({ days: 1 }).toJSDate();
@@ -37,11 +49,12 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     return eventDate.toJSDate();
   }
 
-  // --- 2. WEEKLY / BI-WEEKLY ---
+  // 2. WEEKLY / BI-WEEKLY
   if (typeof dayOrRule === 'number' && (frequency === 'weekly' || frequency === 'biweekly')) {
     const targetDay = dayOrRule; // 0=Sun, 6=Sat
     const luxonTarget = targetDay === 0 ? 7 : targetDay;
 
+    // Start search from the beginning of the anchor's week (Monday)
     eventDate = now.startOf('week').set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
     if (frequency === 'biweekly') {
@@ -59,11 +72,10 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
         eventDate = eventDate.plus({ weeks: 1 });
       }
     }
-    
     return eventDate.toJSDate();
   }
 
-  // --- 3. MONTHLY ---
+  // 3. MONTHLY
   if (typeof dayOrRule === 'number' && frequency === 'monthly') {
       const targetDate = dayOrRule; 
       eventDate = eventDate.set({ day: targetDate });
@@ -73,10 +85,11 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
       return eventDate.toJSDate();
   }
 
-  // --- 4. CUSTOM RULES ---
+  // 4. CUSTOM RULES
   if (frequency === 'custom' && typeof dayOrRule === 'object') {
     const rule = dayOrRule;
 
+    // Custom by Date (specific dates of the month)
     if (rule.type === 'byDate') {
       const sortedDates = rule.dates.sort((a, b) => a - b);
       for (const dateNum of sortedDates) {
@@ -87,13 +100,13 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
       return nextMonth.toJSDate();
     }
 
+    // Custom by Day (e.g., "2nd Thursday")
     if (rule.type === 'byDay') {
       const targetDay = rule.day; 
       const luxonTarget = targetDay === 0 ? 7 : targetDay;
       const occurrenceMap = { '1st': 1, '2nd': 2, '3rd': 3, '4th': 4, '5th': 5 };
       
       let monthPointer = now;
-
       while (true) {
         let candidate = monthPointer.startOf('month');
         if (rule.occurrence === 'Last') {
