@@ -23,6 +23,8 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
   console.log("Cron job started: Regenerating events...");
   const now = new Date();
   
+  // 1. Process Expired Events First (Cleanup)
+  // We clean up all standard recurring events and one-off events that have passed.
   const allEvents = await Event.find({ isOverride: false }).lean();
   
   const expiredEvents = allEvents.filter(event => {
@@ -33,23 +35,22 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
     return eventDateTime < now;
   });
 
-  if (expiredEvents.length === 0) {
-    console.log("No expired recurring events to process. Job finished.");
-    return res.status(200).json({ message: "No expired recurring events to process." });
+  if (expiredEvents.length > 0) {
+    const expiredEventIds = expiredEvents.map(e => e._id);
+    await Event.deleteMany({ _id: { $in: expiredEventIds } });
+    console.log(`Deleted ${expiredEventIds.length} expired events.`);
   }
 
-  const expiredEventIds = expiredEvents.map(e => e._id);
-  const groupIdsToRegenerate = [...new Set(expiredEvents.map(e => String(e.group)))];
-
-  await Event.deleteMany({ _id: { $in: expiredEventIds } });
-  console.log(`Deleted ${expiredEventIds.length} expired recurring events.`);
-
-  const groups = await Group.find({ _id: { $in: groupIdsToRegenerate } });
+  // 2. Replenish Recurring Groups Only (Self-Healing)
+  // FIX: We add $ne: 'once' to ensure one-off events are never replenished.
+  const groups = await Group.find({ 
+    "schedule.frequency": { $exists: true, $ne: 'once' } 
+  });
+  
   let regeneratedCount = 0;
 
   for (const group of groups) {
     if (group.schedule) {
-      // 1. Fetch existing future events
       const existingFutureEvents = await Event.find({ 
         group: group._id, 
         isOverride: false, 
@@ -70,15 +71,11 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
         for (let i = 0; i < needed; i++) {
           let dayOrRule;
           
-          // 2. Handle Custom vs Standard frequencies
           if (group.schedule.frequency === 'custom' && group.schedule.rules?.length > 0) {
-            // For Custom, we rotate through the rules based on the current iteration
-            // This works best for replenishment.
             dayOrRule = group.schedule.rules[i % group.schedule.rules.length];
           } else if (group.schedule.frequency === 'daily' || !group.schedule.days || group.schedule.days.length === 0) {
             dayOrRule = (group.schedule.days && group.schedule.days[0]) || 0;
           } else {
-            // Weekly / Bi-weekly multi-day logic
             const anchorDateTime = DateTime.fromJSDate(anchorDate).setZone(group.timezone);
             const currentWeekday = anchorDateTime.weekday === 7 ? 0 : anchorDateTime.weekday;
             const sortedDays = [...group.schedule.days].sort((a, b) => a - b);
@@ -105,7 +102,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
             undecided: group.members,
           });
 
-          console.log(`Created ${group.schedule.frequency} event (Day/Rule: ${typeof dayOrRule === 'object' ? 'Custom' : dayOrRule}) on: ${nextDate}`);
+          console.log(`Created ${group.schedule.frequency} event on: ${nextDate}`);
 
           anchorDate = nextDate;
           regeneratedCount++;
