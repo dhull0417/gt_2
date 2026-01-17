@@ -13,6 +13,7 @@ import { syncStreamUser } from "../utils/stream.js";
 const getScheduleItems = (schedule) => {
     if (schedule.frequency === 'daily') return [0]; 
     if (schedule.frequency === 'custom') return schedule.rules || [];
+    if (schedule.frequency === 'once') return [schedule.date]; // 👈 Fix: Add this line
     return schedule.days || [];
 };
 
@@ -172,10 +173,6 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
 
   const limit = eventsToDisplay ? parseInt(eventsToDisplay) : 1;
-  if (limit < 1 || limit > 14) {
-      return res.status(400).json({ error: "Display events must be between 1 and 14." });
-  }
-
   const owner = await User.findOne({ clerkId: userId });
   if (!owner) return res.status(404).json({ error: "User not found." });
   
@@ -199,8 +196,8 @@ export const createGroup = asyncHandler(async (req, res) => {
       { $addToSet: { groups: newGroup._id } }
   );
 
+  // Send notifications to invited members
   const membersToNotify = uniqueMemberIds.filter(id => id !== owner._id.toString());
-  
   if (membersToNotify.length > 0) {
       const notifications = membersToNotify.map(memberId => ({
           recipient: memberId,
@@ -218,13 +215,17 @@ export const createGroup = asyncHandler(async (req, res) => {
       }
   }
 
+  // --- Event Generation Logic ---
   try {
     const itemsToIterate = getScheduleItems(newGroup.schedule);
     let potentialEvents = [];
 
     for (const item of itemsToIterate) {
         let lastGeneratedDate = null;
-        for (let i = 0; i < limit; i++) {
+        // For 'once', the limit is always 1
+        const generationLimit = newGroup.schedule.frequency === 'once' ? 1 : limit;
+
+        for (let i = 0; i < generationLimit; i++) {
             const nextEventDate = calculateNextEventDate(
                 item, 
                 newGroup.time, 
@@ -237,7 +238,7 @@ export const createGroup = asyncHandler(async (req, res) => {
         }
     }
 
-    potentialEvents.sort((a, b) => new Date(a) - new Date(b));
+    potentialEvents.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
     const finalEvents = potentialEvents.slice(0, limit);
 
     for (const date of finalEvents) {
@@ -257,7 +258,7 @@ export const createGroup = asyncHandler(async (req, res) => {
 
   await Promise.all(uniqueMemberIds.map(id => syncStreamUser({ _id: id })));
 
-  res.status(201).json({ group: newGroup, message: "Group created successfully." });
+  res.status(201).json({ group: newGroup, message: "Created successfully." });
 });
 
 export const updateGroup = asyncHandler(async (req, res) => {
