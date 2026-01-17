@@ -4,6 +4,9 @@ import { useMemo } from "react";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
+// Exporting a central Frequency type to resolve mismatches across the app
+export type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom' | 'once';
+
 export interface CustomRule {
   type: 'byDay' | 'byDate';
   occurrence?: '1st' | '2nd' | '3rd' | '4th' | '5th' | 'Last';
@@ -12,10 +15,11 @@ export interface CustomRule {
 }
 
 export interface Schedule {
-  frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
+  frequency: Frequency;
   days: number[];
-  rules?: CustomRule[]; // 👈 Updated from any[] to CustomRule[]
+  rules?: CustomRule[];
 }
+
 export interface User {
   _id: string;
   clerkId: string;
@@ -28,12 +32,14 @@ export interface User {
   groups?: string[];
   streamToken: string;
 }
+
 export interface LastMessage {
   text: string;
   user: {
     name: string;
   };
 }
+
 export interface Group {
   _id: string;
   name: string;
@@ -41,11 +47,14 @@ export interface Group {
   schedule: Schedule;
   owner: string;
   timezone: string;
-  lastMessage?: LastMessage | null
+  lastMessage?: LastMessage | null;
 }
+
 export interface GroupDetails extends Group {
   members: User[];
+  defaultCapacity: number; // The limit that new events inherit
 }
+
 export interface Event {
   _id: string;
   group: {
@@ -56,22 +65,27 @@ export interface Event {
   date: string;
   time: string;
   timezone: string;
+  status: 'scheduled' | 'cancelled'; 
+  capacity: number; 
   isOverride: boolean;
   members: User[];
   undecided: string[];
   in: string[];
   out: string[];
+  waitlist: string[]; 
 }
+
 export interface Notification {
-    _id: string;
-    recipient: string;
-    sender: User;
-    type: 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added';
-    group: Group;
-    status: 'pending' | 'accepted' | 'declined' | 'read';
-    read: boolean;
-    createdAt: string;
+  _id: string;
+  recipient: string;
+  sender: User;
+  type: 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added';
+  group: Group;
+  status: 'pending' | 'accepted' | 'declined' | 'read';
+  read: boolean;
+  createdAt: string;
 }
+
 interface CreateGroupPayload {
   name: string;
   time: string;
@@ -79,59 +93,71 @@ interface CreateGroupPayload {
   timezone: string;
   eventsToDisplay: number;
   members?: string[];
+  defaultCapacity?: number;
 }
+
 interface UpdateGroupPayload {
-    groupId: string;
-    name?: string;
-    time: string;
-    schedule: Schedule;
-    timezone: string;
-    eventsToDisplay: number;
+  groupId: string;
+  name?: string;
+  time: string;
+  schedule: Schedule;
+  timezone: string;
+  eventsToDisplay: number;
+  defaultCapacity?: number;
 }
+
 interface AddMemberPayload {
   groupId: string;
   userId: string;
 }
+
 interface InviteUserPayload {
-    groupId: string;
-    userIdToInvite: string;
+  groupId: string;
+  userIdToInvite: string;
 }
+
 interface RemoveMemberPayload {
   groupId: string;
   memberIdToRemove: string;
 }
+
 interface UpdateEventPayload {
-    eventId: string;
-    date: Date;
-    time: string;
-    timezone: string;
+  eventId: string;
+  date: Date;
+  time: string;
+  timezone: string;
+  capacity?: number;
 }
+
 interface RsvpPayload {
   eventId: string;
   status: 'in' | 'out';
 }
+
 interface CreateGroupResponse {
   group: Group;
   message: string;
 }
+
 interface CreateOneOffEventPayload {
-    groupId: string;
-    date: Date;
-    time: string;
-    timezone: string;
+  groupId: string;
+  date: Date;
+  time: string;
+  timezone: string;
+  capacity?: number;
 }
+
 interface RemoveScheduledDayPayload {
-    groupId: string;
-    day: number;
-    frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
-    rules?: any[];
+  groupId: string;
+  day: number;
+  frequency: Frequency;
+  rules?: any[];
 }
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
   const api = axios.create({ 
     baseURL: API_BASE_URL, 
     headers: { 
-      // 👇 This header is REQUIRED to pass the Arcjet Bot detection
       "User-Agent": "GT2MobileApp/1.0",
       "Content-Type": "application/json"
     } 
@@ -144,10 +170,12 @@ export const createApiClient = (getToken: () => Promise<string | null>): AxiosIn
   });
   return api;
 };
+
 export const useApiClient = (): AxiosInstance => {
   const { getToken } = useAuth();
   return useMemo(() => createApiClient(getToken), [getToken]);
 };
+
 export const userApi = {
   syncUser: (api: AxiosInstance) => api.post("/api/users/sync"),
   getCurrentUser: async (api: AxiosInstance): Promise<User> => {
@@ -160,6 +188,7 @@ export const userApi = {
     return response.data;
   },
 };
+
 export const groupApi = {
   createGroup: async (api: AxiosInstance, payload: CreateGroupPayload): Promise<CreateGroupResponse> => {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);
@@ -174,8 +203,8 @@ export const groupApi = {
     return response.data;
   },
   removeScheduledDay: async (api: AxiosInstance, payload: RemoveScheduledDayPayload): Promise<{ message: string }> => {
-      const response = await api.post(`/api/groups/${payload.groupId}/schedule/remove`, { day: payload.day, frequency: payload.frequency });
-      return response.data;
+    const response = await api.post(`/api/groups/${payload.groupId}/schedule/remove`, { day: payload.day, frequency: payload.frequency });
+    return response.data;
   },
   inviteUser: async (api: AxiosInstance, payload: InviteUserPayload): Promise<{ message: string }> => {
     const response = await api.post(`/api/groups/${payload.groupId}/invite`, { userIdToInvite: payload.userIdToInvite });
@@ -204,8 +233,13 @@ export const groupApi = {
   removeMember: async (api: AxiosInstance, payload: RemoveMemberPayload): Promise<{ message: string }> => {
     const response = await api.post(`/api/groups/${payload.groupId}/remove-member`, { memberIdToRemove: payload.memberIdToRemove });
     return response.data;
+  },
+  updateGroupSchedule: async (api: AxiosInstance, groupId: string, data: any): Promise<{ message: string }> => {
+    const response = await api.patch(`/api/groups/${groupId}/schedule`, data);
+    return response.data;
   }
 };
+
 export const eventApi = {
   getEvents: async (api: AxiosInstance): Promise<Event[]> => {
     const response = await api.get<Event[]>("/api/events");
@@ -222,25 +256,30 @@ export const eventApi = {
   deleteEvent: async (api: AxiosInstance, eventId: string): Promise<{ message: string }> => {
     const response = await api.delete(`/api/events/${eventId}`);
     return response.data;
+  },
+  cancelEvent: async (api: AxiosInstance, eventId: string): Promise<{ message: string }> => {
+    const response = await api.patch(`/api/events/${eventId}/cancel`);
+    return response.data;
   }
 };
+
 export const notificationApi = {
-    getNotifications: async (api: AxiosInstance): Promise<Notification[]> => {
-        const response = await api.get<Notification[]>('/api/notifications');
-        return response.data;
-    },
-    acceptInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
-        const response = await api.post(`/api/notifications/${notificationId}/accept`);
-        return response.data;
-    },
-    declineInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
-        const response = await api.post(`/api/notifications/${notificationId}/decline`);
-        return response.data;
-    },
-    markNotificationsAsRead: async (api: AxiosInstance): Promise<{ message: string }> => {
-        const response = await api.post<{ message: string }>('/api/notifications/mark-read');
-        return response.data;
-    },
+  getNotifications: async (api: AxiosInstance): Promise<Notification[]> => {
+    const response = await api.get<Notification[]>('/api/notifications');
+    return response.data;
+  },
+  acceptInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
+    const response = await api.post(`/api/notifications/${notificationId}/accept`);
+    return response.data;
+  },
+  declineInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
+    const response = await api.post(`/api/notifications/${notificationId}/decline`);
+    return response.data;
+  },
+  markNotificationsAsRead: async (api: AxiosInstance): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>('/api/notifications/mark-read');
+    return response.data;
+  },
 };
 
 export const chatApi = {
@@ -249,4 +288,3 @@ export const chatApi = {
     return response.data.token;
   },
 };
-

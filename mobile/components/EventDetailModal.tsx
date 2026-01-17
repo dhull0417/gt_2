@@ -1,178 +1,238 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'expo-router';
-import { useRsvp } from '@/hooks/useRsvp';
-import { useDeleteEvent } from '@/hooks/useDeleteEvent';
-import { useRemoveScheduledDay } from '@/hooks/useRemoveScheduledDay';
-import { Event, User, useApiClient, userApi, GroupDetails, groupApi } from '@/utils/api';
+import { 
+    View, 
+    Text, 
+    TouchableOpacity, 
+    ScrollView, 
+    Image, 
+    Alert, 
+    ActivityIndicator 
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { DateTime } from 'luxon';
+import { Event, User, useApiClient, userApi } from '@/utils/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRsvp } from '@/hooks/useRsvp';
 
 interface EventDetailModalProps {
-    event: Event | null;
-    onClose: () => void;
+  event: Event | null;
+  onClose: () => void;
 }
 
-const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onClose }) => {
-    const insets = useSafeAreaInsets();
+const EventDetailModal = ({ event, onClose }: EventDetailModalProps) => {
     const api = useApiClient();
     const queryClient = useQueryClient();
-    const { mutate: rsvp, isPending: isRsvping } = useRsvp();
-    const { mutate: deleteEvent, isPending: isDeletingEvent } = useDeleteEvent();
-    const { mutate: removeScheduledDay, isPending: isRemovingDay } = useRemoveScheduledDay();
+    
+    // Fetch current user to determine RSVP status and ownership
     const { data: currentUser } = useQuery<User, Error>({
         queryKey: ['currentUser'],
         queryFn: () => userApi.getCurrentUser(api),
     });
 
-    if (!event) return null;
+    const { mutate: rsvp, isPending: isRsvping } = useRsvp();
 
-    const formatDate = (dateString: string, timezone: string) => {
-        const options: Intl.DateTimeFormatOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone };
-        return new Date(dateString).toLocaleDateString(undefined, options);
-    };
+    if (!event || !currentUser) return null;
 
-    const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
-        try {
-            const options: Intl.DateTimeFormatOptions = { timeZone: timezone, timeZoneName: 'shortGeneric' };
-            const date = new Date(dateString);
-            const formatter = new Intl.DateTimeFormat('en-US', options);
-            const parts = formatter.formatToParts(date);
-            const tzPart = parts.find(part => part.type === 'timeZoneName');
-            return tzPart ? tzPart.value : '';
-        } catch (e) { return timezone.split('/').pop()?.replace('_', ' ') || ''; }
-    };
+    // --- Logic Helpers ---
+    const isOwner = typeof event.group === 'object' 
+        ? event.group.owner === currentUser._id 
+        : false; 
+    
+    const isCancelled = event.status === 'cancelled';
+    const isFull = event.capacity > 0 && event.in.length >= event.capacity;
+    const isWaitlisted = event.waitlist.includes(currentUser._id);
+    const isIn = event.in.includes(currentUser._id);
 
-    const handleRsvp = (status: 'in' | 'out') => {
-        if (!currentUser) return;
+    // Map user objects for the "Going" and "Waitlist" sections
+    const goingUsers = event.members.filter(m => event.in.includes(m._id));
+    const waitlistedUsers = event.members.filter(m => event.waitlist.includes(m._id));
+
+    const handleRsvpAction = (status: 'in' | 'out') => {
         rsvp({ eventId: event._id, status }, {
-            onSuccess: () => {
+            onSuccess: (data: any) => {
                 queryClient.invalidateQueries({ queryKey: ['events'] });
+                // Check if the server response indicates a waitlist placement
+                if (data.message && data.message.toLowerCase().includes('waitlist')) {
+                    Alert.alert("Waitlisted", "The event is full. You've been added to the waitlist queue.");
+                }
             }
         });
     };
 
-    const getRsvpStatus = (userId: string) => {
-        if (event.in.includes(userId)) return 'in';
-        if (event.out.includes(userId)) return 'out';
-        return 'undecided';
-    };
-    
-    const handleDeleteThisEvent = () => {
-        const confirmationMessage = event.isOverride 
-            ? "Are you sure you want to delete this one-off event?"
-            : "Are you sure you want to delete this single event? A new one will be generated for the next occurrence.";
-        
-        Alert.alert("Delete This Event?", confirmationMessage, [
-            { text: "Cancel", style: "cancel" },
-            { text: "Delete", style: "destructive", onPress: () => {
-                deleteEvent({ eventId: event._id }, {
-                    onSuccess: () => {
-                        if (!event.isOverride) {
-                            Alert.alert("Success", "The next occurrence for this event has been created.");
-                        }
+    const handleCancelEvent = () => {
+        Alert.alert("Cancel Event", "Are you sure? This event will remain visible but be marked as cancelled.", [
+            { text: "No", style: "cancel" },
+            { 
+                text: "Yes, Cancel", 
+                style: "destructive", 
+                onPress: async () => {
+                    try {
+                        await api.patch(`/api/events/${event._id}/cancel`);
+                        queryClient.invalidateQueries({ queryKey: ['events'] });
                         onClose();
+                    } catch (e) {
+                        Alert.alert("Error", "Could not cancel event.");
                     }
-                });
-            }},
+                }
+            }
         ]);
-    };
-
-    const handleRemoveThisDay = async () => {
-        try {
-            const group: GroupDetails = await queryClient.fetchQuery({
-                queryKey: ['groupDetails', event.group._id],
-                queryFn: () => groupApi.getGroupDetails(api, event.group._id),
-            });
-
-            if (!group.schedule) return;
-
-            const eventDate = DateTime.fromISO(event.date, { zone: event.timezone });
-            const dayToRemove = group.schedule.frequency === 'weekly' 
-                ? eventDate.weekday === 7 ? 0 : eventDate.weekday
-                : eventDate.day;
-
-            const dayDescription = group.schedule.frequency === 'weekly' 
-                ? eventDate.toFormat('EEEE') 
-                : `the ${eventDate.toFormat('do')}`;
-            
-            Alert.alert(`Delete all future ${dayDescription}s?`, `This will permanently remove this day from the group's recurring schedule.`, [
-                { text: "Cancel", style: "cancel" },
-                { text: "Confirm", style: "destructive", onPress: () => {
-                    removeScheduledDay({ groupId: event.group._id, day: dayToRemove, frequency: group.schedule.frequency }, {
-                        onSuccess: () => onClose()
-                    });
-                }},
-            ]);
-        } catch (error) {
-            Alert.alert("Error", "Could not fetch group details to update schedule.");
-        }
     };
 
     return (
         <View className="flex-1 bg-white">
-            <View className="flex-row items-center justify-between px-4" style={{ paddingTop: insets.top + 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
-                <View className="flex-row items-center">
-                    <TouchableOpacity onPress={onClose} className="mr-4">
-                        <Feather name="arrow-left" size={24} color="#4f46e5" />
-                    </TouchableOpacity>
-                    <Text className="text-xl font-bold text-gray-900">{event.name}</Text>
-                </View>
-                {currentUser && event.group.owner === currentUser._id && (
-                    <Link href={{ pathname: `/event-edit/${event._id}` as any }} asChild>
-                        <TouchableOpacity>
-                            <Feather name="edit-2" size={22} color="#4f46e5" />
-                        </TouchableOpacity>
-                    </Link>
-                )}
+            {/* Header / Handle Bar */}
+            <View className="flex-row items-center px-4 py-4 border-b border-gray-100">
+                <TouchableOpacity onPress={onClose} className="p-1">
+                    <Feather name="chevron-down" size={28} color="#4B5563" />
+                </TouchableOpacity>
+                <Text className="flex-1 text-center text-lg font-bold text-gray-900">Meeting Details</Text>
+                <View className="w-10" />
             </View>
-            <View className="p-6">
-                <Text className="text-base text-gray-600">{formatDate(event.date, event.timezone)}</Text>
-                <Text className="text-base text-gray-600 mb-6">at {event.time} {getTimezoneAbbreviation(event.date, event.timezone)}</Text>
-                <Text className="text-lg text-gray-800 font-semibold mb-2">Are you going?</Text>
-                <View className="flex-row space-x-4 mb-8">
-                    <TouchableOpacity onPress={() => handleRsvp('in')} disabled={isRsvping || getRsvpStatus(currentUser?._id || '') === 'in'} className="flex-1 py-4 bg-green-500 rounded-lg items-center justify-center shadow">
-                        <Text className="text-white font-bold text-lg">I'm In</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleRsvp('out')} disabled={isRsvping || getRsvpStatus(currentUser?._id || '') === 'out'} className="flex-1 py-4 bg-red-500 rounded-lg items-center justify-center shadow">
-                        <Text className="text-white font-bold text-lg">I'm Out</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-            <ScrollView className="flex-1 px-6 bg-gray-50" contentContainerStyle={{ paddingBottom: 40 }}>
-                <Text className="text-lg text-gray-800 font-semibold mb-2 pt-6">Guest List</Text>
-                {event.members.map(member => {
-                    const status = getRsvpStatus(member._id);
-                    return (
-                        <View key={member._id} className="flex-row items-center justify-between bg-white p-3 rounded-lg mb-2 shadow-sm">
-                            <View className="flex-row items-center">
-                                <Image source={{ uri: member.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} className="w-10 h-10 rounded-full mr-4"/>
-                                <Text className="text-base text-gray-700">{member.firstName} {member.lastName}</Text>
-                            </View>
-                            {status === 'in' && <Feather name="check-circle" size={24} color="green" />}
-                            {status === 'out' && <Feather name="x-circle" size={24} color="red" />}
+
+            <ScrollView className="p-6">
+                <View className="mb-6">
+                    {/* Cancellation Alert */}
+                    {isCancelled && (
+                        <View className="bg-red-50 border border-red-100 p-4 rounded-2xl mb-6 flex-row items-center justify-center">
+                            <Feather name="alert-triangle" size={18} color="#B91C1C" />
+                            <Text className="text-red-700 font-bold ml-2 uppercase tracking-wide">Meeting Cancelled</Text>
                         </View>
-                    )
-                })}
-                {currentUser && event.group.owner === currentUser._id && (
-                    <View className="mt-8 pt-4 border-t border-gray-200 space-y-4">
-                        <Text className="text-base font-semibold text-gray-600 text-center">Owner Actions</Text>
-                        {event.isOverride ? (
-                            <TouchableOpacity onPress={handleDeleteThisEvent} disabled={isDeletingEvent} className={`py-4 rounded-lg items-center shadow ${isDeletingEvent ? 'bg-red-300' : 'bg-red-600'}`}>
-                                {isDeletingEvent ? <ActivityIndicator color="#fff" /> : <Text className="text-white text-lg font-bold">Delete One-Off Event</Text>}
-                            </TouchableOpacity>
-                        ) : (
-                            <>
-                                <TouchableOpacity onPress={handleDeleteThisEvent} disabled={isDeletingEvent} className={`py-4 rounded-lg items-center shadow ${isDeletingEvent ? 'bg-yellow-600' : 'bg-yellow-500'}`}>
-                                    {isDeletingEvent ? <ActivityIndicator color="#fff" /> : <Text className="text-white text-lg font-bold">Delete This Event Only</Text>}
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={handleRemoveThisDay} disabled={isRemovingDay} className={`py-4 rounded-lg items-center shadow ${isRemovingDay ? 'bg-red-300' : 'bg-red-600'}`}>
-                                    {isRemovingDay ? <ActivityIndicator color="#fff" /> : <Text className="text-white text-lg font-bold">Delete All Occurrences on this Day</Text>}
-                                </TouchableOpacity>
-                            </>
+                    )}
+                    
+                    <Text className={`text-3xl font-black ${isCancelled ? 'text-gray-300 line-through' : 'text-gray-900'}`}>
+                        {event.name}
+                    </Text>
+                    
+                    <View className="mt-5 space-y-3">
+                        <View className="flex-row items-center">
+                            <View className="bg-indigo-50 p-2 rounded-lg">
+                                <Feather name="calendar" size={16} color="#4F46E5" />
+                            </View>
+                            <Text className="ml-3 text-gray-600 font-semibold text-base">
+                                {new Date(event.date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+                            </Text>
+                        </View>
+
+                        <View className="flex-row items-center">
+                            <View className="bg-indigo-50 p-2 rounded-lg">
+                                <Feather name="clock" size={16} color="#4F46E5" />
+                            </View>
+                            <Text className="ml-3 text-gray-600 font-semibold text-base">{event.time}</Text>
+                        </View>
+                        
+                        {/* Capacity Counter */}
+                        {event.capacity > 0 && (
+                            <View className="flex-row items-center">
+                                <View className={`p-2 rounded-lg ${isFull ? 'bg-orange-50' : 'bg-green-50'}`}>
+                                    <Feather name="users" size={16} color={isFull ? "#EA580C" : "#16A34A"} />
+                                </View>
+                                <View className="ml-3">
+                                    <Text className={`font-bold ${isFull ? 'text-orange-700' : 'text-green-700'}`}>
+                                        Capacity: {event.in.length} / {event.capacity} {isFull ? '(FULL)' : ''}
+                                    </Text>
+                                    {isFull && !isIn && !isWaitlisted && (
+                                        <Text className="text-[10px] text-orange-500 font-bold uppercase">Next spot: Waitlist</Text>
+                                    )}
+                                </View>
+                            </View>
                         )}
+                    </View>
+                </View>
+
+                {/* RSVP Actions */}
+                {!isCancelled && (
+                    <View className="flex-row space-x-4 mb-10">
+                        <TouchableOpacity 
+                            onPress={() => handleRsvpAction('in')}
+                            disabled={isRsvping}
+                            className={`flex-1 py-4 rounded-2xl items-center shadow-sm border-b-4 ${
+                                isWaitlisted ? 'bg-blue-600 border-blue-800' : 
+                                isIn ? 'bg-green-600 border-green-800' :
+                                isFull ? 'bg-orange-500 border-orange-700' : 
+                                'bg-white border-gray-200'
+                            }`}
+                        >
+                            {isRsvping ? (
+                                <ActivityIndicator color={isIn || isWaitlisted || isFull ? "white" : "#4F46E5"} />
+                            ) : (
+                                <Text className={`font-black text-lg ${isIn || isWaitlisted || isFull ? 'text-white' : 'text-gray-700'}`}>
+                                    {isWaitlisted ? "Waitlisted" : isIn ? "Going" : isFull ? "Join Waitlist" : "I'm In"}
+                                </Text>
+                            )}
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                            onPress={() => handleRsvpAction('out')}
+                            disabled={isRsvping}
+                            className={`flex-1 py-4 rounded-2xl items-center shadow-sm border-b-4 ${event.out.includes(currentUser._id) ? 'bg-red-600 border-red-800' : 'bg-gray-100 border-gray-300'}`}
+                        >
+                            <Text className={`font-black text-lg ${event.out.includes(currentUser._id) ? 'text-white' : 'text-gray-600'}`}>I'm Out</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {/* Attendee Lists */}
+                <View className="mb-8">
+                    <Text className="text-xl font-black text-gray-800 mb-4 px-1 tracking-tight">Going ({event.in.length})</Text>
+                    {goingUsers.length > 0 ? goingUsers.map(user => (
+                        <View key={user._id} className="flex-row items-center mb-4 bg-gray-50/50 p-2 rounded-2xl">
+                            <Image 
+                                source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0]}` }} 
+                                className="w-12 h-12 rounded-2xl bg-gray-200 border-2 border-white shadow-sm"
+                            />
+                            <View className="ml-3">
+                                <Text className="font-bold text-gray-800 text-base">{user.firstName} {user.lastName}</Text>
+                                <Text className="text-xs text-gray-400 font-bold uppercase tracking-wider">@{user.username}</Text>
+                            </View>
+                        </View>
+                    )) : (
+                        <Text className="text-gray-400 italic px-2">No one confirmed yet.</Text>
+                    )}
+
+                    {/* Waitlist Section */}
+                    {event.waitlist.length > 0 && (
+                        <View className="mt-8">
+                            <View className="flex-row items-center mb-4 px-1">
+                                <Text className="text-xl font-black text-orange-600 tracking-tight">Waitlist</Text>
+                                <View className="ml-2 bg-orange-100 px-2 py-0.5 rounded-full">
+                                    <Text className="text-orange-700 text-xs font-bold">{event.waitlist.length}</Text>
+                                </View>
+                            </View>
+                            {waitlistedUsers.map((user, index) => (
+                                <View key={user._id} className="flex-row items-center mb-3 opacity-80 bg-orange-50/30 p-2 rounded-2xl border border-orange-100">
+                                    <View className="w-6 h-6 bg-orange-100 rounded-full items-center justify-center mr-3">
+                                        <Text className="text-orange-700 text-[10px] font-black">{index + 1}</Text>
+                                    </View>
+                                    <Image 
+                                        source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0]}` }} 
+                                        className="w-10 h-10 rounded-xl bg-gray-200"
+                                    />
+                                    <View className="ml-3">
+                                        <Text className="font-bold text-gray-700">{user.firstName} {user.lastName}</Text>
+                                        <Text className="text-[10px] text-orange-500 font-black uppercase">In Queue</Text>
+                                    </View>
+                                </View>
+                            ))}
+                        </View>
+                    )}
+                </View>
+
+                {/* Owner Specific Actions */}
+                {isOwner && (
+                    <View className="mt-12 mb-10 pt-8 border-t border-gray-100">
+                        <TouchableOpacity 
+                            onPress={handleCancelEvent}
+                            className={`py-4 rounded-2xl items-center border-2 ${isCancelled ? 'bg-indigo-600 border-indigo-600' : 'border-red-100 bg-red-50/20'}`}
+                            activeOpacity={0.7}
+                        >
+                            <Text className={`font-black uppercase tracking-widest text-sm ${isCancelled ? 'text-white' : 'text-red-500'}`}>
+                                {isCancelled ? "Reactivate Meeting" : "Cancel This Meeting"}
+                            </Text>
+                        </TouchableOpacity>
+                        <Text className="text-[10px] text-gray-400 text-center mt-3 px-4 font-medium leading-relaxed">
+                            {isCancelled 
+                                ? "Reactivating will allow members to RSVP again." 
+                                : "Cancelling keeps the event visible on the schedule but strikes it out and disables RSVPs."}
+                        </Text>
                     </View>
                 )}
             </ScrollView>
