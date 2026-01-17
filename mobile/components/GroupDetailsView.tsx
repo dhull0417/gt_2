@@ -4,6 +4,10 @@ import { Feather } from '@expo/vector-icons';
 import { GroupDetails, User } from '@/utils/api';
 import { formatSchedule } from '@/utils/schedule';
 
+/**
+ * Props for the GroupDetailsView component.
+ * Added 'onAddOneOffEvent' to resolve the TypeScript error in the Canvas.
+ */
 interface GroupDetailsViewProps {
   groupDetails: GroupDetails;
   currentUser: User;
@@ -19,13 +23,9 @@ interface GroupDetailsViewProps {
   onLeaveGroup: () => void;
   isLeavingGroup: boolean;
   onEditSchedule?: () => void;
+  onAddOneOffEvent?: () => void; // 👈 Fixed: Added this missing prop to the interface
 }
 
-/**
- * A shared component used to display group information, members,
- * and management actions. This version ensures the Edit button is 
- * correctly linked for the owner to update the recurring schedule.
- */
 export const GroupDetailsView = ({
   groupDetails,
   currentUser,
@@ -40,7 +40,8 @@ export const GroupDetailsView = ({
   isDeletingGroup,
   onLeaveGroup,
   isLeavingGroup,
-  onEditSchedule
+  onEditSchedule,
+  onAddOneOffEvent
 }: GroupDetailsViewProps) => {
   const isOwner = currentUser._id === groupDetails.owner;
 
@@ -51,15 +52,29 @@ export const GroupDetailsView = ({
         <View className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
           <View className="flex-row justify-between items-center mb-2 px-1">
             <Text className="text-sm font-bold text-gray-400 uppercase tracking-widest">Schedule</Text>
-            {isOwner && onEditSchedule && (
-              <TouchableOpacity 
-                onPress={onEditSchedule} 
-                className="flex-row items-center bg-indigo-50 px-2 py-1 rounded-lg"
-                activeOpacity={0.7}
-              >
-                <Feather name="edit-2" size={12} color="#4F46E5" />
-                <Text className="text-indigo-600 text-xs font-bold ml-1">Edit</Text>
-              </TouchableOpacity>
+            {isOwner && (
+                <View className="flex-row">
+                    {onAddOneOffEvent && (
+                        <TouchableOpacity 
+                            onPress={onAddOneOffEvent} 
+                            className="flex-row items-center bg-green-50 px-2 py-1 rounded-lg mr-2"
+                            activeOpacity={0.7}
+                        >
+                            <Feather name="plus" size={12} color="#10B981" />
+                            <Text className="text-green-700 text-xs font-bold ml-1">Add Meeting</Text>
+                        </TouchableOpacity>
+                    )}
+                    {onEditSchedule && (
+                        <TouchableOpacity 
+                            onPress={onEditSchedule} 
+                            className="flex-row items-center bg-indigo-50 px-2 py-1 rounded-lg"
+                            activeOpacity={0.7}
+                        >
+                            <Feather name="edit-2" size={12} color="#4F46E5" />
+                            <Text className="text-indigo-600 text-xs font-bold ml-1">Edit</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
             )}
           </View>
           <View className="flex-row items-center">

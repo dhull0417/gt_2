@@ -157,10 +157,19 @@ const GroupScreen = () => {
 
   const handleEditSchedule = () => {
     if (!selectedGroup) return;
-    setIsGroupDetailVisible(false); // Close overlay before navigating
+    setIsGroupDetailVisible(false);
     router.push({
       pathname: '/group-edit-schedule/[id]',
       params: { id: selectedGroup._id }
+    });
+  };
+
+  const handleAddOneOffEvent = () => {
+    if (!selectedGroup) return;
+    setIsGroupDetailVisible(false);
+    router.push({
+        pathname: '/create-group',
+        params: { existingGroupId: selectedGroup._id, initialType: 'event' }
     });
   };
 
@@ -322,6 +331,7 @@ const GroupScreen = () => {
                   onLeaveGroup={handleLeaveGroup}
                   isLeavingGroup={isLeavingGroup}
                   onEditSchedule={handleEditSchedule}
+                  onAddOneOffEvent={handleAddOneOffEvent} // 👈 Added missing prop
                 />
               )}
             </ScrollView>

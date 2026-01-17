@@ -13,10 +13,6 @@ import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
 import { GroupDetailsView } from '@/components/GroupDetailsView';
 
-/**
- * standalone screen for displaying group details.
- * This screen handles the primary data fetching and group management logic.
- */
 const GroupDetailScreen = () => {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
@@ -25,21 +21,18 @@ const GroupDetailScreen = () => {
 
     const [searchQuery, setSearchQuery] = useState('');
 
-    // --- Data Fetching ---
     const { data: group, isLoading: loadingGroup } = useGetGroupDetails(id);
     const { data: currentUser } = useQuery<User, Error>({ 
         queryKey: ['currentUser'], 
         queryFn: () => userApi.getCurrentUser(api) 
     });
 
-    // --- Mutations ---
     const { mutate: deleteGroup, isPending: isDeletingGroup } = useDeleteGroup();
     const { mutate: leaveGroup, isPending: isLeavingGroup } = useLeaveGroup();
     const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
     const { mutate: inviteUser, isPending: isInviting } = useInviteUser();
     const { data: searchResults } = useSearchUsers(searchQuery);
 
-    // --- Handlers ---
     const handleDeleteGroup = () => {
         if (!id || !group) return;
         Alert.alert("Delete Group", `Are you sure you want to permanently delete "${group.name}"?`, [
@@ -89,11 +82,18 @@ const GroupDetailScreen = () => {
         });
     };
 
-    // Updated Navigation to match your new folder structure
     const handleEditSchedule = () => {
         if (!id) return;
-        // Using string interpolation for the path is often more robust in nested modal stacks
         router.push(`/group-edit-schedule/${id}`);
+    };
+
+    // Handler to navigate to the creation flow for adding a one-off meeting
+    const handleAddOneOffEvent = () => {
+        if (!id) return;
+        router.push({
+            pathname: '/create-group',
+            params: { existingGroupId: id, initialType: 'event' }
+        });
     };
 
     if (loadingGroup || !group || !currentUser) {
@@ -106,39 +106,41 @@ const GroupDetailScreen = () => {
 
     return (
         <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom', 'left', 'right']}>
-            {/* The Header is now mostly handled by group-details/_layout.tsx.
-                We provide a small "Settings" row here if needed, or simply 
-                rely on the onEditSchedule button inside the GroupDetailsView.
-            */}
             <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-100">
-                <Text className="text-2xl font-bold text-gray-900">{group.name}</Text>
+                <View className="flex-1">
+                    <Text className="text-2xl font-bold text-gray-900" numberOfLines={1}>{group.name}</Text>
+                </View>
                 {currentUser._id === group.owner && (
                     <TouchableOpacity 
                         onPress={handleEditSchedule}
-                        className="bg-indigo-50 p-2 rounded-full"
+                        className="bg-indigo-50 p-2 rounded-full ml-4"
+                        activeOpacity={0.7}
                     >
                         <Feather name="settings" size={20} color="#4F46E5" />
                     </TouchableOpacity>
                 )}
             </View>
 
-            <ScrollView className="flex-1 p-6" keyboardShouldPersistTaps="handled">
-                <GroupDetailsView 
-                    groupDetails={group}
-                    currentUser={currentUser}
-                    isRemovingMember={isRemovingMember}
-                    onRemoveMember={handleRemoveMember}
-                    searchQuery={searchQuery}
-                    onSearchChange={setSearchQuery}
-                    searchResults={searchResults}
-                    onInvite={handleInvite}
-                    isInviting={isInviting}
-                    onDeleteGroup={handleDeleteGroup}
-                    isDeletingGroup={isDeletingGroup}
-                    onLeaveGroup={handleLeaveGroup}
-                    isLeavingGroup={isLeavingGroup}
-                    onEditSchedule={handleEditSchedule}
-                />
+            <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
+                <View className="p-6">
+                    <GroupDetailsView 
+                        groupDetails={group}
+                        currentUser={currentUser}
+                        isRemovingMember={isRemovingMember}
+                        onRemoveMember={handleRemoveMember}
+                        searchQuery={searchQuery}
+                        onSearchChange={setSearchQuery}
+                        searchResults={searchResults}
+                        onInvite={handleInvite}
+                        isInviting={isInviting}
+                        onDeleteGroup={handleDeleteGroup}
+                        isDeletingGroup={isDeletingGroup}
+                        onLeaveGroup={handleLeaveGroup}
+                        isLeavingGroup={isLeavingGroup}
+                        onEditSchedule={handleEditSchedule}
+                        onAddOneOffEvent={handleAddOneOffEvent}
+                    />
+                </View>
             </ScrollView>
         </SafeAreaView>
     );

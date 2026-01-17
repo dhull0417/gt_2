@@ -26,8 +26,9 @@ import TimePicker from "@/components/TimePicker";
 import { Picker } from "@react-native-picker/picker";
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { DateTime, Info } from "luxon";
+import { useApiClient } from "@/utils/api";
 
 const GroupImage = require('../../assets/images/group-image.jpeg');
 const { width } = Dimensions.get('window');
@@ -107,6 +108,11 @@ const FadeInView = ({ children, delay = 0, duration = 400, style }: FadeInViewPr
 
 const App = () => {
   const router = useRouter();
+  const api = useApiClient();
+  
+  // Params to handle context when creating an event from an existing group
+  const { existingGroupId, initialType } = useLocalSearchParams<{ existingGroupId?: string, initialType?: string }>();
+  
   const scrollRef = useRef<ScrollView>(null);
   
   // --- State ---
@@ -134,19 +140,42 @@ const App = () => {
   } | null>(null);
 
   // --- Date/Time State ---
-  const [oneOffDate, setOneOffDate] = useState<string>(DateTime.now().toISODate()!);
+  const eventDates = useMemo(() => {
+    return Array.from({ length: 30 }, (_, i) => {
+        const d = DateTime.now().plus({ days: i });
+        return { label: d.toFormat('cccc, LLL d'), value: d.toISODate() || "" };
+    });
+  }, []);
+
+  const [oneOffDate, setOneOffDate] = useState<string>(eventDates[0].value);
   const [calendarViewMonth, setCalendarViewMonth] = useState<DateTime>(DateTime.now().startOf('month'));
   const [meetTime, setMeetTime] = useState("05:00 PM");
   const [timezone, setTimezone] = useState("America/Denver");
   
-  const { mutate, isPending } = useCreateGroup();
+  const { mutate, isPending: isMutationPending } = useCreateGroup();
+  const [isCustomPending, setIsCustomPending] = useState(false);
+  const isPending = isMutationPending || isCustomPending;
+
+  /**
+   * BRANCHING LOGIC:
+   * 1. If coming from Group Details (existingGroupId), skip Naming (1) and Members (2) and go to Date (3).
+   * 2. If initialType is 'event' (global plus button), skip selection fork (0) but show Naming (1).
+   */
+  useEffect(() => {
+    if (existingGroupId) {
+        setCreationType('event');
+        setStep(3); // Direct to Date selection
+    } else if (initialType === 'event') {
+        setCreationType('event');
+        setStep(1); // Direct to Naming
+    }
+  }, [initialType, existingGroupId]);
 
   // --- Calendar Helpers ---
   const calendarGrid = useMemo(() => {
     const startOfMonth = calendarViewMonth.startOf('month');
     const endOfMonth = calendarViewMonth.endOf('month');
     const firstDayIdx = startOfMonth.weekday === 7 ? 0 : startOfMonth.weekday;
-    
     const days = [];
     for (let i = 0; i < firstDayIdx; i++) days.push(null);
     for (let i = 1; i <= endOfMonth.day; i++) days.push(calendarViewMonth.set({ day: i }));
@@ -168,69 +197,90 @@ const App = () => {
       return name.charAt(0).toUpperCase();
   };
 
-  /**
-   * Final Submission Logic
-   * Branching between 'once' for events and recurring frequencies for groups.
-   */
-  const handleCreateRequest = () => {
-    let finalSchedule: any = { frequency: frequency };
-    let finalEventsToDisplay = parseInt(eventsToDisplay);
-
-    if (creationType === 'event') {
-        finalSchedule = { 
-            frequency: 'once', 
-            date: oneOffDate 
-        };
-        finalEventsToDisplay = 1; 
-    } else {
-        if (frequency === 'weekly' || frequency === 'biweekly') finalSchedule.days = selectedDays;
-        else if (frequency === 'monthly') finalSchedule.days = selectedDates;
-        else if (frequency === 'daily') finalSchedule.days = [0, 1, 2, 3, 4, 5, 6]; 
-        else if (frequency === 'custom') {
-            finalSchedule.days = [0]; 
-            finalSchedule.rules = customRoutines.map(r => ({
-                type: r.type,
-                occurrence: r.type === 'byDay' ? r.data.occurrence : undefined,
-                day: r.type === 'byDay' ? r.data.dayIndex : undefined,
-                dates: r.type === 'byDate' ? r.data.dates : undefined,
-            }));
+  const handleCreateRequest = async () => {
+    if (existingGroupId) {
+        // CASE: Add meeting to an existing group (inherits members automatically)
+        setIsCustomPending(true);
+        try {
+            await api.post(`/api/groups/${existingGroupId}/events`, {
+                date: oneOffDate,
+                time: meetTime,
+                timezone: timezone,
+                name: groupName // If empty, backend defaults to group name or 'Meeting'
+            });
+            Alert.alert("Success", "Meeting added to group!");
+            router.back();
+        } catch (error: any) {
+            Alert.alert("Error", error.response?.data?.error || "Failed to add meeting.");
+        } finally {
+            setIsCustomPending(false);
         }
+        return;
     }
 
+    if (creationType === 'event') {
+        // CASE: New Standalone One-Off Event
+        const payload: any = { 
+            name: groupName, 
+            time: meetTime, 
+            schedule: { frequency: 'once', date: oneOffDate }, 
+            timezone,
+            eventsToDisplay: 1,
+            members: selectedMembers.map(m => m._id) 
+        };
+        mutate(payload, { onSuccess: () => router.back() });
+        return;
+    }
+
+    // CASE: New Recurring Group
+    let finalSchedule: any = { frequency };
+    if (frequency === 'weekly' || frequency === 'biweekly') finalSchedule.days = selectedDays;
+    else if (frequency === 'monthly') finalSchedule.days = selectedDates;
+    else if (frequency === 'daily') finalSchedule.days = [0, 1, 2, 3, 4, 5, 6]; 
+    else if (frequency === 'custom') {
+        finalSchedule.days = [0]; 
+        finalSchedule.rules = customRoutines.map(r => ({
+            type: r.type,
+            occurrence: r.type === 'byDay' ? r.data.occurrence : undefined,
+            day: r.type === 'byDay' ? r.data.dayIndex : undefined,
+            dates: r.type === 'byDate' ? r.data.dates : undefined,
+        }));
+    }
+
+    // Cast to any to bypass TS error regarding eventsToDisplay in types
     const payload: any = { 
         name: groupName, 
         time: meetTime, 
         schedule: finalSchedule, 
         timezone,
-        eventsToDisplay: finalEventsToDisplay,
+        eventsToDisplay: parseInt(eventsToDisplay),
         members: selectedMembers.map(m => m._id) 
     };
 
-    mutate(payload, { 
-        onSuccess: () => {
-            Alert.alert("Success", creationType === 'event' ? "Event created!" : "Group created!");
-            router.back();
-        },
-        onError: (err: any) => {
-            Alert.alert("Error", "Failed to create. Please try again.");
-            console.error(err);
-        }
-    });
+    mutate(payload, { onSuccess: () => router.back() });
   };
 
   const handleNext = () => {
+    // If adding to existing group, there are no more steps after Step 4 (Time)
+    // Step transitions for global flows:
     if (step === 3 && frequency === 'daily' && creationType === 'group') setStep(5);
     else setStep(prev => prev + 1);
   };
 
   const handleBack = () => {
-    if (step === 0 || (step === 1 && !creationType)) {
+    // Determine if we are at the start of the current context's flow
+    const isAtStart = 
+        step === 0 || 
+        (existingGroupId && step === 3) || 
+        (initialType === 'event' && !existingGroupId && step === 1);
+
+    if (isAtStart) {
       Alert.alert("Discard Changes?", "Are you sure you want to exit?", [
         { text: "Stay", style: "cancel" },
         { text: "Exit", style: "destructive", onPress: () => router.back() }
       ]);
     } else {
-      setStep(prev => prev - 1);
+        setStep(prev => prev - 1);
     }
   };
 
@@ -438,7 +488,7 @@ const App = () => {
       <ScrollView contentContainerStyle={styles.stepContainerPadded} keyboardShouldPersistTaps="handled"> 
         <FadeInView delay={100}>
             <Text style={styles.headerTitle}>
-                {creationType === 'event' ? "What's the Event name?" : "What's your Group name?"}
+                {creationType === 'event' ? "Meeting Name?" : "What's your Group name?"}
             </Text>
         </FadeInView>
         <FadeInView delay={300}>
@@ -449,7 +499,7 @@ const App = () => {
         <FadeInView delay={500}>
           <TextInput
             style={styles.textInput}
-            placeholder={creationType === 'event' ? "Event name here" : "Group name here"}
+            placeholder={creationType === 'event' ? "Meeting title (e.g. Prep Session)" : "Group name here"}
             placeholderTextColor="#999"
             value={groupName}
             onChangeText={setGroupName}
@@ -746,7 +796,7 @@ const App = () => {
   };
 
   const renderStep_OneOffDate = () => {
-    const weekdayHeaders = Info.weekdays('short'); // ["Mon", "Tue", ...]
+    const weekdayHeaders = Info.weekdays('short'); 
     const reorderedHeaders = [weekdayHeaders[6], ...weekdayHeaders.slice(0, 6)];
 
     return (
@@ -860,9 +910,11 @@ const App = () => {
                     onPress={handleCreateRequest}
                     disabled={isPending}
                 >
-                    <Text style={styles.createButtonText}>
-                        {isPending ? "Creating..." : creationType === 'event' ? "Create Event" : "Create Group"}
-                    </Text>
+                    {isPending ? <ActivityIndicator size="small" color="#fff" /> : (
+                        <Text style={styles.createButtonText}>
+                            {creationType === 'event' ? "Create Event" : "Create Group"}
+                        </Text>
+                    )}
                 </TouchableOpacity>
             </View>
         </FadeInView>
