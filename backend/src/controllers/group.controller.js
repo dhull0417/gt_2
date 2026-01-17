@@ -13,7 +13,7 @@ import { syncStreamUser } from "../utils/stream.js";
 const getScheduleItems = (schedule) => {
     if (schedule.frequency === 'daily') return [0]; 
     if (schedule.frequency === 'custom') return schedule.rules || [];
-    if (schedule.frequency === 'once') return [schedule.date]; // 👈 Fix: Add this line
+    if (schedule.frequency === 'once') return [schedule.date]; 
     return schedule.days || [];
 };
 
@@ -25,58 +25,38 @@ const getScheduleItems = (schedule) => {
  * @access  Private (Owner Only)
  */
 export const updateGroupSchedule = asyncHandler(async (req, res) => {
-    console.log("--- START: updateGroupSchedule ---");
     const { groupId } = req.params;
     const { schedule, time, timezone } = req.body;
     const { userId: clerkId } = getAuth(req);
 
-    console.log("Payload Received:", { groupId, clerkId, time, timezone });
-    console.log("Schedule Object:", JSON.stringify(schedule));
-
     const group = await Group.findById(groupId);
     const user = await User.findOne({ clerkId });
 
-    if (!group || !user) {
-        console.log("Failure: Resource not found.", { groupFound: !!group, userFound: !!user });
-        return res.status(404).json({ error: "Resource not found." });
-    }
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
 
-    // 1. Verify Ownership
-    console.log("Checking Ownership...");
     if (group.owner.toString() !== user._id.toString()) {
-        console.log("Failure: Not an owner.", { groupOwner: group.owner, userId: user._id });
         return res.status(403).json({ error: "Only the group owner can update the schedule." });
     }
 
-    // 2. Validate Inputs
     if (!schedule || !schedule.frequency || !time || !timezone) {
-        console.log("Failure: Missing required fields.");
         return res.status(400).json({ error: "Schedule, time, and timezone are required." });
     }
 
-    // 3. Update Group Metadata
-    console.log("Updating Group Metadata...");
     group.schedule = schedule;
     group.time = time;
     group.timezone = timezone;
     await group.save();
-    console.log("Success: Group saved.");
 
-    // 4. Wipe Future Recurring Events
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     
-    console.log("Deleting future standard events...");
-    const deleteResult = await Event.deleteMany({ 
+    await Event.deleteMany({ 
         group: group._id, 
         isOverride: false, 
         date: { $gte: today } 
     });
-    console.log(`Deleted ${deleteResult.deletedCount} events.`);
 
-    // 5. Regenerate New Events
     try {
-        console.log("Starting regeneration...");
         const limit = group.eventsToDisplay || 3;
         const itemsToIterate = getScheduleItems(group.schedule);
         let potentialEvents = [];
@@ -99,7 +79,6 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
         potentialEvents.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
         const finalEvents = potentialEvents.slice(0, limit);
 
-        console.log(`Creating ${finalEvents.length} new events...`);
         for (const date of finalEvents) {
             await Event.create({
                 group: group._id, 
@@ -111,19 +90,14 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                 undecided: group.members,
             });
         }
-        console.log("Regeneration complete.");
     } catch (eventError) {
         console.error("Critical Error during regeneration:", eventError);
     }
 
-    console.log("--- FINISH: updateGroupSchedule ---");
     res.status(200).json({ 
-        message: "Schedule updated and events regenerated successfully.",
-        deletedCount: deleteResult.deletedCount
+        message: "Schedule updated successfully.",
     });
 });
-
-// --- Existing Controllers ---
 
 export const inviteUser = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
@@ -479,17 +453,6 @@ export const createOneOffEvent = asyncHandler(async (req, res) => {
     if (!date || !time || !timezone) {
         return res.status(400).json({ error: "Date, time, and timezone are required." });
     }
-    
-    const [t, p] = time.split(' ');
-    let [h, m] = t.split(':').map(Number);
-    if (p === 'PM' && h !== 12) h += 12;
-    if (p === 'AM' && h === 12) h = 0;
-    
-    const eventDate = new Date(date);
-    eventDate.setHours(h, m, 0, 0);
-    if (eventDate < new Date()) {
-         return res.status(400).json({ error: "Cannot schedule an event in the past." });
-    }
 
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
@@ -500,10 +463,18 @@ export const createOneOffEvent = asyncHandler(async (req, res) => {
         return res.status(403).json({ error: "Only the group owner can schedule events." });
     }
 
+    // FIXED: Now calls the utility instead of doing inline new Date() calculation
+    const eventDate = calculateNextEventDate(date, time, timezone, 'once');
+
+    // Validation
+    if (eventDate < new Date()) {
+         return res.status(400).json({ error: "Cannot schedule an event in the past." });
+    }
+
     const newEvent = await Event.create({
         group: group._id,
         name: group.name,
-        date: date,
+        date: eventDate, // Now uses the date returned by the utility
         time: time,
         timezone: timezone,
         members: group.members,
