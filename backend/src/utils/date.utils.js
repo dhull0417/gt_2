@@ -2,16 +2,12 @@ import { DateTime } from "luxon";
 
 /**
  * Calculates the next event date based on a schedule rule.
- * TROUBLESHOOTING STEP 1: Entrance Logging
+ * TROUBLESHOOTING STEP 1: Forced Error for Data Visibility
  */
 export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fromDate = null) => {
-  // Log every call to see exactly what strings are being received
-  console.log(`[DEBUG] Utility Called: frequency="${frequency}", time="${time}", timezone="${timezone}"`);
-  console.log(`[DEBUG] dayOrRule:`, dayOrRule);
-
+  
   // 1. Parse common time components
   if (!time || typeof time !== 'string') {
-    console.log(`[DEBUG] Error: 'time' is missing or not a string`);
     return new Date();
   }
 
@@ -22,12 +18,12 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
   if (period && period.toUpperCase() === 'PM' && hours !== 12) hours += 12;
   if (period && period.toUpperCase() === 'AM' && hours === 12) hours = 0;
 
-  // --- A. ONE-OFF EVENTS ---
-  // Using .toLowerCase() and .trim() to ensure string comparison doesn't fail on hidden characters
-  if (frequency && frequency.toString().trim().toLowerCase() === 'once') {
-    console.log(`[DEBUG] Entered 'once' block`);
-    
-    // dayOrRule contains the ISO date string (e.g. "2026-01-17")
+  // --- TROUBLESHOOTING BLOCK ---
+  // We are going to force an error here to see the data in your app's Alert box.
+  // This confirms if the controller is passing the 'once' string correctly.
+  const freqClean = frequency ? frequency.toString().trim().toLowerCase() : "undefined";
+  
+  if (freqClean === 'once') {
     const dtFinal = DateTime.fromISO(dayOrRule, { zone: timezone }).set({ 
         hour: hours, 
         minute: minutes, 
@@ -35,13 +31,11 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
         millisecond: 0 
     });
 
-    console.log(`[DEBUG] Luxon Local Interpretation: ${dtFinal.toString()}`);
-    console.log(`[DEBUG] Resulting UTC for DB: ${dtFinal.toUTC().toString()}`);
-
-    return dtFinal.toJSDate();
+    // This error will be caught by your controller and shown as an Alert on the phone
+    throw new Error(`DEBUG_INFO| Freq: ${freqClean} | Date: ${dayOrRule} | Time: ${hours}:${minutes} | Zone: ${timezone} | Result: ${dtFinal.toString()}`);
   }
 
-  // --- B. RECURRING EVENTS ---
+  // --- REST OF THE UTILITY ---
   const now = fromDate 
     ? DateTime.fromJSDate(fromDate).setZone(timezone).plus({ seconds: 1 })
     : DateTime.now().setZone(timezone);
@@ -111,6 +105,5 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     }
   }
 
-  console.log(`[DEBUG] Fallthrough: No frequency match found for "${frequency}"`);
   return new Date(); 
 };
