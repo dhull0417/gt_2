@@ -48,6 +48,11 @@ export interface Group {
   owner: string;
   timezone: string;
   lastMessage?: LastMessage | null;
+  /**
+   * moderators field added to the base Group interface.
+   * This allows any group object (in lists or details) to optionally include moderator info.
+   */
+  moderators?: (User | string)[];
 }
 
 export interface GroupDetails extends Group {
@@ -154,6 +159,11 @@ interface RemoveScheduledDayPayload {
   rules?: any[];
 }
 
+interface UpdateModeratorsPayload {
+  groupId: string;
+  moderatorIds: string[];
+}
+
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
   const api = axios.create({ 
     baseURL: API_BASE_URL, 
@@ -236,6 +246,13 @@ export const groupApi = {
   },
   updateGroupSchedule: async (api: AxiosInstance, groupId: string, data: any): Promise<{ message: string }> => {
     const response = await api.patch(`/api/groups/${groupId}/schedule`, data);
+    return response.data;
+  },
+  /**
+   * New method for managing moderators.
+   */
+  updateModerators: async (api: AxiosInstance, { groupId, moderatorIds }: UpdateModeratorsPayload): Promise<{ message: string }> => {
+    const response = await api.patch(`/api/groups/${groupId}/moderators`, { moderatorIds });
     return response.data;
   }
 };

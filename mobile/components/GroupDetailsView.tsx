@@ -13,7 +13,7 @@ import {
     Dimensions
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { GroupDetails, User, useApiClient } from '@/utils/api';
+import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
 import { formatSchedule } from '@/utils/schedule';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -97,15 +97,18 @@ export const GroupDetailsView = ({
     };
 
     const handleSaveModerators = async () => {
-        setIsSavingMods(true);
-        try {
-            await api.patch(`/api/groups/${groupDetails._id}/moderators`, { 
-                moderatorIds: selectedModIds 
-            });
-            queryClient.invalidateQueries({ queryKey: ['groupDetails', groupDetails._id] });
-            setIsModModalVisible(false);
-            Alert.alert("Success", "Moderator list updated.");
-        } catch (error: any) {
+    setIsSavingMods(true);
+    try {
+        // Use the centralized utility method
+        await groupApi.updateModerators(api, { 
+            groupId: groupDetails._id, 
+            moderatorIds: selectedModIds 
+        });
+        
+        queryClient.invalidateQueries({ queryKey: ['groupDetails', groupDetails._id] });
+        setIsModModalVisible(false);
+        Alert.alert("Success", "Moderator list updated.");
+    } catch (error: any) {
             Alert.alert("Error", error.response?.data?.error || "Failed to update moderators.");
         } finally {
             setIsSavingMods(false);
