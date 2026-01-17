@@ -87,7 +87,6 @@ const GroupDetailScreen = () => {
         router.push(`/group-edit-schedule/${id}`);
     };
 
-    // Handler to navigate to the creation flow for adding a one-off meeting
     const handleAddOneOffEvent = () => {
         if (!id) return;
         router.push({
@@ -104,13 +103,20 @@ const GroupDetailScreen = () => {
         );
     }
 
+    // Permission logic: Owner or Moderator
+    const isMod = group.moderators?.some((m: any) => 
+        typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id
+    ) ?? false;
+    const canManage = currentUser._id === group.owner || isMod;
+
     return (
         <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom', 'left', 'right']}>
             <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-100">
                 <View className="flex-1">
                     <Text className="text-2xl font-bold text-gray-900" numberOfLines={1}>{group.name}</Text>
                 </View>
-                {currentUser._id === group.owner && (
+                {/* FIXED: Allow moderators to access settings as well */}
+                {canManage && (
                     <TouchableOpacity 
                         onPress={handleEditSchedule}
                         className="bg-indigo-50 p-2 rounded-full ml-4"

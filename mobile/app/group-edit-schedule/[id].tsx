@@ -136,7 +136,7 @@ const EditScheduleScreen = () => {
     }
 
     return (
-        <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
+        <SafeAreaView style={styles.container} edges={['top', 'bottom', 'left', 'right']}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()}>
                     <Feather name="x" size={24} color="#374151" />
@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
         padding: 20, 
         marginBottom: 16, 
         backgroundColor: '#FFFFFF', 
-        borderWidth: 1.5, // Fixed typo: borderWIdth -> borderWidth
+        borderWidth: 1.5, 
         borderColor: '#E5E7EB', 
         borderRadius: 16, 
         elevation: 2 

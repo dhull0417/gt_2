@@ -13,23 +13,15 @@ import {
     Dimensions
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
 import { formatSchedule } from '@/utils/schedule';
 import { useQueryClient } from '@tanstack/react-query';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-/**
- * FIXED: Made 'moderators' optional in the extended interface.
- * This prevents compilation errors in parent components that pass a standard
- * 'GroupDetails' object which may not yet have this field populated from the API.
- */
-interface ExtendedGroupDetails extends GroupDetails {
-    moderators?: (User | string)[];
-}
-
 interface GroupDetailsViewProps {
-    groupDetails: ExtendedGroupDetails;
+    groupDetails: GroupDetails; 
     currentUser: User;
     isRemovingMember: boolean;
     onRemoveMember: (memberIdToRemove: string) => void;
@@ -63,6 +55,7 @@ export const GroupDetailsView = ({
     onEditSchedule,
     onAddOneOffEvent
 }: GroupDetailsViewProps) => {
+    const insets = useSafeAreaInsets();
     const isOwner = currentUser._id === groupDetails.owner;
     
     // Check if current user is a moderator
@@ -97,18 +90,18 @@ export const GroupDetailsView = ({
     };
 
     const handleSaveModerators = async () => {
-    setIsSavingMods(true);
-    try {
-        // Use the centralized utility method
-        await groupApi.updateModerators(api, { 
-            groupId: groupDetails._id, 
-            moderatorIds: selectedModIds 
-        });
-        
-        queryClient.invalidateQueries({ queryKey: ['groupDetails', groupDetails._id] });
-        setIsModModalVisible(false);
-        Alert.alert("Success", "Moderator list updated.");
-    } catch (error: any) {
+        setIsSavingMods(true);
+        try {
+            // Use the centralized utility method as requested
+            await groupApi.updateModerators(api, { 
+                groupId: groupDetails._id, 
+                moderatorIds: selectedModIds 
+            });
+            
+            queryClient.invalidateQueries({ queryKey: ['groupDetails', groupDetails._id] });
+            setIsModModalVisible(false);
+            Alert.alert("Success", "Moderator list updated.");
+        } catch (error: any) {
             Alert.alert("Error", error.response?.data?.error || "Failed to update moderators.");
         } finally {
             setIsSavingMods(false);
@@ -116,7 +109,7 @@ export const GroupDetailsView = ({
     };
 
     return (
-        <View style={{ paddingBottom: 100 }}>
+        <View style={{ paddingBottom: 100, paddingTop: insets.top }}>
             {/* Schedule & Capacity Card */}
             {groupDetails.schedule && (
                 <View style={styles.card}>
