@@ -1,11 +1,11 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, StyleSheet } from 'react-native';
 import React, { useCallback, useMemo, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useGetEvents } from '@/hooks/useGetEvents';
 import { useRsvp } from '@/hooks/useRsvp';
 import { Event, User, useApiClient, userApi } from '@/utils/api';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, Link } from 'expo-router';
 import EventDetailModal from '@/components/EventDetailModal';
 import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
@@ -38,7 +38,6 @@ const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
 
 // --- Components ---
 
-// 1. Status Dot Component
 const RsvpStatusDot = ({ event, userId }: { event: Event; userId: string }) => {
     let dotColor = '#FBBF24'; // Yellow (Undecided) default
 
@@ -59,31 +58,33 @@ const RsvpStatusDot = ({ event, userId }: { event: Event; userId: string }) => {
                 top: 12,
                 right: 12,
                 borderWidth: 1,
-                borderColor: 'white' // Optional: adds a crisp edge
+                borderColor: 'white'
             }} 
         />
     );
 };
 
-// 2. Counts Component
 const RsvpCounts = ({ event }: { event: Event }) => {
     return (
-        <View className="flex-row items-center mt-3">
-            {/* Green Count (In) */}
+        <View className="flex-row items-center mt-3 flex-wrap">
             <View className="flex-row items-center mr-4">
                 <View className="w-2 h-2 rounded-full bg-green-500 mr-1.5" />
-                <Text className="text-gray-600 font-medium">{event.in.length}</Text>
+                <Text className="text-gray-600 font-medium">{event.in.length} In</Text>
             </View>
 
-            {/* Red Count (Out) */}
-            <View className="flex-row items-center">
+            <View className="flex-row items-center mr-4">
                 <View className="w-2 h-2 rounded-full bg-red-500 mr-1.5" />
-                <Text className="text-gray-600 font-medium">{event.out.length}</Text>
+                <Text className="text-gray-600 font-medium">{event.out.length} Out</Text>
+            </View>
+
+            <View className="flex-row items-center">
+                <Text className="text-indigo-600 font-bold text-[10px] uppercase">
+                    Max Attendees: {event.capacity === 0 ? 'Unlimited' : event.capacity}
+                </Text>
             </View>
         </View>
     );
 };
-
 
 const EventCard = ({
   event,
@@ -100,36 +101,80 @@ const EventCard = ({
   isRsvping: boolean;
   currentUser: User | undefined;
 }) => {
-  return (
-    <View className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200 relative">
-      <TouchableOpacity onPress={onPress}>
-        {/* Status Dot */}
-        {currentUser && <RsvpStatusDot event={event} userId={currentUser._id} />}
+  const isCancelled = event.status === 'cancelled';
+  const isFull = event.capacity > 0 && event.in.length >= event.capacity;
+  const isWaitlisted = currentUser ? event.waitlist.includes(currentUser._id) : false;
+  const isIn = currentUser ? event.in.includes(currentUser._id) : false;
 
-        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1F2937', paddingRight: 20 }}>
-          {event.name}
-        </Text>
-        <Text style={{ fontSize: 16, color: '#4B5563', marginTop: 4 }}>
+  return (
+    <View 
+      className={`p-5 my-2 rounded-2xl shadow-sm border relative ${
+        isCancelled ? 'bg-red-50/30 border-red-100 opacity-80' : 'bg-white border-gray-200'
+      }`}
+    >
+      <TouchableOpacity onPress={onPress} disabled={isCancelled}>
+        {!isCancelled && currentUser && <RsvpStatusDot event={event} userId={currentUser._id} />}
+
+        <View className="flex-row justify-between items-start">
+          <View className="flex-1 pr-6">
+            <Text 
+              style={{ 
+                fontSize: 20, 
+                fontWeight: 'bold', 
+                color: isCancelled ? '#9CA3AF' : '#1F2937',
+                textDecorationLine: isCancelled ? 'line-through' : 'none' 
+              }}
+            >
+              {event.name}
+            </Text>
+            {isCancelled && (
+              <View className="bg-red-100 self-start px-2 py-0.5 rounded-md mt-1">
+                <Text className="text-red-600 text-[10px] font-black uppercase">Cancelled</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <Text style={{ fontSize: 16, color: isCancelled ? '#9CA3AF' : '#4B5563', marginTop: 4 }}>
           {formatDate(event.date, event.timezone)} at {event.time} {getTimezoneAbbreviation(event.date, event.timezone)}
         </Text>
 
-        {/* Counts Display */}
-        <RsvpCounts event={event} />
+        {!isCancelled && <RsvpCounts event={event} />}
+
+        <View className="flex-row mt-2">
+            {isFull && !isCancelled && !isIn && (
+                <View className="bg-orange-100 px-2 py-1 rounded-lg mr-2 border border-orange-200">
+                    <Text className="text-orange-600 text-[10px] font-black">FULL</Text>
+                </View>
+            )}
+            {isWaitlisted && (
+                <View className="bg-blue-100 px-2 py-1 rounded-lg border border-blue-200">
+                    <Text className="text-blue-600 text-[10px] font-black uppercase">Waitlisted</Text>
+                </View>
+            )}
+        </View>
       </TouchableOpacity>
 
-      {showRsvpButtons && (
+      {showRsvpButtons && !isCancelled && (
         <View className="flex-row space-x-4 mt-4 pt-4 border-t border-gray-100">
           <TouchableOpacity
             onPress={() => onRsvp('in')}
             disabled={isRsvping}
-            className="flex-1 py-3 bg-green-500 rounded-lg items-center justify-center shadow"
+            className={`flex-1 py-3 rounded-xl items-center justify-center shadow-sm ${
+                isWaitlisted ? 'bg-blue-600' :
+                (isFull && !isIn) ? 'bg-orange-500' : 
+                'bg-green-500'
+            }`}
+            style={{ backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#10B981' }}
           >
-            <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>I'm In</Text>
+            <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
+                {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => onRsvp('out')}
             disabled={isRsvping}
-            className="flex-1 py-3 bg-red-500 rounded-lg items-center justify-center shadow"
+            className="flex-1 py-3 bg-red-500 rounded-xl items-center justify-center shadow-sm"
           >
             <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
           </TouchableOpacity>
@@ -154,12 +199,9 @@ const DashboardScreen = () => {
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
-  const { nextUndecidedEvent } = useMemo(() => {
-    if (!events || !currentUser) {
-      return { nextUndecidedEvent: null };
-    }
-    const nextUndecided = events.find(event => event.undecided.includes(currentUser._id));
-    return { nextUndecidedEvent: nextUndecided };
+  const nextUndecidedEvent = useMemo(() => {
+    if (!events || !currentUser) return null;
+    return events.find(event => event.status !== 'cancelled' && event.undecided.includes(currentUser._id));
   }, [events, currentUser]);
 
   const groupedEvents = useMemo(() => {
@@ -174,15 +216,10 @@ const DashboardScreen = () => {
     events.forEach(event => {
       const eventDate = DateTime.fromISO(event.date);
       const diffInDays = eventDate.diff(today, 'days').days;
-      if (diffInDays <= 3) {
-        groups['Within 3 days'].push(event);
-      } else if (diffInDays <= 7) {
-        groups['Within 1 week'].push(event);
-      } else if (diffInDays <= 14) {
-        groups['Within 2 weeks'].push(event);
-      } else {
-        groups['Future'].push(event);
-      }
+      if (diffInDays <= 3) groups['Within 3 days'].push(event);
+      else if (diffInDays <= 7) groups['Within 1 week'].push(event);
+      else if (diffInDays <= 14) groups['Within 2 weeks'].push(event);
+      else groups['Future'].push(event);
     });
     return groups;
   }, [events]);
@@ -207,13 +244,19 @@ const DashboardScreen = () => {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-100">
-      <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
-        <View style={{ width: 24 }} />
+    <SafeAreaView className="flex-1 bg-gray-50">
+      <View className="flex-row justify-between items-center px-6 py-4 border-b border-gray-200 bg-white">
+        <Link href="/notifications" asChild>
+            <TouchableOpacity>
+                <Feather name="bell" size={24} color="#4F46E5" />
+            </TouchableOpacity>
+        </Link>
         <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#111827' }}>
           Home
         </Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity onPress={() => router.push('/create-group')}>
+            <Feather name="plus-circle" size={24} color="#4F46E5" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView className="p-4">
@@ -225,9 +268,8 @@ const DashboardScreen = () => {
           </Text>
         ) : (
           <>
-            {/* You coming? Section */}
-            <View className="mb-8">
-              <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#2b528a', paddingHorizontal: 8, marginBottom: 8 }}>
+            <View className="mb-10 mt-2">
+              <Text style={{ fontSize: 32, fontWeight: '900', color: '#1F2937', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
                 You coming?
               </Text>
               {nextUndecidedEvent ? (
@@ -237,25 +279,24 @@ const DashboardScreen = () => {
                   showRsvpButtons={true}
                   onRsvp={(status) => handleDashboardRsvp(nextUndecidedEvent._id, status)}
                   isRsvping={isRsvping}
-                  currentUser={currentUser} // Pass currentUser
+                  currentUser={currentUser}
                 />
               ) : (
-                <View className="bg-white p-5 my-2 rounded-lg items-center">
-                  <Text style={{ fontSize: 16, color: '#2b528a' }}>
-                    You're all caught up! No pending RSVPs.
+                <View className="bg-white p-8 my-2 rounded-[2rem] items-center border border-dashed border-gray-300">
+                  <Text className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">
+                    No pending RSVPs
                   </Text>
                 </View>
               )}
             </View>
 
-            {/* Upcoming Events Section */}
-            <View>
-              <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#2b528a', paddingHorizontal: 8, marginBottom: 8 }}>
-                Upcoming Events
+            <View className="pb-10">
+              <Text style={{ fontSize: 32, fontWeight: '900', color: '#1F2937', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
+                Upcoming
               </Text>
 
               {events?.length === 0 && (
-                <View className="bg-white p-5 my-2 rounded-lg items-center">
+                <View className="bg-white p-5 my-2 rounded-2xl items-center border border-gray-100">
                   <Text style={{ fontSize: 16, color: '#6B7280' }}>
                     You have no upcoming events.
                   </Text>
@@ -266,29 +307,19 @@ const DashboardScreen = () => {
                 if (groupEvents.length === 0) return null;
                 return (
                   <View key={groupTitle}>
-                    <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#374151', marginTop: 16, marginBottom: 8, paddingHorizontal: 8 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '900', color: '#9CA3AF', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
                       {groupTitle}
                     </Text>
                     {groupEvents.map((event: Event) => (
-                      <TouchableOpacity
-                        key={event._id}
-                        onPress={() => handleOpenModal(event)}
-                        className="bg-white p-5 my-2 rounded-lg shadow-sm border border-gray-200 relative"
-                      >
-                         {/* 👇 1. Status Dot */}
-                        {currentUser && <RsvpStatusDot event={event} userId={currentUser._id} />}
-
-                        <Text style={{ fontSize: 18, fontWeight: '600', color: '#1F2937', paddingRight: 20 }}>
-                          {event.name}
-                        </Text>
-                        <Text style={{ fontSize: 16, color: '#4B5563', marginTop: 4 }}>
-                          {formatDate(event.date, event.timezone)} at {event.time} {getTimezoneAbbreviation(event.date, event.timezone)}
-                        </Text>
-                        
-                        {/* 👇 2. Counts Display */}
-                        <RsvpCounts event={event} />
-
-                      </TouchableOpacity>
+                        <EventCard
+                            key={event._id}
+                            event={event}
+                            onPress={() => handleOpenModal(event)}
+                            showRsvpButtons={false}
+                            onRsvp={() => {}}
+                            isRsvping={false}
+                            currentUser={currentUser}
+                        />
                     ))}
                   </View>
                 );
@@ -303,7 +334,10 @@ const DashboardScreen = () => {
         animationType="slide"
         onRequestClose={handleCloseModal}
       >
-        <EventDetailModal event={selectedEvent} onClose={handleCloseModal} />
+        {/* Fixed: Use SafeAreaView inside the modal to keep the top visible */}
+        <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }}>
+            <EventDetailModal event={selectedEvent} onClose={handleCloseModal} />
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
