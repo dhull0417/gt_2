@@ -27,16 +27,16 @@ import { Picker } from "@react-native-picker/picker";
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { DateTime, Info } from "luxon";
 
 const GroupImage = require('../../assets/images/group-image.jpeg');
 const { width } = Dimensions.get('window');
 
-// Card Math
 const CARD_WIDTH = width * 0.90; 
 const SIDE_INSET = (width - CARD_WIDTH) / 2; 
 
-// --- Types ---
-type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom' | null;
+type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom' | 'once' | null;
+type CreationType = 'group' | 'event' | null;
 
 interface CustomRoutine {
     id: string;
@@ -80,7 +80,6 @@ const daysOfWeek = [
 
 const occurrences = ['1st', '2nd', '3rd', '4th', '5th', 'Last'];
 
-// --- Animation Helper ---
 interface FadeInViewProps {
   children: React.ReactNode;
   delay?: number;
@@ -94,41 +93,26 @@ const FadeInView = ({ children, delay = 0, duration = 400, style }: FadeInViewPr
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: duration,
-        delay: delay,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: duration,
-        delay: delay,
-        useNativeDriver: true,
-      })
+      Animated.timing(fadeAnim, { toValue: 1, duration, delay, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration, delay, useNativeDriver: true })
     ]).start();
-  }, [delay, duration]);
+  }, [delay, duration, fadeAnim, slideAnim]);
 
   return (
-    <Animated.View style={[{ 
-      opacity: fadeAnim, 
-      transform: [{ translateY: slideAnim }],
-      width: '100%' 
-    }, style]}>
+    <Animated.View style={[{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], width: '100%' }, style]}>
       {children}
     </Animated.View>
   );
 };
 
-const CreateGroupScreen = () => {
+const App = () => {
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
   
   // --- State ---
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0); 
+  const [creationType, setCreationType] = useState<CreationType>(null);
   const [groupName, setGroupName] = useState("");
-  
-  // Hardcoded to 3 as requested for default behavior
   const [eventsToDisplay] = useState("3"); 
   
   const [searchQuery, setSearchQuery] = useState("");
@@ -149,12 +133,30 @@ const CreateGroupScreen = () => {
       routineIndex: number 
   } | null>(null);
 
+  // --- Date/Time State ---
+  const [oneOffDate, setOneOffDate] = useState<string>(DateTime.now().toISODate()!);
+  const [calendarViewMonth, setCalendarViewMonth] = useState<DateTime>(DateTime.now().startOf('month'));
   const [meetTime, setMeetTime] = useState("05:00 PM");
   const [timezone, setTimezone] = useState("America/Denver");
   
   const { mutate, isPending } = useCreateGroup();
 
-  // --- Helpers ---
+  // --- Calendar Helpers ---
+  const calendarGrid = useMemo(() => {
+    const startOfMonth = calendarViewMonth.startOf('month');
+    const endOfMonth = calendarViewMonth.endOf('month');
+    const firstDayIdx = startOfMonth.weekday === 7 ? 0 : startOfMonth.weekday;
+    
+    const days = [];
+    for (let i = 0; i < firstDayIdx; i++) days.push(null);
+    for (let i = 1; i <= endOfMonth.day; i++) days.push(calendarViewMonth.set({ day: i }));
+    return days;
+  }, [calendarViewMonth]);
+
+  const changeMonth = (offset: number) => {
+    setCalendarViewMonth(prev => prev.plus({ months: offset }));
+  };
+
   const getDisplayName = (user: UserStub) => {
       if (user.firstName) return `${user.firstName} ${user.lastName || ''}`.trim();
       if (user.name) return user.name;
@@ -166,49 +168,70 @@ const CreateGroupScreen = () => {
       return name.charAt(0).toUpperCase();
   };
 
-  // --- Logic ---
-  const handleCreateGroup = () => {
-    const limit = parseInt(eventsToDisplay);
-    
-    let finalSchedule: any = { frequency };
-    if (frequency === 'weekly' || frequency === 'biweekly') finalSchedule.days = selectedDays;
-    else if (frequency === 'monthly') finalSchedule.days = selectedDates;
-    else if (frequency === 'daily') finalSchedule.days = [0, 1, 2, 3, 4, 5, 6]; 
-    else if (frequency === 'custom') {
-        finalSchedule.days = [0]; 
-        finalSchedule.rules = customRoutines.map(r => ({
-            type: r.type,
-            occurrence: r.type === 'byDay' ? r.data.occurrence : undefined,
-            day: r.type === 'byDay' ? r.data.dayIndex : undefined,
-            dates: r.type === 'byDate' ? r.data.dates : undefined,
-        }));
+  /**
+   * Final Submission Logic
+   * Branching between 'once' for events and recurring frequencies for groups.
+   */
+  const handleCreateRequest = () => {
+    let finalSchedule: any = { frequency: frequency };
+    let finalEventsToDisplay = parseInt(eventsToDisplay);
+
+    if (creationType === 'event') {
+        finalSchedule = { 
+            frequency: 'once', 
+            date: oneOffDate 
+        };
+        finalEventsToDisplay = 1; 
+    } else {
+        if (frequency === 'weekly' || frequency === 'biweekly') finalSchedule.days = selectedDays;
+        else if (frequency === 'monthly') finalSchedule.days = selectedDates;
+        else if (frequency === 'daily') finalSchedule.days = [0, 1, 2, 3, 4, 5, 6]; 
+        else if (frequency === 'custom') {
+            finalSchedule.days = [0]; 
+            finalSchedule.rules = customRoutines.map(r => ({
+                type: r.type,
+                occurrence: r.type === 'byDay' ? r.data.occurrence : undefined,
+                day: r.type === 'byDay' ? r.data.dayIndex : undefined,
+                dates: r.type === 'byDate' ? r.data.dates : undefined,
+            }));
+        }
     }
 
-    const variables = { 
+    const payload: any = { 
         name: groupName, 
         time: meetTime, 
         schedule: finalSchedule, 
         timezone,
-        eventsToDisplay: limit,
+        eventsToDisplay: finalEventsToDisplay,
         members: selectedMembers.map(m => m._id) 
     };
 
-    mutate(variables, { onSuccess: () => router.back() });
+    mutate(payload, { 
+        onSuccess: () => {
+            Alert.alert("Success", creationType === 'event' ? "Event created!" : "Group created!");
+            router.back();
+        },
+        onError: (err: any) => {
+            Alert.alert("Error", "Failed to create. Please try again.");
+            console.error(err);
+        }
+    });
   };
 
   const handleNext = () => {
-    if (step === 3 && frequency === 'daily') setStep(5);
+    if (step === 3 && frequency === 'daily' && creationType === 'group') setStep(5);
     else setStep(prev => prev + 1);
   };
 
   const handleBack = () => {
-    if (step === 1) {
+    if (step === 0 || (step === 1 && !creationType)) {
       Alert.alert("Discard Changes?", "Are you sure you want to exit?", [
         { text: "Stay", style: "cancel" },
         { text: "Exit", style: "destructive", onPress: () => router.back() }
       ]);
-    } else if (step === 5 && frequency === 'daily') setStep(3);
-    else setStep(prev => prev - 1);
+    } else {
+      setStep(prev => prev - 1);
+    }
   };
 
   const toggleDaySelection = (dayIndex: number) => {
@@ -290,8 +313,6 @@ const CreateGroupScreen = () => {
       const pageIndex = Math.round(offsetX / CARD_WIDTH);
       setCurrentPage(pageIndex);
   };
-
-  // --- RENDERERS ---
 
   const renderDropdownModal = () => {
       if (!modalVisible || !modalConfig) return null;
@@ -386,10 +407,40 @@ const CreateGroupScreen = () => {
       );
   };
 
+  const renderStep0_Choice = () => (
+    <View style={styles.stepContainerPadded}>
+        <FadeInView delay={100}><Text style={styles.headerTitle}>New:</Text></FadeInView>
+        <View style={{ flex: 1, justifyContent: 'center' }}>
+            <FadeInView delay={300}>
+                <TouchableOpacity 
+                    style={[styles.selectionButton, { height: 110, justifyContent: 'center' }]} 
+                    onPress={() => { setCreationType('group'); setStep(1); }}
+                >
+                    <Text style={styles.selectionButtonText}>Group</Text>
+                    <Text style={styles.selectionButtonSubtext}>Create a recurring schedule with others</Text>
+                </TouchableOpacity>
+            </FadeInView>
+            <FadeInView delay={450}>
+                <TouchableOpacity 
+                    style={[styles.selectionButton, { height: 110, justifyContent: 'center' }]} 
+                    onPress={() => { setCreationType('event'); setStep(1); }}
+                >
+                    <Text style={styles.selectionButtonText}>One-Off Event</Text>
+                    <Text style={styles.selectionButtonSubtext}>A single, non-recurring event</Text>
+                </TouchableOpacity>
+            </FadeInView>
+        </View>
+    </View>
+  );
+
   const renderStep1_Name = () => (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.stepContainerPadded} keyboardShouldPersistTaps="handled"> 
-        <FadeInView delay={100}><Text style={styles.headerTitle}>What's your Group name?</Text></FadeInView>
+        <FadeInView delay={100}>
+            <Text style={styles.headerTitle}>
+                {creationType === 'event' ? "What's the Event name?" : "What's your Group name?"}
+            </Text>
+        </FadeInView>
         <FadeInView delay={300}>
           <View style={styles.imagePlaceholder}>
               <Image source={GroupImage} style={styles.image} resizeMode="cover" />
@@ -398,7 +449,7 @@ const CreateGroupScreen = () => {
         <FadeInView delay={500}>
           <TextInput
             style={styles.textInput}
-            placeholder="Your group name here"
+            placeholder={creationType === 'event' ? "Event name here" : "Group name here"}
             placeholderTextColor="#999"
             value={groupName}
             onChangeText={setGroupName}
@@ -406,7 +457,10 @@ const CreateGroupScreen = () => {
           />
         </FadeInView>
         <FadeInView delay={650}>
-          <View style={styles.footerNavRight}>
+          <View style={styles.footerNavSpread}>
+              <TouchableOpacity onPress={handleBack}>
+                  <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+              </TouchableOpacity>
               <TouchableOpacity onPress={handleNext} disabled={groupName.trim().length === 0}>
                   <Feather name="arrow-right-circle" size={48} color={groupName.trim().length === 0 ? "#D1D5DB" : "#4F46E5"} />
               </TouchableOpacity>
@@ -424,7 +478,9 @@ const CreateGroupScreen = () => {
       <View style={styles.stepContainerPadded}>
         <View style={{ flex: 1 }}>
           <FadeInView delay={100}>
-            <Text style={styles.headerTitle}>Who should be in this group?</Text>
+            <Text style={styles.headerTitle}>
+                {creationType === 'event' ? "Who is invited?" : "Who should be in this group?"}
+            </Text>
           </FadeInView>
           
           <FadeInView delay={250}>
@@ -471,7 +527,7 @@ const CreateGroupScreen = () => {
                 <ScrollView showsVerticalScrollIndicator={false}>
                   <View>
                     <Text style={styles.pickerTitle}>Or invite via link</Text>
-                    <TouchableOpacity style={styles.shareLinkButton} onPress={() => Share.share({ message: `Join my new group "${groupName}"!` })}>
+                    <TouchableOpacity style={styles.shareLinkButton} onPress={() => Share.share({ message: `Join my new ${creationType === 'event' ? 'event' : 'group'} "${groupName}"!` })}>
                       <Feather name="share" size={20} color="#4F46E5" />
                       <Text style={styles.shareLinkText}>Share Invite Link</Text>
                     </TouchableOpacity>
@@ -479,7 +535,7 @@ const CreateGroupScreen = () => {
 
                   {!!selectedMembers.length && (
                     <View style={{ marginTop: 24 }}>
-                      <Text style={[styles.pickerTitle, { marginBottom: 8 }]}>Selected Members ({selectedMembers.length})</Text>
+                      <Text style={[styles.pickerTitle, { marginBottom: 8 }]}>Selected ({selectedMembers.length})</Text>
                       <View style={styles.selectedListContainer}>
                         {selectedMembers.map(member => (
                           <View key={member._id} style={styles.selectedRow}>
@@ -689,36 +745,124 @@ const CreateGroupScreen = () => {
     );
   };
 
-  const renderStep5_Time = () => (
-    <View style={styles.stepContainerPadded}>
-        <FadeInView delay={100}><Text style={styles.headerTitle}>Choose a time & details</Text></FadeInView>
-        
-        <FadeInView delay={250}><TimePicker onTimeChange={setMeetTime} initialValue={meetTime} /></FadeInView>
-        
-        <FadeInView delay={400}>
-            <View style={styles.timezoneContainer}>
-                <Text style={styles.pickerTitle}>Select Timezone</Text>
-                <View style={styles.pickerWrapper}>
-                    <Picker selectedValue={timezone} onValueChange={setTimezone} itemStyle={styles.pickerItem}>
-                        {usaTimezones.map(tz => <Picker.Item key={tz.value} label={tz.label} value={tz.value} />)}
-                    </Picker>
-                </View>
+  const renderStep_OneOffDate = () => {
+    const weekdayHeaders = Info.weekdays('short'); // ["Mon", "Tue", ...]
+    const reorderedHeaders = [weekdayHeaders[6], ...weekdayHeaders.slice(0, 6)];
+
+    return (
+        <View style={styles.stepContainerPadded}>
+            <FadeInView delay={100}><Text style={styles.headerTitle}>When is the event?</Text></FadeInView>
+            
+            <View style={{ flex: 1 }}>
+                <FadeInView delay={300}>
+                    <View style={styles.calendarContainer}>
+                        <View style={styles.calendarNav}>
+                            <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.navButton}>
+                                <Feather name="chevron-left" size={24} color="#4F46E5" />
+                            </TouchableOpacity>
+                            <Text style={styles.calendarMonthText}>
+                                {calendarViewMonth.toFormat('LLLL yyyy')}
+                            </Text>
+                            <TouchableOpacity onPress={() => changeMonth(1)} style={styles.navButton}>
+                                <Feather name="chevron-right" size={24} color="#4F46E5" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.calendarHeaderRow}>
+                            {reorderedHeaders.map(day => (
+                                <Text key={day} style={styles.calendarHeaderDay}>{day}</Text>
+                            ))}
+                        </View>
+
+                        <View style={styles.calendarGridContainer}>
+                            {calendarGrid.map((day, index) => {
+                                if (!day) return <View key={`pad-${index}`} style={styles.calendarDayBox} />;
+                                
+                                const isSelected = day.toISODate() === oneOffDate;
+                                const isToday = day.hasSame(DateTime.now(), 'day');
+                                
+                                return (
+                                    <TouchableOpacity 
+                                        key={day.toISODate()} 
+                                        onPress={() => setOneOffDate(day.toISODate()!)}
+                                        style={[
+                                            styles.calendarDayBox, 
+                                            isSelected && styles.calendarDayBoxSelected,
+                                            isToday && !isSelected && styles.calendarDayBoxToday
+                                        ]}
+                                    >
+                                        <Text style={[
+                                            styles.calendarDayText, 
+                                            isSelected && styles.calendarDayTextSelected,
+                                            isToday && !isSelected && styles.calendarDayTextToday
+                                        ]}>
+                                            {day.day}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    </View>
+                </FadeInView>
             </View>
+
+            <FadeInView delay={500}>
+                <View style={styles.footerNavSpread}>
+                    <TouchableOpacity onPress={handleBack}>
+                        <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleNext}>
+                        <Feather name="arrow-right-circle" size={48} color="#4F46E5" />
+                    </TouchableOpacity>
+                </View>
+            </FadeInView>
+        </View>
+    );
+  };
+
+  const renderStep_FinalTime = () => (
+    <View style={styles.stepContainerPadded}>
+        <FadeInView delay={100}>
+            <Text style={styles.headerTitle}>Choose a time & details</Text>
         </FadeInView>
+        
+        <View style={{ flex: 1 }}>
+            <FadeInView delay={250}>
+                <View style={styles.finalCardSection}>
+                    <Text style={styles.pickerTitle}>Meeting Time</Text>
+                    <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
+                </View>
+            </FadeInView>
+            
+            <FadeInView delay={400}>
+                <View style={styles.finalCardSection}>
+                    <Text style={styles.pickerTitle}>Select Timezone</Text>
+                    <View style={styles.pickerWrapper}>
+                        <Picker 
+                            selectedValue={timezone} 
+                            onValueChange={setTimezone} 
+                            itemStyle={styles.pickerItem}
+                        >
+                            {usaTimezones.map(tz => <Picker.Item key={tz.value} label={tz.label} value={tz.value} />)}
+                        </Picker>
+                    </View>
+                </View>
+            </FadeInView>
+        </View>
 
-        {/* Removed Section: Décide event display count. Now defaulted to 3 in state. */}
-
-        <FadeInView delay={550}>
+        <FadeInView delay={600}>
             <View style={styles.footerNavSpread}>
                 <TouchableOpacity onPress={handleBack}>
                     <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
                 </TouchableOpacity>
                 <TouchableOpacity
-                    style={[styles.createButton, isPending && { backgroundColor: '#A5B4FC' }]}
-                    onPress={handleCreateGroup}
+                    style={[styles.createButton, isPending && { opacity: 0.7 }]}
+                    onPress={handleCreateRequest}
                     disabled={isPending}
                 >
-                    <Text style={styles.createButtonText}>{isPending ? "Creating..." : "Create Group"}</Text>
+                    <Text style={styles.createButtonText}>
+                        {isPending ? "Creating..." : creationType === 'event' ? "Create Event" : "Create Group"}
+                    </Text>
                 </TouchableOpacity>
             </View>
         </FadeInView>
@@ -728,11 +872,18 @@ const CreateGroupScreen = () => {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
         <View style={{ flex: 1 }}>
+            {step === 0 && renderStep0_Choice()}
             {step === 1 && renderStep1_Name()}
             {step === 2 && renderStep2_AddMembers()}
-            {step === 3 && renderStep3_Frequency()}
-            {step === 4 && renderStep4_Details()}
-            {step === 5 && renderStep5_Time()}
+            
+            {/* Group branching */}
+            {step === 3 && creationType === 'group' && renderStep3_Frequency()}
+            {step === 4 && creationType === 'group' && renderStep4_Details()}
+            {step === 5 && creationType === 'group' && renderStep_FinalTime()}
+
+            {/* One-Off branching */}
+            {step === 3 && creationType === 'event' && renderStep_OneOffDate()}
+            {step === 4 && creationType === 'event' && renderStep_FinalTime()}
         </View>
         {renderDropdownModal()}
     </SafeAreaView>
@@ -741,7 +892,7 @@ const CreateGroupScreen = () => {
 
 const styles = StyleSheet.create({
     stepContainer: { flex: 1, justifyContent: 'space-between' },
-    stepContainerPadded: { flex: 1, justifyContent: 'space-between', padding: 24 },
+    stepContainerPadded: { flex: 1, padding: 24 },
     headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#1F2937', textAlign: 'center', marginBottom: 24 },
     imagePlaceholder: { width: '80%', aspectRatio: 16/9, marginVertical: 24, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
     image: { width: '100%', height: '100%', borderRadius: 8 },
@@ -782,7 +933,7 @@ const styles = StyleSheet.create({
     cardLabel: { fontSize: 18, fontWeight: '600', color: '#374151', marginVertical: 10 },
     selectionButton: { width: '100%', padding: 16, backgroundColor: '#F3F4F6', borderRadius: 12, marginBottom: 16, alignItems: 'center', borderBottomWidth: 1, borderColor: '#E5E7EB' },
     selectionButtonText: { fontSize: 18, fontWeight: 'bold', color: '#4F46E5', marginBottom: 4 },
-    selectionButtonSubtext: { fontSize: 14, color: '#6B7280' },
+    selectionButtonSubtext: { fontSize: 14, color: '#6B7280', textAlign: 'center' },
     dropdownButton: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: '#F9FAFB', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB' },
     dropdownButtonText: { fontSize: 16, color: '#374151' },
     miniDateBox: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center', margin: 3, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
@@ -799,11 +950,24 @@ const styles = StyleSheet.create({
     footerNavRight: { width: '100%', flexDirection: 'row', justifyContent: 'flex-end', marginTop: 24 },
     footerNavSpread: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 },
     pickerTitle: { fontSize: 18, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
-    timezoneContainer: { width: '100%', marginVertical: 16 },
-    pickerWrapper: { backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB', overflow: 'hidden' },
-    pickerItem: { color: 'black', fontSize: 18, height: 120 },
-    createButton: { paddingVertical: 16, paddingHorizontal: 32, borderRadius: 8, alignItems: 'center', backgroundColor: '#4F46E5', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41, elevation: 2 },
-    createButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
+    finalCardSection: { width: '100%', marginBottom: 24 },
+    pickerWrapper: { backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 },
+    pickerItem: { color: '#111827', fontSize: 18, height: 120 },
+    createButton: { paddingVertical: 18, paddingHorizontal: 36, borderRadius: 16, alignItems: 'center', backgroundColor: '#4F46E5', shadowColor: '#4F46E5', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 5 },
+    createButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
+    calendarContainer: { width: '100%', backgroundColor: '#FFF', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E5E7EB', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+    calendarNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
+    navButton: { padding: 4 },
+    calendarMonthText: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
+    calendarHeaderRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', paddingBottom: 8, marginBottom: 8 },
+    calendarHeaderDay: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase' },
+    calendarGridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
+    calendarDayBox: { width: (CARD_WIDTH - 48) / 7, height: 40, justifyContent: 'center', alignItems: 'center', marginVertical: 2 },
+    calendarDayBoxSelected: { backgroundColor: '#4F46E5', borderRadius: 20 },
+    calendarDayBoxToday: { borderBottomWidth: 2, borderBottomColor: '#4F46E5' },
+    calendarDayText: { fontSize: 15, color: '#374151', fontWeight: '500' },
+    calendarDayTextSelected: { color: '#FFF', fontWeight: 'bold' },
+    calendarDayTextToday: { color: '#4F46E5', fontWeight: 'bold' },
 });
 
-export default CreateGroupScreen;
+export default App;

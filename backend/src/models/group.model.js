@@ -4,7 +4,7 @@ const scheduleSchema = new mongoose.Schema({
   frequency: {
     type: String,
     // Added 'biweekly' and 'custom' here to match frontend
-    enum: ['daily', 'weekly', 'biweekly', 'monthly', 'custom'], 
+    enum: ['daily', 'weekly', 'biweekly', 'monthly', 'custom', 'once'], 
     default: 'weekly'
   },
   days: [{ type: Number }], // Used for Weekly (0-6) or Monthly (1-31)
