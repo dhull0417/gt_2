@@ -1,50 +1,61 @@
 import { Expo } from 'expo-server-sdk';
+import User from '../models/user.model.js';
 
-// Create a new Expo SDK client
 const expo = new Expo();
 
 /**
  * sendPushNotifications
- * * Takes an array of notification objects and delivers them via Expo's service.
- * Handles validation, chunking, and error logging.
- * * @param {Array} notifications - Array of objects: { to: string, title: string, body: string, data?: object }
- * @returns {Promise<Array>} - Returns tickets for tracking delivery status
+ * Delivers notifications and handles "self-healing" by removing invalid tokens.
  */
 export const sendPushNotifications = async (notifications) => {
   const messages = [];
 
   for (let pushNotification of notifications) {
-    // 1. Validate that the token is a valid Expo push token
     if (!Expo.isExpoPushToken(pushNotification.to)) {
       console.error(`Push token ${pushNotification.to} is not a valid Expo push token`);
       continue;
     }
 
-    // 2. Construct the message
     messages.push({
       to: pushNotification.to,
       sound: 'default',
       title: pushNotification.title,
       body: pushNotification.body,
       data: pushNotification.data || {},
-      priority: 'high', // Ensures immediate delivery for cancellations/promotions
+      priority: 'high',
     });
   }
 
-  // 3. Chunk the notifications
-  // Expo's push API is intended for batches. We must chunk them into sizes
-  // that the Expo servers can handle (usually around 100 per chunk).
   let chunks = expo.chunkPushNotifications(messages);
   let tickets = [];
 
   for (let chunk of chunks) {
     try {
-      // 4. Send the chunks
       let ticketChunk = await expo.sendPushNotificationsAsync(chunk);
       tickets.push(...ticketChunk);
       
-      // NOTE: For a production app, you might want to store these 'tickets'
-      // to check for delivery errors (receipts) later.
+      /**
+       * PROJECT 4: TOKEN CLEANUP LOGIC
+       * We iterate through the tickets returned for this specific chunk.
+       * The index of the ticket matches the index of the message in the chunk.
+       */
+      for (let i = 0; i < ticketChunk.length; i++) {
+        const ticket = ticketChunk[i];
+        if (ticket.status === 'error') {
+          // 'DeviceNotRegistered' is the specific error Expo sends when a token is no longer valid
+          if (ticket.details && ticket.details.error === 'DeviceNotRegistered') {
+            const invalidToken = chunk[i].to;
+            
+            console.log(`[Cleanup] Removing invalid token: ${invalidToken}`);
+            
+            // Remove the token from our database so we don't try to use it again
+            await User.updateOne(
+              { expoPushToken: invalidToken },
+              { $unset: { expoPushToken: "" } }
+            );
+          }
+        }
+      }
     } catch (error) {
       console.error("Critical error sending notification chunk:", error);
     }
@@ -55,12 +66,10 @@ export const sendPushNotifications = async (notifications) => {
 
 /**
  * Helper to prepare a list of notifications for a specific group of users
- * @param {Array} users - Array of user objects containing expoPushToken
- * @param {Object} content - { title, body, data }
  */
 export const notifyUsers = async (users, { title, body, data }) => {
   const notifications = users
-    .filter(user => user.expoPushToken) // Only users with registered tokens
+    .filter(user => user.expoPushToken)
     .map(user => ({
       to: user.expoPushToken,
       title,
