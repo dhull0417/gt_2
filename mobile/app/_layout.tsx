@@ -48,7 +48,7 @@ const AuthLayout = () => {
   // 2. Initialize Push Notifications
   // This hook handles the permission request and POSTs the token to 
   // the endpoint we added in the Canvas routes.
-  const { expoPushToken } = usePushNotifications();
+  const { expoPushToken } = usePushNotifications(isSignedIn);
 
   useUserSync();
 

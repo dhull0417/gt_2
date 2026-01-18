@@ -2,7 +2,7 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput,
 import React, { useState, useCallback, useEffect } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; // Added useLocalSearchParams
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
@@ -128,6 +128,9 @@ const GroupScreen = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  // Added: Get deep linking parameters
+  const { openChatId } = useLocalSearchParams<{ openChatId?: string }>();
+
   const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch } = useGetGroups();
   const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(selectedGroup?._id || null);
   const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
@@ -143,6 +146,18 @@ const GroupScreen = () => {
   const hasUnreadNotifications = notifications?.some(n => !n.read);
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
+
+  // PROJECT 4: Deep Linking logic to open chat automatically
+  useEffect(() => {
+    if (openChatId && groups && groups.length > 0) {
+      const targetGroup = groups.find(g => g._id === openChatId);
+      if (targetGroup) {
+        handleOpenGroupDetail(targetGroup);
+        // Clear the params to prevent re-opening on every re-render
+        router.setParams({ openChatId: undefined });
+      }
+    }
+  }, [openChatId, groups]);
 
   const handleInvite = (userIdToInvite: string) => {
     if (!selectedGroup) return;
@@ -250,7 +265,7 @@ const GroupScreen = () => {
   };
 
   return (
-    <SafeAreaView className='flex-1 bg-gray-50'>
+    <SafeAreaView className='flex-1 bg-gray-50' edges={['top', 'left', 'right']}>
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
         <TouchableOpacity onPress={() => router.push('/notifications')}>
           <Feather name="bell" size={26} color="#4F46E5" />
@@ -295,7 +310,7 @@ const GroupScreen = () => {
             <KeyboardAvoidingView
               style={styles.chatContainer}
               behavior={Platform.OS === "ios" ? "padding" : "height"}
-              keyboardVerticalOffset={insets.top + 90}
+              keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
             >
               {(isLoadingDetails || !groupDetails || !currentUser) ? (
                 <View style={styles.loadingContainer}>
@@ -331,7 +346,7 @@ const GroupScreen = () => {
                   onLeaveGroup={handleLeaveGroup}
                   isLeavingGroup={isLeavingGroup}
                   onEditSchedule={handleEditSchedule}
-                  onAddOneOffEvent={handleAddOneOffEvent} // 👈 Added missing prop
+                  onAddOneOffEvent={handleAddOneOffEvent}
                 />
               )}
             </ScrollView>
