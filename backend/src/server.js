@@ -8,6 +8,8 @@ import eventRoutes from "./routes/event.route.js";
 import jobRoutes from "./routes/job.route.js";
 import chatRoutes from "./routes/chat.route.js";
 import notificationRoutes from "./routes/notification.route.js"; 
+// Project 4: Import webhook routes
+import webhookRoutes from "./routes/webhook.route.js";
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
@@ -29,6 +31,8 @@ app.use("/api/events", eventRoutes);
 app.use("/api/jobs", jobRoutes); 
 app.use("/api/chat", chatRoutes); 
 app.use("/api/notifications", notificationRoutes); 
+// Project 4: Mount the webhook route
+app.use("/api/webhooks", webhookRoutes);
 
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
@@ -49,6 +53,4 @@ const startServer = async () => {
 
 startServer();
 
-// In a serverless environment like Vercel, we export the Express app.
-// Vercel will handle the http server layer.
 export default app;
