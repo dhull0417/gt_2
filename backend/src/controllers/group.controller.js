@@ -40,9 +40,6 @@ const getScheduleItems = (schedule) => {
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
   const { name, time, schedule, timezone, eventsToDisplay, members, defaultCapacity } = req.body;
-
-    console.log("DEBUG: Request Body Schedule:", JSON.stringify(schedule, null, 2));
-
   
   if (!name || !time || !schedule || !timezone) {
     return res.status(400).json({ error: "All details required." });
@@ -71,9 +68,6 @@ export const createGroup = asyncHandler(async (req, res) => {
   };
   
   const newGroup = await Group.create(groupData);
-
-    console.log("DEBUG: Saved Group Schedule:", JSON.stringify(newGroup.schedule, null, 2));
-
 
   await User.updateMany(
       { _id: { $in: uniqueMemberIds } },

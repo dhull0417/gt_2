@@ -7,6 +7,12 @@ const scheduleSchema = new mongoose.Schema({
     default: 'weekly'
   },
   days: [{ type: Number }],
+  /**
+   * Project 4 Fix: Added 'date' field.
+   * This is required for 'once' frequency (one-off events) so the date 
+   * string persists after being saved to the database.
+   */
+  date: { type: String }, 
   rules: [{
     type: { 
       type: String, 
