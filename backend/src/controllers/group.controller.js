@@ -39,7 +39,16 @@ const getScheduleItems = (schedule) => {
  */
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
-  const { name, time, schedule, timezone, eventsToDisplay, members, defaultCapacity } = req.body;
+  const { 
+    name, 
+    time, 
+    schedule, 
+    timezone, 
+    eventsToDisplay, 
+    members, 
+    defaultCapacity,
+    defaultLocation // Added for Location Feature
+  } = req.body;
   
   if (!name || !time || !schedule || !timezone) {
     return res.status(400).json({ error: "All details required." });
@@ -64,6 +73,7 @@ export const createGroup = asyncHandler(async (req, res) => {
       owner: owner._id, 
       members: uniqueMemberIds,
       defaultCapacity: defaultCapacity || 0,
+      defaultLocation: defaultLocation || "", // Save the default location
       moderators: [] 
   };
   
@@ -87,8 +97,6 @@ export const createGroup = asyncHandler(async (req, res) => {
       
       try {
           await Notification.insertMany(notifications);
-          
-          // Project 4: Push Alert for users added during group creation
           const usersToNotify = await User.find({ _id: { $in: membersToNotifyIds } });
           await notifyUsers(usersToNotify, {
               title: "New Group",
@@ -131,6 +139,7 @@ export const createGroup = asyncHandler(async (req, res) => {
             date: date, 
             time: newGroup.time,
             timezone: newGroup.timezone,
+            location: newGroup.defaultLocation, // Set initial event location
             members: uniqueMemberIds, 
             undecided: uniqueMemberIds,
             capacity: newGroup.defaultCapacity
@@ -141,18 +150,16 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
 
   await Promise.all(uniqueMemberIds.map(id => syncStreamUser({ _id: id })));
-
   res.status(201).json({ group: newGroup, message: "Created successfully." });
 });
 
 /**
  * @desc    Update group basic info (Owner or Moderator)
- * @route   PUT /api/groups/:groupId
  */
 export const updateGroup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
-    const { name, eventsToDisplay } = req.body;
+    const { name, eventsToDisplay, defaultLocation } = req.body;
     
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
@@ -164,18 +171,19 @@ export const updateGroup = asyncHandler(async (req, res) => {
     
     if (name) group.name = name;
     if (eventsToDisplay) group.eventsToDisplay = parseInt(eventsToDisplay);
+    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
     
     const updatedGroup = await group.save();
     res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
 });
 
 /**
- * @desc    Update group schedule and capacity (Owner or Moderator)
+ * @desc    Update group schedule, capacity, and location (Owner or Moderator)
  * @route   PATCH /api/groups/:groupId/schedule
  */
 export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
-    const { schedule, time, timezone, defaultCapacity } = req.body;
+    const { schedule, time, timezone, defaultCapacity, defaultLocation } = req.body;
     const { userId: clerkId } = getAuth(req);
 
     const group = await Group.findById(groupId);
@@ -191,6 +199,7 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     if (time) group.time = time;
     if (timezone) group.timezone = timezone;
     if (defaultCapacity !== undefined) group.defaultCapacity = Number(defaultCapacity);
+    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
     
     await group.save();
 
@@ -233,6 +242,7 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                 date: date, 
                 time: group.time,
                 timezone: group.timezone,
+                location: group.defaultLocation, // Use updated default location
                 members: group.members, 
                 undecided: group.members,
                 capacity: group.defaultCapacity 

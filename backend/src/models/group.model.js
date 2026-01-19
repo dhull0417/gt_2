@@ -27,6 +27,11 @@ const scheduleSchema = new mongoose.Schema({
 const groupSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   time: { type: String },
+  /**
+   * Default Location: The location that all newly generated events 
+   * will inherit unless overridden.
+   */
+  defaultLocation: { type: String, trim: true, default: "" },
   schedule: { type: scheduleSchema, required: false },
   timezone: { type: String },
   defaultCapacity: { 

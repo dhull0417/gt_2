@@ -47,6 +47,10 @@ export interface Group {
   schedule: Schedule;
   owner: string;
   timezone: string;
+  /**
+   * Location Feature: The group-wide default location.
+   */
+  defaultLocation: string;
   lastMessage?: LastMessage | null;
   /**
    * moderators field added to the base Group interface.
@@ -70,6 +74,10 @@ export interface Event {
   date: string;
   time: string;
   timezone: string;
+  /**
+   * Location Feature: The location specific to this meeting instance.
+   */
+  location: string;
   status: 'scheduled' | 'cancelled'; 
   capacity: number; 
   isOverride: boolean;
@@ -99,6 +107,7 @@ interface CreateGroupPayload {
   eventsToDisplay: number;
   members?: string[];
   defaultCapacity?: number;
+  defaultLocation?: string; // Added for Location Feature
 }
 
 interface UpdateGroupPayload {
@@ -109,6 +118,7 @@ interface UpdateGroupPayload {
   timezone: string;
   eventsToDisplay: number;
   defaultCapacity?: number;
+  defaultLocation?: string; // Added for Location Feature
 }
 
 interface AddMemberPayload {
@@ -132,6 +142,7 @@ interface UpdateEventPayload {
   time: string;
   timezone: string;
   capacity?: number;
+  location?: string; // Added for Location Feature
 }
 
 interface RsvpPayload {
@@ -150,6 +161,7 @@ interface CreateOneOffEventPayload {
   time: string;
   timezone: string;
   capacity?: number;
+  location?: string; // Added for Location Feature
 }
 
 interface RemoveScheduledDayPayload {

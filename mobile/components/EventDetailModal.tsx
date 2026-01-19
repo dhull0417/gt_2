@@ -10,20 +10,13 @@ import {
     TextInput,
     Modal,
     StyleSheet,
-    TextStyle,
-    ViewStyle,
-    ImageStyle
+    KeyboardAvoidingView,
+    Platform
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Event, User, useApiClient, userApi, eventApi } from '@/utils/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
-
-/**
- * PROJECT 2 & 3: EVENT MANAGEMENT & MODERATOR PERMISSIONS
- * Allowing both owners and assigned moderators to manage specific 
- * event instances (capacity, cancellation, etc.)
- */
 
 interface EventDetailModalProps {
   event: Event | null;
@@ -34,13 +27,14 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     const api = useApiClient();
     const queryClient = useQueryClient();
     
-    // Internal state to track local updates before a full refetch
     const [event, setEvent] = useState<Event | null>(initialEvent);
-    const [isCapModalVisible, setIsCapModalVisible] = useState(false);
+    
+    // --- Edit Mode State ---
+    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [newCapacity, setNewCapacity] = useState('');
-    const [isUpdatingCap, setIsUpdatingCap] = useState(false);
+    const [newLocation, setNewLocation] = useState('');
+    const [isUpdating, setIsUpdating] = useState(false);
 
-    // Sync state if the prop changes
     useEffect(() => {
         setEvent(initialEvent);
     }, [initialEvent]);
@@ -54,22 +48,13 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
 
     if (!event || !currentUser) return null;
 
-    // --- Logic Helpers ---
-    
-    // Check if user is the group owner
-    const isOwner = typeof event.group === 'object' 
-        ? event.group.owner === currentUser._id 
-        : false; 
-
-    // FIXED: Added type casting to resolve 'moderators' property missing on Event.group type
+    // --- Permissions Logic ---
+    const isOwner = typeof event.group === 'object' ? event.group.owner === currentUser._id : false; 
     const groupData = event.group as any;
     const isMod = typeof event.group === 'object' && Array.isArray(groupData.moderators)
-        ? groupData.moderators.some((m: any) => 
-            typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id
-          )
+        ? groupData.moderators.some((m: any) => typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id)
         : false;
 
-    // New permission constant for UI visibility
     const canManage = isOwner || isMod;
     
     const isCancelled = event.status === 'cancelled';
@@ -91,42 +76,40 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
         });
     };
 
-    const handleUpdateEventCapacity = async () => {
+    const handleUpdateEventDetails = async () => {
         const capInt = parseInt(newCapacity);
-        if (isNaN(capInt) || capInt < 0 || capInt > 1000000) {
-            Alert.alert("Invalid Input", "Please enter a number between 0 and 1,000,000 (0 for unlimited).");
+        if (isNaN(capInt) || capInt < 0) {
+            Alert.alert("Invalid Input", "Please enter a valid capacity (0 for unlimited).");
             return;
         }
 
-        setIsUpdatingCap(true);
+        setIsUpdating(true);
         try {
             await eventApi.updateEvent(api, { 
                 eventId: event._id, 
                 capacity: capInt,
+                location: newLocation, // Send the updated location
                 date: new Date(event.date),
                 time: event.time,
                 timezone: event.timezone
             });
             
             await queryClient.invalidateQueries({ queryKey: ['events'] });
-            
-            setIsCapModalVisible(false);
-            setNewCapacity('');
-            Alert.alert("Success", "Event capacity updated.");
+            setIsEditModalVisible(false);
+            Alert.alert("Success", "Meeting details updated.");
         } catch (error: any) {
-            const serverMessage = error.response?.data?.error || error.message;
-            Alert.alert("Update Failed", `Reason: ${serverMessage}`);
+            Alert.alert("Update Failed", error.response?.data?.error || error.message);
         } finally {
-            setIsUpdatingCap(false);
+            setIsUpdating(false);
         }
     };
 
     const handleCancelEvent = () => {
         const action = isCancelled ? "Reactivate" : "Cancel";
-        Alert.alert(`${action} Event`, `Are you sure you want to ${action.toLowerCase()} this meeting?`, [
+        Alert.alert(`${action} Event`, `Are you sure?`, [
             { text: "No", style: "cancel" },
             { 
-                text: `Yes, ${action}`, 
+                text: "Yes", 
                 style: isCancelled ? "default" : "destructive", 
                 onPress: async () => {
                     try {
@@ -134,8 +117,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         queryClient.invalidateQueries({ queryKey: ['events'] });
                         if (!isCancelled) onClose(); 
                     } catch (e: any) {
-                        const serverMessage = e.response?.data?.error || e.message;
-                        Alert.alert("Error", `Could not ${action.toLowerCase()} event: ${serverMessage}`);
+                        Alert.alert("Error", e.response?.data?.error || e.message);
                     }
                 }
             }
@@ -144,7 +126,6 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
 
     return (
         <View style={styles.container}>
-            {/* Header / Safe Handle Bar */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                     <Feather name="chevron-down" size={32} color="#9CA3AF" />
@@ -152,7 +133,18 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                 <View style={styles.headerTitleContainer}>
                     <Text style={styles.headerTitle}>Meeting Details</Text>
                 </View>
-                <View style={{ width: 44 }} />
+                {canManage && !isCancelled ? (
+                    <TouchableOpacity 
+                        onPress={() => {
+                            setNewCapacity(event.capacity.toString());
+                            setNewLocation(event.location || '');
+                            setIsEditModalVisible(true);
+                        }}
+                        style={styles.editHeaderBtn}
+                    >
+                        <Feather name="edit-2" size={20} color="#4F46E5" />
+                    </TouchableOpacity>
+                ) : <View style={{ width: 44 }} />}
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -170,9 +162,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                     
                     <View style={styles.infoSection}>
                         <View style={styles.infoRow}>
-                            <View style={styles.iconBox}>
-                                <Feather name="calendar" size={18} color="#4F46E5" />
-                            </View>
+                            <View style={styles.iconBox}><Feather name="calendar" size={18} color="#4F46E5" /></View>
                             <View style={styles.infoTextContainer}>
                                 <Text style={styles.infoValue}>
                                     {new Date(event.date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
@@ -182,24 +172,25 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         </View>
 
                         <View style={styles.infoRow}>
-                            <View style={styles.iconBox}>
-                                <Feather name="clock" size={18} color="#4F46E5" />
-                            </View>
+                            <View style={styles.iconBox}><Feather name="clock" size={18} color="#4F46E5" /></View>
                             <View style={styles.infoTextContainer}>
                                 <Text style={styles.infoValue}>{event.time}</Text>
                                 <Text style={styles.infoLabel}>Time</Text>
                             </View>
                         </View>
+
+                        {/* DISPLAYING EVENT SPECIFIC LOCATION */}
+                        <View style={styles.infoRow}>
+                            <View style={styles.iconBox}><Feather name="map-pin" size={18} color="#4F46E5" /></View>
+                            <View style={styles.infoTextContainer}>
+                                <Text style={styles.infoValue} numberOfLines={1}>{event.location || "No location set"}</Text>
+                                <Text style={styles.infoLabel}>Location</Text>
+                            </View>
+                        </View>
                         
-                        {/* Max Capacity Section */}
                         <View style={styles.capacityCard}>
                             <View style={styles.infoRowCompact}>
-                                <View 
-                                    style={[
-                                        styles.iconBox, 
-                                        { backgroundColor: isFull && !isCancelled ? '#FFF7ED' : '#F5F7FF' }
-                                    ]}
-                                >
+                                <View style={[styles.iconBox, { backgroundColor: isFull && !isCancelled ? '#FFF7ED' : '#F5F7FF' }]}>
                                     <Feather name="users" size={18} color={isFull && !isCancelled ? "#EA580C" : "#4F46E5"} />
                                 </View>
                                 <View style={styles.infoTextContainer}>
@@ -209,18 +200,6 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                                     <Text style={styles.infoLabel}>Max Capacity</Text>
                                 </View>
                             </View>
-                            {/* FIXED: Using canManage instead of isOwner */}
-                            {canManage && !isCancelled && (
-                                <TouchableOpacity 
-                                    onPress={() => {
-                                        setNewCapacity(event.capacity.toString());
-                                        setIsCapModalVisible(true);
-                                    }}
-                                    style={styles.adjustButton}
-                                >
-                                    <Feather name="settings" size={18} color="#4F46E5" />
-                                </TouchableOpacity>
-                            )}
                         </View>
                     </View>
                 </View>
@@ -232,22 +211,16 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                             onPress={() => handleRsvpAction('in')}
                             disabled={isRsvping}
                             style={[
-                                styles.rsvpButton,
-                                styles.rsvpIn,
+                                styles.rsvpButton, styles.rsvpIn,
                                 isWaitlisted && { backgroundColor: '#2563EB', borderBottomColor: '#1E40AF' },
                                 (isFull && !isIn) && { backgroundColor: '#F97316', borderBottomColor: '#C2410C' },
                                 isIn && { backgroundColor: '#10B981', borderBottomColor: '#059669' }
                             ]}
                         >
-                            {isRsvping ? (
-                                <ActivityIndicator color="white" />
-                            ) : (
-                                <Text style={styles.rsvpButtonText}>
-                                    {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "Going"}
-                                </Text>
-                            )}
+                            <Text style={styles.rsvpButtonText}>
+                                {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "Going"}
+                            </Text>
                         </TouchableOpacity>
-                        
                         <TouchableOpacity 
                             onPress={() => handleRsvpAction('out')}
                             disabled={isRsvping}
@@ -263,49 +236,18 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                     <Text style={styles.sectionTitle}>Going ({event.in?.length || 0})</Text>
                     {goingUsers.length > 0 ? goingUsers.map(user => (
                         <View key={user._id} style={styles.memberRow}>
-                            <Image 
-                                source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0]}` }} 
-                                style={styles.avatar}
-                            />
+                            <Image source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0]}` }} style={styles.avatar} />
                             <View style={styles.memberInfo}>
                                 <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
                                 <Text style={styles.memberUsername}>@{user.username}</Text>
                             </View>
                         </View>
-                    )) : (
-                        <Text style={styles.emptyText}>No one confirmed yet.</Text>
-                    )}
-
-                    {event.waitlist && event.waitlist.length > 0 && (
-                        <View style={{ marginTop: 32 }}>
-                            <Text style={[styles.sectionTitle, { color: '#EA580C' }]}>Waitlist ({event.waitlist.length})</Text>
-                            {waitlistedUsers.map((user, index) => (
-                                <View key={user._id} style={[styles.memberRow, { opacity: 0.7 }]}>
-                                    <View style={styles.waitlistBadge}>
-                                        <Text style={styles.waitlistBadgeText}>{index + 1}</Text>
-                                    </View>
-                                    <Image 
-                                        source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0]}` }} 
-                                        style={styles.avatarSmall}
-                                    />
-                                    <View style={styles.memberInfo}>
-                                        <Text style={styles.memberName}>{user.firstName}</Text>
-                                        <Text style={[styles.memberUsername, { color: '#F97316' }]}>In Queue</Text>
-                                    </View>
-                                </View>
-                            ))}
-                        </View>
-                    )}
+                    )) : <Text style={styles.emptyText}>No one confirmed yet.</Text>}
                 </View>
 
-                {/* Management Specific Actions */}
-                {/* FIXED: Using canManage instead of isOwner */}
                 {canManage && (
                     <View style={styles.ownerSection}>
-                        <TouchableOpacity 
-                            onPress={handleCancelEvent}
-                            style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4F46E5', borderColor: '#4F46E5' }]}
-                        >
+                        <TouchableOpacity onPress={handleCancelEvent} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4F46E5', borderColor: '#4F46E5' }]}>
                             <Text style={[styles.cancelToggleText, isCancelled && { color: 'white' }]}>
                                 {isCancelled ? "Reactivate Meeting" : "Cancel This Meeting"}
                             </Text>
@@ -314,98 +256,97 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                 )}
             </ScrollView>
 
-            {/* Capacity Adjustment Modal */}
-            <Modal transparent visible={isCapModalVisible} animationType="fade">
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Adjust Capacity</Text>
-                            <Text style={styles.modalSub}>Only affects this specific meeting.</Text>
-                        </View>
-                        <View style={styles.modalBody}>
-                            <TextInput
-                                style={styles.capInput}
-                                keyboardType="numeric"
-                                placeholder="0 = Unlimited"
-                                value={newCapacity}
-                                onChangeText={setNewCapacity}
-                                autoFocus
-                            />
-                            <View style={styles.modalActions}>
-                                <TouchableOpacity 
-                                    onPress={() => setIsCapModalVisible(false)}
-                                    style={[styles.modalBtn, styles.modalBtnSecondary]}
-                                >
-                                    <Text style={styles.modalBtnTextSec}>Cancel</Text>
+            {/* Combined Edit Details Modal */}
+            <Modal transparent visible={isEditModalVisible} animationType="slide">
+                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            <View style={styles.modalHeaderInner}>
+                                <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
+                                <Text style={styles.modalTitleInner}>Edit Meeting</Text>
+                                <TouchableOpacity onPress={handleUpdateEventDetails} disabled={isUpdating}>
+                                    {isUpdating ? <ActivityIndicator size="small" color="#4F46E5" /> : <Text style={styles.saveBtnText}>Save</Text>}
                                 </TouchableOpacity>
-                                <TouchableOpacity 
-                                    onPress={handleUpdateEventCapacity}
-                                    disabled={isUpdatingCap}
-                                    style={[styles.modalBtn, styles.modalBtnPrimary]}
-                                >
-                                    {isUpdatingCap ? <ActivityIndicator color="white" /> : <Text style={styles.modalBtnTextPri}>Save</Text>}
-                                </TouchableOpacity>
+                            </View>
+                            
+                            <View style={styles.modalBody}>
+                                <Text style={styles.fieldLabel}>Location Override</Text>
+                                <View style={styles.inputContainer}>
+                                    <Feather name="map-pin" size={18} color="#4F46E5" />
+                                    <TextInput 
+                                        style={styles.textInput}
+                                        placeholder="Specific address or link..."
+                                        value={newLocation}
+                                        onChangeText={setNewLocation}
+                                    />
+                                </View>
+
+                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Attendee Limit (0 = Unlimited)</Text>
+                                <TextInput
+                                    style={styles.capInput}
+                                    keyboardType="numeric"
+                                    value={newCapacity}
+                                    onChangeText={setNewCapacity}
+                                />
                             </View>
                         </View>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
         </View>
     );
 };
 
-// Styles remain identical to previous version
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: 'white' },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     closeButton: { padding: 4 },
     headerTitleContainer: { flex: 1, alignItems: 'center' },
     headerTitle: { fontSize: 14, fontWeight: '900', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
+    editHeaderBtn: { padding: 8, backgroundColor: '#EEF2FF', borderRadius: 10 },
     content: { flex: 1, padding: 24 },
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
-    eventTitle: { fontSize: 36, fontWeight: '900', color: '#111827', letterSpacing: -1, lineHeight: 40, marginBottom: 24 },
+    eventTitle: { fontSize: 32, fontWeight: '900', color: '#111827', letterSpacing: -1, lineHeight: 36, marginBottom: 24 },
     strikeThrough: { textDecorationLine: 'line-through', color: '#D1D5DB' },
-    infoSection: { gap: 20 },
+    infoSection: { gap: 16 },
     infoRow: { flexDirection: 'row', alignItems: 'center' },
     infoRowCompact: { flexDirection: 'row', alignItems: 'center' },
-    iconBox: { width: 44, height: 44, backgroundColor: '#F5F7FF', borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-    infoTextContainer: { marginLeft: 16 },
-    infoValue: { fontSize: 18, fontWeight: '800', color: '#1F2937' },
-    infoLabel: { fontSize: 10, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 },
-    capacityCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F9FAFB', padding: 4, paddingRight: 16, borderRadius: 20 },
-    adjustButton: { width: 40, height: 40, backgroundColor: 'white', borderRadius: 12, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-    rsvpRow: { flexDirection: 'row', gap: 12, marginBottom: 40 },
-    rsvpButton: { flex: 1, height: 60, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 4 },
+    iconBox: { width: 40, height: 40, backgroundColor: '#F5F7FF', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    infoTextContainer: { marginLeft: 16, flex: 1 },
+    infoValue: { fontSize: 16, fontWeight: '800', color: '#1F2937' },
+    infoLabel: { fontSize: 10, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase' },
+    capacityCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F9FAFB', padding: 4, paddingRight: 16, borderRadius: 16 },
+    rsvpRow: { flexDirection: 'row', gap: 12, marginVertical: 32 },
+    rsvpButton: { flex: 1, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 4 },
     rsvpIn: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
     rsvpOut: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
-    rsvpButtonText: { color: 'white', fontWeight: '900', fontSize: 15, textTransform: 'uppercase', letterSpacing: 0.5 },
-    sectionTitle: { fontSize: 20, fontWeight: '900', color: '#111827', marginBottom: 16, letterSpacing: -0.5 },
-    memberRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-    avatar: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#F3F4F6', borderWidth: 2, borderColor: 'white' },
-    avatarSmall: { width: 40, height: 40, borderRadius: 16, backgroundColor: '#F3F4F6', borderWidth: 2, borderColor: 'white' },
+    rsvpButtonText: { color: 'white', fontWeight: '900', fontSize: 14, textTransform: 'uppercase' },
+    sectionTitle: { fontSize: 18, fontWeight: '900', color: '#111827', marginBottom: 16 },
+    memberRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+    avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#F3F4F6' },
+    avatarSmall: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F3F4F6' },
     memberInfo: { marginLeft: 12 },
-    memberName: { fontSize: 16, fontWeight: '800', color: '#1F2937' },
-    memberUsername: { fontSize: 12, fontWeight: '600', color: '#9CA3AF' },
-    waitlistBadge: { width: 24, height: 24, backgroundColor: '#FFEDD5', borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-    waitlistBadgeText: { color: '#EA580C', fontSize: 12, fontWeight: '900' },
-    emptyText: { color: '#9CA3AF', fontStyle: 'italic', fontWeight: '500' },
-    ownerSection: { marginTop: 40, paddingBottom: 60, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 32 },
-    cancelToggle: { height: 56, borderRadius: 16, borderWidth: 2, borderColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-    cancelToggleText: { color: '#EF4444', fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1, fontSize: 13 },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-    modalContent: { backgroundColor: 'white', width: '100%', borderRadius: 32, overflow: 'hidden' },
-    modalHeader: { backgroundColor: '#4F46E5', padding: 32, alignItems: 'center' },
-    modalTitle: { color: 'white', fontSize: 24, fontWeight: '900' },
-    modalSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4, fontWeight: '600' },
-    modalBody: { padding: 32 },
-    capInput: { backgroundColor: '#F9FAFB', height: 80, borderRadius: 20, textAlign: 'center', fontSize: 32, fontWeight: '900', color: '#111827' },
-    modalActions: { flexDirection: 'row', gap: 12, marginTop: 24 },
-    modalBtn: { flex: 1, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-    modalBtnSecondary: { backgroundColor: '#F3F4F6' },
-    modalBtnPrimary: { backgroundColor: '#4F46E5' },
-    modalBtnTextSec: { color: '#6B7280', fontWeight: '800', textTransform: 'uppercase' },
-    modalBtnTextPri: { color: 'white', fontWeight: '800', textTransform: 'uppercase' },
+    memberName: { fontSize: 15, fontWeight: '800', color: '#1F2937' },
+    memberUsername: { fontSize: 11, fontWeight: '600', color: '#9CA3AF' },
+    waitlistBadge: { width: 20, height: 20, backgroundColor: '#FFEDD5', borderRadius: 6, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+    waitlistBadgeText: { color: '#EA580C', fontSize: 10, fontWeight: '900' },
+    emptyText: { color: '#9CA3AF', fontStyle: 'italic' },
+    ownerSection: { marginTop: 40, paddingBottom: 60, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 24 },
+    cancelToggle: { height: 50, borderRadius: 14, borderWidth: 2, borderColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+    cancelToggleText: { color: '#EF4444', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
+    
+    // Modal Styles
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 60 },
+    modalHeaderInner: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    modalTitleInner: { fontSize: 18, fontWeight: '900', color: '#111827' },
+    saveBtnText: { color: '#4F46E5', fontWeight: '900', fontSize: 16 },
+    modalBody: { gap: 8 },
+    fieldLabel: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 4 },
+    inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
+    textInput: { flex: 1, marginLeft: 12, fontSize: 16, color: '#374151' },
+    capInput: { backgroundColor: '#F9FAFB', height: 64, borderRadius: 14, textAlign: 'center', fontSize: 24, fontWeight: '900', color: '#111827', borderWidth: 1, borderColor: '#E5E7EB' },
 });
 
 export default EventDetailModal;

@@ -52,11 +52,18 @@ export const getEvents = asyncHandler(async (req, res) => {
 
 /**
  * @desc    Edit an existing event instance (Owner/Moderator Only)
+ * @route   PUT /api/events/:eventId
  */
 export const updateEvent = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { eventId } = req.params;
-    const { date, time, timezone, capacity } = req.body; 
+    const { 
+        date, 
+        time, 
+        timezone, 
+        capacity, 
+        location // Added for Location Feature
+    } = req.body; 
 
     if (!date || !time || !timezone) {
         return res.status(400).json({ error: "Date, time, and timezone are required." });
@@ -83,6 +90,8 @@ export const updateEvent = asyncHandler(async (req, res) => {
     event.time = time;
     event.timezone = timezone;
     if (capacity !== undefined) event.capacity = capacity;
+    if (location !== undefined) event.location = location; // Update specific event location
+    
     event.isOverride = true;
     await event.save();
 
@@ -91,7 +100,6 @@ export const updateEvent = asyncHandler(async (req, res) => {
 
 /**
  * @desc    RSVP to an event with Capacity and Waitlist handling
- * @route   POST /api/events/:eventId/rsvp
  */
 export const handleRsvp = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
@@ -136,12 +144,10 @@ export const handleRsvp = asyncHandler(async (req, res) => {
   } else if (status === 'out') {
     event.out.push(userId);
 
-    // Project 4: Notify users promoted from the waitlist
     if (event.capacity > 0 && event.waitlist.length > 0) {
       const nextUserId = event.waitlist.shift(); 
       event.in.push(nextUserId);
 
-      // Find the user to access their expoPushToken
       const promotedUser = await User.findById(nextUserId);
       if (promotedUser) {
           await notifyUsers([promotedUser], {
@@ -159,7 +165,6 @@ export const handleRsvp = asyncHandler(async (req, res) => {
 
 /**
  * @desc    Cancel an event (Owner/Moderator Only)
- * @route   PATCH /api/events/:eventId/cancel
  */
 export const cancelEvent = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
@@ -178,7 +183,6 @@ export const cancelEvent = asyncHandler(async (req, res) => {
     event.isOverride = true;
     await event.save();
 
-    // Project 4: Notify all group members about the cancellation
     const membersToNotify = await User.find({ _id: { $in: event.members } });
     if (membersToNotify.length > 0) {
         await notifyUsers(membersToNotify, {
@@ -224,6 +228,7 @@ export const deleteEvent = asyncHandler(async (req, res) => {
                 date: nextEventDate,
                 time: parentGroup.time,
                 timezone: parentGroup.timezone,
+                location: parentGroup.defaultLocation, // Use group default when replenishing
                 members: parentGroup.members,
                 undecided: parentGroup.members,
                 isOverride: false,

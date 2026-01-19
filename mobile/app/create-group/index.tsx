@@ -28,7 +28,7 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { DateTime, Info } from "luxon";
-import { useApiClient } from "@/utils/api";
+import { useApiClient, Frequency } from "@/utils/api";
 
 const GroupImage = require('../../assets/images/group-image.jpeg');
 const { width } = Dimensions.get('window');
@@ -36,7 +36,6 @@ const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.90; 
 const SIDE_INSET = (width - CARD_WIDTH) / 2; 
 
-type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom' | 'once' | null;
 type CreationType = 'group' | 'event' | null;
 
 interface CustomRoutine {
@@ -110,7 +109,6 @@ const App = () => {
   const router = useRouter();
   const api = useApiClient();
   
-  // Params to handle context when creating an event from an existing group
   const { existingGroupId, initialType } = useLocalSearchParams<{ existingGroupId?: string, initialType?: string }>();
   
   const scrollRef = useRef<ScrollView>(null);
@@ -121,11 +119,14 @@ const App = () => {
   const [groupName, setGroupName] = useState("");
   const [eventsToDisplay] = useState("3"); 
   
+  // Location Feature: State for storing meeting or group location
+  const [location, setLocation] = useState("");
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<UserStub[]>([]);
   const { data: searchResults, isLoading: isSearchingUsers } = useSearchUsers(searchQuery);
 
-  const [frequency, setFrequency] = useState<Frequency>(null);
+  const [frequency, setFrequency] = useState<Frequency | null>(null);
   const [selectedDays, setSelectedDays] = useState<number[]>([]); 
   const [selectedDates, setSelectedDates] = useState<number[]>([]); 
   const [customRoutines, setCustomRoutines] = useState<CustomRoutine[]>([
@@ -156,11 +157,6 @@ const App = () => {
   const [isCustomPending, setIsCustomPending] = useState(false);
   const isPending = isMutationPending || isCustomPending;
 
-  /**
-   * BRANCHING LOGIC:
-   * 1. If coming from Group Details (existingGroupId), skip Naming (1) and Members (2) and go to Date (3).
-   * 2. If initialType is 'event' (global plus button), skip selection fork (0) but show Naming (1).
-   */
   useEffect(() => {
     if (existingGroupId) {
         setCreationType('event');
@@ -199,14 +195,15 @@ const App = () => {
 
   const handleCreateRequest = async () => {
     if (existingGroupId) {
-        // CASE: Add meeting to an existing group (inherits members automatically)
+        // CASE: Add meeting to an existing group
         setIsCustomPending(true);
         try {
             await api.post(`/api/groups/${existingGroupId}/events`, {
                 date: oneOffDate,
                 time: meetTime,
                 timezone: timezone,
-                name: groupName // If empty, backend defaults to group name or 'Meeting'
+                name: groupName,
+                location: location // Added for Location Feature
             });
             Alert.alert("Success", "Meeting added to group!");
             router.back();
@@ -225,6 +222,7 @@ const App = () => {
             time: meetTime, 
             schedule: { frequency: 'once', date: oneOffDate }, 
             timezone,
+            location: location, // Added for Location Feature
             eventsToDisplay: 1,
             members: selectedMembers.map(m => m._id) 
         };
@@ -247,12 +245,12 @@ const App = () => {
         }));
     }
 
-    // Cast to any to bypass TS error regarding eventsToDisplay in types
     const payload: any = { 
         name: groupName, 
         time: meetTime, 
         schedule: finalSchedule, 
         timezone,
+        defaultLocation: location, // Added for Location Feature
         eventsToDisplay: parseInt(eventsToDisplay),
         members: selectedMembers.map(m => m._id) 
     };
@@ -261,14 +259,11 @@ const App = () => {
   };
 
   const handleNext = () => {
-    // If adding to existing group, there are no more steps after Step 4 (Time)
-    // Step transitions for global flows:
     if (step === 3 && frequency === 'daily' && creationType === 'group') setStep(5);
     else setStep(prev => prev + 1);
   };
 
   const handleBack = () => {
-    // Determine if we are at the start of the current context's flow
     const isAtStart = 
         step === 0 || 
         (existingGroupId && step === 3) || 
@@ -764,7 +759,7 @@ const App = () => {
                                 const isSelected = selectedDays.includes(day.value);
                                 return (
                                     <TouchableOpacity 
-                                        key={day.value}
+                                        key={day.value} 
                                         style={[styles.frequencyButton, isSelected && styles.frequencyButtonSelected]}
                                         onPress={() => toggleDaySelection(day.value)}
                                     >
@@ -876,15 +871,32 @@ const App = () => {
             <Text style={styles.headerTitle}>Choose a time & details</Text>
         </FadeInView>
         
-        <View style={{ flex: 1 }}>
+        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
             <FadeInView delay={250}>
                 <View style={styles.finalCardSection}>
                     <Text style={styles.pickerTitle}>Meeting Time</Text>
                     <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
                 </View>
             </FadeInView>
+
+            {/* Location Feature: Adding Location Input */}
+            <FadeInView delay={350}>
+                <View style={styles.finalCardSection}>
+                    <Text style={styles.pickerTitle}>Location (Address or Link)</Text>
+                    <View style={styles.searchBox}>
+                      <Feather name="map-pin" size={20} color="#4F46E5" />
+                      <TextInput 
+                          style={styles.searchInput}
+                          placeholder="e.g. Starbucks, Zoom Link, Room 101"
+                          placeholderTextColor="#9CA3AF"
+                          value={location}
+                          onChangeText={setLocation}
+                      />
+                    </View>
+                </View>
+            </FadeInView>
             
-            <FadeInView delay={400}>
+            <FadeInView delay={450}>
                 <View style={styles.finalCardSection}>
                     <Text style={styles.pickerTitle}>Select Timezone</Text>
                     <View style={styles.pickerWrapper}>
@@ -898,7 +910,7 @@ const App = () => {
                     </View>
                 </View>
             </FadeInView>
-        </View>
+        </ScrollView>
 
         <FadeInView delay={600}>
             <View style={styles.footerNavSpread}>
