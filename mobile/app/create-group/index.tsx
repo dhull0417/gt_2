@@ -119,7 +119,6 @@ const App = () => {
   const [groupName, setGroupName] = useState("");
   const [eventsToDisplay] = useState("3"); 
   
-  // Location Feature: State for storing meeting or group location
   const [location, setLocation] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -195,7 +194,6 @@ const App = () => {
 
   const handleCreateRequest = async () => {
     if (existingGroupId) {
-        // CASE: Add meeting to an existing group
         setIsCustomPending(true);
         try {
             await api.post(`/api/groups/${existingGroupId}/events`, {
@@ -203,7 +201,7 @@ const App = () => {
                 time: meetTime,
                 timezone: timezone,
                 name: groupName,
-                location: location // Added for Location Feature
+                location: location
             });
             Alert.alert("Success", "Meeting added to group!");
             router.back();
@@ -216,13 +214,12 @@ const App = () => {
     }
 
     if (creationType === 'event') {
-        // CASE: New Standalone One-Off Event
         const payload: any = { 
             name: groupName, 
             time: meetTime, 
             schedule: { frequency: 'once', date: oneOffDate }, 
             timezone,
-            location: location, // Added for Location Feature
+            location: location,
             eventsToDisplay: 1,
             members: selectedMembers.map(m => m._id) 
         };
@@ -230,7 +227,6 @@ const App = () => {
         return;
     }
 
-    // CASE: New Recurring Group
     let finalSchedule: any = { frequency };
     if (frequency === 'weekly' || frequency === 'biweekly') finalSchedule.days = selectedDays;
     else if (frequency === 'monthly') finalSchedule.days = selectedDates;
@@ -250,7 +246,7 @@ const App = () => {
         time: meetTime, 
         schedule: finalSchedule, 
         timezone,
-        defaultLocation: location, // Added for Location Feature
+        defaultLocation: location,
         eventsToDisplay: parseInt(eventsToDisplay),
         members: selectedMembers.map(m => m._id) 
     };
@@ -259,8 +255,12 @@ const App = () => {
   };
 
   const handleNext = () => {
-    if (step === 3 && frequency === 'daily' && creationType === 'group') setStep(5);
-    else setStep(prev => prev + 1);
+    // If daily group, jump past step 4 (Day/Date details) to step 5 (Time/TZ)
+    if (step === 3 && frequency === 'daily' && creationType === 'group') {
+        setStep(5);
+    } else {
+        setStep(prev => prev + 1);
+    }
   };
 
   const handleBack = () => {
@@ -274,6 +274,9 @@ const App = () => {
         { text: "Stay", style: "cancel" },
         { text: "Exit", style: "destructive", onPress: () => router.back() }
       ]);
+    } else if (step === 5 && frequency === 'daily' && creationType === 'group') {
+        // Jump back to Frequency if it was a daily group
+        setStep(3);
     } else {
         setStep(prev => prev - 1);
     }
@@ -868,31 +871,14 @@ const App = () => {
   const renderStep_FinalTime = () => (
     <View style={styles.stepContainerPadded}>
         <FadeInView delay={100}>
-            <Text style={styles.headerTitle}>Choose a time & details</Text>
+            <Text style={styles.headerTitle}>Choose a time & timezone</Text>
         </FadeInView>
         
-        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        <View style={{ flex: 1 }}>
             <FadeInView delay={250}>
                 <View style={styles.finalCardSection}>
                     <Text style={styles.pickerTitle}>Meeting Time</Text>
                     <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
-                </View>
-            </FadeInView>
-
-            {/* Location Feature: Adding Location Input */}
-            <FadeInView delay={350}>
-                <View style={styles.finalCardSection}>
-                    <Text style={styles.pickerTitle}>Location (Address or Link)</Text>
-                    <View style={styles.searchBox}>
-                      <Feather name="map-pin" size={20} color="#4F46E5" />
-                      <TextInput 
-                          style={styles.searchInput}
-                          placeholder="e.g. Starbucks, Zoom Link, Room 101"
-                          placeholderTextColor="#9CA3AF"
-                          value={location}
-                          onChangeText={setLocation}
-                      />
-                    </View>
                 </View>
             </FadeInView>
             
@@ -910,7 +896,45 @@ const App = () => {
                     </View>
                 </View>
             </FadeInView>
-        </ScrollView>
+        </View>
+
+        <FadeInView delay={600}>
+            <View style={styles.footerNavSpread}>
+                <TouchableOpacity onPress={handleBack}>
+                    <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleNext}>
+                    <Feather name="arrow-right-circle" size={48} color="#4F46E5" />
+                </TouchableOpacity>
+            </View>
+        </FadeInView>
+    </View>
+  );
+
+  const renderStep_Location = () => (
+    <View style={styles.stepContainerPadded}>
+        <FadeInView delay={100}>
+            <Text style={styles.headerTitle}>Where are you meeting?</Text>
+        </FadeInView>
+        
+        <View style={{ flex: 1, justifyContent: 'center' }}>
+            {/* Location input on its own separate page */}
+            <FadeInView delay={250}>
+                <View style={styles.finalCardSection}>
+                    <Text style={styles.pickerTitle}>Location (Address or Link)</Text>
+                    <View style={styles.searchBox}>
+                      <Feather name="map-pin" size={20} color="#4F46E5" />
+                      <TextInput 
+                          style={styles.searchInput}
+                          placeholder="e.g. Starbucks, Zoom Link, Room 101"
+                          placeholderTextColor="#9CA3AF"
+                          value={location}
+                          onChangeText={setLocation}
+                      />
+                    </View>
+                </View>
+            </FadeInView>
+        </View>
 
         <FadeInView delay={600}>
             <View style={styles.footerNavSpread}>
@@ -944,10 +968,12 @@ const App = () => {
             {step === 3 && creationType === 'group' && renderStep3_Frequency()}
             {step === 4 && creationType === 'group' && renderStep4_Details()}
             {step === 5 && creationType === 'group' && renderStep_FinalTime()}
+            {step === 6 && creationType === 'group' && renderStep_Location()}
 
             {/* One-Off branching */}
             {step === 3 && creationType === 'event' && renderStep_OneOffDate()}
             {step === 4 && creationType === 'event' && renderStep_FinalTime()}
+            {step === 5 && creationType === 'event' && renderStep_Location()}
         </View>
         {renderDropdownModal()}
     </SafeAreaView>
