@@ -88,7 +88,7 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
             <MessageList Message={CustomMessage} />
             
             <View className="flex-row items-center p-3 border-t border-gray-200 bg-white pb-6"> 
-                <View className="flex-1 flex-row items-center bg-gray-100 rounded-full px-4 py-2 mr-3 border border-gray-300">
+                <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-4 py-2 mr-3 border border-gray-300">
                     <TextInput 
                         value={text}
                         onChangeText={setText}
