@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Keyboard, Alert, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TextInput, Keyboard, Alert, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import React, { useState, useCallback, useEffect } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -130,9 +130,14 @@ const GroupScreen = () => {
 
   const { openChatId } = useLocalSearchParams<{ openChatId?: string }>();
 
-  const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch } = useGetGroups();
+  const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups } = useGetGroups();
   const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(selectedGroup?._id || null);
-  const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
+  
+  // Destructuring refetch for currentUser to use inside focus effect
+  const { data: currentUser, refetch: refetchUser } = useQuery<User, Error>({ 
+    queryKey: ['currentUser'], 
+    queryFn: () => userApi.getCurrentUser(api) 
+  });
   
   const { mutate: deleteGroup, isPending: isDeletingGroup } = useDeleteGroup();
   const { mutate: leaveGroup, isPending: isLeavingGroup } = useLeaveGroup();
@@ -144,7 +149,18 @@ const GroupScreen = () => {
   const { data: notifications } = useGetNotifications();
   const hasUnreadNotifications = notifications?.some(n => !n.read);
 
-  useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
+  /**
+   * PROJECT 4 FIX: 
+   * When this screen comes into focus, we refetch BOTH the group list 
+   * AND the current user. This ensures that if a background job unmuted 
+   * the user, the UI updates immediately when they navigate back here.
+   */
+  useFocusEffect(
+    useCallback(() => { 
+      refetchGroups(); 
+      refetchUser();
+    }, [refetchGroups, refetchUser])
+  );
 
   useEffect(() => {
     if (openChatId && groups && groups.length > 0) {
@@ -233,22 +249,18 @@ const GroupScreen = () => {
     setIsGroupDetailVisible(false);
     setSelectedGroup(null);
     setSearchQuery('');
-    refetch();
+    refetchGroups();
+    refetchUser(); // Refresh user when closing details too
   };
 
-  /**
-   * PROJECT 4: Mute Indicator Logic
-   * We render the group list and include a bell-off icon if the user has silenced the chat.
-   */
   const renderGroupList = () => {
     if (isLoadingGroups || !currentUser) return <ActivityIndicator size="large" color="#4F46E5" className="mt-8"/>;
     if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
     if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
 
     return groups.map((group) => {
-      // Logic for mute indicators
-      const isIndefinitelyMuted = currentUser.mutedGroups?.includes(group._id);
-      const isTemporarilyMuted = currentUser.mutedUntilNextEvent?.includes(group._id);
+      const isIndefinitelyMuted = currentUser?.mutedGroups?.includes(group._id);
+      const isTemporarilyMuted = currentUser?.mutedUntilNextEvent?.includes(group._id);
       const isMuted = isIndefinitelyMuted || isTemporarilyMuted;
 
       return (
@@ -260,6 +272,7 @@ const GroupScreen = () => {
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center flex-1">
               <Text className="text-lg font-bold text-gray-800" numberOfLines={1}>{group.name}</Text>
+              
               {isMuted && (
                 <View className="ml-2">
                   <Feather 
