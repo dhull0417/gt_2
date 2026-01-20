@@ -61,7 +61,6 @@ export const GroupDetailsView = ({
     const insets = useSafeAreaInsets();
     const isOwner = currentUser._id === groupDetails.owner;
     
-    // Check if current user is a moderator
     const isMod = groupDetails.moderators?.some((m: User | string) => 
         typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id
     ) ?? false;
@@ -72,10 +71,17 @@ export const GroupDetailsView = ({
     const queryClient = useQueryClient();
 
     // --- Mute Feature State ---
-    const [isMuted, setIsMuted] = useState(currentUser.mutedGroups?.includes(groupDetails._id) || false);
+    // Determining initial mute type based on user's existing settings
+    const initialMuteType = currentUser.mutedGroups?.includes(groupDetails._id) 
+        ? 'indefinite' 
+        : currentUser.mutedUntilNextEvent?.includes(groupDetails._id) 
+            ? 'untilNext' 
+            : 'none';
+
+    const [muteType, setMuteType] = useState<'indefinite' | 'untilNext' | 'none'>(initialMuteType);
     const [isTogglingMute, setIsTogglingMute] = useState(false);
 
-    // --- Quick Settings State (Location & Capacity) ---
+    // --- Quick Settings State ---
     const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
     const [tempLocation, setTempLocation] = useState('');
     const [tempCapacity, setTempCapacity] = useState<number>(0);
@@ -86,7 +92,6 @@ export const GroupDetailsView = ({
     const [selectedModIds, setSelectedModIds] = useState<string[]>([]);
     const [isSavingMods, setIsSavingMods] = useState(false);
 
-    // Sync modal state when opening settings
     useEffect(() => {
         if (isSettingsModalVisible) {
             setTempLocation(groupDetails.defaultLocation || '');
@@ -94,7 +99,6 @@ export const GroupDetailsView = ({
         }
     }, [isSettingsModalVisible, groupDetails]);
 
-    // Sync internal modal state with group data when opening moderator list
     useEffect(() => {
         if (isModModalVisible) {
             const currentModIds = (groupDetails.moderators || []).map((m: User | string) => 
@@ -104,12 +108,34 @@ export const GroupDetailsView = ({
         }
     }, [isModModalVisible, groupDetails.moderators]);
 
-    const handleToggleMute = async () => {
+    /**
+     * PROJECT 4: UI Choice Implementation
+     * Handles the logic for showing the user a choice when they toggle notifications.
+     */
+    const handleToggleSwitch = (newValue: boolean) => {
+        if (newValue) {
+            // Trigger choice UI
+            Alert.alert(
+                "Mute Notifications",
+                "How long would you like to silence this chat?",
+                [
+                    { text: "Until Next Meeting", onPress: () => performMuteUpdate('untilNext') },
+                    { text: "Indefinitely", onPress: () => performMuteUpdate('indefinite') },
+                    { text: "Cancel", style: "cancel" }
+                ]
+            );
+        } else {
+            // Turning mute OFF
+            performMuteUpdate('none');
+        }
+    };
+
+    const performMuteUpdate = async (type: 'indefinite' | 'untilNext' | 'none') => {
         setIsTogglingMute(true);
         try {
-            const result = await userApi.toggleGroupMute(api, groupDetails._id);
-            setIsMuted(result.muted);
-            // Invalidate user query to keep the mutedGroups list globally in sync
+            await userApi.toggleGroupMute(api, groupDetails._id, type);
+            setMuteType(type);
+            // Sync the global user object so other screens know the new mute state
             queryClient.invalidateQueries({ queryKey: ['currentUser'] });
         } catch (error: any) {
             Alert.alert("Error", "Failed to update notification settings.");
@@ -121,12 +147,10 @@ export const GroupDetailsView = ({
     const handleSaveSettings = async () => {
         setIsSavingSettings(true);
         try {
-            // Bulk update using the group's generic update endpoint
             await api.put(`/api/groups/${groupDetails._id}`, { 
                 defaultLocation: tempLocation,
                 defaultCapacity: tempCapacity 
             });
-            
             queryClient.invalidateQueries({ queryKey: ['groupDetails', groupDetails._id] });
             setIsSettingsModalVisible(false);
             Alert.alert("Success", "Group details updated.");
@@ -150,7 +174,6 @@ export const GroupDetailsView = ({
                 groupId: groupDetails._id, 
                 moderatorIds: selectedModIds 
             });
-            
             queryClient.invalidateQueries({ queryKey: ['groupDetails', groupDetails._id] });
             setIsModModalVisible(false);
             Alert.alert("Success", "Moderator list updated.");
@@ -160,6 +183,8 @@ export const GroupDetailsView = ({
             setIsSavingMods(false);
         }
     };
+
+    const isCurrentlyMuted = muteType !== 'none';
 
     return (
         <View style={{ paddingBottom: 100, paddingTop: insets.top }}>
@@ -186,7 +211,6 @@ export const GroupDetailsView = ({
                         <Text style={styles.infoText}>{formatSchedule(groupDetails.schedule)}</Text>
                     </View>
 
-                    {/* Displaying Location */}
                     <View style={styles.infoRow}>
                         <Feather name="map-pin" size={18} color="#4F46E5" />
                         <Text style={styles.infoText} numberOfLines={1}>
@@ -199,17 +223,31 @@ export const GroupDetailsView = ({
                         <Text style={styles.infoText}>Limit: {groupDetails.defaultCapacity === 0 ? "Unlimited" : groupDetails.defaultCapacity}</Text>
                     </View>
 
-                    {/* Mute Feature Toggle UI */}
+                    {/* Mute Feature UI with choice feedback */}
                     <View style={[styles.infoRow, styles.muteRow]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                            <Feather name={isMuted ? "bell-off" : "bell"} size={18} color={isMuted ? "#9CA3AF" : "#4F46E5"} />
-                            <Text style={[styles.infoText, isMuted && { color: '#9CA3AF' }]}>Mute Chat Notifications</Text>
+                            <Feather 
+                                name={isCurrentlyMuted ? "bell-off" : "bell"} 
+                                size={18} 
+                                color={isCurrentlyMuted ? "#9CA3AF" : "#4F46E5"} 
+                            />
+                            <View style={{ marginLeft: 12 }}>
+                                <Text style={[styles.infoText, { marginLeft: 0 }, isCurrentlyMuted && { color: '#9CA3AF' }]}>
+                                    Mute Chat Notifications
+                                </Text>
+                                {muteType === 'untilNext' && (
+                                    <Text style={styles.muteSubtext}>Until next event occurs</Text>
+                                )}
+                                {muteType === 'indefinite' && (
+                                    <Text style={styles.muteSubtext}>Permanently muted</Text>
+                                )}
+                            </View>
                         </View>
                         <Switch
                             trackColor={{ false: "#E5E7EB", true: "#C7D2FE" }}
-                            thumbColor={isMuted ? "#9CA3AF" : "#4F46E5"}
-                            onValueChange={handleToggleMute}
-                            value={isMuted}
+                            thumbColor={isCurrentlyMuted ? "#9CA3AF" : "#4F46E5"}
+                            onValueChange={handleToggleSwitch}
+                            value={isCurrentlyMuted}
                             disabled={isTogglingMute}
                         />
                     </View>
@@ -230,7 +268,7 @@ export const GroupDetailsView = ({
                 </View>
             )}
 
-            {/* Moderator Management Trigger (Owner Only) */}
+            {/* Moderator Management Trigger */}
             {isOwner && (
                 <TouchableOpacity 
                     onPress={() => setIsModModalVisible(true)}
@@ -304,17 +342,17 @@ export const GroupDetailsView = ({
                 </View>
             )}
 
-            {/* Quick Settings Modal (Location & Capacity) */}
+            {/* Quick Settings Modal */}
             <Modal visible={isSettingsModalVisible} animationType="slide" transparent>
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
                     <View style={styles.modalOverlay}>
                         <View style={styles.modalContainerCompact}>
                             <View style={styles.modalHeader}>
-                                <TouchableOpacity onPress={() => setIsSettingsModalVisible(false)}>
+                                <TouchableOpacity onPress={() => setIsSettingsModalVisible(false)} style={styles.headerIconButton}>
                                     <Feather name="x" size={24} color="#9CA3AF" />
                                 </TouchableOpacity>
                                 <Text style={styles.modalTitle}>Edit Group Details</Text>
-                                <TouchableOpacity onPress={handleSaveSettings} disabled={isSavingSettings}>
+                                <TouchableOpacity onPress={handleSaveSettings} disabled={isSavingSettings} style={styles.headerIconButton}>
                                     {isSavingSettings ? <ActivityIndicator size="small" color="#4F46E5" /> : <Text style={styles.saveBtnText}>Save</Text>}
                                 </TouchableOpacity>
                             </View>
@@ -427,6 +465,7 @@ const styles = StyleSheet.create({
     infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     infoText: { marginLeft: 12, fontSize: 16, fontWeight: '600', color: '#374151', flex: 1 },
     muteRow: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+    muteSubtext: { fontSize: 10, color: '#9CA3AF', fontWeight: 'bold', textTransform: 'uppercase' },
     badgeBtnBlue: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF2FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
     badgeBtnTextBlue: { color: '#4F46E5', fontSize: 10, fontWeight: 'bold', marginLeft: 4 },
     managerActionsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },

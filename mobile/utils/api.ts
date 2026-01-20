@@ -30,7 +30,8 @@ export interface User {
   lastName?: string;
   profilePicture?: string;
   groups?: string[];
-  mutedGroups: string[]; 
+  mutedGroups: string[];
+  mutedUntilNextEvent: string[];
   streamToken: string;
 }
 
@@ -200,10 +201,10 @@ export const userApi = {
     const response = await api.get<User[]>(`/api/users/search?username=${username}`);
     return response.data;
   },
-    toggleGroupMute: async (api: AxiosInstance, groupId: string): Promise<{ muted: boolean }> => {
-    const response = await api.patch<{ muted: boolean }>("/api/users/mute-group", { groupId });
+  toggleGroupMute: async (api: AxiosInstance, groupId: string, muteType: 'indefinite' | 'untilNext' | 'none'): Promise<{ muted: boolean }> => {
+    const response = await api.patch<{ muted: boolean }>("/api/users/mute-group", { groupId, muteType });
     return response.data;
-  },
+  }
 };
 
 export const groupApi = {

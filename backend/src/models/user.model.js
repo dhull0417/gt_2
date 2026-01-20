@@ -55,6 +55,12 @@ const userSchema = new mongoose.Schema(
                 ref: "Group",
             },
         ],
+        mutedUntilNextEvent: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Group",
+            },
+        ],
         /**
          * Project 4: Push Notifications
          * Storing the unique Expo Push Token for this user's device

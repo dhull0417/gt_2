@@ -10,7 +10,7 @@ import { ENV } from '../config/env.js';
  */
 export const toggleGroupMute = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
-  const { groupId } = req.body;
+  const { groupId, muteType } = req.body;
 
   if (!groupId) {
     return res.status(400).json({ error: "Group ID is required." });
@@ -21,22 +21,22 @@ export const toggleGroupMute = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "User not found." });
   }
 
-  // Check if the group is already in the muted list
-  const isMuted = user.mutedGroups.some(id => id.toString() === groupId);
+  // 1. Clean start: Remove from both lists first to ensure no duplicates or cross-over
+  user.mutedGroups = user.mutedGroups.filter(id => id.toString() !== groupId);
+  user.mutedUntilNextEvent = user.mutedUntilNextEvent.filter(id => id.toString() !== groupId);
 
-  if (isMuted) {
-    // Unmute: Remove from array
-    user.mutedGroups = user.mutedGroups.filter(id => id.toString() !== groupId);
-  } else {
-    // Mute: Add to array
+  // 2. Add to the requested list
+  if (muteType === 'indefinite') {
     user.mutedGroups.push(groupId);
+  } else if (muteType === 'untilNext') {
+    user.mutedUntilNextEvent.push(groupId);
   }
 
   await user.save();
 
   res.status(200).json({ 
-    muted: !isMuted, 
-    message: isMuted ? "Notifications unmuted." : "Notifications muted." 
+    muteType,
+    message: muteType === 'none' ? "Notifications unmuted." : "Notifications muted." 
   });
 });
 

@@ -2,7 +2,7 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput,
 import React, { useState, useCallback, useEffect } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; // Added useLocalSearchParams
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; 
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
@@ -128,7 +128,6 @@ const GroupScreen = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  // Added: Get deep linking parameters
   const { openChatId } = useLocalSearchParams<{ openChatId?: string }>();
 
   const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch } = useGetGroups();
@@ -147,13 +146,11 @@ const GroupScreen = () => {
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
-  // PROJECT 4: Deep Linking logic to open chat automatically
   useEffect(() => {
     if (openChatId && groups && groups.length > 0) {
       const targetGroup = groups.find(g => g._id === openChatId);
       if (targetGroup) {
         handleOpenGroupDetail(targetGroup);
-        // Clear the params to prevent re-opening on every re-render
         router.setParams({ openChatId: undefined });
       }
     }
@@ -239,29 +236,54 @@ const GroupScreen = () => {
     refetch();
   };
 
+  /**
+   * PROJECT 4: Mute Indicator Logic
+   * We render the group list and include a bell-off icon if the user has silenced the chat.
+   */
   const renderGroupList = () => {
     if (isLoadingGroups || !currentUser) return <ActivityIndicator size="large" color="#4F46E5" className="mt-8"/>;
     if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
     if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
 
-    return groups.map((group) => (
-      <TouchableOpacity
-        key={group._id}
-        className="bg-white p-5 my-2 rounded-2xl shadow-sm border border-gray-100"
-        onPress={() => handleOpenGroupDetail(group)}
-      >
-        <Text className="text-lg font-bold text-gray-800">{group.name}</Text>
-        {group.lastMessage ? (
-          <Text className="text-sm text-gray-500 mt-1" numberOfLines={1}>
-            <Text className="font-semibold text-indigo-600">{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
-          </Text>
-        ) : (
-          <Text className="text-sm text-gray-400 italic mt-1">
-            No messages yet
-          </Text>
-        )}
-      </TouchableOpacity>
-    ));
+    return groups.map((group) => {
+      // Logic for mute indicators
+      const isIndefinitelyMuted = currentUser.mutedGroups?.includes(group._id);
+      const isTemporarilyMuted = currentUser.mutedUntilNextEvent?.includes(group._id);
+      const isMuted = isIndefinitelyMuted || isTemporarilyMuted;
+
+      return (
+        <TouchableOpacity
+          key={group._id}
+          className="bg-white p-5 my-2 rounded-2xl shadow-sm border border-gray-100"
+          onPress={() => handleOpenGroupDetail(group)}
+        >
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center flex-1">
+              <Text className="text-lg font-bold text-gray-800" numberOfLines={1}>{group.name}</Text>
+              {isMuted && (
+                <View className="ml-2">
+                  <Feather 
+                    name="bell-off" 
+                    size={14} 
+                    color={isTemporarilyMuted ? "#6366F1" : "#9CA3AF"} 
+                  />
+                </View>
+              )}
+            </View>
+          </View>
+          
+          {group.lastMessage ? (
+            <Text className="text-sm text-gray-500 mt-1" numberOfLines={1}>
+              <Text className="font-semibold text-indigo-600">{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
+            </Text>
+          ) : (
+            <Text className="text-sm text-gray-400 italic mt-1">
+              No messages yet
+            </Text>
+          )}
+        </TouchableOpacity>
+      );
+    });
   };
 
   return (
