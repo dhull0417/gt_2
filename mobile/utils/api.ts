@@ -30,6 +30,7 @@ export interface User {
   lastName?: string;
   profilePicture?: string;
   groups?: string[];
+  mutedGroups: string[]; 
   streamToken: string;
 }
 
@@ -47,21 +48,14 @@ export interface Group {
   schedule: Schedule;
   owner: string;
   timezone: string;
-  /**
-   * Location Feature: The group-wide default location.
-   */
   defaultLocation: string;
   lastMessage?: LastMessage | null;
-  /**
-   * moderators field added to the base Group interface.
-   * This allows any group object (in lists or details) to optionally include moderator info.
-   */
   moderators?: (User | string)[];
 }
 
 export interface GroupDetails extends Group {
   members: User[];
-  defaultCapacity: number; // The limit that new events inherit
+  defaultCapacity: number;
 }
 
 export interface Event {
@@ -74,9 +68,6 @@ export interface Event {
   date: string;
   time: string;
   timezone: string;
-  /**
-   * Location Feature: The location specific to this meeting instance.
-   */
   location: string;
   status: 'scheduled' | 'cancelled'; 
   capacity: number; 
@@ -107,7 +98,7 @@ interface CreateGroupPayload {
   eventsToDisplay: number;
   members?: string[];
   defaultCapacity?: number;
-  defaultLocation?: string; // Added for Location Feature
+  defaultLocation?: string;
 }
 
 interface UpdateGroupPayload {
@@ -118,7 +109,7 @@ interface UpdateGroupPayload {
   timezone: string;
   eventsToDisplay: number;
   defaultCapacity?: number;
-  defaultLocation?: string; // Added for Location Feature
+  defaultLocation?: string;
 }
 
 interface AddMemberPayload {
@@ -142,7 +133,7 @@ interface UpdateEventPayload {
   time: string;
   timezone: string;
   capacity?: number;
-  location?: string; // Added for Location Feature
+  location?: string;
 }
 
 interface RsvpPayload {
@@ -161,7 +152,7 @@ interface CreateOneOffEventPayload {
   time: string;
   timezone: string;
   capacity?: number;
-  location?: string; // Added for Location Feature
+  location?: string;
 }
 
 interface RemoveScheduledDayPayload {
@@ -207,6 +198,10 @@ export const userApi = {
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
   searchUsers: async (api: AxiosInstance, username: string): Promise<User[]> => {
     const response = await api.get<User[]>(`/api/users/search?username=${username}`);
+    return response.data;
+  },
+    toggleGroupMute: async (api: AxiosInstance, groupId: string): Promise<{ muted: boolean }> => {
+    const response = await api.patch<{ muted: boolean }>("/api/users/mute-group", { groupId });
     return response.data;
   },
 };
@@ -260,9 +255,6 @@ export const groupApi = {
     const response = await api.patch(`/api/groups/${groupId}/schedule`, data);
     return response.data;
   },
-  /**
-   * New method for managing moderators.
-   */
   updateModerators: async (api: AxiosInstance, { groupId, moderatorIds }: UpdateModeratorsPayload): Promise<{ message: string }> => {
     const response = await api.patch(`/api/groups/${groupId}/moderators`, { moderatorIds });
     return response.data;

@@ -12,11 +12,12 @@ import {
     ScrollView,
     Dimensions,
     KeyboardAvoidingView,
-    Platform
+    Platform,
+    Switch
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
+import { GroupDetails, User, useApiClient, userApi, groupApi } from '@/utils/api';
 import { formatSchedule } from '@/utils/schedule';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -70,6 +71,10 @@ export const GroupDetailsView = ({
     const api = useApiClient();
     const queryClient = useQueryClient();
 
+    // --- Mute Feature State ---
+    const [isMuted, setIsMuted] = useState(currentUser.mutedGroups?.includes(groupDetails._id) || false);
+    const [isTogglingMute, setIsTogglingMute] = useState(false);
+
     // --- Quick Settings State (Location & Capacity) ---
     const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
     const [tempLocation, setTempLocation] = useState('');
@@ -98,6 +103,20 @@ export const GroupDetailsView = ({
             setSelectedModIds(currentModIds);
         }
     }, [isModModalVisible, groupDetails.moderators]);
+
+    const handleToggleMute = async () => {
+        setIsTogglingMute(true);
+        try {
+            const result = await userApi.toggleGroupMute(api, groupDetails._id);
+            setIsMuted(result.muted);
+            // Invalidate user query to keep the mutedGroups list globally in sync
+            queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+        } catch (error: any) {
+            Alert.alert("Error", "Failed to update notification settings.");
+        } finally {
+            setIsTogglingMute(false);
+        }
+    };
 
     const handleSaveSettings = async () => {
         setIsSavingSettings(true);
@@ -178,6 +197,21 @@ export const GroupDetailsView = ({
                     <View style={styles.infoRow}>
                         <Feather name="users" size={18} color="#4F46E5" />
                         <Text style={styles.infoText}>Limit: {groupDetails.defaultCapacity === 0 ? "Unlimited" : groupDetails.defaultCapacity}</Text>
+                    </View>
+
+                    {/* Mute Feature Toggle UI */}
+                    <View style={[styles.infoRow, styles.muteRow]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                            <Feather name={isMuted ? "bell-off" : "bell"} size={18} color={isMuted ? "#9CA3AF" : "#4F46E5"} />
+                            <Text style={[styles.infoText, isMuted && { color: '#9CA3AF' }]}>Mute Chat Notifications</Text>
+                        </View>
+                        <Switch
+                            trackColor={{ false: "#E5E7EB", true: "#C7D2FE" }}
+                            thumbColor={isMuted ? "#9CA3AF" : "#4F46E5"}
+                            onValueChange={handleToggleMute}
+                            value={isMuted}
+                            disabled={isTogglingMute}
+                        />
                     </View>
                 </View>
             )}
@@ -392,19 +426,15 @@ const styles = StyleSheet.create({
     cardTitle: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
     infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     infoText: { marginLeft: 12, fontSize: 16, fontWeight: '600', color: '#374151', flex: 1 },
+    muteRow: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
     badgeBtnBlue: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF2FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
     badgeBtnTextBlue: { color: '#4F46E5', fontSize: 10, fontWeight: 'bold', marginLeft: 4 },
-    badgeBtnGreen: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, marginRight: 8 },
-    badgeBtnTextGreen: { color: '#10B981', fontSize: 10, fontWeight: 'bold', marginLeft: 4 },
-    
     managerActionsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
     actionPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F7FF', paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: '#E0E7FF' },
     actionPillText: { marginLeft: 8, color: '#4F46E5', fontWeight: 'bold', fontSize: 13 },
-
-    manageModsBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 16, borderRadius: 20, marginBottom: 32, borderWidth: 1, borderColor: '#EEF2FF', shadowColor: '#4F46E5', shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
+    manageModsBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 16, borderRadius: 20, marginBottom: 32, borderWidth: 1, borderColor: '#EEF2FF', elevation: 2 },
     manageModsIcon: { backgroundColor: '#4F46E5', width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
     manageModsText: { flex: 1, marginLeft: 12, fontSize: 16, fontWeight: 'bold', color: '#1F2937' },
-    
     sectionTitle: { fontSize: 20, fontWeight: '900', color: '#111827', marginBottom: 16 },
     memberCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     avatar: { width: 44, height: 44, borderRadius: 14, marginRight: 12, backgroundColor: '#F3F4F6' },
@@ -414,15 +444,12 @@ const styles = StyleSheet.create({
     badgeText: { fontSize: 8, fontWeight: 'bold', color: '#7C3AED', textTransform: 'uppercase' },
     modBadge: { backgroundColor: '#EFF6FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 6 },
     modBadgeText: { fontSize: 8, fontWeight: 'bold', color: '#2563EB', textTransform: 'uppercase' },
-    
     searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14, paddingHorizontal: 12, height: 50 },
     searchInput: { flex: 1, marginLeft: 10, fontSize: 15 },
     searchResult: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-    
     actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F7FF', padding: 16, borderRadius: 16, marginBottom: 12 },
     deleteBtn: { backgroundColor: '#FEF2F2' },
     deleteBtnText: { marginLeft: 10, color: '#EF4444', fontWeight: 'bold', fontSize: 16 },
-    
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContainer: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, height: SCREEN_HEIGHT * 0.8, padding: 24, paddingBottom: 40 },
     modalContainerCompact: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 60 },

@@ -23,7 +23,6 @@ export const handleChatWebhook = asyncHandler(async (req, res) => {
   const { message, user: sender, channel } = event;
 
   // 2. Identify the recipients (all channel members except the sender)
-  // GetStream events usually include the members array
   const memberIds = event.members 
     ? event.members.map(m => m.user_id) 
     : [];
@@ -35,15 +34,19 @@ export const handleChatWebhook = asyncHandler(async (req, res) => {
   }
 
   try {
-    // 3. Fetch recipients from our DB to get their Expo Push Tokens
+    /**
+     * PROJECT 4: Mute Feature Implementation
+     * We fetch recipients who:
+     * 1. Have an Expo Push Token.
+     * 2. DO NOT have this specific channel ID in their 'mutedGroups' array.
+     */
     const recipients = await User.find({ 
       _id: { $in: recipientIds },
-      expoPushToken: { $exists: true, $ne: null }
+      expoPushToken: { $exists: true, $ne: null },
+      mutedGroups: { $ne: channel.id } // Respect the mute list
     });
 
     if (recipients.length > 0) {
-      // 4. Send the push notification
-      // We use the channel name if available, otherwise fallback
       const channelName = channel.name || "New Message";
       
       await notifyUsers(recipients, {
@@ -60,6 +63,5 @@ export const handleChatWebhook = asyncHandler(async (req, res) => {
     console.error("Webhook notification error:", error);
   }
 
-  // Always return 200 to Stream to acknowledge receipt
   res.status(200).json({ success: true });
 });
