@@ -46,6 +46,16 @@ const userSchema = new mongoose.Schema(
             },
         ],
         /**
+         * Project 4: Mute Feature
+         * Array of Group IDs for which the user has disabled chat notifications.
+         */
+        mutedGroups: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Group",
+            },
+        ],
+        /**
          * Project 4: Push Notifications
          * Storing the unique Expo Push Token for this user's device
          * to allow the backend to send real-time alerts.

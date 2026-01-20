@@ -5,8 +5,8 @@ import {
   syncUser,
   updateProfile,
   searchUsers,
-  // FIXED: Import the updatePushToken controller function
-  updatePushToken, 
+  updatePushToken,
+  toggleGroupMute
 } from "../controllers/user.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
@@ -18,11 +18,7 @@ router.get("/search", protectRoute, searchUsers);
 router.post("/sync", protectRoute, syncUser);
 router.get("/me", protectRoute, getCurrentUser);
 router.put("/profile", protectRoute, updateProfile);
-
-/**
- * Project 4: Push Notifications
- * Endpoint for the mobile app to register the device's push token.
- */
 router.post("/push-token", protectRoute, updatePushToken);
+router.patch("/mute-group", protectRoute, toggleGroupMute);
 
 export default router;

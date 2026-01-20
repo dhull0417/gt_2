@@ -5,6 +5,42 @@ import { syncStreamUser } from "../utils/stream.js";
 import { ENV } from '../config/env.js';  
 
 /**
+ * @desc    Toggle mute status for a specific group's chat
+ * @route   PATCH /api/users/mute-group
+ */
+export const toggleGroupMute = asyncHandler(async (req, res) => {
+  const { userId: clerkId } = getAuth(req);
+  const { groupId } = req.body;
+
+  if (!groupId) {
+    return res.status(400).json({ error: "Group ID is required." });
+  }
+
+  const user = await User.findOne({ clerkId });
+  if (!user) {
+    return res.status(404).json({ error: "User not found." });
+  }
+
+  // Check if the group is already in the muted list
+  const isMuted = user.mutedGroups.some(id => id.toString() === groupId);
+
+  if (isMuted) {
+    // Unmute: Remove from array
+    user.mutedGroups = user.mutedGroups.filter(id => id.toString() !== groupId);
+  } else {
+    // Mute: Add to array
+    user.mutedGroups.push(groupId);
+  }
+
+  await user.save();
+
+  res.status(200).json({ 
+    muted: !isMuted, 
+    message: isMuted ? "Notifications unmuted." : "Notifications muted." 
+  });
+});
+
+/**
  * @desc    Save/Update User's Expo Push Token
  * @route   POST /api/users/push-token
  */
