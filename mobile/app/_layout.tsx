@@ -1,4 +1,4 @@
-// app/_layout.tsx
+// mobile/app/_layout.tsx
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -8,7 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 import { User, useApiClient, userApi } from '@/utils/api';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { usePushNotifications } from '@/hooks/usePushNotifications'; // 1. Import the hook
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -45,11 +45,7 @@ const AuthLayout = () => {
   const router = useRouter();
   const api = useApiClient();
   
-  // 2. Initialize Push Notifications
-  // This hook handles the permission request and POSTs the token to 
-  // the endpoint we added in the Canvas routes.
-  const { expoPushToken } = usePushNotifications(isSignedIn);
-
+  // Sync logic to create/update MongoDB user from Clerk
   useUserSync();
 
   const { data: currentUser, isSuccess } = useQuery<User, Error>({
@@ -57,6 +53,13 @@ const AuthLayout = () => {
     queryFn: () => userApi.getCurrentUser(api),
     enabled: isSignedIn,
   });
+
+  /**
+   * FIX: Pass isSuccess to the notification hook.
+   * This ensures we only register the device token AFTER 
+   * the backend user record is confirmed to exist.
+   */
+  const { expoPushToken } = usePushNotifications(isSignedIn, isSuccess);
 
   // === ROUTING LOGIC ===
   useEffect(() => {
