@@ -9,15 +9,16 @@ import { calculateNextEventDate } from "../utils/date.utils.js";
 import { canManageGroup } from "./group.controller.js";
 import { notifyUsers } from "../utils/push.notifications.js";
 
-const parseTime = (timeString) => {
-    const [time, period] = timeString.split(' ');
+/**
+ * HELPER: parseTimeString
+ * Converts "07:00 PM" into { hours: 19, minutes: 0 }
+ */
+const parseTimeString = (timeStr) => {
+    if (!timeStr) return { hours: 9, minutes: 0 };
+    const [time, modifier] = timeStr.split(' ');
     let [hours, minutes] = time.split(':').map(Number);
-    if (period.toUpperCase() === 'PM' && hours !== 12) {
-        hours += 12;
-    }
-    if (period.toUpperCase() === 'AM' && hours === 12) {
-        hours = 0;
-    }
+    if (modifier === 'PM' && hours < 12) hours += 12;
+    if (modifier === 'AM' && hours === 12) hours = 0;
     return { hours, minutes };
 };
 
@@ -69,8 +70,8 @@ export const updateEvent = asyncHandler(async (req, res) => {
         return res.status(400).json({ error: "Date, time, and timezone are required." });
     }
     
-    const { hours, minutes } = parseTime(time);
-    const eventDateTime = DateTime.fromJSDate(new Date(date), { zone: timezone }).set({ hour: hours, minute: minutes });
+    const timeParts = parseTimeString(time);
+    const eventDateTime = DateTime.fromJSDate(new Date(date), { zone: timezone }).set({ hour: timeParts.hours, minute: timeParts.minutes });
     const now = DateTime.now().setZone(timezone);
 
     if (eventDateTime < now) {
@@ -125,8 +126,6 @@ export const handleRsvp = asyncHandler(async (req, res) => {
   const userIdStr = userId.toString();
 
   // 1. PROJECT 6: Clean move logic
-  // We remove the user from every list first. This makes the operation idempotent
-  // and ensures they are removed from the 'undecided' list populated by JIT.
   event.in = event.in.filter(id => id.toString() !== userIdStr);
   event.out = event.out.filter(id => id.toString() !== userIdStr);
   event.undecided = event.undecided.filter(id => id.toString() !== userIdStr);
@@ -148,14 +147,12 @@ export const handleRsvp = asyncHandler(async (req, res) => {
     event.out.push(userId);
 
     // 2. Waitlist Promotion Logic
-    // If someone leaves and there is a waitlist, move the first person 'in'
     if (event.capacity > 0 && event.waitlist.length > 0) {
       const promotedUserId = event.waitlist.shift(); 
       event.in.push(promotedUserId);
 
       const promotedUser = await User.findById(promotedUserId);
       if (promotedUser) {
-          // Send push notification to the promoted user
           await notifyUsers([promotedUser], {
               title: "You're off the waitlist!",
               body: `A spot opened up for ${event.name}. You are now confirmed!`,
@@ -165,14 +162,13 @@ export const handleRsvp = asyncHandler(async (req, res) => {
     }
   }
 
-  // Log interaction for background troubleshooting
   console.log(`[RSVP] User ${currentUser.username} (${userIdStr}) set status to '${status}' for event ${eventId}`);
 
   await event.save();
   res.status(200).json({ 
     event, 
     message: responseMessage,
-    status: status // Confirming status back to client
+    status: status 
   });
 });
 
@@ -210,6 +206,7 @@ export const cancelEvent = asyncHandler(async (req, res) => {
 
 /**
  * @desc    Permanently delete an event (Owner/Moderator Only)
+ * Refined for Project 6: Loops to fill all due recurring spots after deletion.
  */
 export const deleteEvent = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
@@ -232,30 +229,49 @@ export const deleteEvent = asyncHandler(async (req, res) => {
 
     await Event.findByIdAndDelete(eventId);
 
-    // If we delete the current recurring meeting, regenerate the next one immediately
+    // If we delete the current recurring meeting, fill any gaps that are due by lead time
     if (wasRecurring && parentGroup.schedule) {
         try {
-            const nextEventDate = calculateNextEventDate(
-                parentGroup.schedule.days?.[0] || 0, 
-                parentGroup.time, 
-                parentGroup.timezone,
-                parentGroup.schedule.frequency
-            );
+            const now = DateTime.now().setZone(parentGroup.timezone);
+            const { hours, minutes } = parseTimeString(parentGroup.generationLeadTime);
             
-            await Event.create({
-                group: parentGroup._id,
-                name: parentGroup.name,
-                date: nextEventDate,
-                time: parentGroup.time,
-                timezone: parentGroup.timezone,
-                location: parentGroup.defaultLocation,
-                members: parentGroup.members,
-                undecided: parentGroup.members,
-                isOverride: false,
-                capacity: parentGroup.defaultCapacity 
-            });
+            let currentAnchor = new Date();
+            currentAnchor.setHours(0, 0, 0, 0);
+
+            while (true) {
+                const nextDate = calculateNextEventDate(
+                    parentGroup.schedule.days?.[0] || 0, 
+                    parentGroup.time, 
+                    parentGroup.timezone,
+                    parentGroup.schedule.frequency,
+                    currentAnchor
+                );
+
+                const nextDT = DateTime.fromJSDate(nextDate).setZone(parentGroup.timezone);
+                const triggerDT = nextDT.minus({ days: parentGroup.generationLeadDays || 0 }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+
+                const exists = await Event.findOne({ group: parentGroup._id, date: nextDate });
+
+                if (now >= triggerDT && !exists) {
+                    await Event.create({
+                        group: parentGroup._id,
+                        name: parentGroup.name,
+                        date: nextDate,
+                        time: parentGroup.time,
+                        timezone: parentGroup.timezone,
+                        location: parentGroup.defaultLocation,
+                        members: parentGroup.members,
+                        undecided: parentGroup.members,
+                        isOverride: false,
+                        capacity: parentGroup.defaultCapacity 
+                    });
+                    currentAnchor = nextDate;
+                } else {
+                    break;
+                }
+            }
         } catch (regenError) {
-            console.error("Failed to regenerate next event after deletion:", regenError);
+            console.error("Failed to regenerate meetings after deletion:", regenError);
         }
     }
 

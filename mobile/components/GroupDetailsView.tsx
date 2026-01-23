@@ -70,8 +70,6 @@ export const GroupDetailsView = ({
     const api = useApiClient();
     const queryClient = useQueryClient();
 
-    // --- Mute Feature State ---
-    // Determining initial mute type based on user's existing settings
     const initialMuteType = currentUser.mutedGroups?.includes(groupDetails._id) 
         ? 'indefinite' 
         : currentUser.mutedUntilNextEvent?.includes(groupDetails._id) 
@@ -81,13 +79,11 @@ export const GroupDetailsView = ({
     const [muteType, setMuteType] = useState<'indefinite' | 'untilNext' | 'none'>(initialMuteType);
     const [isTogglingMute, setIsTogglingMute] = useState(false);
 
-    // --- Quick Settings State ---
     const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
     const [tempLocation, setTempLocation] = useState('');
     const [tempCapacity, setTempCapacity] = useState<number>(0);
     const [isSavingSettings, setIsSavingSettings] = useState(false);
 
-    // --- Moderator Management State ---
     const [isModModalVisible, setIsModModalVisible] = useState(false);
     const [selectedModIds, setSelectedModIds] = useState<string[]>([]);
     const [isSavingMods, setIsSavingMods] = useState(false);
@@ -108,13 +104,8 @@ export const GroupDetailsView = ({
         }
     }, [isModModalVisible, groupDetails.moderators]);
 
-    /**
-     * PROJECT 4: UI Choice Implementation
-     * Handles the logic for showing the user a choice when they toggle notifications.
-     */
     const handleToggleSwitch = (newValue: boolean) => {
         if (newValue) {
-            // Trigger choice UI
             Alert.alert(
                 "Mute Notifications",
                 "How long would you like to silence this chat?",
@@ -125,7 +116,6 @@ export const GroupDetailsView = ({
                 ]
             );
         } else {
-            // Turning mute OFF
             performMuteUpdate('none');
         }
     };
@@ -135,7 +125,6 @@ export const GroupDetailsView = ({
         try {
             await userApi.toggleGroupMute(api, groupDetails._id, type);
             setMuteType(type);
-            // Sync the global user object so other screens know the new mute state
             queryClient.invalidateQueries({ queryKey: ['currentUser'] });
         } catch (error: any) {
             Alert.alert("Error", "Failed to update notification settings.");
@@ -188,7 +177,6 @@ export const GroupDetailsView = ({
 
     return (
         <View style={{ paddingBottom: 100, paddingTop: insets.top }}>
-            {/* Schedule & Capacity Card */}
             {groupDetails.schedule && (
                 <View style={styles.card}>
                     <View style={styles.cardHeader}>
@@ -223,7 +211,14 @@ export const GroupDetailsView = ({
                         <Text style={styles.infoText}>Limit: {groupDetails.defaultCapacity === 0 ? "Unlimited" : groupDetails.defaultCapacity}</Text>
                     </View>
 
-                    {/* Mute Feature UI with choice feedback */}
+                    {/* PROJECT 6: Lead Time Display */}
+                    <View style={styles.infoRow}>
+                        <Feather name="bell" size={18} color="#4F46E5" />
+                        <Text style={styles.infoText}>
+                            Notifies {groupDetails.generationLeadDays} day{groupDetails.generationLeadDays !== 1 ? 's' : ''} before at {groupDetails.generationLeadTime}
+                        </Text>
+                    </View>
+
                     <View style={[styles.infoRow, styles.muteRow]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                             <Feather 
@@ -254,7 +249,6 @@ export const GroupDetailsView = ({
                 </View>
             )}
 
-            {/* Actions for Managers */}
             {canManage && (
                 <View style={styles.managerActionsRow}>
                     <TouchableOpacity onPress={onAddOneOffEvent} style={styles.actionPill}>
@@ -268,7 +262,6 @@ export const GroupDetailsView = ({
                 </View>
             )}
 
-            {/* Moderator Management Trigger */}
             {isOwner && (
                 <TouchableOpacity 
                     onPress={() => setIsModModalVisible(true)}
@@ -283,7 +276,6 @@ export const GroupDetailsView = ({
                 </TouchableOpacity>
             )}
 
-            {/* Members Section */}
             <View style={{ marginBottom: 24 }}>
                 <Text style={styles.sectionTitle}>Members ({groupDetails.members.length})</Text>
                 {groupDetails.members.map(member => {
@@ -319,7 +311,6 @@ export const GroupDetailsView = ({
                 })}
             </View>
 
-            {/* Invite Section */}
             {canManage && (
                 <View style={{ marginBottom: 32 }}>
                     <Text style={styles.sectionTitle}>Invite Members</Text>
@@ -342,7 +333,6 @@ export const GroupDetailsView = ({
                 </View>
             )}
 
-            {/* Quick Settings Modal */}
             <Modal visible={isSettingsModalVisible} animationType="slide" transparent>
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
                     <View style={styles.modalOverlay}>
@@ -386,13 +376,7 @@ export const GroupDetailsView = ({
                 </KeyboardAvoidingView>
             </Modal>
 
-            {/* Moderator Selection Modal */}
-            <Modal 
-                visible={isModModalVisible} 
-                animationType="slide" 
-                transparent={true}
-                onRequestClose={() => setIsModModalVisible(false)}
-            >
+            <Modal visible={isModModalVisible} animationType="slide" transparent onRequestClose={() => setIsModModalVisible(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContainer}>
                         <View style={styles.modalHeader}>
@@ -401,16 +385,10 @@ export const GroupDetailsView = ({
                             </TouchableOpacity>
                             <Text style={styles.modalTitle}>Assign Moderators</Text>
                             <TouchableOpacity onPress={handleSaveModerators} disabled={isSavingMods} style={styles.headerIconButton}>
-                                {isSavingMods ? (
-                                    <ActivityIndicator size="small" color="#4F46E5" />
-                                ) : (
-                                    <Text style={styles.saveBtnText}>Save</Text>
-                                )}
+                                {isSavingMods ? <ActivityIndicator size="small" color="#4F46E5" /> : <Text style={styles.saveBtnText}>Save</Text>}
                             </TouchableOpacity>
                         </View>
-                        
                         <Text style={styles.modalSubtitle}>Selected members will be able to manage schedules, meetings, and standard members.</Text>
-
                         <ScrollView style={styles.memberList} showsVerticalScrollIndicator={false}>
                             {groupDetails.members.filter(m => m._id !== groupDetails.owner).map(member => {
                                 const isSelected = selectedModIds.includes(member._id);
@@ -421,17 +399,12 @@ export const GroupDetailsView = ({
                                         onPress={() => handleToggleModSelection(member._id)}
                                         activeOpacity={0.8}
                                     >
-                                        <Image 
-                                            source={{ uri: member.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${member.username?.[0]}` }} 
-                                            style={styles.avatarSmall} 
-                                        />
+                                        <Image source={{ uri: member.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${member.username?.[0]}` }} style={styles.avatarSmall} />
                                         <View style={{ flex: 1, marginLeft: 12 }}>
                                             <Text style={[styles.selectMemberName, isSelected && styles.textWhite]}>{member.firstName} {member.lastName}</Text>
                                             <Text style={[styles.selectMemberHandle, isSelected && styles.textWhite70]}>@{member.username}</Text>
                                         </View>
-                                        <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
-                                            {isSelected && <Feather name="check" size={14} color="white" />}
-                                        </View>
+                                        <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>{isSelected && <Feather name="check" size={14} color="white" />}</View>
                                     </TouchableOpacity>
                                 );
                             })}
@@ -440,7 +413,6 @@ export const GroupDetailsView = ({
                 </View>
             </Modal>
 
-            {/* Admin Actions Footer */}
             <View style={{ borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 24 }}>
                 {isOwner ? (
                     <TouchableOpacity onPress={onDeleteGroup} style={[styles.actionBtn, styles.deleteBtn]}>
