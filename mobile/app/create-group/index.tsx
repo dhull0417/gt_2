@@ -117,7 +117,8 @@ const App = () => {
   const [step, setStep] = useState(0); 
   const [creationType, setCreationType] = useState<CreationType>(null);
   const [groupName, setGroupName] = useState("");
-  const [eventsToDisplay] = useState("3"); 
+  // PROJECT 6: Default to 1 for Just-in-Time generation
+  const [eventsToDisplay] = useState("1"); 
   
   const [location, setLocation] = useState("");
 
@@ -138,6 +139,10 @@ const App = () => {
       type: 'occurrence' | 'dayIndex', 
       routineIndex: number 
   } | null>(null);
+
+  // --- PROJECT 6: JIT Notification State ---
+  const [leadDays, setLeadDays] = useState(2);
+  const [notificationTime, setNotificationTime] = useState("09:00 AM");
 
   // --- Date/Time State ---
   const eventDates = useMemo(() => {
@@ -248,17 +253,25 @@ const App = () => {
         timezone,
         defaultLocation: location,
         eventsToDisplay: parseInt(eventsToDisplay),
-        members: selectedMembers.map(m => m._id) 
+        members: selectedMembers.map(m => m._id),
+        // PROJECT 6: Added JIT payload fields
+        generationLeadDays: leadDays,
+        generationLeadTime: notificationTime
     };
 
     mutate(payload, { onSuccess: () => router.back() });
   };
 
   const handleNext = () => {
-    // If daily group, jump past step 4 (Day/Date details) to step 5 (Time/TZ)
-    if (step === 3 && frequency === 'daily' && creationType === 'group') {
-        setStep(5);
+    // Branching for groups vs events
+    if (creationType === 'group') {
+        if (step === 3 && frequency === 'daily') {
+            setStep(5); // Jump to Time/TZ
+        } else {
+            setStep(prev => prev + 1);
+        }
     } else {
+        // One-off flow is simpler
         setStep(prev => prev + 1);
     }
   };
@@ -275,8 +288,7 @@ const App = () => {
         { text: "Exit", style: "destructive", onPress: () => router.back() }
       ]);
     } else if (step === 5 && frequency === 'daily' && creationType === 'group') {
-        // Jump back to Frequency if it was a daily group
-        setStep(3);
+        setStep(3); // Jump back to Frequency
     } else {
         setStep(prev => prev - 1);
     }
@@ -911,6 +923,58 @@ const App = () => {
     </View>
   );
 
+  /**
+   * PROJECT 6: New Notification Settings Step
+   * Allows setting how many days before and what time to spawn the event.
+   */
+  const renderStep_NotificationSettings = () => (
+    <View style={styles.stepContainerPadded}>
+        <FadeInView delay={100}>
+            <Text style={styles.headerTitle}>Notification Settings</Text>
+        </FadeInView>
+
+        <View style={{ flex: 1 }}>
+            <FadeInView delay={250}>
+                <Text style={styles.description}>
+                    How many days before the meeting should we create the event and notify everyone to RSVP?
+                </Text>
+            </FadeInView>
+
+            <FadeInView delay={400} style={styles.jitCard}>
+                <View style={styles.leadDaysRow}>
+                    <TouchableOpacity onPress={() => setLeadDays(Math.max(0, leadDays - 1))} style={styles.stepperBtn}>
+                        <Feather name="minus" size={24} color="#4F46E5" />
+                    </TouchableOpacity>
+                    <View style={{ alignItems: 'center', width: 120 }}>
+                        <Text style={styles.leadVal}>{leadDays}</Text>
+                        <Text style={styles.leadLabel}>Days Before</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={styles.stepperBtn}>
+                        <Feather name="plus" size={24} color="#4F46E5" />
+                    </TouchableOpacity>
+                </View>
+
+                <View style={styles.divider} />
+
+                <Text style={styles.sectionLabelCenter}>Trigger Time</Text>
+                <TimePicker onTimeChange={setNotificationTime} initialValue={notificationTime} />
+                <Text style={styles.hint}>Example: Set to 2 days at 7:00 PM to notify everyone Tuesday evening for a Thursday meeting.</Text>
+            </FadeInView>
+        </View>
+
+        <FadeInView delay={600}>
+            <View style={styles.footerNavSpread}>
+                <TouchableOpacity onPress={handleBack}>
+                    <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleNext}>
+                    <Feather name="arrow-right-circle" size={48} color="#4F46E5" />
+                </TouchableOpacity>
+            </View>
+        </FadeInView>
+    </View>
+  );
+
   const renderStep_Location = () => (
     <View style={styles.stepContainerPadded}>
         <FadeInView delay={100}>
@@ -918,7 +982,6 @@ const App = () => {
         </FadeInView>
         
         <View style={{ flex: 1, justifyContent: 'center' }}>
-            {/* Location input on its own separate page */}
             <FadeInView delay={250}>
                 <View style={styles.finalCardSection}>
                     <Text style={styles.pickerTitle}>Location (Address or Link)</Text>
@@ -968,7 +1031,8 @@ const App = () => {
             {step === 3 && creationType === 'group' && renderStep3_Frequency()}
             {step === 4 && creationType === 'group' && renderStep4_Details()}
             {step === 5 && creationType === 'group' && renderStep_FinalTime()}
-            {step === 6 && creationType === 'group' && renderStep_Location()}
+            {step === 6 && creationType === 'group' && renderStep_NotificationSettings()}
+            {step === 7 && creationType === 'group' && renderStep_Location()}
 
             {/* One-Off branching */}
             {step === 3 && creationType === 'event' && renderStep_OneOffDate()}
@@ -1058,6 +1122,16 @@ const styles = StyleSheet.create({
     calendarDayText: { fontSize: 15, color: '#374151', fontWeight: '500' },
     calendarDayTextSelected: { color: '#FFF', fontWeight: 'bold' },
     calendarDayTextToday: { color: '#4F46E5', fontWeight: 'bold' },
+    // PROJECT 6 Styles
+    description: { fontSize: 15, color: '#6B7280', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+    jitCard: { backgroundColor: 'white', borderRadius: 24, padding: 24, borderWidth: 1.5, borderColor: '#E5E7EB', marginBottom: 12 },
+    leadDaysRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+    stepperBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#F5F7FF', alignItems: 'center', justifyContent: 'center' },
+    leadVal: { fontSize: 32, fontWeight: '900', color: '#111827' },
+    leadLabel: { fontSize: 10, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase' },
+    divider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 20 },
+    hint: { fontSize: 11, color: '#9CA3AF', fontStyle: 'italic', textAlign: 'center', marginTop: 12 },
+    sectionLabelCenter: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 16, textAlign: 'center' },
 });
 
 export default App;

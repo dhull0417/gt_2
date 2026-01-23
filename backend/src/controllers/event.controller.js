@@ -62,7 +62,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
         time, 
         timezone, 
         capacity, 
-        location // Added for Location Feature
+        location 
     } = req.body; 
 
     if (!date || !time || !timezone) {
@@ -83,14 +83,14 @@ export const updateEvent = asyncHandler(async (req, res) => {
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
     if (!canManageGroup(requester._id, event.group)) {
-        return res.status(403).json({ error: "Permission denied. Only owners or moderators can edit events." });
+        return res.status(403).json({ error: "Permission denied." });
     }
 
     event.date = date;
     event.time = time;
     event.timezone = timezone;
     if (capacity !== undefined) event.capacity = capacity;
-    if (location !== undefined) event.location = location; // Update specific event location
+    if (location !== undefined) event.location = location; 
     
     event.isOverride = true;
     await event.save();
@@ -99,7 +99,8 @@ export const updateEvent = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    RSVP to an event with Capacity and Waitlist handling
+ * @desc    RSVP to an event
+ * Refined for Project 6 to handle background interactions and JIT undecided state.
  */
 export const handleRsvp = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
@@ -121,11 +122,17 @@ export const handleRsvp = asyncHandler(async (req, res) => {
   if (event.status === 'cancelled') return res.status(400).json({ error: "Cannot RSVP to a cancelled event." });
 
   const userId = currentUser._id;
+  const userIdStr = userId.toString();
 
-  event.in = event.in.filter(id => id.toString() !== userId.toString());
-  event.out = event.out.filter(id => id.toString() !== userId.toString());
-  event.undecided = event.undecided.filter(id => id.toString() !== userId.toString());
-  event.waitlist = event.waitlist.filter(id => id.toString() !== userId.toString());
+  // 1. PROJECT 6: Clean move logic
+  // We remove the user from every list first. This makes the operation idempotent
+  // and ensures they are removed from the 'undecided' list populated by JIT.
+  event.in = event.in.filter(id => id.toString() !== userIdStr);
+  event.out = event.out.filter(id => id.toString() !== userIdStr);
+  event.undecided = event.undecided.filter(id => id.toString() !== userIdStr);
+  event.waitlist = event.waitlist.filter(id => id.toString() !== userIdStr);
+
+  let responseMessage = "RSVP updated successfully.";
 
   if (status === 'in') {
     const isUnlimited = event.capacity === 0;
@@ -135,21 +142,20 @@ export const handleRsvp = asyncHandler(async (req, res) => {
       event.in.push(userId);
     } else {
       event.waitlist.push(userId);
-      await event.save();
-      return res.status(200).json({ 
-          event, 
-          message: "Event is full. You've been added to the waitlist." 
-      });
+      responseMessage = "Event is full. You've been added to the waitlist.";
     }
   } else if (status === 'out') {
     event.out.push(userId);
 
+    // 2. Waitlist Promotion Logic
+    // If someone leaves and there is a waitlist, move the first person 'in'
     if (event.capacity > 0 && event.waitlist.length > 0) {
-      const nextUserId = event.waitlist.shift(); 
-      event.in.push(nextUserId);
+      const promotedUserId = event.waitlist.shift(); 
+      event.in.push(promotedUserId);
 
-      const promotedUser = await User.findById(nextUserId);
+      const promotedUser = await User.findById(promotedUserId);
       if (promotedUser) {
+          // Send push notification to the promoted user
           await notifyUsers([promotedUser], {
               title: "You're off the waitlist!",
               body: `A spot opened up for ${event.name}. You are now confirmed!`,
@@ -159,8 +165,15 @@ export const handleRsvp = asyncHandler(async (req, res) => {
     }
   }
 
+  // Log interaction for background troubleshooting
+  console.log(`[RSVP] User ${currentUser.username} (${userIdStr}) set status to '${status}' for event ${eventId}`);
+
   await event.save();
-  res.status(200).json({ event, message: "RSVP updated successfully." });
+  res.status(200).json({ 
+    event, 
+    message: responseMessage,
+    status: status // Confirming status back to client
+  });
 });
 
 /**
@@ -176,7 +189,7 @@ export const cancelEvent = asyncHandler(async (req, res) => {
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
     if (!canManageGroup(requester._id, event.group)) {
-        return res.status(403).json({ error: "Permission denied. Only owners or moderators can cancel events." });
+        return res.status(403).json({ error: "Permission denied." });
     }
 
     event.status = 'cancelled';
@@ -211,7 +224,7 @@ export const deleteEvent = asyncHandler(async (req, res) => {
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
     if (!canManageGroup(requester._id, event.group)) {
-        return res.status(403).json({ error: "Permission denied. Only owners or moderators can delete events." });
+        return res.status(403).json({ error: "Permission denied." });
     }
 
     const wasRecurring = !event.isOverride;
@@ -219,16 +232,23 @@ export const deleteEvent = asyncHandler(async (req, res) => {
 
     await Event.findByIdAndDelete(eventId);
 
+    // If we delete the current recurring meeting, regenerate the next one immediately
     if (wasRecurring && parentGroup.schedule) {
         try {
-            const nextEventDate = calculateNextEventDate(parentGroup.schedule, parentGroup.time, parentGroup.timezone);
+            const nextEventDate = calculateNextEventDate(
+                parentGroup.schedule.days?.[0] || 0, 
+                parentGroup.time, 
+                parentGroup.timezone,
+                parentGroup.schedule.frequency
+            );
+            
             await Event.create({
                 group: parentGroup._id,
                 name: parentGroup.name,
                 date: nextEventDate,
                 time: parentGroup.time,
                 timezone: parentGroup.timezone,
-                location: parentGroup.defaultLocation, // Use group default when replenishing
+                location: parentGroup.defaultLocation,
                 members: parentGroup.members,
                 undecided: parentGroup.members,
                 isOverride: false,

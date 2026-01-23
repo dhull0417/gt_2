@@ -77,6 +77,11 @@ const EditScheduleScreen = () => {
     const [meetTime, setMeetTime] = useState("05:00 PM");
     const [timezone, setTimezone] = useState("America/Denver");
     const [defaultCapacity, setDefaultCapacity] = useState<number>(0);
+
+    // --- PROJECT 6: JIT State ---
+    const [leadDays, setLeadDays] = useState(2);
+    const [notificationTime, setNotificationTime] = useState("09:00 AM");
+    
     const [isUpdating, setIsUpdating] = useState(false);
 
     useEffect(() => {
@@ -85,6 +90,11 @@ const EditScheduleScreen = () => {
             setMeetTime(group.time || "05:00 PM");
             setTimezone(group.timezone || "America/Denver");
             setDefaultCapacity(group.defaultCapacity || 0);
+            
+            // PROJECT 6: Initialize JIT settings from group data
+            setLeadDays(group.generationLeadDays ?? 2);
+            setNotificationTime(group.generationLeadTime || "09:00 AM");
+            
             if (group.schedule?.frequency === 'weekly' || group.schedule?.frequency === 'biweekly') {
                 setSelectedDays(group.schedule.days || []);
             } else if (group.schedule?.frequency === 'monthly') {
@@ -109,16 +119,19 @@ const EditScheduleScreen = () => {
                 schedule: finalSchedule,
                 time: meetTime,
                 timezone: timezone,
-                defaultCapacity: defaultCapacity
+                defaultCapacity: defaultCapacity,
+                // PROJECT 6: Include JIT settings in update
+                generationLeadDays: leadDays,
+                generationLeadTime: notificationTime
             });
 
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
             queryClient.invalidateQueries({ queryKey: ['events'] });
             
-            Alert.alert("Success", "Schedule updated and recurring events regenerated.");
+            Alert.alert("Success", "Schedule and notification settings updated.");
             router.back();
         } catch (error: any) {
-            Alert.alert("Update Error", "Failed to update schedule.");
+            Alert.alert("Update Error", "Failed to update group settings.");
         } finally {
             setIsUpdating(false);
         }
@@ -217,14 +230,14 @@ const EditScheduleScreen = () => {
                 {step === 3 && (
                     <View style={styles.stepContainerPadded}>
                         <ScrollView showsVerticalScrollIndicator={false}>
-                            <FadeInView delay={100}><Text style={styles.title}>Choose time & capacity</Text></FadeInView>
+                            <FadeInView delay={100}><Text style={styles.title}>Meeting Details</Text></FadeInView>
                             
                             <FadeInView delay={300} style={styles.finalCardSection}>
                                 <Text style={styles.pickerTitle}>Meeting Time</Text>
                                 <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
                             </FadeInView>
                             
-                            <FadeInView delay={400} style={styles.finalCardSection}>
+                            <FadeInView delay={450} style={styles.finalCardSection}>
                                 <Text style={styles.pickerTitle}>Select Timezone</Text>
                                 <View style={styles.pickerWrapper}>
                                     <Picker 
@@ -237,7 +250,7 @@ const EditScheduleScreen = () => {
                                 </View>
                             </FadeInView>
 
-                            <FadeInView delay={500} style={styles.finalCardSection}>
+                            <FadeInView delay={550} style={styles.finalCardSection}>
                                 <Text style={styles.pickerTitle}>Attendee Limit (0 = Unlimited)</Text>
                                 <View style={styles.capacityRow}>
                                     <TouchableOpacity 
@@ -260,6 +273,49 @@ const EditScheduleScreen = () => {
                         <FadeInView delay={700}>
                             <View style={styles.footerNavSpread}>
                                 <TouchableOpacity onPress={() => frequency === 'daily' ? setStep(1) : setStep(2)}>
+                                    <Feather name="arrow-left-circle" size={54} color="#4F46E5" />
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => setStep(4)}>
+                                    <Feather name="arrow-right-circle" size={54} color="#4F46E5" />
+                                </TouchableOpacity>
+                            </View>
+                        </FadeInView>
+                    </View>
+                )}
+
+                {step === 4 && (
+                    <View style={styles.stepContainerPadded}>
+                        <FadeInView delay={100}><Text style={styles.title}>Notification Settings</Text></FadeInView>
+                        
+                        <FadeInView delay={250}>
+                            <Text style={styles.description}>
+                                How many days before the meeting should we create the event and notify everyone?
+                            </Text>
+                        </FadeInView>
+
+                        <FadeInView delay={400} style={styles.jitCard}>
+                            <View style={styles.leadDaysRow}>
+                                <TouchableOpacity onPress={() => setLeadDays(Math.max(0, leadDays - 1))} style={styles.stepperBtn}>
+                                    <Feather name="minus" size={24} color="#4F46E5" />
+                                </TouchableOpacity>
+                                <View style={{ alignItems: 'center', width: 120 }}>
+                                    <Text style={styles.leadVal}>{leadDays}</Text>
+                                    <Text style={styles.leadLabel}>Days Before</Text>
+                                </View>
+                                <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={styles.stepperBtn}>
+                                    <Feather name="plus" size={24} color="#4F46E5" />
+                                </TouchableOpacity>
+                            </View>
+
+                            <View style={styles.divider} />
+
+                            <Text style={styles.sectionLabelCenter}>Trigger Time</Text>
+                            <TimePicker onTimeChange={setNotificationTime} initialValue={notificationTime} />
+                        </FadeInView>
+
+                        <FadeInView delay={600}>
+                            <View style={styles.footerNavSpread}>
+                                <TouchableOpacity onPress={() => setStep(3)}>
                                     <Feather name="arrow-left-circle" size={54} color="#4F46E5" />
                                 </TouchableOpacity>
                                 <TouchableOpacity
@@ -288,7 +344,8 @@ const styles = StyleSheet.create({
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
     headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
     stepContainerPadded: { flex: 1, padding: 24 },
-    title: { fontSize: 26, fontWeight: '800', color: '#111827', textAlign: 'center', marginBottom: 32 },
+    title: { fontSize: 26, fontWeight: '800', color: '#111827', textAlign: 'center', marginBottom: 24 },
+    description: { fontSize: 15, color: '#6B7280', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
     frequencyButton: { 
         flexDirection: 'row', 
         alignItems: 'center', 
@@ -321,6 +378,15 @@ const styles = StyleSheet.create({
     capVal: { fontSize: 24, fontWeight: '800', color: '#111827' },
     createButton: { paddingVertical: 18, paddingHorizontal: 36, borderRadius: 16, alignItems: 'center', backgroundColor: '#4F46E5', elevation: 5 },
     createButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
+    
+    // PROJECT 6 Styles
+    jitCard: { backgroundColor: 'white', borderRadius: 24, padding: 24, borderWidth: 1.5, borderColor: '#E5E7EB', marginBottom: 12 },
+    leadDaysRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+    stepperBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#F5F7FF', alignItems: 'center', justifyContent: 'center' },
+    leadVal: { fontSize: 32, fontWeight: '900', color: '#111827' },
+    leadLabel: { fontSize: 10, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase' },
+    divider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 20 },
+    sectionLabelCenter: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 16, textAlign: 'center' },
 });
 
 export default EditScheduleScreen;

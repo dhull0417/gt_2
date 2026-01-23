@@ -6,21 +6,39 @@ import { useApiClient } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 
+// Configure how notifications are handled when the app is in the foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
+    shouldShowBanner: true, // Added to satisfy TypeScript requirement
+    shouldShowList: true,   // Added to satisfy TypeScript requirement
   }),
 });
 
 /**
- * PROJECT 4: AUTH-AWARE PUSH NOTIFICATIONS
- * @param isSignedIn - Boolean from Clerk auth state.
- * @param hasBackendUser - Boolean indicating if the MongoDB user record is ready.
+ * PROJECT 6: Actionable Notifications
+ * This registers the 'EVENT_RSVP' category with the OS.
+ * When the backend sends a notification with this category ID,
+ * the lock screen will display "I'm In" and "I'm Out" buttons
+ * once the user expands the notification (swipe down/long press).
  */
+const defineNotificationCategories = async () => {
+  await Notifications.setNotificationCategoryAsync('EVENT_RSVP', [
+    {
+      identifier: 'GOING',
+      buttonTitle: "I'm In", // Updated label as requested
+      options: { opensAppToForeground: false }, // Executes in background
+    },
+    {
+      identifier: 'OUT',
+      buttonTitle: "I'm Out", // Updated label
+      options: { opensAppToForeground: false, isDestructive: true },
+    },
+  ]);
+};
+
 export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser: boolean = false) => {
   const [expoPushToken, setExpoPushToken] = useState<string | undefined>(undefined);
   const [notification, setNotification] = useState<Notifications.Notification | undefined>(undefined);
@@ -32,26 +50,51 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
   const router = useRouter();
 
   useEffect(() => {
+    // Register categories so the OS knows what 'EVENT_RSVP' means
+    defineNotificationCategories();
+
     registerForPushNotificationsAsync().then(token => {
       if (token) setExpoPushToken(token);
     });
 
-    notificationListener.current = Notifications.addNotificationReceivedListener((notification: Notifications.Notification) => {
-      setNotification(notification);
+    notificationListener.current = Notifications.addNotificationReceivedListener(notif => {
+      setNotification(notif);
     });
 
-    responseListener.current = Notifications.addNotificationResponseReceivedListener((response: Notifications.NotificationResponse) => {
+    /**
+     * Response Listener: Handles button clicks and notification taps.
+     */
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(async (response) => {
       const data = response.notification.request.content.data as Record<string, any>;
-      
-      if (data?.type === 'chat' && data?.channelId) {
+      const actionIdentifier = response.actionIdentifier;
+
+      // Logic for the RSVP Buttons (handled while app is backgrounded)
+      if (actionIdentifier === 'GOING' || actionIdentifier === 'OUT') {
+        const status = actionIdentifier === 'GOING' ? 'in' : 'out';
+        const eventId = data.eventId;
+
+        if (eventId) {
+          try {
+            // Perform the RSVP silently via API
+            await api.post(`/api/events/${eventId}/rsvp`, { status });
+          } catch (err) {
+            console.error("Background RSVP failed:", err);
+          }
+        }
+        return;
+      }
+
+      // Logic for standard notification taps
+      if (data?.type === 'event_created' && data?.eventId) {
+        router.push({
+          pathname: '/(tabs)',
+          params: { openEventId: String(data.eventId) }
+        });
+      } else if (data?.type === 'chat' && data?.channelId) {
         router.push({
           pathname: '/(tabs)/groups',
           params: { openChatId: String(data.channelId) }
         });
-      } else if (data?.type === 'waitlist_promotion' || data?.type === 'event_cancellation') {
-        router.push('/(tabs)');
-      } else if (data?.type === 'group-invite' || data?.type === 'group-added') {
-        router.push('/notifications');
       }
     });
 
@@ -61,16 +104,12 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
     };
   }, []);
 
-  /**
-   * FIX: Wait for Backend Sync
-   * We only POST the token once hasBackendUser is true.
-   * This prevents the 404 error during the sign-up race condition.
-   */
+  // Update token on backend only once we are signed in and synced
   useEffect(() => {
     if (isSignedIn && hasBackendUser && expoPushToken) {
       api.post('/api/users/push-token', { token: expoPushToken }).catch(err => {
         if (err.response?.status !== 401) {
-          console.error("Failed to save push token to backend", err);
+          console.error("Failed to save push token", err);
         }
       });
     }
@@ -94,20 +133,17 @@ async function registerForPushNotificationsAsync() {
   if (Device.isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
-    
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-    
     if (finalStatus !== 'granted') return;
-    
+
     const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
-    
     try {
       token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     } catch (e) {
-      console.error("Error fetching Expo push token", e);
+      console.error("Push token error:", e);
     }
   }
 

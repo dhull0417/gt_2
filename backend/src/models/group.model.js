@@ -7,11 +7,6 @@ const scheduleSchema = new mongoose.Schema({
     default: 'weekly'
   },
   days: [{ type: Number }],
-  /**
-   * Project 4 Fix: Added 'date' field.
-   * This is required for 'once' frequency (one-off events) so the date 
-   * string persists after being saved to the database.
-   */
   date: { type: String }, 
   rules: [{
     type: { 
@@ -27,16 +22,27 @@ const scheduleSchema = new mongoose.Schema({
 const groupSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   time: { type: String },
-  /**
-   * Default Location: The location that all newly generated events 
-   * will inherit unless overridden.
-   */
   defaultLocation: { type: String, trim: true, default: "" },
   schedule: { type: scheduleSchema, required: false },
   timezone: { type: String },
   defaultCapacity: { 
     type: Number, 
-    default: 0     // 0 means unlimited
+    default: 0 
+  },
+  /**
+   * PROJECT 6: Just-in-Time Generation Refinement
+   * generationLeadDays: How many days BEFORE the event to create it.
+   * generationLeadTime: The specific time of day on that lead day to trigger.
+   * Example: days=3, time="12:00 PM" -> Event created 3 days before at Noon.
+   */
+  generationLeadDays: {
+    type: Number,
+    default: 2,
+    min: 0 // 0 would mean same day
+  },
+  generationLeadTime: {
+    type: String,
+    default: "09:00 AM"
   },
   eventsToDisplay: { 
     type: Number, 
@@ -46,13 +52,7 @@ const groupSchema = new mongoose.Schema({
   },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  
-  /**
-   * moderators: Array of user IDs who have management permissions.
-   * Moderators can invite members, remove standard members, and update schedules.
-   */
   moderators: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  
 }, { timestamps: true });
 
 const Group = mongoose.model("Group", groupSchema);

@@ -50,6 +50,11 @@ export interface Group {
   owner: string;
   timezone: string;
   defaultLocation: string;
+  /**
+   * PROJECT 6: Lead time fields for JIT Generation
+   */
+  generationLeadDays: number;
+  generationLeadTime: string;
   lastMessage?: LastMessage | null;
   moderators?: (User | string)[];
 }
@@ -100,6 +105,11 @@ interface CreateGroupPayload {
   members?: string[];
   defaultCapacity?: number;
   defaultLocation?: string;
+  /**
+   * PROJECT 6: Added JIT configuration to creation payload
+   */
+  generationLeadDays: number;
+  generationLeadTime: string;
 }
 
 interface UpdateGroupPayload {
@@ -111,6 +121,11 @@ interface UpdateGroupPayload {
   eventsToDisplay: number;
   defaultCapacity?: number;
   defaultLocation?: string;
+  /**
+   * PROJECT 6: Added JIT configuration to update payload
+   */
+  generationLeadDays?: number;
+  generationLeadTime?: string;
 }
 
 interface AddMemberPayload {
@@ -291,6 +306,10 @@ export const notificationApi = {
     return response.data;
   },
   acceptInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
+    const response = await api.post(`/api/notifications/${notificationId}/accept`);
+    return response.data;
+  },
+  acceptGroupInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
     const response = await api.post(`/api/notifications/${notificationId}/accept`);
     return response.data;
   },

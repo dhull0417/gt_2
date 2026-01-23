@@ -1,112 +1,112 @@
 import asyncHandler from "express-async-handler";
 import Event from "../models/event.model.js";
 import Group from "../models/group.model.js";
-import User from "../models/user.model.js"; 
+import User from "../models/user.model.js";
 import { DateTime } from "luxon";
 import { calculateNextEventDate } from "../utils/date.utils.js";
+import { notifyUsers } from "../utils/push.notifications.js";
 
 /**
- * @desc    Cron job to clean up expired events, replenish recurring schedules,
- * and clear temporary "Until Next Meeting" mutes.
+ * Helper: parseTimeString
+ * Converts "07:00 PM" into { hours: 19, minutes: 0 }
+ */
+const parseTimeString = (timeStr) => {
+  const [time, modifier] = timeStr.split(' ');
+  let [hours, minutes] = time.split(':').map(Number);
+  if (modifier === 'PM' && hours < 12) hours += 12;
+  if (modifier === 'AM' && hours === 12) hours = 0;
+  return { hours, minutes };
+};
+
+/**
+ * @desc    Cron job to clean up expired events and generate new ones "Just-in-Time"
  * @route   POST /api/jobs/regenerate-events
  */
 export const regenerateEvents = asyncHandler(async (req, res) => {
-  console.log("Cron job started: Regenerating events and cleaning temporary mutes...");
-  const now = new Date();
+  console.log("Cron job started: JIT Event Generation...");
+  const now = DateTime.now(); // Local time for comparison
   
-  // 1. Identify and Cleanup Expired Events
-  // We select 'group' as well so we know which groups to unmute users for
-  const expiredEvents = await Event.find({ date: { $lt: now } }).select('_id group').lean();
-  
+  // 1. Cleanup Expired Events and Clear Mutes
+  const expiredEvents = await Event.find({ date: { $lt: now.toJSDate() } }).select('_id group').lean();
   if (expiredEvents.length > 0) {
-    const expiredIds = expiredEvents.map(e => e._id);
-    
-    // --- 1.1 Clear Temporary Mutes (Project 4) ---
-    // We extract unique group IDs from the events that just expired.
     const groupIdsToUnmute = [...new Set(expiredEvents.map(e => e.group.toString()))];
-    
-    if (groupIdsToUnmute.length > 0) {
-      console.log(`Clearing temporary mutes for groups: ${groupIdsToUnmute.join(', ')}`);
-      
-      // Pull these group IDs from any user's 'mutedUntilNextEvent' array.
-      // This effectively "turns back on" notifications for the next message/event.
-      await User.updateMany(
-        { mutedUntilNextEvent: { $in: groupIdsToUnmute } },
-        { $pull: { mutedUntilNextEvent: { $in: groupIdsToUnmute } } }
-      );
-    }
-
-    // Now delete the expired event instances
-    await Event.deleteMany({ _id: { $in: expiredIds } });
+    await User.updateMany(
+      { mutedUntilNextEvent: { $in: groupIdsToUnmute } },
+      { $pull: { mutedUntilNextEvent: { $in: groupIdsToUnmute } } }
+    );
+    await Event.deleteMany({ _id: { $in: expiredEvents.map(e => e._id) } });
   }
 
-  // 2. Replenish Recurring Groups
+  // 2. Replenish Groups via JIT Logic
   const groups = await Group.find({ "schedule.frequency": { $exists: true, $ne: 'once' } });
-  let regeneratedCount = 0;
+  let generatedCount = 0;
 
   for (const group of groups) {
-    // Check how many future (non-override) events currently exist for this group
-    const existingFutureEvents = await Event.find({ 
+    // A. Find the last generated event to use as anchor
+    const lastEvent = await Event.findOne({ group: group._id, isOverride: false })
+      .sort({ date: -1 })
+      .lean();
+
+    const anchorDate = lastEvent ? lastEvent.date : now.toJSDate();
+
+    // B. Calculate the NEXT potential meeting date
+    const nextMeetingDate = calculateNextEventDate(
+      group.schedule.frequency === 'daily' ? 0 : (group.schedule.days?.[0] || 0), // Simplification for step
+      group.time,
+      group.timezone,
+      group.schedule.frequency,
+      anchorDate
+    );
+
+    const nextMeetingDT = DateTime.fromJSDate(nextMeetingDate).setZone(group.timezone);
+
+    // C. Calculate the "Trigger Time" (When this event should be created)
+    const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
+    const triggerDT = nextMeetingDT
+      .minus({ days: group.generationLeadDays || 0 })
+      .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+
+    // D. Check if we have reached the trigger window AND event doesn't exist
+    const alreadyExists = await Event.findOne({ 
       group: group._id, 
-      isOverride: false, 
-      date: { $gte: now } 
-    }).sort({ date: 1 }).lean();
+      date: nextMeetingDate 
+    });
 
-    const needed = (group.eventsToDisplay || 3) - existingFutureEvents.length;
+    if (now.setZone(group.timezone) >= triggerDT && !alreadyExists) {
+      console.log(`Generating JIT event for group: ${group.name}`);
+      
+      const newEvent = await Event.create({
+        group: group._id,
+        name: group.name,
+        date: nextMeetingDate,
+        time: group.time,
+        timezone: group.timezone,
+        location: group.defaultLocation || "",
+        members: group.members,
+        undecided: group.members,
+        capacity: group.defaultCapacity || 0,
+        isOverride: false
+      });
 
-    if (needed > 0) {
-      // Use the last existing event date as the anchor, or 'now' if none exist
-      let anchorDate = existingFutureEvents.length > 0 
-        ? existingFutureEvents[existingFutureEvents.length - 1].date 
-        : now;
-
-      for (let i = 0; i < needed; i++) {
-        let dayOrRule;
-        
-        // Determine the logic for selecting the next day based on frequency
-        if (group.schedule.frequency === 'custom' && group.schedule.rules?.length > 0) {
-          dayOrRule = group.schedule.rules[i % group.schedule.rules.length];
-        } else if (group.schedule.frequency === 'daily' || !group.schedule.days || group.schedule.days.length === 0) {
-          dayOrRule = (group.schedule.days && group.schedule.days[0]) || 0;
-        } else {
-          const anchorDateTime = DateTime.fromJSDate(anchorDate).setZone(group.timezone);
-          const currentWeekday = anchorDateTime.weekday === 7 ? 0 : anchorDateTime.weekday;
-          const sortedDays = [...group.schedule.days].sort((a, b) => a - b);
-          let nextDay = sortedDays.find(d => d > currentWeekday);
-          dayOrRule = nextDay !== undefined ? nextDay : sortedDays[0];
+      // E. Notify Members
+      const members = await User.find({ _id: { $in: group.members } });
+      await notifyUsers(members, {
+        title: `New Meeting: ${group.name}`,
+        body: `Scheduled for ${nextMeetingDT.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)} at ${group.time}. RSVP now!`,
+        data: { 
+          type: 'event_created', 
+          eventId: newEvent._id.toString(),
+          groupId: group._id.toString()
         }
+      });
 
-        const nextDate = calculateNextEventDate(
-          dayOrRule, 
-          group.time, 
-          group.timezone, 
-          group.schedule.frequency, 
-          anchorDate
-        );
-
-        // Create the new event instance inheriting group defaults
-        await Event.create({
-          group: group._id,
-          name: group.name,
-          date: nextDate,
-          time: group.time,
-          timezone: group.timezone,
-          location: group.defaultLocation || "", // Inherit location
-          members: group.members,
-          undecided: group.members,
-          isOverride: false,
-          capacity: group.defaultCapacity || 0 // Inherit capacity
-        });
-
-        anchorDate = nextDate;
-        regeneratedCount++;
-      }
+      generatedCount++;
     }
   }
 
   res.status(200).json({ 
-    message: "Cleanup, unmuting, and regeneration complete.", 
-    deletedEvents: expiredEvents.length, 
-    regeneratedEvents: regeneratedCount 
+    message: "JIT processing complete.", 
+    deleted: expiredEvents.length, 
+    generated: generatedCount 
   });
 });
