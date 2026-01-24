@@ -1,5 +1,17 @@
-import { View, Text, ScrollView, ActivityIndicator, TextInput, Keyboard, Alert, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
-import React, { useState, useCallback, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  ScrollView, 
+  ActivityIndicator, 
+  TextInput, 
+  Keyboard, 
+  Alert, 
+  StyleSheet, 
+  KeyboardAvoidingView, 
+  Platform,
+  TouchableOpacity 
+} from 'react-native';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; 
@@ -8,7 +20,7 @@ import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { useRemoveMember } from '@/hooks/useRemoveMember';
-import { Group, GroupDetails, User, useApiClient, userApi } from '@/utils/api';
+import { Group, GroupDetails, User, useApiClient, userApi, groupApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
@@ -29,6 +41,46 @@ const styles = StyleSheet.create({
   chatContainer: {
     flex: 1,
   },
+  detailsButton: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    marginLeft: 8,
+  },
+  detailsButtonText: {
+    color: '#4F46E5',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  muteButton: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  muteButtonText: {
+    color: '#EF4444',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  unmuteButton: {
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  unmuteButtonText: {
+    color: '#10B981',
+    fontWeight: 'bold',
+    fontSize: 14,
+  }
 });
 
 const GroupChat = ({ group }: { group: GroupDetails }) => {
@@ -38,34 +90,39 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
   const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
-    if (!client || !group) return;
+    if (!client || !group || !isConnected) return;
 
     const initChannel = async () => {
-      const channelId = group._id;
-      const newChannel = client.channel('messaging', channelId, {
-        members: group.members.map(m => m._id),
-      } as any);
+      try {
+        const channelId = group._id;
+        const newChannel = client.channel('messaging', channelId, {
+          members: group.members.map(m => m._id),
+        } as any);
 
-      await newChannel.watch();
-      setChannel(newChannel);
+        await newChannel.watch();
+        setChannel(newChannel);
+      } catch (err) {
+        console.error("[Chat] Channel init error:", err);
+      }
     };
 
     initChannel();
 
     return () => {
-      channel?.stopWatching();
+      if (channel) {
+        channel.stopWatching();
+      }
     };
-  }, [client, group]);
+  }, [client, group._id, isConnected]);
 
   const handleRawSend = async () => {
     if (!channel || !text.trim()) return;
-    
     setIsSending(true);
     try {
         await channel.sendMessage({ text: text });
         setText('');
     } catch (error: any) {
-        Alert.alert("FAILED", `Raw send error: ${error.message}`);
+        Alert.alert("Error", `Failed to send message: ${error.message}`);
     } finally {
         setIsSending(false);
     }
@@ -75,7 +132,7 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#4F46E5" />
-        <Text className="mt-4 text-gray-500">Connecting to chat...</Text>
+        <Text style={{ marginTop: 16, color: '#6B7280' }}>Connecting to chat...</Text>
       </View>
     );
   }
@@ -86,9 +143,9 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
         <Channel channel={channel}>
           <View style={styles.chatContainer}>
             <MessageList Message={CustomMessage} />
-            
             <View className="flex-row items-center p-3 border-t border-gray-200 bg-white pb-6"> 
-                <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-4 py-2 mr-3 border border-gray-300">
+                {/* Updated styling: rounded-2xl instead of rounded-full for a softer square look */}
+                <View className="flex-1 flex-row items-center bg-gray-100 rounded-2xl px-4 py-2 mr-3 border border-gray-300">
                     <TextInput 
                         value={text}
                         onChangeText={setText}
@@ -99,11 +156,10 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
                         style={{ paddingTop: Platform.OS === 'ios' ? 6 : 0 }} 
                     />
                 </View>
-
                 <TouchableOpacity 
                     onPress={handleRawSend} 
                     disabled={isSending || !text.trim()}
-                    className={`p-3 rounded-full ${!text.trim() ? 'bg-gray-200' : 'bg-indigo-600'}`}
+                    className={`p-3 rounded-xl ${!text.trim() ? 'bg-gray-200' : 'bg-indigo-600'}`}
                 >
                     {isSending ? (
                         <ActivityIndicator size="small" color="#fff" />
@@ -123,6 +179,7 @@ const GroupScreen = () => {
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [isGroupDetailVisible, setIsGroupDetailVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'Chat' | 'Details'>('Chat');
+  
   const insets = useSafeAreaInsets();
   const api = useApiClient();
   const router = useRouter();
@@ -133,11 +190,52 @@ const GroupScreen = () => {
   const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups } = useGetGroups();
   const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(selectedGroup?._id || null);
   
-  // Destructuring refetch for currentUser to use inside focus effect
-  const { data: currentUser, refetch: refetchUser } = useQuery<User, Error>({ 
+  const { data: currentUser, refetch: refetchUser, isLoading: isLoadingUser } = useQuery<User, Error>({ 
     queryKey: ['currentUser'], 
-    queryFn: () => userApi.getCurrentUser(api) 
+    queryFn: () => userApi.getCurrentUser(api),
   });
+
+  const stableUserRef = useRef<User | null>(null);
+  
+  if (!stableUserRef.current && currentUser) {
+    stableUserRef.current = currentUser;
+  }
+
+  useEffect(() => {
+    if (!selectedGroup) stableUserRef.current = null;
+  }, [selectedGroup?._id]);
+
+  const isCurrentlyMuted = useMemo(() => {
+    if (!selectedGroup || !currentUser) return false;
+    return currentUser.mutedGroups?.includes(selectedGroup._id) || 
+           currentUser.mutedUntilNextEvent?.includes(selectedGroup._id);
+  }, [selectedGroup?._id, currentUser?.mutedGroups, currentUser?.mutedUntilNextEvent]);
+
+  const performMuteUpdate = async (type: 'indefinite' | 'untilNext' | 'none') => {
+    if (!selectedGroup) return;
+    try {
+        await userApi.toggleGroupMute(api, selectedGroup._id, type);
+        queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+    } catch (error: any) {
+        Alert.alert("Error", "Failed to update notification settings.");
+    }
+  };
+
+  const handleMutePress = () => {
+    if (isCurrentlyMuted) {
+      performMuteUpdate('none');
+    } else {
+      Alert.alert(
+          "Mute Notifications",
+          "How long would you like to silence this chat?",
+          [
+              { text: "Until Next Meeting", onPress: () => performMuteUpdate('untilNext') },
+              { text: "Indefinitely", onPress: () => performMuteUpdate('indefinite') },
+              { text: "Cancel", style: "cancel" }
+          ]
+      );
+    }
+  };
   
   const { mutate: deleteGroup, isPending: isDeletingGroup } = useDeleteGroup();
   const { mutate: leaveGroup, isPending: isLeavingGroup } = useLeaveGroup();
@@ -149,12 +247,6 @@ const GroupScreen = () => {
   const { data: notifications } = useGetNotifications();
   const hasUnreadNotifications = notifications?.some(n => !n.read);
 
-  /**
-   * PROJECT 4 FIX: 
-   * When this screen comes into focus, we refetch BOTH the group list 
-   * AND the current user. This ensures that if a background job unmuted 
-   * the user, the UI updates immediately when they navigate back here.
-   */
   useFocusEffect(
     useCallback(() => { 
       refetchGroups(); 
@@ -242,7 +334,7 @@ const GroupScreen = () => {
   const handleOpenGroupDetail = (group: Group) => {
     setSelectedGroup(group);
     setIsGroupDetailVisible(true);
-    setActiveTab('Chat');
+    setActiveTab('Chat'); 
   };
 
   const handleCloseGroupDetail = () => {
@@ -250,19 +342,16 @@ const GroupScreen = () => {
     setSelectedGroup(null);
     setSearchQuery('');
     refetchGroups();
-    refetchUser(); // Refresh user when closing details too
+    refetchUser();
   };
 
   const renderGroupList = () => {
-    if (isLoadingGroups || !currentUser) return <ActivityIndicator size="large" color="#4F46E5" className="mt-8"/>;
+    if (isLoadingGroups || (!currentUser && isLoadingUser)) return <ActivityIndicator size="large" color="#4F46E5" className="mt-8"/>;
     if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
     if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
 
     return groups.map((group) => {
-      const isIndefinitelyMuted = currentUser?.mutedGroups?.includes(group._id);
-      const isTemporarilyMuted = currentUser?.mutedUntilNextEvent?.includes(group._id);
-      const isMuted = isIndefinitelyMuted || isTemporarilyMuted;
-
+      const isMuted = currentUser?.mutedGroups?.includes(group._id) || currentUser?.mutedUntilNextEvent?.includes(group._id);
       return (
         <TouchableOpacity
           key={group._id}
@@ -272,27 +361,19 @@ const GroupScreen = () => {
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center flex-1">
               <Text className="text-lg font-bold text-gray-800" numberOfLines={1}>{group.name}</Text>
-              
               {isMuted && (
                 <View className="ml-2">
-                  <Feather 
-                    name="bell-off" 
-                    size={14} 
-                    color={isTemporarilyMuted ? "#6366F1" : "#9CA3AF"} 
-                  />
+                  <Feather name="bell-off" size={14} color="#9CA3AF" />
                 </View>
               )}
             </View>
           </View>
-          
           {group.lastMessage ? (
             <Text className="text-sm text-gray-500 mt-1" numberOfLines={1}>
               <Text className="font-semibold text-indigo-600">{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
             </Text>
           ) : (
-            <Text className="text-sm text-gray-400 italic mt-1">
-              No messages yet
-            </Text>
+            <Text className="text-sm text-gray-400 italic mt-1">No messages yet</Text>
           )}
         </TouchableOpacity>
       );
@@ -319,72 +400,90 @@ const GroupScreen = () => {
 
       {isGroupDetailVisible && selectedGroup && (
         <View className="absolute top-0 bottom-0 left-0 right-0 bg-white" style={{paddingTop:insets.top}}>
-          <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
-            <TouchableOpacity onPress={handleCloseGroupDetail} className="mr-4">
-              <Feather name="arrow-left" size={24} color="#4F46E5"/>
-            </TouchableOpacity>
-            <Text className="text-xl font-bold text-gray-900">{selectedGroup.name}</Text>
+          <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
+            <View className="flex-row items-center flex-1">
+              <TouchableOpacity 
+                onPress={() => activeTab === 'Details' ? setActiveTab('Chat') : handleCloseGroupDetail()} 
+                className="mr-4 p-1"
+              >
+                <Feather name="arrow-left" size={24} color="#4F46E5"/>
+              </TouchableOpacity>
+              <Text className="text-xl font-bold text-gray-900 flex-1" numberOfLines={1}>
+                {selectedGroup.name}
+              </Text>
+            </View>
+            
+            {activeTab === 'Chat' && (
+              <View className="flex-row items-center">
+                <TouchableOpacity 
+                  onPress={handleMutePress}
+                  style={isCurrentlyMuted ? styles.unmuteButton : styles.muteButton}
+                  activeOpacity={0.7}
+                >
+                  <Text style={isCurrentlyMuted ? styles.unmuteButtonText : styles.muteButtonText}>
+                    {isCurrentlyMuted ? "Unmute" : "Mute"}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  onPress={() => setActiveTab('Details')}
+                  style={styles.detailsButton}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.detailsButtonText}>Details</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
-          <View className="flex-row border-b border-gray-200">
-            <TouchableOpacity
-              onPress={() => setActiveTab('Chat')}
-              className={`flex-1 items-center py-3 ${activeTab === 'Chat' ? 'border-b-2 border-indigo-600' : ''}`}
-            >
-              <Text className={`font-semibold ${activeTab === 'Chat' ? 'text-indigo-600' : 'text-gray-500'}`}>Chat</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setActiveTab('Details')}
-              className={`flex-1 items-center py-3 ${activeTab === 'Details' ? 'border-b-2 border-indigo-600' : ''}`}
-            >
-              <Text className={`font-semibold ${activeTab === 'Details' ? 'text-indigo-600' : 'text-gray-500'}`}>Details</Text>
-            </TouchableOpacity>
-          </View>
-
-          {activeTab === 'Chat' && (
-            <KeyboardAvoidingView
-              style={styles.chatContainer}
-              behavior={Platform.OS === "ios" ? "padding" : "height"}
-              keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-            >
-              {(isLoadingDetails || !groupDetails || !currentUser) ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color="#4F46E5" />
-                </View>
+          {!(stableUserRef.current || currentUser) ? (
+              <ActivityIndicator size="large" color="#4F46E5" style={{ marginTop: 50 }} />
+          ) : (
+            <ChatProvider user={stableUserRef.current || currentUser!}>
+               {activeTab === 'Chat' ? (
+                <KeyboardAvoidingView
+                  style={styles.chatContainer}
+                  behavior={Platform.OS === "ios" ? "padding" : "height"}
+                  keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+                >
+                  {(isLoadingDetails || !groupDetails) ? (
+                    <View style={styles.loadingContainer}>
+                      <ActivityIndicator size="large" color="#4F46E5" />
+                    </View>
+                  ) : (
+                      <GroupChat group={groupDetails} />
+                  )}
+                </KeyboardAvoidingView>
               ) : (
-                <ChatProvider user={currentUser}>
-                  <GroupChat group={groupDetails} />
-                </ChatProvider>
+                <ScrollView className="flex-1 bg-gray-50" keyboardShouldPersistTaps="handled">
+                  <View className="p-6">
+                    {(isLoadingDetails || !groupDetails) ? (
+                        <ActivityIndicator size="large" color="#4F46E5" className="my-8" />
+                    ) : isErrorDetails ? (
+                        <Text className="text-center text-red-500 mt-4">Failed to load group details.</Text>
+                    ) : (
+                      <GroupDetailsView 
+                        groupDetails={groupDetails}
+                        currentUser={currentUser!}
+                        isRemovingMember={isRemovingMember}
+                        onRemoveMember={handleRemoveMember}
+                        searchQuery={searchQuery}
+                        onSearchChange={setSearchQuery}
+                        searchResults={searchResults}
+                        onInvite={handleInvite}
+                        isInviting={isInviting}
+                        onDeleteGroup={handleDeleteGroup}
+                        isDeletingGroup={isDeletingGroup}
+                        onLeaveGroup={handleLeaveGroup}
+                        isLeavingGroup={isLeavingGroup}
+                        onEditSchedule={handleEditSchedule}
+                        onAddOneOffEvent={handleAddOneOffEvent}
+                      />
+                    )}
+                  </View>
+                </ScrollView>
               )}
-            </KeyboardAvoidingView>
-          )}
-
-          {activeTab === 'Details' && (
-            <ScrollView className="flex-1 p-6 bg-gray-50" keyboardShouldPersistTaps="handled">
-              {(isLoadingDetails || !groupDetails || !currentUser) ? (
-                  <ActivityIndicator size="large" color="#4F46E5" className="my-8" />
-              ) : isErrorDetails ? (
-                  <Text className="text-center text-red-500 mt-4">Failed to load group details.</Text>
-              ) : (
-                <GroupDetailsView 
-                  groupDetails={groupDetails}
-                  currentUser={currentUser}
-                  isRemovingMember={isRemovingMember}
-                  onRemoveMember={handleRemoveMember}
-                  searchQuery={searchQuery}
-                  onSearchChange={setSearchQuery}
-                  searchResults={searchResults}
-                  onInvite={handleInvite}
-                  isInviting={isInviting}
-                  onDeleteGroup={handleDeleteGroup}
-                  isDeletingGroup={isDeletingGroup}
-                  onLeaveGroup={handleLeaveGroup}
-                  isLeavingGroup={isLeavingGroup}
-                  onEditSchedule={handleEditSchedule}
-                  onAddOneOffEvent={handleAddOneOffEvent}
-                />
-              )}
-            </ScrollView>
+            </ChatProvider>
           )}
         </View>
       )}

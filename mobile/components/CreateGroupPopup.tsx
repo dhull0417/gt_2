@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, StyleSheet, Image, Dimensions } from "react-native"; // Import Dimensions
 import { useCreateGroup } from "@/hooks/useCreateGroup";
 import TimePicker from "./TimePicker";
-import SchedulePicker, { Schedule } from "./SchedulePicker";
+import { Schedule } from "@/utils/api";
 import { Picker } from "@react-native-picker/picker";
 import { Feather } from '@expo/vector-icons';
 
@@ -68,7 +68,7 @@ const CreateGroupPopup: React.FC<CreateGroupPopupProps> = ({ onClose }) => {
         return (
           <View>
             <Text className="text-3xl font-bold mb-6 text-gray-800 text-center">How often will you meet?</Text>
-            <SchedulePicker onScheduleChange={setSchedule} initialValue={schedule} />
+            <Schedule onScheduleChange={setSchedule} initialValue={schedule} />
             <View className="w-full flex-row justify-between items-center mt-6">
                 <TouchableOpacity onPress={() => setStep(1)}>
                     <Feather name="arrow-left-circle" size={48} color="#4F46E5" />

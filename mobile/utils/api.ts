@@ -14,9 +14,24 @@ export interface CustomRule {
   dates?: number[]; // 1-31
 }
 
+/**
+ * PROJECT 7: Day-specific times
+ * Allows the UI and backend to associate a specific time with a specific day.
+ */
+export interface DayTime {
+  day: number;
+  time: string;
+}
+
 export interface Schedule {
   frequency: Frequency;
   days: number[];
+  /**
+   * dayTimes: Allows different days to have different meeting times (e.g. Mon @ 6pm, Fri @ 10am).
+   * startDate: The ISO date string representing when the recurring schedule should begin spawning.
+   */
+  dayTimes?: DayTime[];
+  startDate?: string; 
   rules?: CustomRule[];
 }
 
@@ -105,9 +120,6 @@ interface CreateGroupPayload {
   members?: string[];
   defaultCapacity?: number;
   defaultLocation?: string;
-  /**
-   * PROJECT 6: Added JIT configuration to creation payload
-   */
   generationLeadDays: number;
   generationLeadTime: string;
 }
@@ -121,9 +133,6 @@ interface UpdateGroupPayload {
   eventsToDisplay: number;
   defaultCapacity?: number;
   defaultLocation?: string;
-  /**
-   * PROJECT 6: Added JIT configuration to update payload
-   */
   generationLeadDays?: number;
   generationLeadTime?: string;
 }

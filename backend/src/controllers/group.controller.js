@@ -9,6 +9,7 @@ import { calculateNextEventDate } from "../utils/date.utils.js";
 import { ENV } from "../config/env.js";
 import { syncStreamUser } from "../utils/stream.js";
 import { notifyUsers } from "../utils/push.notifications.js";
+import { DateTime } from "luxon";
 
 // --- Helpers ---
 
@@ -24,17 +25,6 @@ export const canManageGroup = (userId, group) => {
 };
 
 /**
- * HELPER: getScheduleItems
- * Extracts the relevant day/rule identifiers based on frequency.
- */
-const getScheduleItems = (schedule) => {
-    if (schedule.frequency === 'daily') return [0]; 
-    if (schedule.frequency === 'custom') return schedule.rules || [];
-    if (schedule.frequency === 'once') return [schedule.date]; 
-    return schedule.days || [];
-};
-
-/**
  * @desc    Create a new group
  * @route   POST /api/groups/create
  */
@@ -42,8 +32,7 @@ export const createGroup = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
   const { 
     name, 
-    time, 
-    schedule, 
+    schedule, // Now contains { startDate, routines: [] }
     timezone, 
     eventsToDisplay, 
     members, 
@@ -53,8 +42,8 @@ export const createGroup = asyncHandler(async (req, res) => {
     generationLeadTime
   } = req.body;
   
-  if (!name || !time || !schedule || !timezone) {
-    return res.status(400).json({ error: "All details required." });
+  if (!name || !timezone) {
+    return res.status(400).json({ error: "Name and Timezone are required." });
   }
 
   const owner = await User.findOne({ clerkId });
@@ -68,8 +57,7 @@ export const createGroup = asyncHandler(async (req, res) => {
 
   const groupData = { 
       name, 
-      time, 
-      schedule, 
+      schedule: schedule || null, // Handle "Set schedule now? No"
       timezone, 
       eventsToDisplay: eventsToDisplay || 1, 
       owner: owner._id, 
@@ -113,30 +101,55 @@ export const createGroup = asyncHandler(async (req, res) => {
       }
   }
 
-  // JIT Logic: Only create the very first meeting instance.
-  // The JIT Cron job will handle spawning future meetings based on lead time.
-  try {
-    const nextEventDate = calculateNextEventDate(
-        getScheduleItems(newGroup.schedule)[0], 
-        newGroup.time, 
-        newGroup.timezone, 
-        newGroup.schedule.frequency
-    );
+  // --- PROJECT 7: Advanced JIT Generation ---
+  // If no schedule was provided, we skip meeting creation entirely.
+  if (newGroup.schedule && newGroup.schedule.routines && newGroup.schedule.routines.length > 0) {
+      try {
+          const startDateAnchor = newGroup.schedule.startDate 
+              ? new Date(newGroup.schedule.startDate) 
+              : new Date();
 
-    await Event.create({
-        group: newGroup._id, 
-        name: newGroup.name, 
-        date: nextEventDate, 
-        time: newGroup.time,
-        timezone: newGroup.timezone,
-        location: newGroup.defaultLocation,
-        members: uniqueMemberIds, 
-        undecided: uniqueMemberIds,
-        capacity: newGroup.defaultCapacity,
-        isOverride: false
-    });
-  } catch (eventError) {
-    console.error("Failed to create initial JIT event:", eventError);
+          // We loop through every routine (up to 5) set by the user
+          for (const routine of newGroup.schedule.routines) {
+              
+              // For each routine, we loop through its day/time pairs
+              for (const dtEntry of routine.dayTimes) {
+                  
+                  // Calculate the first meeting for this specific day/time on or after the startDate
+                  const nextEventDate = calculateNextEventDate(
+                      routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
+                      dtEntry.time, 
+                      newGroup.timezone, 
+                      routine.frequency,
+                      startDateAnchor,
+                      routine.frequency === 'ordinal' ? routine.ordinalConfig : null
+                  );
+
+                  // JIT Lead Time Check
+                  const meetingDT = DateTime.fromJSDate(nextEventDate).setZone(newGroup.timezone);
+                  const triggerDT = meetingDT.minus({ days: newGroup.generationLeadDays });
+                  const nowInTZ = DateTime.now().setZone(newGroup.timezone);
+
+                  // Only spawn the event if we are within the notification lead window
+                  if (nowInTZ >= triggerDT) {
+                      await Event.create({
+                          group: newGroup._id, 
+                          name: newGroup.name, 
+                          date: nextEventDate, 
+                          time: dtEntry.time,
+                          timezone: newGroup.timezone,
+                          location: newGroup.defaultLocation,
+                          members: uniqueMemberIds, 
+                          undecided: uniqueMemberIds,
+                          capacity: newGroup.defaultCapacity,
+                          isOverride: false
+                      });
+                  }
+              }
+          }
+      } catch (eventError) {
+          console.error("Failed to create initial JIT events:", eventError);
+      }
   }
 
   await Promise.all(uniqueMemberIds.map(id => syncStreamUser({ _id: id })));
@@ -182,7 +195,7 @@ export const updateGroup = asyncHandler(async (req, res) => {
  */
 export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
-    const { schedule, time, timezone, defaultCapacity, defaultLocation } = req.body;
+    const { schedule, timezone, defaultCapacity, defaultLocation } = req.body;
     const { userId: clerkId } = getAuth(req);
 
     const group = await Group.findById(groupId);
@@ -195,7 +208,6 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     }
 
     if (schedule) group.schedule = schedule;
-    if (time) group.time = time;
     if (timezone) group.timezone = timezone;
     if (defaultCapacity !== undefined) group.defaultCapacity = Number(defaultCapacity);
     if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
@@ -212,29 +224,38 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
         date: { $gte: today } 
     });
 
-    // Create the new immediate next meeting instance
-    try {
-        const nextEventDate = calculateNextEventDate(
-            getScheduleItems(group.schedule)[0], 
-            group.time, 
-            group.timezone, 
-            group.schedule.frequency
-        );
+    // Re-generate initial events for the updated routines
+    if (group.schedule && group.schedule.routines) {
+        try {
+            const startDateAnchor = group.schedule.startDate ? new Date(group.schedule.startDate) : new Date();
+            for (const routine of group.schedule.routines) {
+                for (const dtEntry of routine.dayTimes) {
+                    const nextDate = calculateNextEventDate(
+                        routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
+                        dtEntry.time, 
+                        group.timezone, 
+                        routine.frequency,
+                        startDateAnchor,
+                        routine.frequency === 'ordinal' ? routine.ordinalConfig : null
+                    );
 
-        await Event.create({
-            group: group._id, 
-            name: group.name, 
-            date: nextEventDate, 
-            time: group.time,
-            timezone: group.timezone,
-            location: group.defaultLocation,
-            members: group.members, 
-            undecided: group.members,
-            capacity: group.defaultCapacity,
-            isOverride: false
-        });
-    } catch (eventError) {
-        console.error("Regeneration Error:", eventError);
+                    await Event.create({
+                        group: group._id, 
+                        name: group.name, 
+                        date: nextDate, 
+                        time: dtEntry.time,
+                        timezone: group.timezone,
+                        location: group.defaultLocation,
+                        members: group.members, 
+                        undecided: group.members,
+                        capacity: group.defaultCapacity,
+                        isOverride: false
+                    });
+                }
+            }
+        } catch (eventError) {
+            console.error("Regeneration Error:", eventError);
+        }
     }
 
     res.status(200).json({ message: "Schedule updated.", group });

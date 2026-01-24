@@ -11,6 +11,7 @@ import { notifyUsers } from "../utils/push.notifications.js";
  * Converts "07:00 PM" into { hours: 19, minutes: 0 }
  */
 const parseTimeString = (timeStr) => {
+  if (!timeStr) return { hours: 9, minutes: 0 };
   const [time, modifier] = timeStr.split(' ');
   let [hours, minutes] = time.split(':').map(Number);
   if (modifier === 'PM' && hours < 12) hours += 12;
@@ -24,7 +25,7 @@ const parseTimeString = (timeStr) => {
  */
 export const regenerateEvents = asyncHandler(async (req, res) => {
   console.log("Cron job started: JIT Event Generation...");
-  const now = DateTime.now(); // Local time for comparison
+  const now = DateTime.now(); 
   
   // 1. Cleanup Expired Events and Clear Mutes
   const expiredEvents = await Event.find({ date: { $lt: now.toJSDate() } }).select('_id group').lean();
@@ -38,69 +39,98 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
   }
 
   // 2. Replenish Groups via JIT Logic
-  const groups = await Group.find({ "schedule.frequency": { $exists: true, $ne: 'once' } });
+  // Filter for groups that actually have a schedule defined
+  const groups = await Group.find({ 
+    "schedule.routines": { $exists: true, $not: { $size: 0 } } 
+  });
+
   let generatedCount = 0;
 
   for (const group of groups) {
-    // A. Find the last generated event to use as anchor
-    const lastEvent = await Event.findOne({ group: group._id, isOverride: false })
-      .sort({ date: -1 })
-      .lean();
+    const timezone = group.timezone;
+    const kickoffDate = group.schedule.startDate 
+        ? DateTime.fromJSDate(group.schedule.startDate).setZone(timezone).startOf('day').toJSDate()
+        : now.setZone(timezone).startOf('day').toJSDate();
 
-    const anchorDate = lastEvent ? lastEvent.date : now.toJSDate();
+    // Iterate through each routine (up to 5) in the group's multiple rules
+    for (const routine of group.schedule.routines) {
+        
+        // For each routine, we check every specific day/time entry
+        for (const dtEntry of routine.dayTimes) {
+            
+            // A. Find the last generated event matching THIS specific frequency/day pattern
+            // We search for events created by this routine to use as an anchor.
+            const lastEvent = await Event.findOne({ 
+                group: group._id, 
+                isOverride: false,
+                time: dtEntry.time, // Matches the specific time of this dayTime entry
+                // We use the date logic in calculateNextEventDate to find the next one,
+                // so we just need the most recent instance to avoid skipping cycles.
+            })
+            .sort({ date: -1 })
+            .lean();
 
-    // B. Calculate the NEXT potential meeting date
-    const nextMeetingDate = calculateNextEventDate(
-      group.schedule.frequency === 'daily' ? 0 : (group.schedule.days?.[0] || 0), // Simplification for step
-      group.time,
-      group.timezone,
-      group.schedule.frequency,
-      anchorDate
-    );
+            const anchorDate = lastEvent ? lastEvent.date : kickoffDate;
 
-    const nextMeetingDT = DateTime.fromJSDate(nextMeetingDate).setZone(group.timezone);
+            // B. Calculate the NEXT potential meeting date for this specific day/time
+            const nextMeetingDate = calculateNextEventDate(
+                routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
+                dtEntry.time,
+                timezone,
+                routine.frequency,
+                anchorDate,
+                routine.frequency === 'ordinal' ? routine.ordinalConfig : null
+            );
 
-    // C. Calculate the "Trigger Time" (When this event should be created)
-    const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
-    const triggerDT = nextMeetingDT
-      .minus({ days: group.generationLeadDays || 0 })
-      .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+            const nextMeetingDT = DateTime.fromJSDate(nextMeetingDate).setZone(timezone);
 
-    // D. Check if we have reached the trigger window AND event doesn't exist
-    const alreadyExists = await Event.findOne({ 
-      group: group._id, 
-      date: nextMeetingDate 
-    });
+            // C. Calculate the "Trigger Time" (When this event should be created)
+            const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
+            const triggerDT = nextMeetingDT
+                .minus({ days: group.generationLeadDays || 0 })
+                .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
-    if (now.setZone(group.timezone) >= triggerDT && !alreadyExists) {
-      console.log(`Generating JIT event for group: ${group.name}`);
-      
-      const newEvent = await Event.create({
-        group: group._id,
-        name: group.name,
-        date: nextMeetingDate,
-        time: group.time,
-        timezone: group.timezone,
-        location: group.defaultLocation || "",
-        members: group.members,
-        undecided: group.members,
-        capacity: group.defaultCapacity || 0,
-        isOverride: false
-      });
+            // D. Check if we have reached the trigger window AND event doesn't exist
+            const alreadyExists = await Event.findOne({ 
+                group: group._id, 
+                date: nextMeetingDate,
+                time: dtEntry.time
+            });
 
-      // E. Notify Members
-      const members = await User.find({ _id: { $in: group.members } });
-      await notifyUsers(members, {
-        title: `New Meeting: ${group.name}`,
-        body: `Scheduled for ${nextMeetingDT.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)} at ${group.time}. RSVP now!`,
-        data: { 
-          type: 'event_created', 
-          eventId: newEvent._id.toString(),
-          groupId: group._id.toString()
+            const nowInTZ = now.setZone(timezone);
+
+            if (nowInTZ >= triggerDT && !alreadyExists) {
+                console.log(`Generating JIT event for group: ${group.name} - Routine: ${routine.frequency}`);
+                
+                const newEvent = await Event.create({
+                    group: group._id,
+                    name: group.name,
+                    date: nextMeetingDate,
+                    time: dtEntry.time,
+                    timezone: timezone,
+                    location: group.defaultLocation || "",
+                    members: group.members,
+                    undecided: group.members,
+                    capacity: group.defaultCapacity || 0,
+                    isOverride: false
+                });
+
+                // E. Notify Members
+                const members = await User.find({ _id: { $in: group.members } });
+                await notifyUsers(members, {
+                    title: `Upcoming: ${group.name}`,
+                    body: `${nextMeetingDT.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)} at ${dtEntry.time}`,
+                    data: { 
+                        type: 'event_created', 
+                        eventId: newEvent._id.toString(),
+                        groupId: group._id.toString()
+                    },
+                    categoryIdentifier: 'EVENT_RSVP'
+                });
+
+                generatedCount++;
+            }
         }
-      });
-
-      generatedCount++;
     }
   }
 

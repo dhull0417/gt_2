@@ -17,6 +17,7 @@ import { Feather } from '@expo/vector-icons';
 import { Event, User, useApiClient, userApi, eventApi } from '@/utils/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
+import { useRouter } from 'expo-router';
 
 interface EventDetailModalProps {
   event: Event | null;
@@ -25,6 +26,7 @@ interface EventDetailModalProps {
 
 const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProps) => {
     const api = useApiClient();
+    const router = useRouter();
     const queryClient = useQueryClient();
     
     const [event, setEvent] = useState<Event | null>(initialEvent);
@@ -63,7 +65,6 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     const isIn = event.in?.includes(currentUser._id) || false;
 
     const goingUsers = (event.members || []).filter(m => event.in?.includes(m._id));
-    const waitlistedUsers = (event.members || []).filter(m => event.waitlist?.includes(m._id));
 
     const handleRsvpAction = (status: 'in' | 'out') => {
         rsvp({ eventId: event._id, status }, {
@@ -73,6 +74,18 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                     Alert.alert("Waitlisted", "The event is full. You've been added to the waitlist queue.");
                 }
             }
+        });
+    };
+
+    /**
+     * Navigates to the group chat
+     */
+    const handleGoToChat = () => {
+        onClose(); // Close the modal first
+        // Navigate to groups tab and pass the specific group ID to open
+        router.push({
+            pathname: '/(tabs)/groups',
+            params: { openChatId: event.group._id }
         });
     };
 
@@ -88,7 +101,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
             await eventApi.updateEvent(api, { 
                 eventId: event._id, 
                 capacity: capInt,
-                location: newLocation, // Send the updated location
+                location: newLocation,
                 date: new Date(event.date),
                 time: event.time,
                 timezone: event.timezone
@@ -156,9 +169,20 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         </View>
                     )}
                     
-                    <Text style={[styles.eventTitle, isCancelled && styles.strikeThrough]}>
-                        {event.name}
-                    </Text>
+                    <View style={styles.titleRow}>
+                        <Text style={[styles.eventTitle, isCancelled && styles.strikeThrough]}>
+                            {event.name}
+                        </Text>
+                        {/* New Chat Button Link */}
+                        <TouchableOpacity 
+                            onPress={handleGoToChat}
+                            style={styles.chatButton}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={styles.chatButtonText}>Chat</Text>
+                            <Feather name="arrow-right" size={14} color="#4F46E5" style={{ marginLeft: 4 }} />
+                        </TouchableOpacity>
+                    </View>
                     
                     <View style={styles.infoSection}>
                         <View style={styles.infoRow}>
@@ -179,7 +203,6 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                             </View>
                         </View>
 
-                        {/* DISPLAYING EVENT SPECIFIC LOCATION */}
                         <View style={styles.infoRow}>
                             <View style={styles.iconBox}><Feather name="map-pin" size={18} color="#4F46E5" /></View>
                             <View style={styles.infoTextContainer}>
@@ -231,7 +254,6 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                     </View>
                 )}
 
-                {/* Attendee Lists */}
                 <View style={{ marginBottom: 40 }}>
                     <Text style={styles.sectionTitle}>Going ({event.in?.length || 0})</Text>
                     {goingUsers.length > 0 ? goingUsers.map(user => (
@@ -307,7 +329,26 @@ const styles = StyleSheet.create({
     content: { flex: 1, padding: 24 },
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
-    eventTitle: { fontSize: 32, fontWeight: '900', color: '#111827', letterSpacing: -1, lineHeight: 36, marginBottom: 24 },
+    titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
+    eventTitle: { fontSize: 28, fontWeight: '900', color: '#111827', letterSpacing: -1, lineHeight: 32, flex: 1 },
+    // Chat Button Styling
+    chatButton: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        backgroundColor: '#EEF2FF', 
+        paddingHorizontal: 12, 
+        paddingVertical: 6, 
+        borderRadius: 8, 
+        borderWidth: 1, 
+        borderColor: '#C7D2FE',
+        marginLeft: 12,
+        marginTop: 2
+    },
+    chatButtonText: { 
+        color: '#4F46E5', 
+        fontWeight: 'bold', 
+        fontSize: 14 
+    },
     strikeThrough: { textDecorationLine: 'line-through', color: '#D1D5DB' },
     infoSection: { gap: 16 },
     infoRow: { flexDirection: 'row', alignItems: 'center' },
@@ -325,18 +366,13 @@ const styles = StyleSheet.create({
     sectionTitle: { fontSize: 18, fontWeight: '900', color: '#111827', marginBottom: 16 },
     memberRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#F3F4F6' },
-    avatarSmall: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F3F4F6' },
     memberInfo: { marginLeft: 12 },
     memberName: { fontSize: 15, fontWeight: '800', color: '#1F2937' },
     memberUsername: { fontSize: 11, fontWeight: '600', color: '#9CA3AF' },
-    waitlistBadge: { width: 20, height: 20, backgroundColor: '#FFEDD5', borderRadius: 6, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-    waitlistBadgeText: { color: '#EA580C', fontSize: 10, fontWeight: '900' },
     emptyText: { color: '#9CA3AF', fontStyle: 'italic' },
     ownerSection: { marginTop: 40, paddingBottom: 60, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 24 },
     cancelToggle: { height: 50, borderRadius: 14, borderWidth: 2, borderColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
     cancelToggleText: { color: '#EF4444', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
-    
-    // Modal Styles
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 60 },
     modalHeaderInner: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
