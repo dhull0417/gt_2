@@ -39,7 +39,6 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
   }
 
   // 2. Replenish Groups via JIT Logic
-  // Filter for groups that actually have a schedule defined
   const groups = await Group.find({ 
     "schedule.routines": { $exists: true, $not: { $size: 0 } } 
   });
@@ -52,67 +51,55 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
         ? DateTime.fromJSDate(group.schedule.startDate).setZone(timezone).startOf('day').toJSDate()
         : now.setZone(timezone).startOf('day').toJSDate();
 
-    // Iterate through each routine (up to 5) in the group's multiple rules
     for (const routine of group.schedule.routines) {
-        
-        // For each routine, we check every specific day/time entry
         for (const dtEntry of routine.dayTimes) {
             
-            // A. Find the last generated event matching THIS specific frequency/day pattern
-            // We search for events created by this routine to use as an anchor.
+            // A. Find anchor
             const lastEvent = await Event.findOne({ 
                 group: group._id, 
                 isOverride: false,
-                time: dtEntry.time, // Matches the specific time of this dayTime entry
-                // We use the date logic in calculateNextEventDate to find the next one,
-                // so we just need the most recent instance to avoid skipping cycles.
+                time: dtEntry.time,
+                // Matches the day of the week to ensure we are anchoring to the correct repeating instance
+                date: { $exists: true } 
             })
             .sort({ date: -1 })
             .lean();
 
             const anchorDate = lastEvent ? lastEvent.date : kickoffDate;
 
-            // B. Calculate the NEXT potential meeting date for this specific day/time
-            // backend/src/controllers/job.controller.js
-
+            // B. Calculate NEXT date
             const nextMeetingDate = calculateNextEventDate(
                 routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
                 dtEntry.time,
                 timezone,
                 routine.frequency,
                 anchorDate,
-                routine.frequency === 'ordinal' ? routine.ordinalConfig : null
+                routine.frequency === 'ordinal' ? routine.rules?.[0] : null
             );
 
-          // backend/src/controllers/job.controller.js
-          // Update your log around line 85 to this:
-
-          console.log(`[DEBUG] Entry: ${dtEntry.day} | Next Event: ${nextMeetingDT.toISODate()} | Trigger At: ${triggerDT.toISOString()} | Now: ${nowInTZ.toISOString()} | Due? ${nowInTZ >= triggerDT}`);
-
+            // INITIALIZE nextMeetingDT BEFORE USING IT
             const nextMeetingDT = DateTime.fromJSDate(nextMeetingDate).setZone(timezone);
 
-            // C. Calculate the "Trigger Time" (When this event should be created)
+            // C. Trigger Time math
             const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
             const triggerDT = nextMeetingDT
                 .minus({ days: group.generationLeadDays || 0 })
                 .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
-            // D. Check if we have reached the trigger window AND event doesn't exist
+            const nowInTZ = now.setZone(timezone);
+
+            // FIXED: Reference log is now AFTER initialization
+            console.log(`[JIT CHECK] Group: ${group.name} | LeadDays: ${group.generationLeadDays} | Target: ${nextMeetingDT.toISODate()} | Trigger: ${triggerDT.toISOString()} | Now: ${nowInTZ.toISOString()} | Due: ${nowInTZ >= triggerDT}`);
+
+            // D. Check Existence
             const alreadyExists = await Event.findOne({ 
                 group: group._id, 
                 date: nextMeetingDate,
                 time: dtEntry.time
             });
 
-            const nowInTZ = now.setZone(timezone);
-
-            // backend/src/controllers/job.controller.js
-
-// Add this immediately after triggerDT is calculated:
-console.log(`[JIT CHECK] Group: ${group.name} | LeadDays: ${group.generationLeadDays} | Target: ${nextMeetingDT.toISODate()} | Trigger: ${triggerDT.toISOString()} | Now: ${nowInTZ.toISOString()} | Due: ${nowInTZ >= triggerDT}`);
-
             if (nowInTZ >= triggerDT && !alreadyExists) {
-                console.log(`Generating JIT event for group: ${group.name} - Routine: ${routine.frequency}`);
+                console.log(`Generating JIT event for group: ${group.name} - Date: ${nextMeetingDT.toISODate()}`);
                 
                 const newEvent = await Event.create({
                     group: group._id,
