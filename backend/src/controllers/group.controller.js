@@ -26,13 +26,12 @@ export const canManageGroup = (userId, group) => {
 
 /**
  * @desc    Create a new group
- * @route   POST /api/groups/create
  */
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
   const { 
     name, 
-    schedule, // Now contains { startDate, routines: [] }
+    schedule, 
     timezone, 
     eventsToDisplay, 
     members, 
@@ -57,7 +56,7 @@ export const createGroup = asyncHandler(async (req, res) => {
 
   const groupData = { 
       name, 
-      schedule: schedule || null, // Handle "Set schedule now? No"
+      schedule: schedule || null,
       timezone, 
       eventsToDisplay: eventsToDisplay || 1, 
       owner: owner._id, 
@@ -76,80 +75,55 @@ export const createGroup = asyncHandler(async (req, res) => {
       { $addToSet: { groups: newGroup._id } }
   );
 
-  // Notify members about being added to the group
-  const membersToNotifyIds = uniqueMemberIds.filter(id => id !== owner._id.toString());
-  if (membersToNotifyIds.length > 0) {
-      const notifications = membersToNotifyIds.map(memberId => ({
-          recipient: memberId,
-          sender: owner._id,
-          type: 'group-added', 
-          group: newGroup._id,
-          status: 'read',
-          read: false
-      }));
-      
+  // Initial Generation with Window Filling
+  if (newGroup.schedule && newGroup.schedule.routines) {
       try {
-          await Notification.insertMany(notifications);
-          const usersToNotify = await User.find({ _id: { $in: membersToNotifyIds } });
-          await notifyUsers(usersToNotify, {
-              title: "New Group",
-              body: `${owner.firstName} added you to the group "${name}".`,
-              data: { groupId: newGroup._id.toString(), type: 'group-added' }
-          });
-      } catch (error) {
-          console.error("Failed to notify members:", error);
-      }
-  }
+          const now = DateTime.now().setZone(timezone);
+          const kickoffDate = newGroup.schedule.startDate 
+              ? DateTime.fromJSDate(newGroup.schedule.startDate).setZone(timezone).startOf('day').toJSDate()
+              : now.startOf('day').toJSDate();
 
-  // --- PROJECT 7: Advanced JIT Generation ---
-  // If no schedule was provided, we skip meeting creation entirely.
-  if (newGroup.schedule && newGroup.schedule.routines && newGroup.schedule.routines.length > 0) {
-      try {
-          const startDateAnchor = newGroup.schedule.startDate 
-              ? new Date(newGroup.schedule.startDate) 
-              : new Date();
-
-          // We loop through every routine (up to 5) set by the user
           for (const routine of newGroup.schedule.routines) {
-              
-              // For each routine, we loop through its day/time pairs
               for (const dtEntry of routine.dayTimes) {
-                  
-                  // Calculate the first meeting for this specific day/time on or after the startDate
-                  const nextEventDate = calculateNextEventDate(
-                      routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
-                      dtEntry.time, 
-                      newGroup.timezone, 
-                      routine.frequency,
-                      startDateAnchor,
-                      routine.frequency === 'ordinal' ? routine.ordinalConfig : null
-                  );
+                  let currentAnchor = kickoffDate;
+                  let fillingWindow = true;
+                  let loopSafety = 0;
 
-                  // JIT Lead Time Check
-                  const meetingDT = DateTime.fromJSDate(nextEventDate).setZone(newGroup.timezone);
-                  const triggerDT = meetingDT.minus({ days: newGroup.generationLeadDays });
-                  const nowInTZ = DateTime.now().setZone(newGroup.timezone);
+                  while (fillingWindow && loopSafety < 15) {
+                      const nextDate = calculateNextEventDate(
+                          routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
+                          dtEntry.time, 
+                          timezone, 
+                          routine.frequency,
+                          currentAnchor,
+                          routine.frequency === 'ordinal' ? routine.rules?.[0] : null
+                      );
 
-                  // Only spawn the event if we are within the notification lead window
-                  if (nowInTZ >= triggerDT) {
-                      await Event.create({
-                          group: newGroup._id, 
-                          name: newGroup.name, 
-                          date: nextEventDate, 
-                          time: dtEntry.time,
-                          timezone: newGroup.timezone,
-                          location: newGroup.defaultLocation,
-                          members: uniqueMemberIds, 
-                          undecided: uniqueMemberIds,
-                          capacity: newGroup.defaultCapacity,
-                          isOverride: false
-                      });
+                      const nextMeetingDT = DateTime.fromJSDate(nextDate).setZone(timezone);
+                      const triggerDT = nextMeetingDT.minus({ days: newGroup.generationLeadDays });
+
+                      if (now >= triggerDT) {
+                          await Event.create({
+                              group: newGroup._id, 
+                              name: newGroup.name, 
+                              date: nextDate, 
+                              time: dtEntry.time,
+                              timezone: timezone,
+                              location: newGroup.defaultLocation,
+                              members: uniqueMemberIds, 
+                              undecided: uniqueMemberIds,
+                              capacity: newGroup.defaultCapacity,
+                              isOverride: false
+                          });
+                          currentAnchor = nextDate;
+                          loopSafety++;
+                      } else {
+                          fillingWindow = false;
+                      }
                   }
               }
           }
-      } catch (eventError) {
-          console.error("Failed to create initial JIT events:", eventError);
-      }
+      } catch (err) { console.error("Initial Gen Error:", err); }
   }
 
   await Promise.all(uniqueMemberIds.map(id => syncStreamUser({ _id: id })));
@@ -157,41 +131,7 @@ export const createGroup = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Update group basic info
- * @route   PUT /api/groups/:groupId
- */
-export const updateGroup = asyncHandler(async (req, res) => {
-    const { userId: clerkId } = getAuth(req);
-    const { groupId } = req.params;
-    const { 
-        name, 
-        eventsToDisplay, 
-        defaultLocation,
-        generationLeadDays,
-        generationLeadTime 
-    } = req.body;
-    
-    const group = await Group.findById(groupId);
-    const requester = await User.findOne({ clerkId }).lean();
-    if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
-    
-    if (!canManageGroup(requester._id, group)) {
-        return res.status(403).json({ error: "Permission denied." });
-    }
-    
-    if (name) group.name = name;
-    if (eventsToDisplay) group.eventsToDisplay = parseInt(eventsToDisplay);
-    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
-    if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
-    if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
-    
-    const updatedGroup = await group.save();
-    res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
-});
-
-/**
  * @desc    Update group schedule and capacity
- * @route   PATCH /api/groups/:groupId/schedule
  */
 export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
@@ -202,10 +142,7 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const user = await User.findOne({ clerkId });
 
     if (!group || !user) return res.status(404).json({ error: "Resource not found." });
-
-    if (!canManageGroup(user._id, group)) {
-        return res.status(403).json({ error: "Permission denied." });
-    }
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
 
     if (schedule) group.schedule = schedule;
     if (timezone) group.timezone = timezone;
@@ -217,50 +154,60 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     
-    // Cleanup future recurring events for JIT regeneration
     await Event.deleteMany({ 
         group: group._id, 
         isOverride: false, 
         date: { $gte: today } 
     });
 
-    // Re-generate initial events for the updated routines
     if (group.schedule && group.schedule.routines) {
         try {
-            const startDateAnchor = group.schedule.startDate ? new Date(group.schedule.startDate) : new Date();
+            const now = DateTime.now().setZone(group.timezone);
+            const kickoffDate = group.schedule.startDate 
+                ? DateTime.fromJSDate(group.schedule.startDate).setZone(group.timezone).startOf('day').toJSDate()
+                : now.startOf('day').toJSDate();
+
             for (const routine of group.schedule.routines) {
                 for (const dtEntry of routine.dayTimes) {
-                    // Locate this loop in updateGroupSchedule:
-                    for (const dtEntry of routine.dayTimes) {
+                    let currentAnchor = kickoffDate;
+                    let fillingWindow = true;
+                    let loopSafety = 0;
+
+                    while (fillingWindow && loopSafety < 15) {
                         const nextDate = calculateNextEventDate(
                             routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
                             dtEntry.time, 
                             group.timezone, 
                             routine.frequency,
-                            startDateAnchor
+                            currentAnchor,
+                            routine.frequency === 'ordinal' ? routine.rules?.[0] : null
                         );
 
-                        // --- ADD THIS LOG HERE ---
-                        console.log(`[DEBUG] Freq: ${routine.frequency} | Input Day: ${dtEntry.day} | Time: ${dtEntry.time} | Result: ${nextDate.toISOString()}`);
-                    }
+                        const nextMeetingDT = DateTime.fromJSDate(nextDate).setZone(group.timezone);
+                        const triggerDT = nextMeetingDT.minus({ days: group.generationLeadDays });
 
-                    await Event.create({
-                        group: group._id, 
-                        name: group.name, 
-                        date: nextDate, 
-                        time: dtEntry.time,
-                        timezone: group.timezone,
-                        location: group.defaultLocation,
-                        members: group.members, 
-                        undecided: group.members,
-                        capacity: group.defaultCapacity,
-                        isOverride: false
-                    });
+                        if (now >= triggerDT) {
+                            await Event.create({
+                                group: group._id, 
+                                name: group.name, 
+                                date: nextDate, 
+                                time: dtEntry.time,
+                                timezone: group.timezone,
+                                location: group.defaultLocation,
+                                members: group.members, 
+                                undecided: group.members,
+                                capacity: group.defaultCapacity,
+                                isOverride: false
+                            });
+                            currentAnchor = nextDate;
+                            loopSafety++;
+                        } else {
+                            fillingWindow = false;
+                        }
+                    }
                 }
             }
-        } catch (eventError) {
-            console.error("Regeneration Error:", eventError);
-        }
+        } catch (err) { console.error("Update Gen Error:", err); }
     }
 
     res.status(200).json({ message: "Schedule updated.", group });
