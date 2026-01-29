@@ -73,6 +73,8 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
             const anchorDate = lastEvent ? lastEvent.date : kickoffDate;
 
             // B. Calculate the NEXT potential meeting date for this specific day/time
+            // backend/src/controllers/job.controller.js
+
             const nextMeetingDate = calculateNextEventDate(
                 routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
                 dtEntry.time,
@@ -81,6 +83,9 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
                 anchorDate,
                 routine.frequency === 'ordinal' ? routine.ordinalConfig : null
             );
+
+// --- ADD THIS LOG HERE ---
+console.log(`[DEBUG GEN] DayTag: ${dtEntry.day} | Time: ${dtEntry.time} | GeneratedDate: ${nextMeetingDate.toISOString()}`);
 
             const nextMeetingDT = DateTime.fromJSDate(nextMeetingDate).setZone(timezone);
 
