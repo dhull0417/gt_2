@@ -214,6 +214,39 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Update group basic info
+ * @route   PUT /api/groups/:groupId
+ */
+export const updateGroup = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+    const { 
+        name, 
+        eventsToDisplay, 
+        defaultLocation,
+        generationLeadDays,
+        generationLeadTime 
+    } = req.body;
+
+    const group = await Group.findById(groupId);
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
+
+    if (!canManageGroup(requester._id, group)) {
+        return res.status(403).json({ error: "Permission denied." });
+    }
+
+    if (name) group.name = name;
+    if (eventsToDisplay) group.eventsToDisplay = parseInt(eventsToDisplay);
+    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
+    if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
+    if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
+
+    const updatedGroup = await group.save();
+    res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
+});
+
+/**
  * @desc    Set the entire list of moderators (Owner Only)
  */
 export const updateModerators = asyncHandler(async (req, res) => {
