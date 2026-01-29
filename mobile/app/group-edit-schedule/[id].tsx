@@ -9,6 +9,7 @@ import {
     Dimensions, 
     Animated,
     ActivityIndicator,
+    TextInput,
     StyleProp,
     ViewStyle
 } from "react-native";
@@ -17,9 +18,10 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Picker } from "@react-native-picker/picker";
-import { useGetGroupDetails } from "@/hooks/useGetGroupDetails";
-import { useApiClient, User, userApi, Frequency } from "@/utils/api"; 
-import TimePicker from "@/components/TimePicker";
+import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
+import { useApiClient, User, userApi, Frequency, Routine } from "../../utils/api"; 
+import TimePicker from "../../components/TimePicker";
+import { DateTime } from "luxon";
 
 const { width } = Dimensions.get('window');
 
@@ -77,52 +79,88 @@ const EditScheduleScreen = () => {
     const [meetTime, setMeetTime] = useState("05:00 PM");
     const [timezone, setTimezone] = useState("America/Denver");
     const [defaultCapacity, setDefaultCapacity] = useState<number>(0);
+    const [location, setLocation] = useState("");
+    const [startDate, setStartDate] = useState<string>(DateTime.now().toISODate()!);
 
-    // --- PROJECT 6: JIT State ---
+    // --- JIT State ---
     const [leadDays, setLeadDays] = useState(2);
     const [notificationTime, setNotificationTime] = useState("09:00 AM");
+    const [eventsToDisplay, setEventsToDisplay] = useState(1);
     
     const [isUpdating, setIsUpdating] = useState(false);
 
+    // Calendar logic for Kickoff Date picker
+    const [calendarMonth, setCalendarMonth] = useState<DateTime>(DateTime.now().startOf('month'));
+    const calendarGrid = useMemo(() => {
+        const start = calendarMonth.startOf('month');
+        const firstDayIdx = start.weekday === 7 ? 0 : start.weekday;
+        const days = [];
+        for (let i = 0; i < firstDayIdx; i++) days.push(null);
+        for (let i = 1; i <= calendarMonth.endOf('month').day; i++) days.push(calendarMonth.set({ day: i }));
+        return days;
+    }, [calendarMonth]);
+
     useEffect(() => {
         if (group) {
-            setFrequency(group.schedule?.frequency || null);
-            setMeetTime(group.time || "05:00 PM");
+            const sched = group.schedule;
+            setFrequency(sched?.frequency || null);
+            
+            // Get time from routine or fallback to legacy group.time
+            const firstRoutineTime = sched?.routines?.[0]?.dayTimes?.[0]?.time;
+            setMeetTime(firstRoutineTime || (group as any).time || "05:00 PM");
+            
             setTimezone(group.timezone || "America/Denver");
             setDefaultCapacity(group.defaultCapacity || 0);
+            setLocation(group.defaultLocation || "");
             
-            // PROJECT 6: Initialize JIT settings from group data
+            // Project 6 JIT Init
             setLeadDays(group.generationLeadDays ?? 2);
             setNotificationTime(group.generationLeadTime || "09:00 AM");
+            setEventsToDisplay((group as any).eventsToDisplay || 1);
+            setStartDate(sched?.startDate || DateTime.now().toISODate()!);
             
-            if (group.schedule?.frequency === 'weekly' || group.schedule?.frequency === 'biweekly') {
-                setSelectedDays(group.schedule.days || []);
-            } else if (group.schedule?.frequency === 'monthly') {
-                setSelectedDates(group.schedule.days || []);
+            if (sched?.frequency === 'weekly' || sched?.frequency === 'biweekly') {
+                const days = sched.routines?.[0]?.dayTimes?.map(dt => dt.day).filter(d => d !== undefined) as number[];
+                setSelectedDays(days?.length ? days : (sched as any).days || []);
+            } else if (sched?.frequency === 'monthly') {
+                const dates = sched.routines?.[0]?.dayTimes?.map(dt => dt.date).filter(d => d !== undefined) as number[];
+                setSelectedDates(dates?.length ? dates : (sched as any).days || []);
             }
         }
     }, [group]);
 
     const handleUpdateSchedule = async () => {
-        if (!id) return;
+        if (!id || !frequency) return;
         setIsUpdating(true);
         
-        let finalSchedule: any = { frequency };
-        if (frequency === 'weekly' || frequency === 'biweekly') finalSchedule.days = selectedDays;
-        else if (frequency === 'monthly') finalSchedule.days = selectedDates;
-        else if (frequency === 'daily') finalSchedule.days = [0, 1, 2, 3, 4, 5, 6];
+        const targets = frequency === 'monthly' ? selectedDates : (frequency === 'daily' ? [0,1,2,3,4,5,6] : selectedDays);
+        const dayTimes = targets.map(val => (
+            frequency === 'monthly' ? { date: val, time: meetTime } : { day: val, time: meetTime }
+        ));
+
+        const routine: Routine = {
+            frequency: frequency,
+            dayTimes: dayTimes
+        };
 
         const targetUrl = `/api/groups/${id}/schedule`;
 
         try {
+            // The JIT Worker relies on metadata at the root AND the routines within the schedule
             await api.patch(targetUrl, {
-                schedule: finalSchedule,
-                time: meetTime,
+                name: group?.name,
+                schedule: {
+                    frequency: frequency,
+                    routines: [routine],
+                    startDate: startDate // Anchors the cycle to ensure the JIT window calculates correctly
+                },
+                time: meetTime, // Root-level required for some notification worker versions
                 timezone: timezone,
                 defaultCapacity: defaultCapacity,
-                // PROJECT 6: Include JIT settings in update
+                defaultLocation: location,
                 generationLeadDays: leadDays,
-                generationLeadTime: notificationTime
+                generationLeadTime: notificationTime,
+                eventsToDisplay: eventsToDisplay // Set to 1 for JIT (create only on notification trigger)
             });
 
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
@@ -236,8 +274,48 @@ const EditScheduleScreen = () => {
                                 <Text style={styles.pickerTitle}>Meeting Time</Text>
                                 <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
                             </FadeInView>
+
+                            <FadeInView delay={400} style={styles.finalCardSection}>
+                                <Text style={styles.pickerTitle}>Kickoff Date (Effective From)</Text>
+                                <View style={styles.calendarContainer}>
+                                    <View style={styles.calendarNav}>
+                                        <TouchableOpacity onPress={() => setCalendarMonth(prev => prev.minus({ months: 1 }))}>
+                                            <Feather name="chevron-left" size={24} color="#4F46E5" />
+                                        </TouchableOpacity>
+                                        <Text style={styles.calendarMonthText}>{calendarMonth.toFormat('MMMM yyyy')}</Text>
+                                        <TouchableOpacity onPress={() => setCalendarMonth(prev => prev.plus({ months: 1 }))}>
+                                            <Feather name="chevron-right" size={24} color="#4F46E5" />
+                                        </TouchableOpacity>
+                                    </View>
+                                    <View style={styles.calendarGridContainer}>
+                                        {calendarGrid.map((day, idx) => {
+                                            if (!day) return <View key={`p-${idx}`} style={styles.calendarDayBox} />;
+                                            const isSel = day.toISODate() === startDate;
+                                            return (
+                                                <TouchableOpacity 
+                                                    key={day.toISODate()} 
+                                                    onPress={() => setStartDate(day.toISODate()!)} 
+                                                    style={[styles.calendarDayBox, isSel && styles.calendarDayBoxSelected]}
+                                                >
+                                                    <Text style={[styles.calendarDayText, isSel && styles.calendarDayTextSelected]}>{day.day}</Text>
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </View>
+                                </View>
+                            </FadeInView>
+
+                            <FadeInView delay={500} style={styles.finalCardSection}>
+                                <Text style={styles.pickerTitle}>Default Location</Text>
+                                <TextInput 
+                                    style={styles.textInput} 
+                                    placeholder="Location name or link..." 
+                                    value={location} 
+                                    onChangeText={setLocation} 
+                                />
+                            </FadeInView>
                             
-                            <FadeInView delay={450} style={styles.finalCardSection}>
+                            <FadeInView delay={600} style={styles.finalCardSection}>
                                 <Text style={styles.pickerTitle}>Select Timezone</Text>
                                 <View style={styles.pickerWrapper}>
                                     <Picker 
@@ -250,7 +328,7 @@ const EditScheduleScreen = () => {
                                 </View>
                             </FadeInView>
 
-                            <FadeInView delay={550} style={styles.finalCardSection}>
+                            <FadeInView delay={700} style={styles.finalCardSection}>
                                 <Text style={styles.pickerTitle}>Attendee Limit (0 = Unlimited)</Text>
                                 <View style={styles.capacityRow}>
                                     <TouchableOpacity 
@@ -270,7 +348,7 @@ const EditScheduleScreen = () => {
                             </FadeInView>
                         </ScrollView>
 
-                        <FadeInView delay={700}>
+                        <FadeInView delay={800}>
                             <View style={styles.footerNavSpread}>
                                 <TouchableOpacity onPress={() => frequency === 'daily' ? setStep(1) : setStep(2)}>
                                     <Feather name="arrow-left-circle" size={54} color="#4F46E5" />
@@ -306,6 +384,23 @@ const EditScheduleScreen = () => {
                                     <Feather name="plus" size={24} color="#4F46E5" />
                                 </TouchableOpacity>
                             </View>
+
+                            <View style={styles.divider} />
+
+                            <Text style={styles.sectionLabelCenter}>Events to show at once</Text>
+                            <View style={styles.leadDaysRow}>
+                                <TouchableOpacity onPress={() => setEventsToDisplay(Math.max(1, eventsToDisplay - 1))} style={styles.stepperBtn}>
+                                    <Feather name="minus" size={24} color="#4F46E5" />
+                                </TouchableOpacity>
+                                <View style={{ alignItems: 'center', width: 120 }}>
+                                    <Text style={styles.leadVal}>{eventsToDisplay}</Text>
+                                    <Text style={styles.leadLabel}>{eventsToDisplay === 1 ? 'Just-In-Time' : 'Future Events'}</Text>
+                                </View>
+                                <TouchableOpacity onPress={() => setEventsToDisplay(eventsToDisplay + 1)} style={styles.stepperBtn}>
+                                    <Feather name="plus" size={24} color="#4F46E5" />
+                                </TouchableOpacity>
+                            </View>
+                            <Text style={styles.hint}>Set to 1 to ensure events are created exactly when the notification fires.</Text>
 
                             <View style={styles.divider} />
 
@@ -378,8 +473,7 @@ const styles = StyleSheet.create({
     capVal: { fontSize: 24, fontWeight: '800', color: '#111827' },
     createButton: { paddingVertical: 18, paddingHorizontal: 36, borderRadius: 16, alignItems: 'center', backgroundColor: '#4F46E5', elevation: 5 },
     createButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
-    
-    // PROJECT 6 Styles
+    textInput: { backgroundColor: 'white', padding: 16, borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', fontSize: 16, color: '#374151' },
     jitCard: { backgroundColor: 'white', borderRadius: 24, padding: 24, borderWidth: 1.5, borderColor: '#E5E7EB', marginBottom: 12 },
     leadDaysRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
     stepperBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#F5F7FF', alignItems: 'center', justifyContent: 'center' },
@@ -387,6 +481,15 @@ const styles = StyleSheet.create({
     leadLabel: { fontSize: 10, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase' },
     divider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 20 },
     sectionLabelCenter: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 16, textAlign: 'center' },
+    hint: { fontSize: 11, color: '#9CA3AF', fontStyle: 'italic', textAlign: 'center', marginTop: -8, marginBottom: 12 },
+    calendarContainer: { backgroundColor: 'white', padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB' },
+    calendarNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    calendarMonthText: { fontSize: 18, fontWeight: 'bold' },
+    calendarGridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
+    calendarDayBox: { width: (width - 100) / 7, height: 40, alignItems: 'center', justifyContent: 'center' },
+    calendarDayBoxSelected: { backgroundColor: '#4F46E5', borderRadius: 20 },
+    calendarDayText: { fontSize: 16 },
+    calendarDayTextSelected: { color: 'white', fontWeight: 'bold' },
 });
 
 export default EditScheduleScreen;

@@ -1,11 +1,37 @@
-import { Schedule } from './api';
+import { Schedule, Routine, DayTime } from './api';
 
 /**
  * Formats a raw schedule object into a human-readable string.
- * This utility handles Daily, Weekly, Bi-weekly, Monthly, and Custom frequencies.
+ * PROJECT 7 UPDATE: Now supports nested Routines and the Ordinal frequency.
+ * FIXED: Applied type casting to resolve "Property does not exist on type Schedule" errors.
  */
 export const formatSchedule = (schedule: Schedule): string => {
-  const { frequency, days, rules } = schedule;
+  // Casting to any here ensures we can access routines and legacy properties 
+  // without triggering TypeScript resolution errors while the global interface syncs.
+  const { frequency, routines, days: legacyDays } = schedule as any;
+
+  // 1. If it's a "Multiple Rules" schedule, format the routines list
+  if (frequency === 'custom' && routines && routines.length > 0) {
+    const parts = routines.map((r: Routine) => formatSingleRoutine(r));
+    return parts.join(" & ");
+  }
+
+  // 2. Otherwise, treat the Schedule object itself as a single routine for formatting
+  // This maintains backward compatibility with simple schedules
+  return formatSingleRoutine({
+    frequency,
+    days: legacyDays,
+    dayTimes: (schedule as any).dayTimes || [],
+    rules: (schedule as any).rules
+  } as any);
+};
+
+/**
+ * HELPER: formatSingleRoutine
+ * Handles the logic for a specific frequency pattern.
+ */
+const formatSingleRoutine = (routine: Routine & { days?: number[] }): string => {
+  const { frequency, dayTimes, rules, days: legacyDays } = routine;
   const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const dayNamesPlural = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
 
@@ -21,11 +47,18 @@ export const formatSchedule = (schedule: Schedule): string => {
 
   if (frequency === 'daily') return "Daily";
 
+  // Handle Weekly / Biweekly
   if (frequency === 'weekly' || frequency === 'biweekly') {
     const prefix = frequency === 'biweekly' ? "Every 2 weeks on " : "Weekly on ";
-    if (!days || days.length === 0) return frequency === 'biweekly' ? "Every 2 weeks" : "Weekly";
     
-    const sortedDays = [...days].sort((a, b) => a - b);
+    // Extract unique days from dayTimes or legacy days array
+    const targetDays = dayTimes?.length > 0 
+      ? Array.from(new Set(dayTimes.map(dt => dt.day!))) 
+      : legacyDays || [];
+
+    if (targetDays.length === 0) return frequency === 'biweekly' ? "Every 2 weeks" : "Weekly";
+    
+    const sortedDays = [...targetDays].sort((a, b) => a - b);
     const names = sortedDays.map(d => dayNamesPlural[d]);
     
     if (names.length > 1) {
@@ -34,9 +67,15 @@ export const formatSchedule = (schedule: Schedule): string => {
     return prefix + names[0];
   }
 
+  // Handle Monthly
   if (frequency === 'monthly') {
-    if (!days || days.length === 0) return "Monthly";
-    const sortedDates = [...days].sort((a, b) => a - b);
+    const targetDates = dayTimes?.length > 0 
+      ? Array.from(new Set(dayTimes.map(dt => dt.date!))) 
+      : legacyDays || [];
+
+    if (targetDates.length === 0) return "Monthly";
+    
+    const sortedDates = [...targetDates].sort((a, b) => a - b);
     const formattedDates = sortedDates.map(d => `${d}${getSuffix(d)}`);
     
     if (formattedDates.length > 1) {
@@ -45,23 +84,12 @@ export const formatSchedule = (schedule: Schedule): string => {
     return `Monthly on the ${formattedDates[0]}`;
   }
 
-  if (frequency === 'custom' && rules && rules.length > 0) {
-    const description = rules.map(rule => {
-      if (rule.type === 'byDay') {
+  // Handle Ordinal (e.g., 2nd Wednesday)
+  if (frequency === 'ordinal' && rules && rules.length > 0) {
+    const rule = rules[0];
+    if (rule.type === 'byDay') {
         return `${rule.occurrence} ${dayNames[rule.day!]}`;
-      }
-      if (rule.type === 'byDate') {
-        const sorted = [...(rule.dates || [])].sort((a, b) => a - b);
-        const formatted = sorted.map(d => `${d}${getSuffix(d)}`);
-        if (formatted.length > 1) {
-          return `the ${formatted.slice(0, -1).join(", ")} & ${formatted.slice(-1)}`;
-        }
-        return `the ${formatted[0]}`;
-      }
-      return "";
-    }).filter(Boolean).join(" and ");
-    
-    return description ? `Custom: ${description} of the month` : "Custom Schedule";
+    }
   }
 
   return "Recurring Schedule";

@@ -230,14 +230,19 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
             const startDateAnchor = group.schedule.startDate ? new Date(group.schedule.startDate) : new Date();
             for (const routine of group.schedule.routines) {
                 for (const dtEntry of routine.dayTimes) {
-                    const nextDate = calculateNextEventDate(
-                        routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
-                        dtEntry.time, 
-                        group.timezone, 
-                        routine.frequency,
-                        startDateAnchor,
-                        routine.frequency === 'ordinal' ? routine.ordinalConfig : null
-                    );
+                    // Locate this loop in updateGroupSchedule:
+                    for (const dtEntry of routine.dayTimes) {
+                        const nextDate = calculateNextEventDate(
+                            routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
+                            dtEntry.time, 
+                            group.timezone, 
+                            routine.frequency,
+                            startDateAnchor
+                        );
+
+                        // --- ADD THIS LOG HERE ---
+                        console.log(`[DEBUG] Freq: ${routine.frequency} | Input Day: ${dtEntry.day} | Time: ${dtEntry.time} | Result: ${nextDate.toISOString()}`);
+                    }
 
                     await Event.create({
                         group: group._id, 

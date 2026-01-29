@@ -4,8 +4,8 @@ import { useMemo } from "react";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
-// Exporting a central Frequency type to resolve mismatches across the app
-export type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom' | 'once';
+// Central Frequency type to resolve mismatches across the app
+export type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'ordinal' | 'custom' | 'once';
 
 export interface CustomRule {
   type: 'byDay' | 'byDate';
@@ -15,24 +15,30 @@ export interface CustomRule {
 }
 
 /**
- * PROJECT 7: Day-specific times
- * Allows the UI and backend to associate a specific time with a specific day.
+ * PROJECT 7: Day/Date-specific times
+ * Supports both weekly days (0-6) and monthly dates (1-31).
  */
 export interface DayTime {
-  day: number;
+  day?: number;    // Used for daily/weekly/biweekly/ordinal
+  date?: number;   // Used for monthly
   time: string;
+}
+
+/**
+ * Routine represents a single scheduling pattern.
+ * A group can have an array of up to 5 routines for "Multiple Rules".
+ */
+export interface Routine {
+  frequency: Frequency;
+  dayTimes: DayTime[];
+  rules?: CustomRule[]; // Used specifically for Ordinal patterns
 }
 
 export interface Schedule {
   frequency: Frequency;
-  days: number[];
-  /**
-   * dayTimes: Allows different days to have different meeting times (e.g. Mon @ 6pm, Fri @ 10am).
-   * startDate: The ISO date string representing when the recurring schedule should begin spawning.
-   */
-  dayTimes?: DayTime[];
-  startDate?: string; 
-  rules?: CustomRule[];
+  startDate?: string;    // ISO date string for when to start generating meetings
+  routines?: Routine[];  // Used for 'Multiple Rules' (Project 7)
+  days?: number[];       // Legacy/Support for simple schedules
 }
 
 export interface User {
@@ -60,14 +66,10 @@ export interface LastMessage {
 export interface Group {
   _id: string;
   name: string;
-  time: string;
   schedule: Schedule;
   owner: string;
   timezone: string;
   defaultLocation: string;
-  /**
-   * PROJECT 6: Lead time fields for JIT Generation
-   */
   generationLeadDays: number;
   generationLeadTime: string;
   lastMessage?: LastMessage | null;
@@ -113,8 +115,7 @@ export interface Notification {
 
 interface CreateGroupPayload {
   name: string;
-  time: string;
-  schedule: Schedule;
+  schedule?: Schedule | null; // Optional to support "Set schedule now? No"
   timezone: string;
   eventsToDisplay: number;
   members?: string[];
@@ -124,17 +125,8 @@ interface CreateGroupPayload {
   generationLeadTime: string;
 }
 
-interface UpdateGroupPayload {
+interface UpdateGroupPayload extends Partial<Omit<CreateGroupPayload, 'groupId'>> {
   groupId: string;
-  name?: string;
-  time: string;
-  schedule: Schedule;
-  timezone: string;
-  eventsToDisplay: number;
-  defaultCapacity?: number;
-  defaultLocation?: string;
-  generationLeadDays?: number;
-  generationLeadTime?: string;
 }
 
 interface AddMemberPayload {
@@ -178,13 +170,6 @@ interface CreateOneOffEventPayload {
   timezone: string;
   capacity?: number;
   location?: string;
-}
-
-interface RemoveScheduledDayPayload {
-  groupId: string;
-  day: number;
-  frequency: Frequency;
-  rules?: any[];
 }
 
 interface UpdateModeratorsPayload {
@@ -242,10 +227,6 @@ export const groupApi = {
   },
   createOneOffEvent: async (api: AxiosInstance, { groupId, ...details }: CreateOneOffEventPayload): Promise<{ event: Event }> => {
     const response = await api.post<{ event: Event }>(`/api/groups/${groupId}/events`, details);
-    return response.data;
-  },
-  removeScheduledDay: async (api: AxiosInstance, payload: RemoveScheduledDayPayload): Promise<{ message: string }> => {
-    const response = await api.post(`/api/groups/${payload.groupId}/schedule/remove`, { day: payload.day, frequency: payload.frequency });
     return response.data;
   },
   inviteUser: async (api: AxiosInstance, payload: InviteUserPayload): Promise<{ message: string }> => {
@@ -312,10 +293,6 @@ export const eventApi = {
 export const notificationApi = {
   getNotifications: async (api: AxiosInstance): Promise<Notification[]> => {
     const response = await api.get<Notification[]>('/api/notifications');
-    return response.data;
-  },
-  acceptInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
-    const response = await api.post(`/api/notifications/${notificationId}/accept`);
     return response.data;
   },
   acceptGroupInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
