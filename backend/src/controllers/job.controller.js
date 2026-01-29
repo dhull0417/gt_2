@@ -106,6 +106,11 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
             const nowInTZ = now.setZone(timezone);
 
+            // backend/src/controllers/job.controller.js
+
+// Add this immediately after triggerDT is calculated:
+console.log(`[JIT CHECK] Group: ${group.name} | LeadDays: ${group.generationLeadDays} | Target: ${nextMeetingDT.toISODate()} | Trigger: ${triggerDT.toISOString()} | Now: ${nowInTZ.toISOString()} | Due: ${nowInTZ >= triggerDT}`);
+
             if (nowInTZ >= triggerDT && !alreadyExists) {
                 console.log(`Generating JIT event for group: ${group.name} - Routine: ${routine.frequency}`);
                 
