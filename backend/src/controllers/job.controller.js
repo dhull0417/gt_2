@@ -84,8 +84,10 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
                 routine.frequency === 'ordinal' ? routine.ordinalConfig : null
             );
 
-// --- ADD THIS LOG HERE ---
-console.log(`[DEBUG GEN] DayTag: ${dtEntry.day} | Time: ${dtEntry.time} | GeneratedDate: ${nextMeetingDate.toISOString()}`);
+          // backend/src/controllers/job.controller.js
+          // Update your log around line 85 to this:
+
+          console.log(`[DEBUG] Entry: ${dtEntry.day} | Next Event: ${nextMeetingDT.toISODate()} | Trigger At: ${triggerDT.toISOString()} | Now: ${nowInTZ.toISOString()} | Due? ${nowInTZ >= triggerDT}`);
 
             const nextMeetingDT = DateTime.fromJSDate(nextMeetingDate).setZone(timezone);
 
