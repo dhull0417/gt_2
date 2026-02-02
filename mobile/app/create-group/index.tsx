@@ -20,7 +20,6 @@ import {
     ViewStyle,
     StyleProp
 } from "react-native";
-// Using relative paths as per project structure
 import { useCreateGroup } from "../../hooks/useCreateGroup";
 import { useSearchUsers } from "../../hooks/useSearchUsers";
 import TimePicker from "../../components/TimePicker";
@@ -34,7 +33,7 @@ import { useApiClient, Frequency, DayTime, Routine, User } from "../../utils/api
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.90; 
 
-// Fallback image URL for preview environment stability
+// Fallback high-quality image for the creation flow
 const GroupImage = { uri: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=1000' };
 
 type CreationType = 'group' | 'event' | null;
@@ -96,13 +95,10 @@ const FadeInView = ({ children, delay = 0, duration = 400, style }: FadeInViewPr
   );
 };
 
-/**
- * App Component (CreateGroupScreen)
- */
-const App = () => {
+const CreateGroupScreen = () => {
   const router = useRouter();
   const api = useApiClient();
-  const { existingGroupId, initialType } = useLocalSearchParams<{ existingGroupId?: string, initialType?: string }>();
+  const { initialType } = useLocalSearchParams<{ initialType?: string }>();
   
   // --- Flow State ---
   const [step, setStep] = useState(0); 
@@ -112,13 +108,13 @@ const App = () => {
   const [groupName, setGroupName] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<UserStub[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const { data: searchResults, isLoading: isSearchingUsers } = useSearchUsers(searchQuery);
+  const { data: searchResults } = useSearchUsers(searchQuery);
 
   // --- Multi-Routine Logic ---
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [isMultipleMode, setIsMultipleMode] = useState(false);
 
-  // Active builder states (Reset per routine)
+  // Active builder states (These are reset after each routine is finished)
   const [currentFreq, setCurrentFreq] = useState<Frequency | null>(null);
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [selectedDates, setSelectedDates] = useState<number[]>([]);
@@ -126,13 +122,12 @@ const App = () => {
   const [ordinalOccurrence, setOrdinalOccurrence] = useState('1st');
   const [ordinalDay, setOrdinalDay] = useState(1);
   
-  // Looping state for individual times within one routine
   const [loopIndex, setLoopIndex] = useState(0); 
   const [tempTime, setTempTime] = useState("05:00 PM");
   const [tempDayTimes, setTempDayTimes] = useState<DayTime[]>([]);
   const [currentTZ, setCurrentTZ] = useState("America/Denver");
 
-  // Global Settings
+  // Global Schedule Settings
   const [kickoffDate, setKickoffDate] = useState<string>(DateTime.now().toISODate()!);
   const [location, setLocation] = useState("");
   const [leadDays, setLeadDays] = useState(2);
@@ -140,7 +135,6 @@ const App = () => {
 
   const { mutate, isPending } = useCreateGroup();
 
-  // Helper to determine what we are looping through in Step 6
   const getTargets = () => {
     if (currentFreq === 'daily') return daysOfWeek.map(d => d.value);
     if (currentFreq === 'weekly' || currentFreq === 'biweekly') return [...selectedDays].sort((a,b) => a-b);
@@ -187,10 +181,11 @@ const App = () => {
           }] : undefined
       };
       
-      const newRoutines = [...routines, routine];
+      // If we are NOT in multiple rules mode, we replace the array to avoid duplication if the user went back.
+      const newRoutines = isMultipleMode ? [...routines, routine] : [routine];
       setRoutines(newRoutines);
       
-      // Clean builder state
+      // Reset builder for next routine or clean up
       setTempDayTimes([]);
       setLoopIndex(0);
       setSelectedDays([]);
@@ -202,14 +197,13 @@ const App = () => {
       if (isMultipleMode && newRoutines.length < 5) {
           setStep(11); // "Set Another Routine?"
       } else {
-          setStep(9); // Start Date
+          setStep(9); // Kickoff Date Selection
       }
   };
 
   const handleNext = () => {
     if (step === 1 && groupName.trim() === "") return;
     
-    // Step 4 Branching
     if (step === 4) {
         if (currentFreq === 'custom') { 
             setIsMultipleMode(true); 
@@ -222,27 +216,23 @@ const App = () => {
         if (currentFreq === 'ordinal') return setStep(10);
     }
 
-    // Weekday (7)
     if (step === 7) {
         if (selectedDays.length === 1) { setIsSameTime(true); return setStep(6); }
         return setStep(5);
     }
 
-    // Monthly (8)
     if (step === 8) {
-        if (selectedDates.length === 0) return Alert.alert("Required", "Select a date.");
+        if (selectedDates.length === 0) return Alert.alert("Required", "Select at least one date.");
         if (selectedDates.length === 1) { setIsSameTime(true); return setStep(6); }
         return setStep(5);
     }
 
-    // Ordinal Pattern (10)
     if (step === 10) {
         setIsSameTime(true); 
         setStep(6);
         return;
     }
 
-    // Meeting Time (6) - Multi-day looping logic
     if (step === 6) {
         const targets = getTargets();
 
@@ -259,7 +249,6 @@ const App = () => {
             if (loopIndex < targets.length - 1) {
                 setTempDayTimes(updatedTempList);
                 setLoopIndex(loopIndex + 1);
-                // Stay on Step 6, heading will update via loopIndex
             } else {
                 handleFinishRoutine(updatedTempList);
             }
@@ -272,13 +261,32 @@ const App = () => {
 
   const handleBack = () => {
     if (step === 0) return router.back();
+    
+    // Internal loop handling for multi-time selection
     if (step === 6 && !isSameTime && loopIndex > 0) {
         setLoopIndex(loopIndex - 1);
         setTempDayTimes(prev => prev.slice(0, -1));
         return;
     }
-    if (step === 15) return setStep(13);
-    if (step === 14) return setStep(13);
+
+    // Returning from decision point to edit the routine just added
+    if (step === 11) {
+        setRoutines(prev => prev.slice(0, -1));
+        return setStep(6);
+    }
+
+    // Standard path fixes
+    if (step === 9) {
+        if (isMultipleMode) return setStep(11);
+        return setStep(6);
+    }
+
+    if (step === 4 && isMultipleMode && routines.length > 0) {
+        return setStep(11);
+    }
+
+    if (step === 15 || step === 14) return setStep(13);
+
     setStep(prev => prev - 1);
   };
 
@@ -292,11 +300,11 @@ const App = () => {
     }
   };
 
-  // --- Step Content Renders ---
+  // --- Step Renders ---
 
   const renderStep4_Frequency = () => {
       const isLoop = isMultipleMode && routines.length > 0;
-      const heading = isLoop ? `Set Routine ${routines.length + 1}` : (isMultipleMode ? "Set First Routine" : "How often will you meet?");
+      const heading = isLoop ? `Routine ${routines.length + 1}` : (isMultipleMode ? "First Routine" : "How often will you meet?");
       return (
           <View style={styles.stepContainerPadded}>
               <FadeInView delay={100}><Text style={styles.headerTitle}>{heading}</Text></FadeInView>
@@ -325,14 +333,13 @@ const App = () => {
   const renderStep6_TimeSelection = () => {
       const targets = getTargets();
       const val = targets[loopIndex];
-      
-      let heading = "Set meeting time";
+      let heading = "Meeting time";
       if (!isSameTime) {
           if (currentFreq === 'monthly') {
-              const suffix = val === 1 ? 'st' : val === 2 ? 'nd' : val === 3 ? 'rd' : 'th';
-              heading = `Set time for the ${val}${suffix}`;
+              const sfx = val === 1 ? 'st' : val === 2 ? 'nd' : val === 3 ? 'rd' : 'th';
+              heading = `Time for the ${val}${sfx}`;
           } else {
-              heading = `Set time for ${daysOfWeek.find(d => d.value === val)?.label}`;
+              heading = `Time for ${daysOfWeek.find(d => d.value === val)?.label}`;
           }
       }
 
@@ -340,19 +347,18 @@ const App = () => {
           <View style={styles.stepContainerPadded}>
               <FadeInView delay={100}><Text style={styles.headerTitle}>{heading}</Text></FadeInView>
               {!isSameTime && targets.length > 1 && (
-                  <Text style={styles.loopProgress}>Step {loopIndex + 1} of {targets.length}</Text>
+                  <Text style={styles.loopProgress}>Entry {loopIndex + 1} of {targets.length}</Text>
               )}
               <View style={{ flex: 1, paddingTop: 20 }}>
-                  <Text style={styles.pickerTitle}>Meeting Time</Text>
+                  <Text style={styles.pickerTitle}>Select Time</Text>
                   <TimePicker onTimeChange={setTempTime} initialValue={tempTime} />
                   <View style={{ height: 40 }} />
-                  <Text style={styles.pickerTitle}>Select Timezone</Text>
+                  <Text style={styles.pickerTitle}>Timezone</Text>
                   <View style={styles.pickerWrapper}>
                       <Picker 
                         selectedValue={currentTZ} 
                         onValueChange={setCurrentTZ} 
                         itemStyle={styles.pickerItem}
-                        style={{ color: '#111827' }}
                       >
                           {usaTimezones.map(tz=><Picker.Item key={tz.value} label={tz.label} value={tz.value} color="#111827"/>)}
                       </Picker>
@@ -368,16 +374,16 @@ const App = () => {
 
   const renderStep15_Summary = () => (
       <View style={styles.stepContainerPadded}>
-          <FadeInView delay={100}><Text style={styles.headerTitle}>Group Summary</Text></FadeInView>
+          <FadeInView delay={100}><Text style={styles.headerTitle}>Review</Text></FadeInView>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
               <View style={styles.summaryCard}>
-                  <Text style={styles.summaryLabel}>Name</Text>
+                  <Text style={styles.summaryLabel}>Group Name</Text>
                   <Text style={styles.summaryVal}>{groupName}</Text>
 
-                  <Text style={styles.summaryLabel}>Kickoff Date</Text>
+                  <Text style={styles.summaryLabel}>Effective Date</Text>
                   <Text style={styles.summaryVal}>{DateTime.fromISO(kickoffDate).toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)}</Text>
 
-                  <Text style={styles.summaryLabel}>Routines</Text>
+                  <Text style={styles.summaryLabel}>Schedules</Text>
                   {routines.map((r, i) => (
                       <View key={i} style={styles.routineSummaryBox}>
                           <Text style={styles.routineSummaryType}>{r.frequency.toUpperCase()}</Text>
@@ -394,17 +400,17 @@ const App = () => {
                       </View>
                   ))}
 
-                  <Text style={styles.summaryLabel}>Notifications</Text>
-                  <Text style={styles.summaryValSmall}>{leadDays} days before at {notificationTime}</Text>
+                  <Text style={styles.summaryLabel}>JIT Notifications</Text>
+                  <Text style={styles.summaryValSmall}>{leadDays} days lead @ {notificationTime}</Text>
 
                   <Text style={styles.summaryLabel}>Location</Text>
-                  <Text style={styles.summaryVal}>{location || "No default location set"}</Text>
+                  <Text style={styles.summaryVal}>{location || "Not specified"}</Text>
               </View>
           </ScrollView>
           <View style={styles.footerNavSpread}>
               <TouchableOpacity onPress={handleBack}><Feather name="arrow-left" size={32} color="#6B7280" /></TouchableOpacity>
               <TouchableOpacity style={styles.finishBtn} onPress={handleCreateRequest} disabled={isPending}>
-                  {isPending ? <ActivityIndicator color="white" /> : <Text style={styles.finishBtnText}>Finish</Text>}
+                  {isPending ? <ActivityIndicator color="white" /> : <Text style={styles.finishBtnText}>Confirm</Text>}
               </TouchableOpacity>
           </View>
       </View>
@@ -422,182 +428,193 @@ const App = () => {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
-        <View style={{ flex: 1 }}>
-            {step === 0 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>New:</Text>
-                    <View style={styles.centeredContent}>
-                        <TouchableOpacity style={styles.selectionButton} onPress={() => { setCreationType('group'); handleNext(); }}>
-                            <Text style={styles.selectionButtonText}>Group</Text>
-                            <Text style={styles.selectionButtonSubtext}>Recurring schedule with others</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.selectionButton} onPress={() => { setCreationType('event'); handleNext(); }}>
-                            <Text style={styles.selectionButtonText}>One-Off Event</Text>
-                            <Text style={styles.selectionButtonSubtext}>Single, non-recurring event</Text>
-                        </TouchableOpacity>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <View style={{ flex: 1 }}>
+                {step === 0 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>New:</Text>
+                        <View style={styles.centeredContent}>
+                            <TouchableOpacity style={styles.selectionButton} onPress={() => { setCreationType('group'); handleNext(); }}>
+                                <Text style={styles.selectionButtonText}>Group</Text>
+                                <Text style={styles.selectionButtonSubtext}>Recurring schedule with members</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.selectionButton} onPress={() => { setCreationType('event'); handleNext(); }}>
+                                <Text style={styles.selectionButtonText}>Event</Text>
+                                <Text style={styles.selectionButtonSubtext}>Single instance override</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </View>
-            )}
-            {step === 1 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Group name?</Text>
-                    <View style={styles.imagePlaceholder}><Image source={GroupImage} style={styles.image} resizeMode="cover" /></View>
-                    <TextInput style={styles.textInput} placeholder="Enter name..." value={groupName} onChangeText={setGroupName} />
-                    <View style={styles.footerNavSpread}>
-                        <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
-                        <TouchableOpacity onPress={handleNext} disabled={!groupName}><Feather name="arrow-right-circle" size={48} color={!groupName ? '#CCC' : '#4F46E5'} /></TouchableOpacity>
+                )}
+                {step === 1 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Name your group</Text>
+                        <View style={styles.imagePlaceholder}><Image source={GroupImage} style={styles.image} resizeMode="cover" /></View>
+                        <TextInput style={styles.textInput} placeholder="The coolest group..." value={groupName} onChangeText={setGroupName} />
+                        <View style={styles.footerNavSpread}>
+                            <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+                            <TouchableOpacity onPress={handleNext} disabled={!groupName}><Feather name="arrow-right-circle" size={48} color={!groupName ? '#CCC' : '#4F46E5'} /></TouchableOpacity>
+                        </View>
                     </View>
-                </View>
-            )}
-            {step === 2 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Invite members?</Text>
-                    <View style={styles.searchBox}><Feather name="search" size={20} color="#9CA3AF" /><TextInput style={styles.searchInput} placeholder="Search users..." value={searchQuery} onChangeText={setSearchQuery} /></View>
-                    <FlatList data={searchResults || []} keyExtractor={item=>item._id} renderItem={({item})=>(
-                        <TouchableOpacity style={styles.resultRow} onPress={()=>toggleMember(item)}><Text style={styles.resultText}>@{item.username}</Text>{selectedMembers.some(m=>m._id===item._id)&&<Feather name="check" size={18} color="#4F46E5"/>}</TouchableOpacity>
-                    )}/>
-                    <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
-                </View>
-            )}
-            {step === 3 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Set the Schedule now?</Text>
-                    <View style={styles.centeredContent}>
-                        <TouchableOpacity style={styles.choiceBtn} onPress={()=>setStep(4)}><Text style={styles.choiceBtnText}>Yes</Text></TouchableOpacity>
-                        <TouchableOpacity style={styles.choiceBtnOutline} onPress={handleCreateRequest}><Text style={styles.choiceBtnTextOutline}>No</Text></TouchableOpacity>
+                )}
+                {step === 2 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Invite members</Text>
+                        <View style={styles.searchBox}><Feather name="search" size={20} color="#9CA3AF" /><TextInput style={styles.searchInput} placeholder="Username..." value={searchQuery} onChangeText={setSearchQuery} /></View>
+                        <FlatList data={searchResults || []} keyExtractor={item=>item._id} renderItem={({item})=>(
+                            <TouchableOpacity style={styles.resultRow} onPress={()=>toggleMember(item)}><Text style={styles.resultText}>@{item.username}</Text>{selectedMembers.some(m=>m._id===item._id)&&<Feather name="check" size={18} color="#4F46E5"/>}</TouchableOpacity>
+                        )}/>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
-                    <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
-                </View>
-            )}
-
-            {step === 4 && renderStep4_Frequency()}
-            
-            {step === 5 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Same time for everyone?</Text>
-                    <View style={styles.centeredContent}>
-                        <TouchableOpacity style={styles.choiceBtn} onPress={()=>{setIsSameTime(true); setStep(6);}}><Text style={styles.choiceBtnText}>Yes</Text></TouchableOpacity>
-                        <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>{setIsSameTime(false); setStep(6);}}><Text style={styles.choiceBtnTextOutline}>No</Text></TouchableOpacity>
+                )}
+                {step === 3 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Define schedule now?</Text>
+                        <View style={styles.centeredContent}>
+                            <TouchableOpacity style={styles.choiceBtn} onPress={()=>setStep(4)}><Text style={styles.choiceBtnText}>Yes</Text></TouchableOpacity>
+                            <TouchableOpacity style={styles.choiceBtnOutline} onPress={handleCreateRequest}><Text style={styles.choiceBtnTextOutline}>No</Text></TouchableOpacity>
+                        </View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
-                    <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
-                </View>
-            )}
+                )}
 
-            {step === 6 && renderStep6_TimeSelection()}
-
-            {step === 7 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Which day(s)?</Text>
-                    <View style={{flex: 1, justifyContent: 'center'}}>{daysOfWeek.map(d=>(
-                        <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays(prev=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label}</Text></TouchableOpacity>
-                    ))}</View>
-                    <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}><Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
-                </View>
-            )}
-
-            {step === 8 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Select Date(s)</Text>
-                    <View style={styles.calendarGrid}>{Array.from({length:31}, (_,i)=>i+1).map(d=>(
-                        <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d)&&styles.dateBoxSelected]} onPress={()=>setSelectedDates(prev=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d])}><Text style={[styles.dateText, selectedDates.includes(d)&&styles.dateTextSelected]}>{d}</Text></TouchableOpacity>
-                    ))}</View>
-                    <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDates.length}><Feather name="arrow-right-circle" size={48} color={!selectedDates.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
-                </View>
-            )}
-
-            {step === 9 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Kickoff Date?</Text>
-                    <View style={styles.calendarContainer}>
-                        <View style={styles.calendarNav}><TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4F46E5"/></TouchableOpacity><Text style={styles.calendarMonthText}>{calendarMonth.toFormat('MMMM yyyy')}</Text><TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.plus({months:1}))}><Feather name="chevron-right" size={24} color="#4F46E5"/></TouchableOpacity></View>
-                        <View style={styles.calendarGridContainer}>{calendarGrid.map((day, idx)=>{
-                            if(!day) return <View key={`p-${idx}`} style={styles.calendarDayBox}/>;
-                            const isSel = day.toISODate() === kickoffDate;
-                            return <TouchableOpacity key={day.toISODate()} onPress={()=>setKickoffDate(day.toISODate()!)} style={[styles.calendarDayBox, isSel && styles.calendarDayBoxSelected]}><Text style={[styles.calendarDayText, isSel && styles.calendarDayTextSelected]}>{day.day}</Text></TouchableOpacity>
-                        })}</View>
+                {step === 4 && renderStep4_Frequency()}
+                
+                {step === 5 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Same time for all days?</Text>
+                        <View style={styles.centeredContent}>
+                            <TouchableOpacity style={styles.choiceBtn} onPress={()=>{setIsSameTime(true); setStep(6);}}><Text style={styles.choiceBtnText}>Yes</Text></TouchableOpacity>
+                            <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>{setIsSameTime(false); setStep(6);}}><Text style={styles.choiceBtnTextOutline}>No</Text></TouchableOpacity>
+                        </View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
-                    <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(12)}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
-                </View>
-            )}
+                )}
 
-            {step === 10 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Select Pattern</Text>
-                    <View style={{flex: 1, justifyContent: 'center'}}>
-                        <View style={styles.pickerWrapper}><Picker selectedValue={ordinalOccurrence} onValueChange={setOrdinalOccurrence} itemStyle={styles.pickerItem} style={{color: '#111827'}}>{occurrences.map(o=><Picker.Item key={o} label={o} value={o} color="#111827"/>)}</Picker></View>
-                        <View style={{height: 20}}/>
-                        <View style={styles.pickerWrapper}><Picker selectedValue={ordinalDay} onValueChange={setOrdinalDay} itemStyle={styles.pickerItem} style={{color: '#111827'}}>{daysOfWeek.map(d=><Picker.Item key={d.value} label={d.label} value={d.value} color="#111827"/>)}</Picker></View>
+                {step === 6 && renderStep6_TimeSelection()}
+
+                {step === 7 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Select weekdays</Text>
+                        <View style={{flex: 1, justifyContent: 'center'}}>{daysOfWeek.map(d=>(
+                            <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays(prev=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label}</Text></TouchableOpacity>
+                        ))}</View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}><Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
                     </View>
-                    <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
-                </View>
-            )}
+                )}
 
-            {step === 11 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Set Another Routine?</Text>
-                    <Text style={styles.headerSub}>max: 5</Text>
-                    <View style={styles.centeredContent}>
-                        <TouchableOpacity style={styles.choiceBtn} onPress={()=>setStep(4)}><Text style={styles.choiceBtnText}>Yes</Text></TouchableOpacity>
-                        <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>setStep(9)}><Text style={styles.choiceBtnTextOutline}>No</Text></TouchableOpacity>
+                {step === 8 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Choose dates</Text>
+                        <View style={styles.calendarGrid}>{Array.from({length:31}, (_,i)=>i+1).map(d=>(
+                            <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d)&&styles.dateBoxSelected]} onPress={()=>setSelectedDates(prev=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d])}><Text style={[styles.dateText, selectedDates.includes(d)&&styles.dateTextSelected]}>{d}</Text></TouchableOpacity>
+                        ))}</View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDates.length}><Feather name="arrow-right-circle" size={48} color={!selectedDates.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
                     </View>
-                </View>
-            )}
+                )}
 
-            {step === 12 && (
-                <View style={styles.stepContainerPadded}>
-                    <FadeInView delay={100}><Text style={styles.headerTitle}>Notifications</Text></FadeInView>
-                    <View style={{ flex: 1 }}>
-                        <FadeInView delay={250}>
-                            <Text style={styles.description}>
-                                How many days before the meeting should we create the event and notify everyone to RSVP?
-                            </Text>
-                        </FadeInView>
+                {step === 9 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>When to start?</Text>
+                        <View style={styles.calendarContainer}>
+                            <View style={styles.calendarNav}><TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4F46E5"/></TouchableOpacity><Text style={styles.calendarMonthText}>{calendarMonth.toFormat('MMMM yyyy')}</Text><TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.plus({months:1}))}><Feather name="chevron-right" size={24} color="#4F46E5"/></TouchableOpacity></View>
+                            <View style={styles.calendarGridContainer}>{calendarGrid.map((day, idx)=>{
+                                if(!day) return <View key={`p-${idx}`} style={styles.calendarDayBox}/>;
+                                const isSel = day.toISODate() === kickoffDate;
+                                return <TouchableOpacity key={day.toISODate()} onPress={()=>setKickoffDate(day.toISODate()!)} style={[styles.calendarDayBox, isSel && styles.calendarDayBoxSelected]}><Text style={[styles.calendarDayText, isSel && styles.calendarDayTextSelected]}>{day.day}</Text></TouchableOpacity>
+                            })}</View>
+                        </View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(12)}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                    </View>
+                )}
 
-                        <FadeInView delay={400} style={styles.jitCard}>
-                            <View style={styles.leadDaysRow}>
-                                <TouchableOpacity onPress={() => setLeadDays(Math.max(0, leadDays - 1))} style={styles.stepperBtn}>
-                                    <Feather name="minus" size={24} color="#4F46E5" />
-                                </TouchableOpacity>
-                                <View style={{ alignItems: 'center', width: 120 }}>
-                                    <Text style={styles.leadVal}>{leadDays}</Text>
-                                    <Text style={styles.leadLabel}>Days Before</Text>
+                {step === 10 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Select pattern</Text>
+                        <View style={{flex: 1, justifyContent: 'center'}}>
+                            <View style={styles.pickerWrapper}><Picker selectedValue={ordinalOccurrence} onValueChange={setOrdinalOccurrence} itemStyle={styles.pickerItem}>{occurrences.map(o=><Picker.Item key={o} label={o} value={o} color="#111827"/>)}</Picker></View>
+                            <View style={{height: 20}}/>
+                            <View style={styles.pickerWrapper}><Picker selectedValue={ordinalDay} onValueChange={setOrdinalDay} itemStyle={styles.pickerItem}>{daysOfWeek.map(d=><Picker.Item key={d.value} label={d.label} value={d.value} color="#111827"/>)}</Picker></View>
+                        </View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                    </View>
+                )}
+
+                {step === 11 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Add another rule?</Text>
+                        <Text style={styles.headerSub}>max 5 allowed</Text>
+                        <View style={styles.centeredContent}>
+                            <TouchableOpacity style={styles.choiceBtn} onPress={()=>setStep(4)}><Text style={styles.choiceBtnText}>Add More</Text></TouchableOpacity>
+                            <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>setStep(9)}><Text style={styles.choiceBtnTextOutline}>Continue</Text></TouchableOpacity>
+                        </View>
+                        <View style={styles.footerNavSpread}>
+                            <TouchableOpacity onPress={handleBack}>
+                                <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+
+                {step === 12 && (
+                    <View style={styles.stepContainerPadded}>
+                        <FadeInView delay={100}><Text style={styles.headerTitle}>JIT Setup</Text></FadeInView>
+                        <View style={{ flex: 1 }}>
+                            <FadeInView delay={250}>
+                                <Text style={styles.description}>
+                                    Lead time for event creation and member notification:
+                                </Text>
+                            </FadeInView>
+
+                            <FadeInView delay={400} style={styles.jitCard}>
+                                <View style={styles.leadDaysRow}>
+                                    <TouchableOpacity onPress={() => setLeadDays(Math.max(0, leadDays - 1))} style={styles.stepperBtn}>
+                                        <Feather name="minus" size={24} color="#4F46E5" />
+                                    </TouchableOpacity>
+                                    <View style={{ alignItems: 'center', width: 120 }}>
+                                        <Text style={styles.leadVal}>{leadDays}</Text>
+                                        <Text style={styles.leadLabel}>Days Lead</Text>
+                                    </View>
+                                    <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={styles.stepperBtn}>
+                                        <Feather name="plus" size={24} color="#4F46E5" />
+                                    </TouchableOpacity>
                                 </View>
-                                <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={styles.stepperBtn}>
-                                    <Feather name="plus" size={24} color="#4F46E5" />
-                                </TouchableOpacity>
-                            </View>
 
-                            <View style={styles.divider} />
+                                <View style={styles.divider} />
 
-                            <Text style={styles.sectionLabelCenter}>Trigger Time</Text>
-                            <TimePicker onTimeChange={setNotificationTime} initialValue={notificationTime} />
-                            <Text style={styles.hint}>Example: Set to 2 days at 7:00 PM to notify everyone Tuesday evening for a Thursday meeting.</Text>
-                        </FadeInView>
+                                <Text style={styles.sectionLabelCenter}>Trigger Time</Text>
+                                <TimePicker onTimeChange={setNotificationTime} initialValue={notificationTime} />
+                            </FadeInView>
+                        </View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(13)}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
-                    <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(13)}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
-                </View>
-            )}
+                )}
 
-            {step === 13 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Set a default location?</Text>
-                    <View style={styles.centeredContent}>
-                        <TouchableOpacity style={styles.choiceBtn} onPress={()=>setStep(14)}><Text style={styles.choiceBtnText}>Yes</Text></TouchableOpacity>
-                        <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>setStep(15)}><Text style={styles.choiceBtnTextOutline}>No</Text></TouchableOpacity>
+                {step === 13 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Default location?</Text>
+                        <View style={styles.centeredContent}>
+                            <TouchableOpacity style={styles.choiceBtn} onPress={()=>setStep(14)}><Text style={styles.choiceBtnText}>Set Location</Text></TouchableOpacity>
+                            <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>setStep(15)}><Text style={styles.choiceBtnTextOutline}>Skip</Text></TouchableOpacity>
+                        </View>
+                        <View style={styles.footerNavSpread}>
+                            <TouchableOpacity onPress={handleBack}>
+                                <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </View>
-            )}
+                )}
 
-            {step === 14 && (
-                <View style={styles.stepContainerPadded}>
-                    <Text style={styles.headerTitle}>Where at?</Text>
-                    <TextInput style={styles.textInput} placeholder="Location name/link..." value={location} onChangeText={setLocation} />
-                    <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(15)}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
-                </View>
-            )}
+                {step === 14 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Location Info</Text>
+                        <TextInput style={styles.textInput} placeholder="e.g. Starbucks or Zoom link..." value={location} onChangeText={setLocation} />
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(15)}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                    </View>
+                )}
 
-            {step === 15 && renderStep15_Summary()}
-        </View>
+                {step === 15 && renderStep15_Summary()}
+            </View>
+        </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -666,4 +683,4 @@ const styles = StyleSheet.create({
     finishBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 });
 
-export default App;
+export default CreateGroupScreen;

@@ -107,6 +107,13 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
                     time: dtEntry.time
                 });
 
+                if (group.name === "Howdy") {
+                    console.log(`[DEBUG SNAPSHOT] Checking for: ${nextMeetingDate.toISOString()} | Result Found: ${!!alreadyExists}`);
+                    if (alreadyExists) {
+                        console.log(`[DEBUG MATCH] Found Event ID: ${alreadyExists._id} | DB Date: ${alreadyExists.date.toISOString()}`);
+                    }
+}
+
                 if (!alreadyExists) {
                     console.log(`[JIT] Creating: ${group.name} | Date: ${nextMeetingDT.toISODate()} | Lead: ${group.generationLeadDays}d`);
                     
