@@ -8,7 +8,6 @@ import { notifyUsers } from "../utils/push.notifications.js";
 
 /**
  * Helper: parseTimeString
- * Converts "07:00 PM" into { hours: 19, minutes: 0 }
  */
 const parseTimeString = (timeStr) => {
   if (!timeStr) return { hours: 9, minutes: 0 };
@@ -27,8 +26,8 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
   console.log("Cron job started: JIT Event Generation...");
   const now = DateTime.now(); 
   
-  // 1. Cleanup Expired Events and Clear Mutes
-  const expiredEvents = await Event.find({ date: { $lt: now.toJSDate() } }).select('_id group').lean();
+  // 1. Cleanup Expired Events
+  const expiredEvents = await Event.find({ date: { $lt: now.toJSDate() } }).select('_id group name date').lean();
   if (expiredEvents.length > 0) {
     const groupIdsToUnmute = [...new Set(expiredEvents.map(e => e.group.toString()))];
     await User.updateMany(
@@ -47,32 +46,34 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
   for (const group of groups) {
     const timezone = group.timezone;
+    
+    // Kickoff date used ONLY as a filter (Step 1 of Troubleshooting)
     const kickoffDate = group.schedule.startDate 
-        ? DateTime.fromJSDate(group.schedule.startDate).setZone(timezone).startOf('day').toJSDate()
+        ? DateTime.fromJSDate(group.schedule.startDate).setZone(timezone).toJSDate()
         : now.setZone(timezone).startOf('day').toJSDate();
 
     for (const routine of group.schedule.routines) {
         for (const dtEntry of routine.dayTimes) {
             
-            // --- PROJECT 6/7: Iterative Window Filling ---
-            // We loop to ensure the entire lead-time window is filled immediately.
             let currentAnchor = null;
             let fillingWindow = true;
+            let safetyCounter = 0;
 
-            while (fillingWindow) {
-                // A. Find the most recent anchor for this specific day/time
+            while (fillingWindow && safetyCounter < 20) {
+                safetyCounter++;
+
+                // A. Anchor Resolution: Decoupled from kickoffDate
+                // If lastEvent and currentAnchor are null, utility starts from 'now'
                 const lastEvent = await Event.findOne({ 
                     group: group._id, 
                     isOverride: false,
                     time: dtEntry.time,
-                    // If we just created an event in this loop, we anchor to it.
-                    // Otherwise, we look at the database.
                     date: currentAnchor ? { $gt: currentAnchor } : { $exists: true }
                 })
                 .sort({ date: -1 })
                 .lean();
 
-                const anchorDate = lastEvent ? lastEvent.date : (currentAnchor || kickoffDate);
+                const anchorDate = lastEvent ? lastEvent.date : currentAnchor;
 
                 // B. Calculate NEXT date
                 const nextMeetingDate = calculateNextEventDate(
@@ -86,7 +87,21 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
                 const nextMeetingDT = DateTime.fromJSDate(nextMeetingDate).setZone(timezone);
 
-                // C. Trigger Time math
+                // C. The Kickoff Guard (Step 1 Implementation)
+                // If the meeting happens before kickoff, skip it and look for the next one
+                if (nextMeetingDate < kickoffDate) {
+                    currentAnchor = nextMeetingDate;
+                    continue;
+                }
+
+                // D. The Past-Event Guard
+                // JIT should never create events that are already in the past
+                if (nextMeetingDT < now.setZone(timezone)) {
+                    currentAnchor = nextMeetingDate;
+                    continue;
+                }
+
+                // E. Trigger Time math
                 const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
                 const triggerDT = nextMeetingDT
                     .minus({ days: group.generationLeadDays || 0 })
@@ -94,28 +109,21 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
                 const nowInTZ = now.setZone(timezone);
 
-                // D. Break condition: If the next potential meeting's trigger is in the future, we are done filling.
+                // F. Break condition
                 if (nowInTZ < triggerDT) {
                     fillingWindow = false;
                     break;
                 }
 
-                // E. Check Existence to prevent duplicates
+                // G. Check Existence
                 const alreadyExists = await Event.findOne({ 
                     group: group._id, 
                     date: nextMeetingDate,
                     time: dtEntry.time
                 });
 
-                if (group.name === "Howdy") {
-                    console.log(`[DEBUG SNAPSHOT] Checking for: ${nextMeetingDate.toISOString()} | Result Found: ${!!alreadyExists}`);
-                    if (alreadyExists) {
-                        console.log(`[DEBUG MATCH] Found Event ID: ${alreadyExists._id} | DB Date: ${alreadyExists.date.toISOString()}`);
-                    }
-}
-
                 if (!alreadyExists) {
-                    console.log(`[JIT] Creating: ${group.name} | Date: ${nextMeetingDT.toISODate()} | Lead: ${group.generationLeadDays}d`);
+                    console.log(`[JIT] Creating: ${group.name} | Date: ${nextMeetingDT.toISODate()}`);
                     
                     const newEvent = await Event.create({
                         group: group._id,
@@ -130,7 +138,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
                         isOverride: false
                     });
 
-                    // F. Notify Members
+                    // H. Notify Members
                     const members = await User.find({ _id: { $in: group.members } });
                     await notifyUsers(members, {
                         title: `Upcoming: ${group.name}`,
@@ -146,19 +154,11 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
                     generatedCount++;
                 }
 
-                // Update anchor for the next iteration of the while loop
                 currentAnchor = nextMeetingDate;
-
-                // Safety break to prevent infinite loops (max 15 events per run per routine)
-                if (generatedCount > 15) fillingWindow = false;
             }
         }
     }
   }
 
-  res.status(200).json({ 
-    message: "JIT processing complete.", 
-    deleted: expiredEvents.length, 
-    generated: generatedCount 
-  });
+  res.status(200).json({ generated: generatedCount });
 });
