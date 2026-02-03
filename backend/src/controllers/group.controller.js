@@ -167,6 +167,15 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                 ? DateTime.fromJSDate(group.schedule.startDate).setZone(group.timezone).startOf('day').toJSDate()
                 : now.startOf('day').toJSDate();
 
+                // --- TROUBLESHOOTING LOG ---
+            if (group.name === "Hello") {
+                const kickoffDT = DateTime.fromJSDate(kickoffDate).setZone(group.timezone);
+                console.log(`[CONTROLLER KICKOFF DEBUG]`);
+                console.log(`- Stored StartDate: ${group.schedule.startDate}`);
+                console.log(`- Kickoff (Local Resolved): ${kickoffDT.toLocaleString(DateTime.DATETIME_MED)}`);
+            }
+            // ---------------------------
+
             for (const routine of group.schedule.routines) {
                 for (const dtEntry of routine.dayTimes) {
                     let currentAnchor = kickoffDate;
