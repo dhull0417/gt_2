@@ -108,7 +108,7 @@ const CreateGroupScreen = () => {
   const [groupName, setGroupName] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<UserStub[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const { data: searchResults } = useSearchUsers(searchQuery);
+  const { data: searchResults, isLoading: isSearchingUsers } = useSearchUsers(searchQuery);
 
   // --- Multi-Routine Logic ---
   const [routines, setRoutines] = useState<Routine[]>([]);
@@ -134,6 +134,17 @@ const CreateGroupScreen = () => {
   const [notificationTime, setNotificationTime] = useState("09:00 AM");
 
   const { mutate, isPending } = useCreateGroup();
+
+  // Calendar State for Kickoff (Fixed missing variables)
+  const [calendarMonth, setCalendarMonth] = useState<DateTime>(DateTime.now().startOf('month'));
+  const calendarGrid = useMemo(() => {
+    const start = calendarMonth.startOf('month');
+    const firstDayIdx = start.weekday === 7 ? 0 : start.weekday;
+    const days = [];
+    for (let i = 0; i < firstDayIdx; i++) days.push(null);
+    for (let i = 1; i <= calendarMonth.endOf('month').day; i++) days.push(calendarMonth.set({ day: i }));
+    return days;
+  }, [calendarMonth]);
 
   const getTargets = () => {
     if (currentFreq === 'daily') return daysOfWeek.map(d => d.value);
@@ -181,11 +192,9 @@ const CreateGroupScreen = () => {
           }] : undefined
       };
       
-      // If we are NOT in multiple rules mode, we replace the array to avoid duplication if the user went back.
       const newRoutines = isMultipleMode ? [...routines, routine] : [routine];
       setRoutines(newRoutines);
       
-      // Reset builder for next routine or clean up
       setTempDayTimes([]);
       setLoopIndex(0);
       setSelectedDays([]);
@@ -195,9 +204,9 @@ const CreateGroupScreen = () => {
       setTempTime("05:00 PM");
 
       if (isMultipleMode && newRoutines.length < 5) {
-          setStep(11); // "Set Another Routine?"
+          setStep(11); 
       } else {
-          setStep(9); // Kickoff Date Selection
+          setStep(9); 
       }
   };
 
@@ -261,32 +270,20 @@ const CreateGroupScreen = () => {
 
   const handleBack = () => {
     if (step === 0) return router.back();
-    
-    // Internal loop handling for multi-time selection
     if (step === 6 && !isSameTime && loopIndex > 0) {
         setLoopIndex(loopIndex - 1);
         setTempDayTimes(prev => prev.slice(0, -1));
         return;
     }
-
-    // Returning from decision point to edit the routine just added
     if (step === 11) {
         setRoutines(prev => prev.slice(0, -1));
         return setStep(6);
     }
-
-    // Standard path fixes
     if (step === 9) {
         if (isMultipleMode) return setStep(11);
         return setStep(6);
     }
-
-    if (step === 4 && isMultipleMode && routines.length > 0) {
-        return setStep(11);
-    }
-
     if (step === 15 || step === 14) return setStep(13);
-
     setStep(prev => prev - 1);
   };
 
@@ -300,7 +297,83 @@ const CreateGroupScreen = () => {
     }
   };
 
+  const handleShareInvite = async () => {
+      try {
+          await Share.share({
+              message: `Join my group "${groupName}" on the app! Sign up here: https://yourapplink.com`,
+          });
+      } catch (error) {
+          console.error("Share error:", error);
+      }
+  };
+
   // --- Step Renders ---
+
+  const renderStep2_Invite = () => (
+      <View style={styles.stepContainerPadded}>
+          <FadeInView delay={100}><Text style={styles.headerTitle}>Invite members</Text></FadeInView>
+          
+          <FadeInView delay={200}>
+              <View style={styles.searchBox}>
+                  <Feather name="search" size={20} color="#9CA3AF" />
+                  <TextInput 
+                    style={styles.searchInput} 
+                    placeholder="Search by username..." 
+                    value={searchQuery} 
+                    onChangeText={setSearchQuery} 
+                    autoCapitalize="none"
+                  />
+              </View>
+          </FadeInView>
+
+          {/* Restored: Currently Invited Chips */}
+          {selectedMembers.length > 0 && (
+              <View style={styles.selectedMembersContainer}>
+                  <Text style={styles.sectionLabel}>Currently Invited ({selectedMembers.length})</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectedScroll}>
+                      {selectedMembers.map((member) => (
+                          <TouchableOpacity 
+                            key={member._id} 
+                            style={styles.selectedMemberChip}
+                            onPress={() => toggleMember(member)}
+                          >
+                              <Text style={styles.selectedMemberText}>@{member.username}</Text>
+                              <Feather name="x-circle" size={14} color="#6B7280" style={{ marginLeft: 6 }} />
+                          </TouchableOpacity>
+                      ))}
+                  </ScrollView>
+              </View>
+          )}
+
+          <View style={{ flex: 1 }}>
+              {isSearchingUsers ? (
+                  <ActivityIndicator size="small" color="#4F46E5" style={{ marginTop: 20 }} />
+              ) : (
+                  <FlatList 
+                    data={searchResults || []} 
+                    keyExtractor={item=>item._id} 
+                    renderItem={({item})=>(
+                        <TouchableOpacity style={styles.resultRow} onPress={()=>toggleMember(item)}>
+                            <Text style={styles.resultText}>@{item.username}</Text>
+                            {selectedMembers.some(m=>m._id===item._id) && <Feather name="check-circle" size={24} color="#4F46E5" />}
+                        </TouchableOpacity>
+                    )}
+                  />
+              )}
+          </View>
+
+          {/* Restored: Invite Link */}
+          <TouchableOpacity style={styles.shareLinkBtn} onPress={handleShareInvite}>
+              <Feather name="share-2" size={20} color="#4F46E5" />
+              <Text style={styles.shareLinkText}>Share Invite Link</Text>
+          </TouchableOpacity>
+
+          <View style={styles.footerNavSpread}>
+              <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+              <TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+          </View>
+      </View>
+  );
 
   const renderStep4_Frequency = () => {
       const isLoop = isMultipleMode && routines.length > 0;
@@ -357,7 +430,7 @@ const CreateGroupScreen = () => {
                   <View style={styles.pickerWrapper}>
                       <Picker 
                         selectedValue={currentTZ} 
-                        onValueChange={setCurrentTZ} 
+                        onValueChange={(itemValue: string) => setCurrentTZ(itemValue)} 
                         itemStyle={styles.pickerItem}
                       >
                           {usaTimezones.map(tz=><Picker.Item key={tz.value} label={tz.label} value={tz.value} color="#111827"/>)}
@@ -416,16 +489,6 @@ const CreateGroupScreen = () => {
       </View>
   );
 
-  const [calendarMonth, setCalendarMonth] = useState<DateTime>(DateTime.now().startOf('month'));
-  const calendarGrid = useMemo(() => {
-    const start = calendarMonth.startOf('month');
-    const firstDayIdx = start.weekday === 7 ? 0 : start.weekday;
-    const days = [];
-    for (let i = 0; i < firstDayIdx; i++) days.push(null);
-    for (let i = 1; i <= calendarMonth.endOf('month').day; i++) days.push(calendarMonth.set({ day: i }));
-    return days;
-  }, [calendarMonth]);
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -456,16 +519,9 @@ const CreateGroupScreen = () => {
                         </View>
                     </View>
                 )}
-                {step === 2 && (
-                    <View style={styles.stepContainerPadded}>
-                        <Text style={styles.headerTitle}>Invite members</Text>
-                        <View style={styles.searchBox}><Feather name="search" size={20} color="#9CA3AF" /><TextInput style={styles.searchInput} placeholder="Username..." value={searchQuery} onChangeText={setSearchQuery} /></View>
-                        <FlatList data={searchResults || []} keyExtractor={item=>item._id} renderItem={({item})=>(
-                            <TouchableOpacity style={styles.resultRow} onPress={()=>toggleMember(item)}><Text style={styles.resultText}>@{item.username}</Text>{selectedMembers.some(m=>m._id===item._id)&&<Feather name="check" size={18} color="#4F46E5"/>}</TouchableOpacity>
-                        )}/>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
-                    </View>
-                )}
+                
+                {step === 2 && renderStep2_Invite()}
+
                 {step === 3 && (
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Define schedule now?</Text>
@@ -496,7 +552,7 @@ const CreateGroupScreen = () => {
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Select weekdays</Text>
                         <View style={{flex: 1, justifyContent: 'center'}}>{daysOfWeek.map(d=>(
-                            <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays(prev=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label}</Text></TouchableOpacity>
+                            <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays((prev: number[])=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label}</Text></TouchableOpacity>
                         ))}</View>
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}><Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
                     </View>
@@ -506,7 +562,7 @@ const CreateGroupScreen = () => {
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Choose dates</Text>
                         <View style={styles.calendarGrid}>{Array.from({length:31}, (_,i)=>i+1).map(d=>(
-                            <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d)&&styles.dateBoxSelected]} onPress={()=>setSelectedDates(prev=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d])}><Text style={[styles.dateText, selectedDates.includes(d)&&styles.dateTextSelected]}>{d}</Text></TouchableOpacity>
+                            <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d)&&styles.dateBoxSelected]} onPress={()=>setSelectedDates((prev: number[])=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d])}><Text style={[styles.dateText, selectedDates.includes(d)&&styles.dateTextSelected]}>{d}</Text></TouchableOpacity>
                         ))}</View>
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDates.length}><Feather name="arrow-right-circle" size={48} color={!selectedDates.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
                     </View>
@@ -516,8 +572,8 @@ const CreateGroupScreen = () => {
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>When to start?</Text>
                         <View style={styles.calendarContainer}>
-                            <View style={styles.calendarNav}><TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4F46E5"/></TouchableOpacity><Text style={styles.calendarMonthText}>{calendarMonth.toFormat('MMMM yyyy')}</Text><TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.plus({months:1}))}><Feather name="chevron-right" size={24} color="#4F46E5"/></TouchableOpacity></View>
-                            <View style={styles.calendarGridContainer}>{calendarGrid.map((day, idx)=>{
+                            <View style={styles.calendarNav}><TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4F46E5"/></TouchableOpacity><Text style={styles.calendarMonthText}>{calendarMonth.toFormat('MMMM yyyy')}</Text><TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.plus({months:1}))}><Feather name="chevron-right" size={24} color="#4F46E5"/></TouchableOpacity></View>
+                            <View style={styles.calendarGridContainer}>{calendarGrid.map((day: DateTime | null, idx: number)=>{
                                 if(!day) return <View key={`p-${idx}`} style={styles.calendarDayBox}/>;
                                 const isSel = day.toISODate() === kickoffDate;
                                 return <TouchableOpacity key={day.toISODate()} onPress={()=>setKickoffDate(day.toISODate()!)} style={[styles.calendarDayBox, isSel && styles.calendarDayBoxSelected]}><Text style={[styles.calendarDayText, isSel && styles.calendarDayTextSelected]}>{day.day}</Text></TouchableOpacity>
@@ -531,9 +587,9 @@ const CreateGroupScreen = () => {
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Select pattern</Text>
                         <View style={{flex: 1, justifyContent: 'center'}}>
-                            <View style={styles.pickerWrapper}><Picker selectedValue={ordinalOccurrence} onValueChange={setOrdinalOccurrence} itemStyle={styles.pickerItem}>{occurrences.map(o=><Picker.Item key={o} label={o} value={o} color="#111827"/>)}</Picker></View>
+                            <View style={styles.pickerWrapper}><Picker selectedValue={ordinalOccurrence} onValueChange={(itemValue: string)=>setOrdinalOccurrence(itemValue)} itemStyle={styles.pickerItem}>{occurrences.map(o=><Picker.Item key={o} label={o} value={o} color="#111827"/>)}</Picker></View>
                             <View style={{height: 20}}/>
-                            <View style={styles.pickerWrapper}><Picker selectedValue={ordinalDay} onValueChange={setOrdinalDay} itemStyle={styles.pickerItem}>{daysOfWeek.map(d=><Picker.Item key={d.value} label={d.label} value={d.value} color="#111827"/>)}</Picker></View>
+                            <View style={styles.pickerWrapper}><Picker selectedValue={ordinalDay} onValueChange={(itemValue: number)=>setOrdinalDay(itemValue)} itemStyle={styles.pickerItem}>{daysOfWeek.map(d=><Picker.Item key={d.value} label={d.label} value={d.value} color="#111827"/>)}</Picker></View>
                         </View>
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
@@ -629,6 +685,11 @@ const styles = StyleSheet.create({
     textInput: { width: '100%', padding: 16, borderBottomWidth: 2, borderColor: '#4F46E5', fontSize: 18, fontWeight: '600', backgroundColor: 'white', borderRadius: 12 },
     searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 16 },
     searchInput: { flex: 1, marginLeft: 10, fontSize: 16 },
+    sectionLabel: { fontSize: 12, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 8, marginLeft: 4 },
+    selectedMembersContainer: { marginBottom: 20 },
+    selectedScroll: { paddingLeft: 4, paddingBottom: 4 },
+    selectedMemberChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: '#E5E7EB' },
+    selectedMemberText: { fontSize: 14, fontWeight: '600', color: '#374151' },
     resultRow: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     resultText: { fontSize: 16, fontWeight: '500', color: '#374151' },
     selectionButton: { width: '100%', padding: 20, backgroundColor: 'white', borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E5E7EB', elevation: 2 },
@@ -681,6 +742,8 @@ const styles = StyleSheet.create({
     sectionLabelCenter: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 16, textAlign: 'center' },
     finishBtn: { backgroundColor: '#4F46E5', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12 },
     finishBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+    shareLinkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#F5F7FF', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#4F46E5', marginVertical: 16 },
+    shareLinkText: { color: '#4F46E5', fontWeight: '700', fontSize: 16, marginLeft: 10 },
 });
 
 export default CreateGroupScreen;

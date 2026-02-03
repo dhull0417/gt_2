@@ -47,7 +47,6 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
   for (const group of groups) {
     const timezone = group.timezone;
     
-    // Kickoff date used ONLY as a filter (Step 1 of Troubleshooting)
     const kickoffDate = group.schedule.startDate 
         ? DateTime.fromJSDate(group.schedule.startDate).setZone(timezone).toJSDate()
         : now.setZone(timezone).startOf('day').toJSDate();
@@ -62,8 +61,6 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
             while (fillingWindow && safetyCounter < 20) {
                 safetyCounter++;
 
-                // A. Anchor Resolution: Decoupled from kickoffDate
-                // If lastEvent and currentAnchor are null, utility starts from 'now'
                 const lastEvent = await Event.findOne({ 
                     group: group._id, 
                     isOverride: false,
@@ -75,7 +72,6 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
                 const anchorDate = lastEvent ? lastEvent.date : currentAnchor;
 
-                // B. Calculate NEXT date
                 const nextMeetingDate = calculateNextEventDate(
                     routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
                     dtEntry.time,
@@ -87,21 +83,21 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
                 const nextMeetingDT = DateTime.fromJSDate(nextMeetingDate).setZone(timezone);
 
-                // C. The Kickoff Guard (Step 1 Implementation)
-                // If the meeting happens before kickoff, skip it and look for the next one
+                // --- TROUBLESHOOTING LOG ---
+                if (group.name === "Hello") {
+                    console.log(`[KICKOFF CHECK] Target: ${nextMeetingDate.toISOString()} | Kickoff: ${kickoffDate.toISOString()} | Is Target < Kickoff? ${nextMeetingDate < kickoffDate}`);
+                }
+
                 if (nextMeetingDate < kickoffDate) {
                     currentAnchor = nextMeetingDate;
                     continue;
                 }
 
-                // D. The Past-Event Guard
-                // JIT should never create events that are already in the past
                 if (nextMeetingDT < now.setZone(timezone)) {
                     currentAnchor = nextMeetingDate;
                     continue;
                 }
 
-                // E. Trigger Time math
                 const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
                 const triggerDT = nextMeetingDT
                     .minus({ days: group.generationLeadDays || 0 })
@@ -109,13 +105,11 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
                 const nowInTZ = now.setZone(timezone);
 
-                // F. Break condition
                 if (nowInTZ < triggerDT) {
                     fillingWindow = false;
                     break;
                 }
 
-                // G. Check Existence
                 const alreadyExists = await Event.findOne({ 
                     group: group._id, 
                     date: nextMeetingDate,
@@ -138,7 +132,6 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
                         isOverride: false
                     });
 
-                    // H. Notify Members
                     const members = await User.find({ _id: { $in: group.members } });
                     await notifyUsers(members, {
                         title: `Upcoming: ${group.name}`,
