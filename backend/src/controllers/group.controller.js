@@ -79,13 +79,17 @@ export const createGroup = asyncHandler(async (req, res) => {
   if (newGroup.schedule && newGroup.schedule.routines) {
       try {
           const now = DateTime.now().setZone(timezone);
+          // Drift Fix: Interpret UTC date as local intended date
           const kickoffDate = newGroup.schedule.startDate 
-              ? DateTime.fromJSDate(newGroup.schedule.startDate).setZone(timezone).startOf('day').toJSDate()
+              ? DateTime.fromJSDate(newGroup.schedule.startDate, { zone: 'utc' })
+                  .setZone(timezone, { keepLocalTime: true })
+                  .startOf('day')
+                  .toJSDate()
               : now.startOf('day').toJSDate();
 
           for (const routine of newGroup.schedule.routines) {
               for (const dtEntry of routine.dayTimes) {
-                  let currentAnchor = kickoffDate;
+                  let currentAnchor = null;
                   let fillingWindow = true;
                   let loopSafety = 0;
 
@@ -98,6 +102,13 @@ export const createGroup = asyncHandler(async (req, res) => {
                           currentAnchor,
                           routine.frequency === 'ordinal' ? routine.rules?.[0] : null
                       );
+
+                      // Kickoff Guard: Prevent events before the effective start date
+                      if (nextDate < kickoffDate) {
+                          currentAnchor = nextDate;
+                          loopSafety++;
+                          continue;
+                      }
 
                       const nextMeetingDT = DateTime.fromJSDate(nextDate).setZone(timezone);
                       const triggerDT = nextMeetingDT.minus({ days: newGroup.generationLeadDays });
@@ -163,22 +174,17 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     if (group.schedule && group.schedule.routines) {
         try {
             const now = DateTime.now().setZone(group.timezone);
+            // Drift Fix: Interpret UTC date as local intended date
             const kickoffDate = group.schedule.startDate 
-                ? DateTime.fromJSDate(group.schedule.startDate).setZone(group.timezone).startOf('day').toJSDate()
+                ? DateTime.fromJSDate(group.schedule.startDate, { zone: 'utc' })
+                    .setZone(group.timezone, { keepLocalTime: true })
+                    .startOf('day')
+                    .toJSDate()
                 : now.startOf('day').toJSDate();
-
-                // --- TROUBLESHOOTING LOG ---
-            if (group.name === "Hello") {
-                const kickoffDT = DateTime.fromJSDate(kickoffDate).setZone(group.timezone);
-                console.log(`[CONTROLLER KICKOFF DEBUG]`);
-                console.log(`- Stored StartDate: ${group.schedule.startDate}`);
-                console.log(`- Kickoff (Local Resolved): ${kickoffDT.toLocaleString(DateTime.DATETIME_MED)}`);
-            }
-            // ---------------------------
 
             for (const routine of group.schedule.routines) {
                 for (const dtEntry of routine.dayTimes) {
-                    let currentAnchor = kickoffDate;
+                    let currentAnchor = null;
                     let fillingWindow = true;
                     let loopSafety = 0;
 
@@ -191,6 +197,13 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                             currentAnchor,
                             routine.frequency === 'ordinal' ? routine.rules?.[0] : null
                         );
+
+                        // Kickoff Guard: Prevent events before the effective start date
+                        if (nextDate < kickoffDate) {
+                            currentAnchor = nextDate;
+                            loopSafety++;
+                            continue;
+                        }
 
                         const nextMeetingDT = DateTime.fromJSDate(nextDate).setZone(group.timezone);
                         const triggerDT = nextMeetingDT.minus({ days: group.generationLeadDays });
@@ -222,10 +235,6 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     res.status(200).json({ message: "Schedule updated.", group });
 });
 
-/**
- * @desc    Update group basic info
- * @route   PUT /api/groups/:groupId
- */
 export const updateGroup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
@@ -255,9 +264,6 @@ export const updateGroup = asyncHandler(async (req, res) => {
     res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
 });
 
-/**
- * @desc    Set the entire list of moderators (Owner Only)
- */
 export const updateModerators = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const { moderatorIds } = req.body;
@@ -280,9 +286,6 @@ export const updateModerators = asyncHandler(async (req, res) => {
     res.status(200).json({ message: "Moderator list updated successfully.", group });
 });
 
-/**
- * @desc    Toggle Moderator status for a member (Owner Only)
- */
 export const toggleModerator = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const { userIdToToggle } = req.body;
@@ -310,9 +313,6 @@ export const toggleModerator = asyncHandler(async (req, res) => {
     res.status(200).json({ message: isCurrentlyMod ? "Moderator removed." : "Moderator added.", group });
 });
 
-/**
- * @desc    Get all groups for the current user
- */
 export const getGroups = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const user = await User.findOne({ clerkId }).lean();
@@ -342,9 +342,6 @@ export const getGroups = asyncHandler(async (req, res) => {
     res.status(200).json(hydratedGroups);
 });
 
-/**
- * @desc    Get full group details
- */
 export const getGroupDetails = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid ID." });
@@ -358,9 +355,6 @@ export const getGroupDetails = asyncHandler(async (req, res) => {
     res.status(200).json(group);
 });
 
-/**
- * @desc    Directly add a member (Owner or Moderator)
- */
 export const addMember = asyncHandler(async (req, res) => {
   const { userId: requesterClerkId } = getAuth(req);
   const { groupId } = req.params;
@@ -400,9 +394,6 @@ export const addMember = asyncHandler(async (req, res) => {
   res.status(200).json({ message: "User added." });
 });
 
-/**
- * @desc    Invite User (Owner or Moderator)
- */
 export const inviteUser = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
@@ -428,9 +419,6 @@ export const inviteUser = asyncHandler(async (req, res) => {
     res.status(200).json({ message: "Invitation sent." });
 });
 
-/**
- * @desc    Remove a member from the group (Owner/Moderator)
- */
 export const removeMember = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
@@ -454,9 +442,6 @@ export const removeMember = asyncHandler(async (req, res) => {
     res.status(200).json({ message: "Member removed." });
 });
 
-/**
- * @desc    Create a one-off meeting override
- */
 export const createOneOffEvent = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
@@ -485,9 +470,6 @@ export const createOneOffEvent = asyncHandler(async (req, res) => {
     res.status(201).json({ event: newEvent, message: "One-off event scheduled." });
 });
 
-/**
- * @desc    Leave a group
- */
 export const leaveGroup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
@@ -502,9 +484,6 @@ export const leaveGroup = asyncHandler(async (req, res) => {
     res.status(200).json({ message: "You have left." });
 });
 
-/**
- * @desc    Permanently delete group and associations
- */
 export const deleteGroup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
