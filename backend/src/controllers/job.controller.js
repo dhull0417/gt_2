@@ -47,8 +47,13 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
   for (const group of groups) {
     const timezone = group.timezone;
     
+    // --- FIX FOR KICKOFF DRIFT ---
+    // We treat the stored UTC date as the 'Local' intended date to prevent the 1-day-early bug.
     const kickoffDate = group.schedule.startDate 
-        ? DateTime.fromJSDate(group.schedule.startDate).setZone(timezone).toJSDate()
+        ? DateTime.fromJSDate(group.schedule.startDate, { zone: 'utc' })
+            .setZone(timezone, { keepLocalTime: true })
+            .startOf('day')
+            .toJSDate()
         : now.setZone(timezone).startOf('day').toJSDate();
 
     for (const routine of group.schedule.routines) {
@@ -83,16 +88,10 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
                 const nextMeetingDT = DateTime.fromJSDate(nextMeetingDate).setZone(timezone);
 
-                // --- TROUBLESHOOTING LOG ---
+                // --- TROUBLESHOOTING LOG: STEP 2 ---
                 if (group.name === "Hello") {
                     const kickoffDT = DateTime.fromJSDate(kickoffDate).setZone(timezone);
-                    const targetDT = DateTime.fromJSDate(nextMeetingDate).setZone(timezone);
-
-                    console.log(`[DEBUG KICKOFF]`);
-                    console.log(`- Group Timezone: ${timezone}`);
-                    console.log(`- Kickoff (Local): ${kickoffDT.toLocaleString(DateTime.DATETIME_MED)}`);
-                    console.log(`- Target  (Local): ${targetDT.toLocaleString(DateTime.DATETIME_MED)}`);
-                    console.log(`- Is Target < Kickoff? ${nextMeetingDate < kickoffDate}`);
+                    console.log(`[KICKOFF DEBUG] Kickoff: ${kickoffDT.toLocaleString(DateTime.DATETIME_MED)} | Target: ${nextMeetingDT.toLocaleString(DateTime.DATETIME_MED)} | Skip? ${nextMeetingDate < kickoffDate}`);
                 }
 
                 if (nextMeetingDate < kickoffDate) {
