@@ -85,7 +85,14 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
 
                 // --- TROUBLESHOOTING LOG ---
                 if (group.name === "Hello") {
-                    console.log(`[KICKOFF CHECK] Target: ${nextMeetingDate.toISOString()} | Kickoff: ${kickoffDate.toISOString()} | Is Target < Kickoff? ${nextMeetingDate < kickoffDate}`);
+                    const kickoffDT = DateTime.fromJSDate(kickoffDate).setZone(timezone);
+                    const targetDT = DateTime.fromJSDate(nextMeetingDate).setZone(timezone);
+
+                    console.log(`[DEBUG KICKOFF]`);
+                    console.log(`- Group Timezone: ${timezone}`);
+                    console.log(`- Kickoff (Local): ${kickoffDT.toLocaleString(DateTime.DATETIME_MED)}`);
+                    console.log(`- Target  (Local): ${targetDT.toLocaleString(DateTime.DATETIME_MED)}`);
+                    console.log(`- Is Target < Kickoff? ${nextMeetingDate < kickoffDate}`);
                 }
 
                 if (nextMeetingDate < kickoffDate) {
