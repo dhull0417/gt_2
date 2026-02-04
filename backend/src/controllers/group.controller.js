@@ -79,7 +79,6 @@ export const createGroup = asyncHandler(async (req, res) => {
   if (newGroup.schedule && newGroup.schedule.routines) {
       try {
           const now = DateTime.now().setZone(timezone);
-          // Drift Fix: Interpret UTC date as local intended date
           const kickoffDate = newGroup.schedule.startDate 
               ? DateTime.fromJSDate(newGroup.schedule.startDate, { zone: 'utc' })
                   .setZone(timezone, { keepLocalTime: true })
@@ -103,7 +102,6 @@ export const createGroup = asyncHandler(async (req, res) => {
                           routine.frequency === 'ordinal' ? routine.rules?.[0] : null
                       );
 
-                      // Kickoff Guard: Prevent events before the effective start date
                       if (nextDate < kickoffDate) {
                           currentAnchor = nextDate;
                           loopSafety++;
@@ -174,7 +172,6 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     if (group.schedule && group.schedule.routines) {
         try {
             const now = DateTime.now().setZone(group.timezone);
-            // Drift Fix: Interpret UTC date as local intended date
             const kickoffDate = group.schedule.startDate 
                 ? DateTime.fromJSDate(group.schedule.startDate, { zone: 'utc' })
                     .setZone(group.timezone, { keepLocalTime: true })
@@ -198,7 +195,6 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                             routine.frequency === 'ordinal' ? routine.rules?.[0] : null
                         );
 
-                        // Kickoff Guard: Prevent events before the effective start date
                         if (nextDate < kickoffDate) {
                             currentAnchor = nextDate;
                             loopSafety++;
@@ -235,6 +231,9 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     res.status(200).json({ message: "Schedule updated.", group });
 });
 
+/**
+ * @desc    Update group general details
+ */
 export const updateGroup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
@@ -254,14 +253,23 @@ export const updateGroup = asyncHandler(async (req, res) => {
         return res.status(403).json({ error: "Permission denied." });
     }
 
-    if (name) group.name = name;
+    // --- NAME SYNC LOGIC ---
+    // If the name is being updated, push it to all associated events
+    if (name && name !== group.name) {
+        group.name = name;
+        await Event.updateMany(
+            { group: groupId }, 
+            { $set: { name: name } }
+        );
+    }
+
     if (eventsToDisplay) group.eventsToDisplay = parseInt(eventsToDisplay);
     if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
     if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
     if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
 
     const updatedGroup = await group.save();
-    res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
+    res.status(200).json({ group: updatedGroup, message: "Group and events updated successfully." });
 });
 
 export const updateModerators = asyncHandler(async (req, res) => {

@@ -295,7 +295,8 @@ export const notificationApi = {
     const response = await api.get<Notification[]>('/api/notifications');
     return response.data;
   },
-  acceptGroupInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
+  // 👇 RENAMED to match the hook's expectation
+  acceptInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
     const response = await api.post(`/api/notifications/${notificationId}/accept`);
     return response.data;
   },

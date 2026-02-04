@@ -48,7 +48,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#C7D2FE',
-    marginLeft: 8,
+    marginRight: 8,
   },
   detailsButtonText: {
     color: '#4F46E5',
@@ -62,6 +62,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#FECACA',
+    marginRight: 8,
   },
   muteButtonText: {
     color: '#EF4444',
@@ -75,11 +76,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#BBF7D0',
+    marginRight: 8,
   },
   unmuteButtonText: {
     color: '#10B981',
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  settingsButton: {
+    padding: 6,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   }
 });
 
@@ -144,7 +153,6 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
           <View style={styles.chatContainer}>
             <MessageList Message={CustomMessage} />
             <View className="flex-row items-center p-3 border-t border-gray-200 bg-white pb-6"> 
-                {/* Updated styling: rounded-2xl instead of rounded-full for a softer square look */}
                 <View className="flex-1 flex-row items-center bg-gray-100 rounded-2xl px-4 py-2 mr-3 border border-gray-300">
                     <TextInput 
                         value={text}
@@ -210,6 +218,22 @@ const GroupScreen = () => {
     return currentUser.mutedGroups?.includes(selectedGroup._id) || 
            currentUser.mutedUntilNextEvent?.includes(selectedGroup._id);
   }, [selectedGroup?._id, currentUser?.mutedGroups, currentUser?.mutedUntilNextEvent]);
+
+  // --- PERMISSION LOGIC ---
+  const canManageGroup = useMemo(() => {
+    if (!groupDetails || !currentUser) return false;
+    const userId = currentUser._id;
+    
+    // Simplified check mirroring common project patterns to avoid TypeScript inference errors
+    const g = groupDetails as any;
+    const isOwner = g.owner === userId || g.owner?._id === userId;
+    const isMod = g.moderators?.some((m: any) => {
+      const mId = m?._id || m;
+      return mId === userId;
+    });
+
+    return !!(isOwner || isMod);
+  }, [groupDetails, currentUser]);
 
   const performMuteUpdate = async (type: 'indefinite' | 'untilNext' | 'none') => {
     if (!selectedGroup) return;
@@ -345,6 +369,14 @@ const GroupScreen = () => {
     refetchUser();
   };
 
+  const handleSettingsPress = () => {
+    if (!selectedGroup) return;
+    router.push({
+      pathname: '/group-settings/[id]',
+      params: { id: selectedGroup._id }
+    });
+  };
+
   const renderGroupList = () => {
     if (isLoadingGroups || (!currentUser && isLoadingUser)) return <ActivityIndicator size="large" color="#4F46E5" className="mt-8"/>;
     if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
@@ -401,10 +433,10 @@ const GroupScreen = () => {
       {isGroupDetailVisible && selectedGroup && (
         <View className="absolute top-0 bottom-0 left-0 right-0 bg-white" style={{paddingTop:insets.top}}>
           <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
-            <View className="flex-row items-center flex-1">
+            <View className="flex-row items-center flex-1 truncate mr-2">
               <TouchableOpacity 
                 onPress={() => activeTab === 'Details' ? setActiveTab('Chat') : handleCloseGroupDetail()} 
-                className="mr-4 p-1"
+                className="mr-3 p-1"
               >
                 <Feather name="arrow-left" size={24} color="#4F46E5"/>
               </TouchableOpacity>
@@ -413,27 +445,39 @@ const GroupScreen = () => {
               </Text>
             </View>
             
-            {activeTab === 'Chat' && (
-              <View className="flex-row items-center">
-                <TouchableOpacity 
-                  onPress={handleMutePress}
-                  style={isCurrentlyMuted ? styles.unmuteButton : styles.muteButton}
-                  activeOpacity={0.7}
-                >
-                  <Text style={isCurrentlyMuted ? styles.unmuteButtonText : styles.muteButtonText}>
-                    {isCurrentlyMuted ? "Unmute" : "Mute"}
-                  </Text>
-                </TouchableOpacity>
+            {/* Header Action Row */}
+            <View className="flex-row items-center">
+              {activeTab === 'Chat' ? (
+                <>
+                  <TouchableOpacity 
+                    onPress={handleMutePress}
+                    style={isCurrentlyMuted ? styles.unmuteButton : styles.muteButton}
+                  >
+                    <Text style={isCurrentlyMuted ? styles.unmuteButtonText : styles.muteButtonText}>
+                      {isCurrentlyMuted ? "Unmute" : "Mute"}
+                    </Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity 
-                  onPress={() => setActiveTab('Details')}
-                  style={styles.detailsButton}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.detailsButtonText}>Details</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+                  <TouchableOpacity 
+                    onPress={() => setActiveTab('Details')}
+                    style={styles.detailsButton}
+                  >
+                    <Text style={styles.detailsButtonText}>Details</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                /* Settings button only shown on the Group Details tab */
+                canManageGroup && (
+                  <TouchableOpacity 
+                    onPress={handleSettingsPress}
+                    style={styles.settingsButton}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="settings" size={22} color="#374151" />
+                  </TouchableOpacity>
+                )
+              )}
+            </View>
           </View>
 
           {!(stableUserRef.current || currentUser) ? (

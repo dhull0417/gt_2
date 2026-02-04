@@ -45,20 +45,14 @@ const AuthLayout = () => {
   const router = useRouter();
   const api = useApiClient();
   
-  // Sync logic to create/update MongoDB user from Clerk
   useUserSync();
 
   const { data: currentUser, isSuccess } = useQuery<User, Error>({
-    queryKey: ['currentUser'],
+    queryKey: ['currentUser'], 
     queryFn: () => userApi.getCurrentUser(api),
     enabled: isSignedIn,
   });
 
-  /**
-   * FIX: Pass isSuccess to the notification hook.
-   * This ensures we only register the device token AFTER 
-   * the backend user record is confirmed to exist.
-   */
   const { expoPushToken } = usePushNotifications(isSignedIn, isSuccess);
 
   // === ROUTING LOGIC ===
@@ -67,10 +61,13 @@ const AuthLayout = () => {
 
     const inTabsGroup = segments[0] === '(tabs)';
     const inAuthGroup = segments[0] === '(auth)';
+    
+    // FIX: Added 'group-settings' to allowed routes to prevent Auth redirect loops
     const inAllowedModalGroup = [
       'profile-setup',
       'account',
       'group-edit-schedule',
+      'group-settings',
       'event-edit',
       'schedule-event',
       'create-group',
@@ -91,7 +88,6 @@ const AuthLayout = () => {
     }
   }, [isLoaded, isSignedIn, currentUser, isSuccess, segments, router]);
 
-  // === SPLASH SCREEN ===
   useEffect(() => {
     if (isLoaded && ((isSignedIn && isSuccess) || !isSignedIn)) {
       SplashScreen.hideAsync();
@@ -105,6 +101,7 @@ const AuthLayout = () => {
       <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
       <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true }} />
       <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
+      <Stack.Screen name="group-settings" options={{ headerShown: false }} />
       <Stack.Screen name="event-edit" options={{ headerShown: false }} />
       <Stack.Screen name="schedule-event" options={{ headerShown: false }} />
       <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />      

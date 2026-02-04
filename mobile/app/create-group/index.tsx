@@ -18,7 +18,8 @@ import {
     Animated,
     KeyboardAvoidingView,
     ViewStyle,
-    StyleProp
+    StyleProp,
+    LayoutChangeEvent
 } from "react-native";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
 import { useSearchUsers } from "../../hooks/useSearchUsers";
@@ -59,13 +60,8 @@ const usaTimezones = [
 ];
 
 const daysOfWeek = [
-    { label: "Sunday", value: 0 },
-    { label: "Monday", value: 1 },
-    { label: "Tuesday", value: 2 },
-    { label: "Wednesday", value: 3 },
-    { label: "Thursday", value: 4 },
-    { label: "Friday", value: 5 },
-    { label: "Saturday", value: 6 },
+    { label: "S", value: 0 }, { label: "M", value: 1 }, { label: "T", value: 2 },
+    { label: "W", value: 3 }, { label: "T", value: 4 }, { label: "F", value: 5 }, { label: "S", value: 6 },
 ];
 
 const occurrences = ['1st', '2nd', '3rd', '4th', '5th', 'Last'];
@@ -114,7 +110,7 @@ const CreateGroupScreen = () => {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [isMultipleMode, setIsMultipleMode] = useState(false);
 
-  // Active builder states (These are reset after each routine is finished)
+  // Active builder states
   const [currentFreq, setCurrentFreq] = useState<Frequency | null>(null);
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [selectedDates, setSelectedDates] = useState<number[]>([]);
@@ -135,19 +131,29 @@ const CreateGroupScreen = () => {
 
   const { mutate, isPending } = useCreateGroup();
 
-  // Calendar State for Kickoff (Fixed missing variables)
+  // FIXED CALENDAR LAYOUT LOGIC
+  const [calculatedDayWidth, setCalculatedDayWidth] = useState(0);
   const [calendarMonth, setCalendarMonth] = useState<DateTime>(DateTime.now().startOf('month'));
+  
   const calendarGrid = useMemo(() => {
     const start = calendarMonth.startOf('month');
     const firstDayIdx = start.weekday === 7 ? 0 : start.weekday;
-    const days = [];
+    const days: (DateTime | null)[] = [];
     for (let i = 0; i < firstDayIdx; i++) days.push(null);
-    for (let i = 1; i <= calendarMonth.endOf('month').day; i++) days.push(calendarMonth.set({ day: i }));
+    for (let i = 1; i <= calendarMonth.endOf('month').day; i++) {
+        days.push(calendarMonth.set({ day: i }));
+    }
     return days;
   }, [calendarMonth]);
 
+  const onCalendarContainerLayout = (event: LayoutChangeEvent) => {
+      const { width: measuredWidth } = event.nativeEvent.layout;
+      // Safety margin -0.5 prevents Saturday wrap due to rounding
+      setCalculatedDayWidth((measuredWidth / 7) - 0.5);
+  };
+
   const getTargets = () => {
-    if (currentFreq === 'daily') return daysOfWeek.map(d => d.value);
+    if (currentFreq === 'daily') return [0,1,2,3,4,5,6];
     if (currentFreq === 'weekly' || currentFreq === 'biweekly') return [...selectedDays].sort((a,b) => a-b);
     if (currentFreq === 'monthly') return [...selectedDates].sort((a,b) => a-b);
     if (currentFreq === 'ordinal') return [ordinalDay];
@@ -287,6 +293,10 @@ const CreateGroupScreen = () => {
     setStep(prev => prev - 1);
   };
 
+  const handleClose = () => {
+    router.replace('/(tabs)/groups');
+  };
+
   const toggleMember = (user: UserStub) => {
     if (selectedMembers.some(m => m._id === user._id)) {
         setSelectedMembers(prev => prev.filter(m => m._id !== user._id));
@@ -326,7 +336,6 @@ const CreateGroupScreen = () => {
               </View>
           </FadeInView>
 
-          {/* Restored: Currently Invited Chips */}
           {selectedMembers.length > 0 && (
               <View style={styles.selectedMembersContainer}>
                   <Text style={styles.sectionLabel}>Currently Invited ({selectedMembers.length})</Text>
@@ -362,7 +371,6 @@ const CreateGroupScreen = () => {
               )}
           </View>
 
-          {/* Restored: Invite Link */}
           <TouchableOpacity style={styles.shareLinkBtn} onPress={handleShareInvite}>
               <Feather name="share-2" size={20} color="#4F46E5" />
               <Text style={styles.shareLinkText}>Share Invite Link</Text>
@@ -412,7 +420,8 @@ const CreateGroupScreen = () => {
               const sfx = val === 1 ? 'st' : val === 2 ? 'nd' : val === 3 ? 'rd' : 'th';
               heading = `Time for the ${val}${sfx}`;
           } else {
-              heading = `Time for ${daysOfWeek.find(d => d.value === val)?.label}`;
+              const dayData = daysOfWeek.find(d => d.value === val);
+              heading = `Time for ${dayData?.label === "S" ? (val === 0 ? "Sunday" : "Saturday") : dayData?.label}`;
           }
       }
 
@@ -463,10 +472,13 @@ const CreateGroupScreen = () => {
                           {r.dayTimes.map((dt, dti) => {
                               let label = "";
                               if (r.frequency === 'ordinal' && r.rules?.[0]) {
-                                  const dayName = daysOfWeek.find(d => d.value === r.rules![0].day)?.label;
+                                  const dayData = daysOfWeek.find(d => d.value === r.rules![0].day);
+                                  const dayName = dayData?.label === "S" ? (dayData.value === 0 ? "Sunday" : "Saturday") : dayData?.label;
                                   label = `${r.rules[0].occurrence} ${dayName}`;
                               } else {
-                                  label = dt.date ? `The ${dt.date}${dt.date === 1 ? 'st' : dt.date === 2 ? 'nd' : dt.date === 3 ? 'rd' : 'th'}` : daysOfWeek.find(d => d.value === dt.day)?.label || "";
+                                  const dayData = daysOfWeek.find(d => d.value === dt.day);
+                                  const dayName = dayData?.label === "S" ? (dayData.value === 0 ? "Sunday" : "Saturday") : dayData?.label;
+                                  label = dt.date ? `The ${dt.date}${dt.date === 1 ? 'st' : dt.date === 2 ? 'nd' : dt.date === 3 ? 'rd' : 'th'}` : dayName || "";
                               }
                               return <Text key={dti} style={styles.summaryValSmall}>• {label} @ {dt.time}</Text>
                           })}
@@ -492,6 +504,13 @@ const CreateGroupScreen = () => {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            {/* Header: Fixed X button for all creation steps */}
+            <View style={styles.screenHeader}>
+                <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+                    <Feather name="x" size={28} color="#374151" />
+                </TouchableOpacity>
+            </View>
+
             <View style={{ flex: 1 }}>
                 {step === 0 && (
                     <View style={styles.stepContainerPadded}>
@@ -552,7 +571,7 @@ const CreateGroupScreen = () => {
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Select weekdays</Text>
                         <View style={{flex: 1, justifyContent: 'center'}}>{daysOfWeek.map(d=>(
-                            <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays((prev: number[])=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label}</Text></TouchableOpacity>
+                            <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays((prev: number[])=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label === "S" ? (d.value === 0 ? "Sunday" : "Saturday") : d.label}</Text></TouchableOpacity>
                         ))}</View>
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}><Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
                     </View>
@@ -561,7 +580,7 @@ const CreateGroupScreen = () => {
                 {step === 8 && (
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Choose dates</Text>
-                        <View style={styles.calendarGrid}>{Array.from({length:31}, (_,i)=>i+1).map(d=>(
+                        <View style={styles.dateGrid}>{Array.from({length:31}, (_,i)=>i+1).map(d=>(
                             <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d)&&styles.dateBoxSelected]} onPress={()=>setSelectedDates((prev: number[])=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d])}><Text style={[styles.dateText, selectedDates.includes(d)&&styles.dateTextSelected]}>{d}</Text></TouchableOpacity>
                         ))}</View>
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDates.length}><Feather name="arrow-right-circle" size={48} color={!selectedDates.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
@@ -571,13 +590,46 @@ const CreateGroupScreen = () => {
                 {step === 9 && (
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>When to start?</Text>
-                        <View style={styles.calendarContainer}>
-                            <View style={styles.calendarNav}><TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4F46E5"/></TouchableOpacity><Text style={styles.calendarMonthText}>{calendarMonth.toFormat('MMMM yyyy')}</Text><TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.plus({months:1}))}><Feather name="chevron-right" size={24} color="#4F46E5"/></TouchableOpacity></View>
-                            <View style={styles.calendarGridContainer}>{calendarGrid.map((day: DateTime | null, idx: number)=>{
-                                if(!day) return <View key={`p-${idx}`} style={styles.calendarDayBox}/>;
-                                const isSel = day.toISODate() === kickoffDate;
-                                return <TouchableOpacity key={day.toISODate()} onPress={()=>setKickoffDate(day.toISODate()!)} style={[styles.calendarDayBox, isSel && styles.calendarDayBoxSelected]}><Text style={[styles.calendarDayText, isSel && styles.calendarDayTextSelected]}>{day.day}</Text></TouchableOpacity>
-                            })}</View>
+                        {/* FIXED CALENDAR: Measurement fixed Saturday layout drift */}
+                        <View style={styles.calendarContainer} onLayout={onCalendarContainerLayout}>
+                            <View style={styles.calendarNav}>
+                                <TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4F46E5"/></TouchableOpacity>
+                                <Text style={styles.calendarMonthText}>{calendarMonth.toFormat('MMMM yyyy')}</Text>
+                                <TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.plus({months:1}))}><Feather name="chevron-right" size={24} color="#4F46E5"/></TouchableOpacity>
+                            </View>
+                            
+                            {calculatedDayWidth > 0 ? (
+                                <>
+                                    <View style={styles.calendarGridContainer}>
+                                        {daysOfWeek.map((day, i) => (
+                                            <View key={`lbl-${i}`} style={[styles.calendarDayBox, { width: calculatedDayWidth }]}>
+                                                <Text style={styles.dayLabelText}>{day.label}</Text>
+                                            </View>
+                                        ))}
+                                    </View>
+                                    <View style={styles.calendarGridContainer}>
+                                        {calendarGrid.map((day: DateTime | null, idx: number)=>{
+                                            if(!day) return <View key={`p-${idx}`} style={[styles.calendarDayBox, { width: calculatedDayWidth }]}/>;
+                                            const isSel = day.toISODate() === kickoffDate;
+                                            return (
+                                                <TouchableOpacity 
+                                                    key={day.toISODate()} 
+                                                    onPress={()=>setKickoffDate(day.toISODate()!)} 
+                                                    style={[
+                                                        styles.calendarDayBox, 
+                                                        { width: calculatedDayWidth },
+                                                        isSel && styles.calendarDayBoxSelected
+                                                    ]}
+                                                >
+                                                    <Text style={[styles.calendarDayText, isSel && styles.calendarDayTextSelected]}>
+                                                        {day.day}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </View>
+                                </>
+                            ) : <ActivityIndicator style={{ margin: 20 }} />}
                         </View>
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(12)}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
@@ -676,12 +728,21 @@ const CreateGroupScreen = () => {
 };
 
 const styles = StyleSheet.create({
-    stepContainerPadded: { flex: 1, padding: 24 },
+    screenHeader: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        paddingHorizontal: 16,
+        paddingTop: 8,
+    },
+    closeButton: {
+        padding: 8,
+    },
+    stepContainerPadded: { flex: 1, padding: 24, paddingTop: 12 },
     centeredContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     headerTitle: { fontSize: 26, fontWeight: '900', color: '#111827', textAlign: 'center', marginBottom: 8 },
     headerSub: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 20 },
     imagePlaceholder: { width: '100%', aspectRatio: 16/9, marginVertical: 24, borderRadius: 16, overflow: 'hidden', backgroundColor: '#E5E7EB' },
-    image: { width: '100%', height: '100%' },
+    image: { width: '100%', height: 200 },
     textInput: { width: '100%', padding: 16, borderBottomWidth: 2, borderColor: '#4F46E5', fontSize: 18, fontWeight: '600', backgroundColor: 'white', borderRadius: 12 },
     searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 16 },
     searchInput: { flex: 1, marginLeft: 10, fontSize: 16 },
@@ -711,17 +772,17 @@ const styles = StyleSheet.create({
     pickerWrapper: { backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden' },
     pickerItem: { height: 120, color: '#111827', fontSize: 18 },
     pickerTitle: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 8, marginTop: 16 },
-    calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
-    dateBox: { width: (width - 80) / 7, height: (width - 80) / 7, justifyContent: 'center', alignItems: 'center', margin: 4, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
+    dateGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
+    dateBox: { width: '12%', height: 45, justifyContent: 'center', alignItems: 'center', margin: '1%', borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
     dateBoxSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
     dateText: { fontSize: 14, fontWeight: '600' },
     dateTextSelected: { color: '#FFF' },
-    calendarContainer: { backgroundColor: 'white', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB' },
-    calendarNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    calendarContainer: { backgroundColor: 'white', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden' },
+    calendarNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15 },
     calendarMonthText: { fontSize: 18, fontWeight: 'bold' },
-    calendarGridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
-    calendarDayBox: { width: (width - 80) / 7, height: 40, alignItems: 'center', justifyContent: 'center' },
-    calendarDayBoxSelected: { backgroundColor: '#4F46E5', borderRadius: 20 },
+    calendarGridContainer: { flexDirection: 'row', flexWrap: 'wrap', width: '100%' },
+    calendarDayBox: { height: 45, alignItems: 'center', justifyContent: 'center' },
+    calendarDayBoxSelected: { backgroundColor: '#4F46E5', borderRadius: 25 },
     calendarDayText: { fontSize: 16 },
     calendarDayTextSelected: { color: 'white', fontWeight: 'bold' },
     description: { fontSize: 15, color: '#6B7280', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
@@ -744,6 +805,7 @@ const styles = StyleSheet.create({
     finishBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
     shareLinkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#F5F7FF', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#4F46E5', marginVertical: 16 },
     shareLinkText: { color: '#4F46E5', fontWeight: '700', fontSize: 16, marginLeft: 10 },
+    dayLabelText: { fontSize: 10, fontWeight: '900', color: '#9CA3AF' }
 });
 
 export default CreateGroupScreen;

@@ -17,6 +17,20 @@ const NotificationItem = ({ item }: { item: Notification }) => {
         return null;
     }
 
+    const handleAccept = () => {
+        // TROUBLESHOOTING STEP 1: Add diagnostic callbacks to surface the error
+        acceptInvite(item._id, {
+            onSuccess: () => {
+                Alert.alert("Success", "You have joined the group.");
+            },
+            onError: (err: any) => {
+                console.error("[DEBUG] Accept Invite Failed:", err);
+                const errorMessage = err?.response?.data?.error || err?.response?.data?.message || err.message || "Unknown error";
+                Alert.alert("Join Failed", errorMessage);
+            }
+        });
+    };
+
     const renderContent = () => {
         switch(item.type) {
             case 'group-invite':
@@ -25,10 +39,18 @@ const NotificationItem = ({ item }: { item: Notification }) => {
                         <Text className="text-gray-800"><Text className="font-bold">{item.sender.firstName} {item.sender.lastName}</Text> invited you to join the group <Text className="font-bold">{item.group.name}</Text>.</Text>
                         {item.status === 'pending' && (
                             <View className="flex-row space-x-2 mt-2">
-                                <TouchableOpacity onPress={() => acceptInvite(item._id)} disabled={isPending} className="bg-green-500 px-4 py-2 rounded-md">
-                                    <Text className="text-white font-bold">Accept</Text>
+                                <TouchableOpacity 
+                                    onPress={handleAccept} 
+                                    disabled={isPending} 
+                                    className="bg-green-500 px-4 py-2 rounded-md"
+                                >
+                                    {isAccepting ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold">Accept</Text>}
                                 </TouchableOpacity>
-                                <TouchableOpacity onPress={() => declineInvite(item._id)} disabled={isPending} className="bg-red-500 px-4 py-2 rounded-md">
+                                <TouchableOpacity 
+                                    onPress={() => declineInvite(item._id)} 
+                                    disabled={isPending} 
+                                    className="bg-red-500 px-4 py-2 rounded-md"
+                                >
                                     <Text className="text-white font-bold">Decline</Text>
                                 </TouchableOpacity>
                             </View>
@@ -38,7 +60,6 @@ const NotificationItem = ({ item }: { item: Notification }) => {
                     </>
                 );
             
-            // 👇 FIX: Added the missing case for 'group-added'
             case 'group-added':
                 return (
                     <Text className="text-gray-800">
@@ -53,7 +74,6 @@ const NotificationItem = ({ item }: { item: Notification }) => {
                 return <Text className="text-gray-800"><Text className="font-bold">{item.sender.firstName} {item.sender.lastName}</Text> declined your invitation to join <Text className="font-bold">{item.group.name}</Text>.</Text>;
             
             default:
-                // This is why it was blank before!
                 return null;
         }
     };
@@ -73,9 +93,6 @@ const NotificationsScreen = () => {
     const { data: notifications, isLoading, refetch } = useGetNotifications();
     const { mutate: markAsRead } = useMarkNotificationsAsRead();
 
-    // 👇 SPY LOG IS HERE
-    console.log("NOTIFICATIONS SPY:", JSON.stringify(notifications, null, 2));
-
     useFocusEffect(useCallback(() => {
         markAsRead(); 
     }, [markAsRead]));
@@ -91,6 +108,8 @@ const NotificationsScreen = () => {
                     renderItem={({ item }) => <NotificationItem item={item} />}
                     keyExtractor={item => item._id}
                     ListEmptyComponent={<Text className="text-center text-gray-500 mt-8">You have no notifications.</Text>}
+                    onRefresh={refetch}
+                    refreshing={isLoading}
                 />
             )}
         </SafeAreaView>
