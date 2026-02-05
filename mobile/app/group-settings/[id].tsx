@@ -22,7 +22,7 @@ import { User, useApiClient, userApi, groupApi } from '@/utils/api';
 /**
  * Group Settings Screen
  * Access is strictly restricted to the group owner and designated moderators.
- * Features central management for group name, schedule, JIT, and more.
+ * Features central management for group identity, schedule, JIT, and location.
  */
 const GroupSettings = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -36,15 +36,18 @@ const GroupSettings = () => {
     queryFn: () => userApi.getCurrentUser(api),
   });
 
-  // --- State for Edit Name Modal ---
+  // --- State for Edit Modals ---
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
   const [isSavingName, setIsSavingName] = useState(false);
 
-  // --- State for Edit Capacity Modal ---
   const [isEditingCapacity, setIsEditingCapacity] = useState(false);
   const [tempCapacity, setTempCapacity] = useState("");
   const [isSavingCapacity, setIsSavingCapacity] = useState(false);
+
+  const [isEditingLocation, setIsEditingLocation] = useState(false);
+  const [tempLocation, setTempLocation] = useState("");
+  const [isSavingLocation, setIsSavingLocation] = useState(false);
 
   // --- ACCESS CONTROL GUARD ---
   useEffect(() => {
@@ -78,32 +81,27 @@ const GroupSettings = () => {
   const handleOptionPress = (optionId: string) => {
     if (!id) return;
 
-    console.log(`[DEBUG] Option Pressed: ${optionId}`);
-
     switch (optionId) {
       case 'name':
         setTempName(group?.name || "");
         setIsEditingName(true);
         break;
       case 'capacity':
-        // Populate current limit (set to 0 for unlimited)
         setTempCapacity(group?.defaultCapacity?.toString() || "0");
         setIsEditingCapacity(true);
         break;
+      case 'location':
+        setTempLocation(group?.defaultLocation || "");
+        setIsEditingLocation(true);
+        break;
       case 'schedule':
-        router.push({ 
-            pathname: '/group-edit-schedule/[id]', 
-            params: { id: id } 
-        });
+        router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id } });
         break;
       case 'jit':
-        router.push({ 
-            pathname: '/group-edit-jit/[id]', 
-            params: { id: id } 
-        });
+        router.push({ pathname: '/group-edit-jit/[id]', params: { id: id } });
         break;
       default:
-        console.log(`[DEBUG] No logic defined for option: ${optionId}`);
+        console.log(`Option ${optionId} logic requested.`);
         break;
     }
   };
@@ -125,8 +123,7 @@ const GroupSettings = () => {
         ]);
         setIsEditingName(false);
     } catch (error: any) {
-        const msg = error.response?.data?.error || "Failed to update group name.";
-        Alert.alert("Error", msg);
+        Alert.alert("Error", error.response?.data?.error || "Failed to update group name.");
     } finally {
         setIsSavingName(false);
     }
@@ -134,10 +131,7 @@ const GroupSettings = () => {
 
   const handleSaveCapacity = async () => {
     if (!id) return;
-    
-    // Parse the input; default to 0 if empty or invalid
     const capacityNum = parseInt(tempCapacity || "0", 10);
-    
     if (capacityNum === group?.defaultCapacity) {
       setIsEditingCapacity(false);
       return;
@@ -145,22 +139,49 @@ const GroupSettings = () => {
 
     setIsSavingCapacity(true);
     try {
-        await groupApi.updateGroup(api, { 
-          groupId: id, 
-          defaultCapacity: isNaN(capacityNum) ? 0 : capacityNum 
-        });
-
+        await groupApi.updateGroup(api, { groupId: id, defaultCapacity: isNaN(capacityNum) ? 0 : capacityNum });
         await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['events'] })
         ]);
         setIsEditingCapacity(false);
+        Alert.alert("Success", "Attendee limit and associated events updated.");
     } catch (error: any) {
-        const msg = error.response?.data?.error || "Failed to update attendee limit.";
-        Alert.alert("Error", msg);
+        Alert.alert("Error", error.response?.data?.error || "Failed to update attendee limit.");
     } finally {
         setIsSavingCapacity(false);
+    }
+  };
+
+  const handleSaveLocation = async () => {
+    if (!id) return;
+    const trimmedLoc = tempLocation.trim();
+    
+    // Safety check: don't call if no change
+    if (trimmedLoc === group?.defaultLocation) {
+        setIsEditingLocation(false);
+        return;
+    }
+
+    setIsSavingLocation(true);
+    try {
+        // This triggers the backend updateGroup which now handles event syncing
+        await groupApi.updateGroup(api, { groupId: id, defaultLocation: trimmedLoc });
+        
+        // Invalidate all relevant data to refresh UI everywhere
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
+            queryClient.invalidateQueries({ queryKey: ['groups'] }),
+            queryClient.invalidateQueries({ queryKey: ['events'] })
+        ]);
+        
+        setIsEditingLocation(false);
+        Alert.alert("Success", "Default location and future events updated.");
+    } catch (error: any) {
+        Alert.alert("Error", error.response?.data?.error || "Failed to update location.");
+    } finally {
+        setIsSavingLocation(false);
     }
   };
 
@@ -200,9 +221,14 @@ const GroupSettings = () => {
                   <Text style={[styles.optionLabel, option.destructive && styles.destructiveLabel]}>
                     {option.label}
                   </Text>
+                  {option.id === 'location' && (
+                    <Text style={styles.optionSubLabel} numberOfLines={1}>
+                       {group?.defaultLocation || 'No default location set'}
+                    </Text>
+                  )}
                   {option.id === 'capacity' && (
                     <Text style={styles.optionSubLabel}>
-                      Current: {group?.defaultCapacity === 0 ? 'Unlimited' : group?.defaultCapacity}
+                      Current Limit: {group?.defaultCapacity === 0 ? 'Unlimited' : group?.defaultCapacity}
                     </Text>
                   )}
                 </View>
@@ -224,20 +250,9 @@ const GroupSettings = () => {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
             <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Edit Group Name</Text>
-                <TextInput
-                    style={styles.modalInput}
-                    value={tempName}
-                    onChangeText={setTempName}
-                    placeholder="Enter group name"
-                    autoFocus
-                    maxLength={50}
-                    placeholderTextColor="#9CA3AF"
-                    selectTextOnFocus
-                />
+                <TextInput style={styles.modalInput} value={tempName} onChangeText={setTempName} placeholder="Enter group name" autoFocus maxLength={50} selectTextOnFocus />
                 <View style={styles.modalButtons}>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingName(false)}>
-                        <Text style={styles.modalBtnTextCancel}>Cancel</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingName(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
                     <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveName} disabled={isSavingName || !tempName.trim()}>
                         {isSavingName ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
                     </TouchableOpacity>
@@ -252,23 +267,37 @@ const GroupSettings = () => {
             <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Attendee Limit</Text>
                 <Text style={styles.modalSubtitle}>Set to 0 for unlimited members.</Text>
-                <TextInput
-                    style={styles.modalInput}
-                    value={tempCapacity}
-                    onChangeText={setTempCapacity}
-                    placeholder="e.g. 15"
-                    keyboardType="numeric"
-                    autoFocus
-                    maxLength={5}
-                    placeholderTextColor="#9CA3AF"
-                    selectTextOnFocus
-                />
+                <TextInput style={styles.modalInput} value={tempCapacity} onChangeText={setTempCapacity} placeholder="e.g. 15" keyboardType="numeric" autoFocus maxLength={5} selectTextOnFocus />
                 <View style={styles.modalButtons}>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingCapacity(false)}>
-                        <Text style={styles.modalBtnTextCancel}>Cancel</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingCapacity(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
                     <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveCapacity} disabled={isSavingCapacity}>
                         {isSavingCapacity ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Edit Location Modal */}
+      <Modal visible={isEditingLocation} transparent animationType="fade" onRequestClose={() => setIsEditingLocation(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Default Location</Text>
+                <Text style={styles.modalSubtitle}>Updates location for all associated events.</Text>
+                <TextInput 
+                    style={styles.modalInput} 
+                    value={tempLocation} 
+                    onChangeText={setTempLocation} 
+                    placeholder="e.g. Starbucks or Zoom link..." 
+                    autoFocus 
+                    selectTextOnFocus 
+                />
+                <View style={styles.modalButtons}>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingLocation(false)}>
+                        <Text style={styles.modalBtnTextCancel}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveLocation} disabled={isSavingLocation}>
+                        {isSavingLocation ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
                     </TouchableOpacity>
                 </View>
             </View>

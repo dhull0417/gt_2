@@ -264,7 +264,6 @@ export const updateGroup = asyncHandler(async (req, res) => {
     }
 
     // --- CAPACITY SYNC LOGIC ---
-    // If the capacity is being updated, push it to all associated events
     if (defaultCapacity !== undefined) {
         const capacityNum = Math.max(0, Number(defaultCapacity));
         if (capacityNum !== group.defaultCapacity) {
@@ -276,8 +275,17 @@ export const updateGroup = asyncHandler(async (req, res) => {
         }
     }
 
+    // --- LOCATION SYNC LOGIC ---
+    // If the location is being updated, push it to all associated events
+    if (defaultLocation !== undefined && defaultLocation !== group.defaultLocation) {
+        group.defaultLocation = defaultLocation;
+        await Event.updateMany(
+            { group: groupId },
+            { $set: { location: defaultLocation } }
+        );
+    }
+
     if (eventsToDisplay) group.eventsToDisplay = parseInt(eventsToDisplay);
-    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
     if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
     if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
 
