@@ -2,16 +2,20 @@ import React, { useState, useEffect, useMemo } from "react";
 import { 
     View, 
     Text, 
+    TextInput, 
     TouchableOpacity, 
     ScrollView, 
     StyleSheet, 
+    Alert, 
     Dimensions, 
+    Platform, 
+    Keyboard, 
     ActivityIndicator,
-    TextInput,
-    LayoutChangeEvent,
-    StyleProp,
+    Animated,
+    KeyboardAvoidingView,
     ViewStyle,
-    Alert
+    StyleProp,
+    LayoutChangeEvent
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -19,11 +23,11 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Picker } from "@react-native-picker/picker";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
-import { useApiClient, User, userApi, Frequency, Routine } from "../../utils/api"; 
+import { useApiClient, User, userApi, Frequency, Routine, DayTime } from "../../utils/api"; 
 import TimePicker from "../../components/TimePicker";
 import { DateTime } from "luxon";
 
-type LocalFrequency = Frequency | null;
+const { width } = Dimensions.get('window');
 
 const usaTimezones = [
     { label: "Eastern (ET)", value: "America/New_York" },
@@ -40,15 +44,38 @@ const daysOfWeek = [
     { label: "W", value: 3 }, { label: "T", value: 4 }, { label: "F", value: 5 }, { label: "S", value: 6 },
 ];
 
-// Helper for step transitions
-const FadeInView = ({ children, delay = 0 }: { children: React.ReactNode, delay?: number }) => {
+const occurrences = ['1st', '2nd', '3rd', '4th', '5th', 'Last'];
+
+interface FadeInViewProps {
+  children: React.ReactNode;
+  delay?: number;
+  duration?: number;
+  style?: StyleProp<ViewStyle>;
+}
+
+const FadeInView = ({ children, delay = 0, duration = 400, style }: FadeInViewProps) => {
+  const fadeAnim = useMemo(() => new Animated.Value(0), []);
+  const slideAnim = useMemo(() => new Animated.Value(-15), []);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration, delay, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration, delay, useNativeDriver: true })
+    ]).start();
+  }, [delay, duration, fadeAnim, slideAnim]);
+
   return (
-    <View style={{ width: '100%' }}>
+    <Animated.View style={[{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], width: '100%' }, style]}>
       {children}
-    </View>
+    </Animated.View>
   );
 };
 
+/**
+ * Edit Schedule Screen
+ * Mirroring the Create Group flow Scheduling steps exactly.
+ * Focused ONLY on Frequency, Days/Dates, and Meeting Times.
+ */
 const EditScheduleScreen = () => {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
@@ -61,360 +88,424 @@ const EditScheduleScreen = () => {
         queryFn: () => userApi.getCurrentUser(api) 
     });
 
-    // --- State Management ---
-    const [step, setStep] = useState(1);
-    const [frequency, setFrequency] = useState<LocalFrequency>(null);
-    const [selectedDays, setSelectedDays] = useState<number[]>([]); 
-    const [selectedDates, setSelectedDates] = useState<number[]>([]); 
-    const [meetTime, setMeetTime] = useState("05:00 PM");
-    const [timezone, setTimezone] = useState("America/Denver");
-    const [defaultCapacity, setDefaultCapacity] = useState<number>(0);
-    const [location, setLocation] = useState("");
-    const [startDate, setStartDate] = useState<string>(DateTime.now().toISODate()!);
+    // --- Wizard Flow State ---
+    const [step, setStep] = useState(4); // Starts at the frequency step from creation flow
+    
+    // Schedule Builder Logic
+    const [routines, setRoutines] = useState<Routine[]>([]);
+    const [isMultipleMode, setIsMultipleMode] = useState(false);
 
+    // Active builder states
+    const [currentFreq, setCurrentFreq] = useState<Frequency | null>(null);
+    const [selectedDays, setSelectedDays] = useState<number[]>([]);
+    const [selectedDates, setSelectedDates] = useState<number[]>([]);
+    const [isSameTime, setIsSameTime] = useState<boolean | null>(null);
+    const [ordinalOccurrence, setOrdinalOccurrence] = useState('1st');
+    const [ordinalDay, setOrdinalDay] = useState(1);
+    
+    const [loopIndex, setLoopIndex] = useState(0); 
+    const [tempTime, setTempTime] = useState("05:00 PM");
+    const [tempDayTimes, setTempDayTimes] = useState<DayTime[]>([]);
+    const [currentTZ, setCurrentTZ] = useState("America/Denver");
+
+    // Persistent settings from group (hidden from editing as requested)
+    const [kickoffDate, setKickoffDate] = useState<string>(DateTime.now().toISODate()!);
+    const [location, setLocation] = useState("");
     const [leadDays, setLeadDays] = useState(2);
     const [notificationTime, setNotificationTime] = useState("09:00 AM");
-    const [eventsToDisplay, setEventsToDisplay] = useState(1);
     const [isUpdating, setIsUpdating] = useState(false);
 
-    // DYNAMIC LAYOUT STATE (Validated via Troubleshooting)
-    const [calculatedDayWidth, setCalculatedDayWidth] = useState(0);
-
-    // Calendar logic for Kickoff Date picker
-    const [calendarMonth, setCalendarMonth] = useState<DateTime>(DateTime.now().startOf('month'));
-    
-    const calendarGrid = useMemo(() => {
-        const start = calendarMonth.startOf('month');
-        const firstDayIdx = start.weekday === 7 ? 0 : start.weekday;
-        const days: (DateTime | null)[] = [];
-        for (let i = 0; i < firstDayIdx; i++) days.push(null);
-        for (let i = 1; i <= calendarMonth.endOf('month').day; i++) {
-            days.push(calendarMonth.set({ day: i }));
-        }
-        return days;
-    }, [calendarMonth]);
-
+    // --- Populate existing data for preservation ---
     useEffect(() => {
         if (group) {
             const sched = group.schedule;
-            setFrequency(sched?.frequency || null);
-            const firstRoutineTime = sched?.routines?.[0]?.dayTimes?.[0]?.time;
-            setMeetTime(firstRoutineTime || (group as any).time || "05:00 PM");
-            setTimezone(group.timezone || "America/Denver");
-            setDefaultCapacity(group.defaultCapacity || 0);
+            if (sched?.routines) {
+                setRoutines(sched.routines);
+                setIsMultipleMode(sched.routines.length > 1 || sched.frequency === 'custom');
+            }
+            setCurrentTZ(group.timezone || "America/Denver");
             setLocation(group.defaultLocation || "");
             setLeadDays(group.generationLeadDays ?? 2);
             setNotificationTime(group.generationLeadTime || "09:00 AM");
-            setEventsToDisplay((group as any).eventsToDisplay || 1);
-            setStartDate(sched?.startDate || DateTime.now().toISODate()!);
             
-            if (sched?.frequency === 'weekly' || sched?.frequency === 'biweekly') {
-                const days = sched.routines?.[0]?.dayTimes?.map(dt => dt.day).filter(d => d !== undefined) as number[];
-                setSelectedDays(days?.length ? days : (sched as any).days || []);
-            } else if (sched?.frequency === 'monthly') {
-                const dates = sched.routines?.[0]?.dayTimes?.map(dt => dt.date).filter(d => d !== undefined) as number[];
-                setSelectedDates(dates?.length ? dates : (sched as any).days || []);
+            if (sched?.startDate) {
+                // Ensure we parse stored date correctly
+                const dt = DateTime.fromISO(sched.startDate);
+                if (dt.isValid) setKickoffDate(dt.toISODate()!);
             }
         }
     }, [group]);
 
-    const onCalendarContainerLayout = (event: LayoutChangeEvent) => {
-        const { width } = event.nativeEvent.layout;
-        // Verified Fix: Divide by 7 and subtract safety margin
-        setCalculatedDayWidth((width / 7) - 0.5);
+    const getTargets = () => {
+        if (currentFreq === 'daily') return [0,1,2,3,4,5,6];
+        if (currentFreq === 'weekly' || currentFreq === 'biweekly') return [...selectedDays].sort((a,b) => a-b);
+        if (currentFreq === 'monthly') return [...selectedDates].sort((a,b) => a-b);
+        if (currentFreq === 'ordinal') return [ordinalDay];
+        return [];
     };
 
     const handleUpdateSchedule = async () => {
-        if (!id || !frequency) return;
+        if (!id) return;
         setIsUpdating(true);
         
-        const targets = frequency === 'monthly' ? selectedDates : (frequency === 'daily' ? [0,1,2,3,4,5,6] : selectedDays);
-        const dayTimes = targets.map(val => (
-            frequency === 'monthly' ? { date: val, time: meetTime } : { day: val, time: meetTime }
-        ));
-
-        const routine: Routine = {
-            frequency: frequency,
-            dayTimes: dayTimes
+        const payload = {
+            schedule: {
+                frequency: isMultipleMode ? 'custom' : (routines[0]?.frequency || 'once'),
+                startDate: kickoffDate, // Preserved
+                routines: routines
+            },
+            timezone: currentTZ, // Preserved or edited in time selection step
+            defaultLocation: location, // Preserved
+            generationLeadDays: leadDays, // Preserved
+            generationLeadTime: notificationTime // Preserved
         };
 
         try {
-            await api.patch(`/api/groups/${id}/schedule`, {
-                name: group?.name,
-                schedule: {
-                    frequency: frequency,
-                    routines: [routine],
-                    startDate: startDate
-                },
-                time: meetTime,
-                timezone: timezone,
-                defaultCapacity: defaultCapacity,
-                defaultLocation: location,
-                generationLeadDays: leadDays,
-                generationLeadTime: notificationTime,
-                eventsToDisplay: eventsToDisplay
-            });
+            await api.patch(`/api/groups/${id}/schedule`, payload);
 
-            queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
-            queryClient.invalidateQueries({ queryKey: ['events'] });
-            Alert.alert("Success", "Schedule updated.");
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
+                queryClient.invalidateQueries({ queryKey: ['events'] }),
+                queryClient.invalidateQueries({ queryKey: ['groups'] })
+            ]);
+
+            Alert.alert("Success", "Group schedule updated.");
             router.back();
         } catch (error: any) {
-            Alert.alert("Update Error", "Failed to update group settings.");
+            Alert.alert("Error", error.response?.data?.error || "Failed to update.");
         } finally {
             setIsUpdating(false);
         }
     };
 
-    const toggleDay = (val: number) => setSelectedDays(prev => prev.includes(val) ? prev.filter(d => d !== val) : [...prev, val]);
-    const toggleDate = (val: number) => setSelectedDates(prev => prev.includes(val) ? prev.filter(d => d !== val) : [...prev, val]);
+    const handleFinishRoutine = (finalDayTimes: DayTime[]) => {
+        const routine: Routine = {
+            frequency: currentFreq!,
+            dayTimes: finalDayTimes,
+            rules: currentFreq === 'ordinal' ? [{ 
+                type: 'byDay', 
+                occurrence: ordinalOccurrence as any, 
+                day: ordinalDay 
+            }] : undefined
+        };
+        
+        const newRoutines = isMultipleMode ? [...routines, routine] : [routine];
+        setRoutines(newRoutines);
+        
+        // Reset local builder state for potential next routine
+        setTempDayTimes([]);
+        setLoopIndex(0);
+        setSelectedDays([]);
+        setSelectedDates([]);
+        setCurrentFreq(null);
+        setIsSameTime(null);
+        setTempTime("05:00 PM");
+
+        if (isMultipleMode && newRoutines.length < 5) {
+            setStep(11); // Add another rule?
+        } else {
+            setStep(15); // Skip directly to review/save
+        }
+    };
+
+    const handleNext = () => {
+        if (step === 4) {
+            if (currentFreq === 'custom') { 
+                setIsMultipleMode(true); 
+                setCurrentFreq(null); 
+                return; 
+            } 
+            if (currentFreq === 'daily') return setStep(5);
+            if (currentFreq === 'weekly' || currentFreq === 'biweekly') return setStep(7);
+            if (currentFreq === 'monthly') return setStep(8);
+            if (currentFreq === 'ordinal') return setStep(10);
+        }
+
+        if (step === 7) {
+            if (selectedDays.length === 1) { setIsSameTime(true); return setStep(6); }
+            return setStep(5);
+        }
+
+        if (step === 8) {
+            if (selectedDates.length === 0) return Alert.alert("Required", "Select at least one date.");
+            if (selectedDates.length === 1) { setIsSameTime(true); return setStep(6); }
+            return setStep(5);
+        }
+
+        if (step === 10) {
+            setIsSameTime(true); 
+            setStep(6);
+            return;
+        }
+
+        if (step === 6) {
+            const targets = getTargets();
+            if (isSameTime) {
+                const entries: DayTime[] = targets.map(val => (
+                    currentFreq === 'monthly' ? { date: val, time: tempTime } : { day: val, time: tempTime }
+                ));
+                return handleFinishRoutine(entries);
+            } else {
+                const val = targets[loopIndex];
+                const currentEntry = currentFreq === 'monthly' ? { date: val, time: tempTime } : { day: val, time: tempTime };
+                const updatedTempList = [...tempDayTimes, currentEntry as DayTime];
+
+                if (loopIndex < targets.length - 1) {
+                    setTempDayTimes(updatedTempList);
+                    setLoopIndex(loopIndex + 1);
+                } else {
+                    handleFinishRoutine(updatedTempList);
+                }
+                return;
+            }
+        }
+
+        if (step === 11 || step === 9) setStep(15);
+        else setStep(prev => prev + 1);
+    };
+
+    const handleBack = () => {
+        if (step === 4) return router.back();
+        if (step === 6 && !isSameTime && loopIndex > 0) {
+            setLoopIndex(loopIndex - 1);
+            setTempDayTimes(prev => prev.slice(0, -1));
+            return;
+        }
+        if (step === 11) {
+            setRoutines(prev => prev.slice(0, -1));
+            return setStep(6);
+        }
+        if (step === 15) {
+            if (isMultipleMode) return setStep(11);
+            return setStep(6);
+        }
+        setStep(prev => prev - 1);
+    };
+
+    const renderStep4_Frequency = () => {
+        const isLoop = isMultipleMode && routines.length > 0;
+        const heading = isLoop ? `Routine ${routines.length + 1}` : (isMultipleMode ? "First Routine" : "How often will you meet?");
+        return (
+            <View style={styles.stepContainerPadded}>
+                <FadeInView delay={100}><Text style={styles.headerTitle}>{heading}</Text></FadeInView>
+                <View style={{ flex: 1, justifyContent: 'center' }}>
+                    {['daily', 'weekly', 'biweekly', 'monthly', 'ordinal', 'custom'].map((f) => {
+                        if (isMultipleMode && f === 'custom') return null;
+                        return (
+                            <TouchableOpacity key={f} style={[styles.frequencyButton, currentFreq === f && styles.frequencyButtonSelected]} onPress={() => setCurrentFreq(f as any)}>
+                                <View style={[styles.radioCircle, currentFreq === f && styles.radioCircleSelected]} />
+                                <View style={{ marginLeft: 12 }}>
+                                    <Text style={styles.frequencyText}>{f === 'custom' ? 'Multiple Rules' : f.charAt(0).toUpperCase() + f.slice(1)}</Text>
+                                    {f === 'ordinal' && <Text style={styles.frequencySub}>Ex: 2nd Wednesday, Last Saturday</Text>}
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+                <View style={styles.footerNavSpread}>
+                    <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+                    <TouchableOpacity onPress={handleNext} disabled={!currentFreq}><Feather name="arrow-right-circle" size={48} color={!currentFreq ? "#D1D5DB" : "#4F46E5"} /></TouchableOpacity>
+                </View>
+            </View>
+        );
+    };
+
+    const renderStep6_TimeSelection = () => {
+        const targets = getTargets();
+        const val = targets[loopIndex];
+        let heading = "Meeting time";
+        if (!isSameTime) {
+            if (currentFreq === 'monthly') {
+                const sfx = val === 1 ? 'st' : val === 2 ? 'nd' : val === 3 ? 'rd' : 'th';
+                heading = `Time for the ${val}${sfx}`;
+            } else {
+                const dayData = daysOfWeek.find(d => d.value === val);
+                heading = `Time for ${dayData?.label === "S" ? (val === 0 ? "Sunday" : "Saturday") : dayData?.label}`;
+            }
+        }
+
+        return (
+            <View style={styles.stepContainerPadded}>
+                <FadeInView delay={100}><Text style={styles.headerTitle}>{heading}</Text></FadeInView>
+                {!isSameTime && targets.length > 1 && (
+                    <Text style={styles.loopProgress}>Entry {loopIndex + 1} of {targets.length}</Text>
+                )}
+                <View style={{ flex: 1, paddingTop: 20 }}>
+                    <Text style={styles.pickerTitle}>Select Time</Text>
+                    <TimePicker onTimeChange={setTempTime} initialValue={tempTime} />
+                    <View style={{ height: 40 }} />
+                    <Text style={styles.pickerTitle}>Timezone</Text>
+                    <View style={styles.pickerWrapper}>
+                        <Picker 
+                            selectedValue={currentTZ} 
+                            onValueChange={(v: string) => setCurrentTZ(v)} 
+                            itemStyle={styles.pickerItem}
+                        >
+                            {usaTimezones.map(tz=><Picker.Item key={tz.value} label={tz.label} value={tz.value} color="#111827"/>)}
+                        </Picker>
+                    </View>
+                </View>
+                <View style={styles.footerNavSpread}>
+                    <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+                    <TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+                </View>
+            </View>
+        );
+    };
+
+    const renderStep15_Summary = () => (
+        <View style={styles.stepContainerPadded}>
+            <FadeInView delay={100}><Text style={styles.headerTitle}>Review Schedule</Text></FadeInView>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+                <View style={styles.summaryCard}>
+                    <Text style={styles.summaryLabel}>Schedules</Text>
+                    {routines.map((r, i) => (
+                        <View key={i} style={styles.routineSummaryBox}>
+                            <Text style={styles.routineSummaryType}>{r.frequency.toUpperCase()}</Text>
+                            {r.dayTimes.map((dt, dti) => {
+                                let label = "";
+                                if (r.frequency === 'ordinal' && r.rules?.[0]) {
+                                    const dayData = daysOfWeek.find(d => d.value === r.rules![0].day);
+                                    const dayName = dayData?.label === "S" ? (dayData.value === 0 ? "Sunday" : "Saturday") : dayData?.label;
+                                    label = `${r.rules[0].occurrence} ${dayName}`;
+                                } else {
+                                    const dayData = daysOfWeek.find(d => d.value === dt.day);
+                                    const dayName = dayData?.label === "S" ? (dayData.value === 0 ? "Sunday" : "Saturday") : dayData?.label;
+                                    label = dt.date ? `The ${dt.date}${dt.date === 1 ? 'st' : dt.date === 2 ? 'nd' : dt.date === 3 ? 'rd' : 'th'}` : dayName || "";
+                                }
+                                return <Text key={dti} style={styles.summaryValSmall}>• {label} @ {dt.time}</Text>
+                            })}
+                        </View>
+                    ))}
+                    
+                    <Text style={styles.summaryLabel}>Preserved Settings</Text>
+                    <Text style={styles.summaryValSmall}>• Start Date: {DateTime.fromISO(kickoffDate).toLocaleString(DateTime.DATE_MED)}</Text>
+                    <Text style={styles.summaryValSmall}>• JIT: {leadDays} days @ {notificationTime}</Text>
+                    <Text style={styles.summaryValSmall}>• Location: {location || "Default"}</Text>
+                </View>
+            </ScrollView>
+            <View style={styles.footerNavSpread}>
+                <TouchableOpacity onPress={handleBack}><Feather name="arrow-left" size={32} color="#6B7280" /></TouchableOpacity>
+                <TouchableOpacity style={styles.finishBtn} onPress={handleUpdateSchedule} disabled={isUpdating}>
+                    {isUpdating ? <ActivityIndicator color="white" /> : <Text style={styles.finishBtnText}>Save Changes</Text>}
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
 
     if (loadingGroup || !currentUser) {
         return (
-            <SafeAreaView style={styles.center}>
+            <View style={styles.center}>
                 <ActivityIndicator size="large" color="#4F46E5" />
-            </SafeAreaView>
+            </View>
         );
     }
 
     return (
-        <SafeAreaView style={styles.container} edges={['top', 'bottom', 'left', 'right']}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Feather name="x" size={24} color="#374151" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Update Schedule</Text>
-                <View style={{ width: 24 }} />
-            </View>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+                
+                {step === 4 && renderStep4_Frequency()}
 
-            <View style={{ flex: 1 }}>
-                {step === 1 && (
+                {step === 5 && (
                     <View style={styles.stepContainerPadded}>
-                        <Text style={styles.title}>How often will you meet?</Text>
-                        <View style={{ flex: 1, justifyContent: 'center' }}>
-                            {['daily', 'weekly', 'biweekly', 'monthly'].map((f) => (
-                                <TouchableOpacity 
-                                    key={f} 
-                                    style={[styles.frequencyButton, frequency === f && styles.frequencyButtonSelected]} 
-                                    onPress={() => setFrequency(f as any)}
-                                >
-                                    <View style={[styles.radioCircle, frequency === f && styles.radioCircleSelected]} />
-                                    <Text style={[styles.frequencyText, frequency === f && styles.frequencyTextSelected]}>
-                                        {f === 'biweekly' ? 'Every 2 Weeks' : f.charAt(0).toUpperCase() + f.slice(1)}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                        <Text style={styles.headerTitle}>Same time for all days?</Text>
+                        <View style={styles.centeredContent}>
+                            <TouchableOpacity style={styles.choiceBtn} onPress={()=>{setIsSameTime(true); setStep(6);}}><Text style={styles.choiceBtnText}>Yes</Text></TouchableOpacity>
+                            <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>{setIsSameTime(false); setStep(6);}}><Text style={styles.choiceBtnTextOutline}>No</Text></TouchableOpacity>
                         </View>
-                        <View style={styles.footerNavRight}>
-                            <TouchableOpacity onPress={() => frequency === 'daily' ? setStep(3) : setStep(2)} disabled={!frequency}>
-                                <Feather name="arrow-right-circle" size={54} color={!frequency ? "#D1D5DB" : "#4F46E5"} />
-                            </TouchableOpacity>
-                        </View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
                 )}
 
-                {step === 2 && (
+                {step === 6 && renderStep6_TimeSelection()}
+
+                {step === 7 && (
                     <View style={styles.stepContainerPadded}>
-                        <Text style={styles.title}>Which day(s) will you meet?</Text>
-                        <View style={{ flex: 1 }}>
-                            <ScrollView contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
-                                {frequency === 'monthly' ? (
-                                    <View style={styles.dateGrid}>
-                                        {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
-                                            <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d) && styles.dateBoxSelected]} onPress={() => toggleDate(d)}>
-                                                <Text style={[styles.dateText, selectedDates.includes(d) && styles.dateTextSelected]}>{d}</Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                ) : (
-                                    daysOfWeek.map(d => (
-                                        <TouchableOpacity 
-                                            key={d.value} 
-                                            style={[styles.frequencyButton, selectedDays.includes(d.value) && styles.frequencyButtonSelected]} 
-                                            onPress={() => toggleDay(d.value)}
-                                        >
-                                            <View style={[styles.radioCircle, selectedDays.includes(d.value) && styles.radioCircleSelected]} />
-                                            <Text style={[styles.frequencyText, selectedDays.includes(d.value) && styles.frequencyTextSelected]}>{d.label === "S" ? (d.value === 0 ? "Sunday" : "Saturday") : d.label}</Text>
-                                        </TouchableOpacity>
-                                    ))
-                                )}
-                            </ScrollView>
-                        </View>
-                        <View style={styles.footerNavSpread}>
-                            <TouchableOpacity onPress={() => setStep(1)}><Feather name="arrow-left-circle" size={54} color="#4F46E5" /></TouchableOpacity>
-                            <TouchableOpacity onPress={() => setStep(3)} disabled={(frequency === 'monthly' ? selectedDates.length : selectedDays.length) === 0}>
-                                <Feather name="arrow-right-circle" size={54} color={(frequency === 'monthly' ? selectedDates.length : selectedDays.length) === 0 ? "#D1D5DB" : "#4F46E5"} />
-                            </TouchableOpacity>
-                        </View>
+                        <Text style={styles.headerTitle}>Select weekdays</Text>
+                        <View style={{flex: 1, justifyContent: 'center'}}>{daysOfWeek.map(d=>(
+                            <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays((prev)=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label === "S" ? (d.value === 0 ? "Sunday" : "Saturday") : d.label}</Text></TouchableOpacity>
+                        ))}</View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}><Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
                     </View>
                 )}
 
-                {step === 3 && (
+                {step === 8 && (
                     <View style={styles.stepContainerPadded}>
-                        <ScrollView showsVerticalScrollIndicator={false}>
-                            <Text style={styles.title}>Meeting Details</Text>
-                            
-                            <View style={styles.finalCardSection}>
-                                <Text style={styles.pickerTitle}>Meeting Time</Text>
-                                <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
-                            </View>
-
-                            <View style={styles.finalCardSection}>
-                                <Text style={styles.pickerTitle}>Kickoff Date (Effective From)</Text>
-                                <View style={styles.calendarContainer} onLayout={onCalendarContainerLayout}>
-                                    <View style={styles.calendarNav}>
-                                        <TouchableOpacity onPress={() => setCalendarMonth(prev => prev.minus({ months: 1 }))}>
-                                            <Feather name="chevron-left" size={24} color="#4F46E5" />
-                                        </TouchableOpacity>
-                                        <Text style={styles.calendarMonthText}>{calendarMonth.toFormat('MMMM yyyy')}</Text>
-                                        <TouchableOpacity onPress={() => setCalendarMonth(prev => prev.plus({ months: 1 }))}>
-                                            <Feather name="chevron-right" size={24} color="#4F46E5" />
-                                        </TouchableOpacity>
-                                    </View>
-                                    
-                                    {calculatedDayWidth > 0 ? (
-                                        <>
-                                            <View style={styles.calendarGridContainer}>
-                                                {daysOfWeek.map((day, i) => (
-                                                    <View key={`lbl-${i}`} style={[styles.calendarDayBox, { width: calculatedDayWidth }]}>
-                                                        <Text style={styles.dayLabelText}>{day.label}</Text>
-                                                    </View>
-                                                ))}
-                                            </View>
-                                            <View style={styles.calendarGridContainer}>
-                                                {calendarGrid.map((day, idx) => (
-                                                    <TouchableOpacity 
-                                                        key={`d-${idx}`} 
-                                                        disabled={!day}
-                                                        onPress={() => day && setStartDate(day.toISODate()!)}
-                                                        style={[
-                                                            styles.calendarDayBox,
-                                                            { width: calculatedDayWidth },
-                                                            day?.toISODate() === startDate && { backgroundColor: '#4F46E5', borderRadius: 25 }
-                                                        ]}
-                                                    >
-                                                        {day && (
-                                                            <Text style={[styles.calendarDayText, day.toISODate() === startDate && { color: 'white' }]}>
-                                                                {day.day}
-                                                            </Text>
-                                                        )}
-                                                    </TouchableOpacity>
-                                                ))}
-                                            </View>
-                                        </>
-                                    ) : <ActivityIndicator style={{ margin: 20 }} />}
-                                </View>
-                            </View>
-
-                            <View style={styles.finalCardSection}>
-                                <Text style={styles.pickerTitle}>Default Location</Text>
-                                <TextInput style={styles.textInput} placeholder="Location name or link..." value={location} onChangeText={setLocation} />
-                            </View>
-                            
-                            <View style={styles.finalCardSection}>
-                                <Text style={styles.pickerTitle}>Select Timezone</Text>
-                                <View style={styles.pickerWrapper}>
-                                    <Picker selectedValue={timezone} onValueChange={setTimezone} itemStyle={styles.pickerItem}>
-                                        {usaTimezones.map(tz => <Picker.Item key={tz.value} label={tz.label} value={tz.value} />)}
-                                    </Picker>
-                                </View>
-                            </View>
-
-                            <View style={styles.finalCardSection}>
-                                <Text style={styles.pickerTitle}>Attendee Limit (0 = Unlimited)</Text>
-                                <View style={styles.capacityRow}>
-                                    <TouchableOpacity onPress={() => setDefaultCapacity(prev => Math.max(0, prev - 1))} style={styles.capBtn}><Feather name="minus" size={24} color="#4F46E5" /></TouchableOpacity>
-                                    <Text style={styles.capVal}>{defaultCapacity === 0 ? "Unlimited" : defaultCapacity}</Text>
-                                    <TouchableOpacity onPress={() => setDefaultCapacity(prev => prev + 1)} style={styles.capBtn}><Feather name="plus" size={24} color="#4F46E5" /></TouchableOpacity>
-                                </View>
-                            </View>
-                        </ScrollView>
-
-                        <View style={styles.footerNavSpread}>
-                            <TouchableOpacity onPress={() => frequency === 'daily' ? setStep(1) : setStep(2)}><Feather name="arrow-left-circle" size={54} color="#4F46E5" /></TouchableOpacity>
-                            <TouchableOpacity onPress={() => setStep(4)}><Feather name="arrow-right-circle" size={54} color="#4F46E5" /></TouchableOpacity>
-                        </View>
+                        <Text style={styles.headerTitle}>Choose dates</Text>
+                        <View style={styles.dateGrid}>{Array.from({length:31}, (_,i)=>i+1).map(d=>(
+                            <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d)&&styles.dateBoxSelected]} onPress={()=>setSelectedDates((prev)=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d])}><Text style={[styles.dateText, selectedDates.includes(d)&&styles.dateTextSelected]}>{d}</Text></TouchableOpacity>
+                        ))}</View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDates.length}><Feather name="arrow-right-circle" size={48} color={!selectedDates.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
                     </View>
                 )}
 
-                {step === 4 && (
+                {step === 10 && (
                     <View style={styles.stepContainerPadded}>
-                        <Text style={styles.title}>Notification Settings</Text>
-                        <Text style={styles.description}>How many days before the meeting should we notify everyone?</Text>
-
-                        <View style={styles.jitCard}>
-                            <View style={styles.leadDaysRow}>
-                                <TouchableOpacity onPress={() => setLeadDays(Math.max(0, leadDays - 1))} style={styles.stepperBtn}><Feather name="minus" size={24} color="#4F46E5" /></TouchableOpacity>
-                                <View style={{ alignItems: 'center', width: 120 }}>
-                                    <Text style={styles.leadVal}>{leadDays}</Text>
-                                    <Text style={styles.leadLabel}>Days Before</Text>
-                                </View>
-                                <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={styles.stepperBtn}><Feather name="plus" size={24} color="#4F46E5" /></TouchableOpacity>
-                            </View>
-
-                            <View style={styles.divider} />
-                            <Text style={styles.sectionLabelCenter}>Trigger Time</Text>
-                            <TimePicker onTimeChange={setNotificationTime} initialValue={notificationTime} />
+                        <Text style={styles.headerTitle}>Select pattern</Text>
+                        <View style={{flex: 1, justifyContent: 'center'}}>
+                            <View style={styles.pickerWrapper}><Picker selectedValue={ordinalOccurrence} onValueChange={(v: string)=>setOrdinalOccurrence(v)} itemStyle={styles.pickerItem}>{occurrences.map(o=><Picker.Item key={o} label={o} value={o} color="#111827"/>)}</Picker></View>
+                            <View style={{height: 20}}/>
+                            <View style={styles.pickerWrapper}><Picker selectedValue={ordinalDay} onValueChange={(v: number)=>setOrdinalDay(v)} itemStyle={styles.pickerItem}>{daysOfWeek.map(d=><Picker.Item key={d.value} label={d.label} value={d.value} color="#111827"/>)}</Picker></View>
                         </View>
-
-                        <View style={styles.footerNavSpread}>
-                            <TouchableOpacity onPress={() => setStep(3)}><Feather name="arrow-left-circle" size={54} color="#4F46E5" /></TouchableOpacity>
-                            <TouchableOpacity style={[styles.createButton, isUpdating && { opacity: 0.7 }]} onPress={handleUpdateSchedule} disabled={isUpdating}>
-                                {isUpdating ? <ActivityIndicator color="#FFF" /> : <Text style={styles.createButtonText}>Save Changes</Text>}
-                            </TouchableOpacity>
-                        </View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
                 )}
-            </View>
+
+                {step === 11 && (
+                    <View style={styles.stepContainerPadded}>
+                        <Text style={styles.headerTitle}>Add another rule?</Text>
+                        <Text style={styles.headerSub}>max 5 allowed</Text>
+                        <View style={styles.centeredContent}>
+                            <TouchableOpacity style={styles.choiceBtn} onPress={()=>setStep(4)}><Text style={styles.choiceBtnText}>Add More</Text></TouchableOpacity>
+                            <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>setStep(15)}><Text style={styles.choiceBtnTextOutline}>Continue</Text></TouchableOpacity>
+                        </View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                    </View>
+                )}
+
+                {step === 15 && renderStep15_Summary()}
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F9FAFB' },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-    headerTitle: { fontSize: 18, fontWeight: 'bold' },
-    stepContainerPadded: { flex: 1, padding: 24 },
-    title: { fontSize: 26, fontWeight: '800', color: '#111827', textAlign: 'center', marginBottom: 24 },
-    description: { fontSize: 15, color: '#6B7280', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
-    frequencyButton: { flexDirection: 'row', alignItems: 'center', padding: 20, marginBottom: 16, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 16, elevation: 2 },
+    stepContainerPadded: { flex: 1, padding: 24, paddingTop: 12 },
+    centeredContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { fontSize: 26, fontWeight: '900', color: '#111827', textAlign: 'center', marginBottom: 8 },
+    headerSub: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 20 },
+    choiceBtn: { width: '100%', backgroundColor: '#4F46E5', paddingVertical: 18, borderRadius: 16, alignItems: 'center', marginBottom: 16 },
+    choiceBtnText: { color: 'white', fontSize: 18, fontWeight: '800' },
+    choiceBtnOutline: { width: '100%', borderWidth: 2, borderColor: '#E5E7EB', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
+    choiceBtnTextOutline: { color: '#6B7280', fontSize: 18, fontWeight: '800' },
+    frequencyButton: { flexDirection: 'row', alignItems: 'center', padding: 18, marginBottom: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 16 },
     frequencyButtonSelected: { backgroundColor: '#F5F7FF', borderColor: '#4F46E5' },
-    frequencyText: { fontSize: 18, color: '#374151', marginLeft: 16, fontWeight: '500' },
-    frequencyTextSelected: { color: '#4F46E5', fontWeight: '700' },
-    radioCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#D1D5DB' },
-    radioCircleSelected: { borderColor: '#4F46E5', backgroundColor: '#4F46E5' },
+    frequencyText: { fontSize: 17, color: '#374151', fontWeight: '700', marginLeft: 12 },
+    frequencySub: { fontSize: 12, color: '#9CA3AF', marginTop: 2, marginLeft: 12 },
+    radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D1D5DB' },
+    radioCircleSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    checkboxCircle: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center' },
+    checkboxCircleSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    footerNavSpread: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingBottom: 20 },
+    pickerWrapper: { backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden' },
+    pickerItem: { height: 120, color: '#111827', fontSize: 18 },
+    pickerTitle: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 8, marginTop: 16 },
     dateGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
     dateBox: { width: '12%', height: 45, justifyContent: 'center', alignItems: 'center', margin: '1%', borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
     dateBoxSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
     dateText: { fontSize: 14, fontWeight: '600' },
     dateTextSelected: { color: '#FFF' },
-    footerNavRight: { width: '100%', flexDirection: 'row', justifyContent: 'flex-end', marginTop: 24 },
-    footerNavSpread: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 },
-    finalCardSection: { width: '100%', marginBottom: 24 },
-    pickerTitle: { fontSize: 18, fontWeight: '700', color: '#374151', marginBottom: 12, textAlign: 'center' },
-    pickerWrapper: { backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', overflow: 'hidden' },
-    pickerItem: { color: '#111827', fontSize: 18, height: 120 },
-    capacityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 10 },
-    capBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center', marginHorizontal: 20 },
-    capVal: { fontSize: 24, fontWeight: '800' },
-    createButton: { paddingVertical: 18, paddingHorizontal: 36, borderRadius: 16, backgroundColor: '#4F46E5' },
-    createButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
-    textInput: { backgroundColor: 'white', padding: 16, borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', fontSize: 16 },
-    jitCard: { backgroundColor: 'white', borderRadius: 24, padding: 24, borderWidth: 1.5, borderColor: '#E5E7EB' },
-    leadDaysRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-    stepperBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#F5F7FF', alignItems: 'center', justifyContent: 'center' },
-    leadVal: { fontSize: 32, fontWeight: '900' },
-    leadLabel: { fontSize: 10, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase' },
-    divider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 20 },
-    sectionLabelCenter: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 16, textAlign: 'center' },
-    calendarContainer: { backgroundColor: 'white', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden' },
-    calendarNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15 },
-    calendarMonthText: { fontSize: 16, fontWeight: 'bold' },
-    calendarGridContainer: { flexDirection: 'row', flexWrap: 'wrap', width: '100%' },
-    calendarDayBox: { height: 45, alignItems: 'center', justifyContent: 'center' },
-    dayLabelText: { fontSize: 10, fontWeight: '900', color: '#9CA3AF' },
-    calendarDayText: { fontSize: 14, fontWeight: '600' },
+    loopProgress: { fontSize: 12, color: '#9CA3AF', textAlign: 'center', fontWeight: 'bold', textTransform: 'uppercase' },
+    summaryCard: { backgroundColor: 'white', padding: 20, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB' },
+    summaryLabel: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginTop: 16 },
+    summaryVal: { fontSize: 18, fontWeight: '700', color: '#1F2937', marginTop: 4 },
+    summaryValSmall: { fontSize: 15, color: '#374151', marginTop: 2 },
+    routineSummaryBox: { marginTop: 10, padding: 12, backgroundColor: '#F9FAFB', borderRadius: 12 },
+    routineSummaryType: { fontSize: 10, fontWeight: '900', color: '#4F46E5', marginBottom: 4 },
+    finishBtn: { backgroundColor: '#4F46E5', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12 },
+    finishBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 });
 
 export default EditScheduleScreen;

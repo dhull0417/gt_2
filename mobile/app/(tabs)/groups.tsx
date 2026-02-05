@@ -106,6 +106,7 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
         const channelId = group._id;
         const newChannel = client.channel('messaging', channelId, {
           members: group.members.map(m => m._id),
+          name: group.name,
         } as any);
 
         await newChannel.watch();
@@ -122,7 +123,7 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
         channel.stopWatching();
       }
     };
-  }, [client, group._id, isConnected]);
+  }, [client, group._id, group.name, isConnected]);
 
   const handleRawSend = async () => {
     if (!channel || !text.trim()) return;
@@ -195,45 +196,47 @@ const GroupScreen = () => {
 
   const { openChatId } = useLocalSearchParams<{ openChatId?: string }>();
 
+  // FIX: Added isErrorGroups to destructuring
   const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups } = useGetGroups();
   const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(selectedGroup?._id || null);
   
+  // Destructured isLoadingUser to use in loading checks
   const { data: currentUser, refetch: refetchUser, isLoading: isLoadingUser } = useQuery<User, Error>({ 
     queryKey: ['currentUser'], 
     queryFn: () => userApi.getCurrentUser(api),
   });
 
   const stableUserRef = useRef<User | null>(null);
-  
-  if (!stableUserRef.current && currentUser) {
-    stableUserRef.current = currentUser;
-  }
+  if (!stableUserRef.current && currentUser) stableUserRef.current = currentUser;
 
   useEffect(() => {
     if (!selectedGroup) stableUserRef.current = null;
   }, [selectedGroup?._id]);
 
+  // LIVE NAME SYNC: Ensure state and header update immediately when backend name changes
+  useEffect(() => {
+    if (groupDetails && selectedGroup && groupDetails._id === selectedGroup._id) {
+      if (groupDetails.name !== selectedGroup.name) {
+        setSelectedGroup(prev => prev ? { ...prev, name: groupDetails.name } : null);
+      }
+    }
+  }, [groupDetails?.name]);
+
+  const canManageGroup = useMemo(() => {
+    if (!groupDetails || !currentUser) return false;
+    const userId = currentUser._id;
+    // Direct cast to avoid TypeScript 'never' inference on populations
+    const g = groupDetails as any;
+    const isOwner = (g.owner?._id || g.owner) === userId;
+    const isMod = g.moderators?.some((m: any) => (m?._id || m) === userId);
+    return isOwner || isMod;
+  }, [groupDetails, currentUser]);
+
   const isCurrentlyMuted = useMemo(() => {
     if (!selectedGroup || !currentUser) return false;
     return currentUser.mutedGroups?.includes(selectedGroup._id) || 
            currentUser.mutedUntilNextEvent?.includes(selectedGroup._id);
-  }, [selectedGroup?._id, currentUser?.mutedGroups, currentUser?.mutedUntilNextEvent]);
-
-  // --- PERMISSION LOGIC ---
-  const canManageGroup = useMemo(() => {
-    if (!groupDetails || !currentUser) return false;
-    const userId = currentUser._id;
-    
-    // Simplified check mirroring common project patterns to avoid TypeScript inference errors
-    const g = groupDetails as any;
-    const isOwner = g.owner === userId || g.owner?._id === userId;
-    const isMod = g.moderators?.some((m: any) => {
-      const mId = m?._id || m;
-      return mId === userId;
-    });
-
-    return !!(isOwner || isMod);
-  }, [groupDetails, currentUser]);
+  }, [selectedGroup?._id, currentUser]);
 
   const performMuteUpdate = async (type: 'indefinite' | 'untilNext' | 'none') => {
     if (!selectedGroup) return;
@@ -378,7 +381,9 @@ const GroupScreen = () => {
   };
 
   const renderGroupList = () => {
+    // FIX: Changed (!currentUser && refetchUser) to (!currentUser && isLoadingUser) to fix code 2774
     if (isLoadingGroups || (!currentUser && isLoadingUser)) return <ActivityIndicator size="large" color="#4F46E5" className="mt-8"/>;
+    // isErrorGroups is now defined from destructuring hook above, fixing code 2304
     if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
     if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
 
@@ -433,21 +438,22 @@ const GroupScreen = () => {
       {isGroupDetailVisible && selectedGroup && (
         <View className="absolute top-0 bottom-0 left-0 right-0 bg-white" style={{paddingTop:insets.top}}>
           <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
-            <View className="flex-row items-center flex-1 truncate mr-2">
+            <View className="flex-row items-center flex-1 truncate">
               <TouchableOpacity 
                 onPress={() => activeTab === 'Details' ? setActiveTab('Chat') : handleCloseGroupDetail()} 
                 className="mr-3 p-1"
               >
                 <Feather name="arrow-left" size={24} color="#4F46E5"/>
               </TouchableOpacity>
+              {/* Header Title: Use live query name primarily to avoid stale state display */}
               <Text className="text-xl font-bold text-gray-900 flex-1" numberOfLines={1}>
-                {selectedGroup.name}
+                {groupDetails?.name || selectedGroup.name}
               </Text>
             </View>
             
-            {/* Header Action Row */}
             <View className="flex-row items-center">
               {activeTab === 'Chat' ? (
+                // ACTION ROW FOR CHAT TAB: No Settings Button
                 <>
                   <TouchableOpacity 
                     onPress={handleMutePress}
@@ -466,7 +472,7 @@ const GroupScreen = () => {
                   </TouchableOpacity>
                 </>
               ) : (
-                /* Settings button only shown on the Group Details tab */
+                // ACTION ROW FOR DETAILS TAB: Settings Button only here
                 canManageGroup && (
                   <TouchableOpacity 
                     onPress={handleSettingsPress}
