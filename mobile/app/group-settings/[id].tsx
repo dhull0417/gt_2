@@ -20,6 +20,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi, groupApi } from '@/utils/api';
+import { useDeleteGroup } from '@/hooks/useDeleteGroup';
+import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 
 /**
  * Group Settings Screen
@@ -37,6 +39,10 @@ const GroupSettings = () => {
     queryKey: ['currentUser'], 
     queryFn: () => userApi.getCurrentUser(api),
   });
+
+  // --- Termination Hooks ---
+  const { mutate: deleteGroup } = useDeleteGroup();
+  const { mutate: leaveGroup } = useLeaveGroup();
 
   // --- State for Edit Modals ---
   const [isEditingName, setIsEditingName] = useState(false);
@@ -98,7 +104,7 @@ const GroupSettings = () => {
     { id: 'location', label: 'Edit Location', icon: 'map-pin', color: '#10B981', bg: '#ECFDF5' },
     { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: '#ECFEFF' },
     { id: 'members', label: 'Remove Members', icon: 'user-minus', color: '#F97316', bg: '#FFF7ED' },
-    { id: 'delete', label: 'Delete Group', icon: 'trash-2', color: '#EF4444', bg: '#FEF2F2', destructive: true },
+    { id: 'terminate', label: isUserOwner ? 'Delete Group' : 'Leave Group', icon: isUserOwner ? 'trash-2' : 'log-out', color: '#EF4444', bg: '#FEF2F2', destructive: true },
   ];
 
   const handleOptionPress = (optionId: string) => {
@@ -132,6 +138,10 @@ const GroupSettings = () => {
         break;
       case 'jit':
         router.push({ pathname: '/group-edit-jit/[id]', params: { id: id } });
+        break;
+      case 'terminate':
+        if (isUserOwner) handleConfirmDelete();
+        else handleConfirmLeave();
         break;
       default:
         console.log(`Option ${optionId} logic requested.`);
@@ -268,6 +278,63 @@ const GroupSettings = () => {
     } finally {
         setIsRemovingMemberId(null);
     }
+  };
+
+  // --- TERMINATION LOGIC ---
+
+  const handleConfirmDelete = () => {
+    // Step 1: Standard Deletion Alert
+    Alert.alert(
+      "Delete Group", 
+      `Are you sure you want to permanently delete "${group?.name}"?`, 
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: () => {
+            // Step 2: Critical Recovery Warning
+            Alert.alert(
+              "Final Confirmation",
+              "Your group cannot be recovered if deleted. Are you sure?",
+              [
+                { text: "Cancel", style: "cancel" },
+                { 
+                  text: "Yes, I am sure", 
+                  style: "destructive", 
+                  onPress: () => {
+                    deleteGroup({ groupId: id! }, {
+                      onSuccess: () => {
+                        queryClient.invalidateQueries({ queryKey: ['groups'] });
+                        router.replace('/(tabs)/groups');
+                      }
+                    });
+                  }
+                }
+              ]
+            );
+          }
+        }
+      ]
+    );
+  };
+
+  const handleConfirmLeave = () => {
+    Alert.alert("Leave Group", "Are you sure you want to leave this group?", [
+      { text: "Cancel", style: "cancel" },
+      { 
+        text: "Leave", 
+        style: "destructive", 
+        onPress: () => {
+          leaveGroup({ groupId: id! }, {
+            onSuccess: () => {
+              queryClient.invalidateQueries({ queryKey: ['groups'] });
+              router.replace('/(tabs)/groups');
+            },
+          });
+        }
+      },
+    ]);
   };
 
   if (isLoadingGroup || isLoadingUser) {
@@ -412,31 +479,23 @@ const GroupSettings = () => {
               </Text>
             )}
             renderItem={({ item }) => {
-              const memberId = item._id.toString();
+              const mId = item._id.toString();
               const groupOwnerId = ((group?.owner as any)?._id || group?.owner || "").toString();
-              
-              const isOwner = memberId === groupOwnerId;
-              const isSelected = selectedModIds.includes(memberId);
+              const isOwner = mId === groupOwnerId;
+              const isSelected = selectedModIds.includes(mId);
               
               return (
                 <TouchableOpacity 
                   style={[styles.selectMemberRow, isSelected && !isOwner && styles.selectMemberRowActive]} 
-                  onPress={() => !isOwner && handleToggleModSelection(memberId)}
+                  onPress={() => !isOwner && setSelectedModIds(p => p.includes(mId) ? p.filter(id => id !== mId) : [...p, mId])}
                   disabled={isOwner || !isUserOwner}
                   activeOpacity={0.8}
                 >
                   <View style={styles.memberInfo}>
-                    <Image 
-                      source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} 
-                      style={styles.memberAvatar} 
-                    />
+                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
                     <View>
-                      <Text style={[styles.memberName, isSelected && !isOwner && styles.textWhite]}>
-                        {item.firstName} {item.lastName}
-                      </Text>
-                      <Text style={[styles.memberRole, isSelected && !isOwner && styles.textWhite70]}>
-                        {isOwner ? 'Owner' : isSelected ? 'Moderator' : 'Member'}
-                      </Text>
+                      <Text style={[styles.memberName, isSelected && !isOwner && styles.textWhite]}>{item.firstName} {item.lastName}</Text>
+                      <Text style={[styles.memberRole, isSelected && !isOwner && styles.textWhite70]}>{isOwner ? 'Owner' : isSelected ? 'Moderator' : 'Member'}</Text>
                     </View>
                   </View>
                   
@@ -456,7 +515,7 @@ const GroupSettings = () => {
         </SafeAreaView>
       </Modal>
 
-      {/* Remove Members Modal (Mirrored UI from Mods, logic from Details) */}
+      {/* Remove Members Modal */}
       <Modal visible={isEditingMembers} transparent animationType="slide" onRequestClose={() => setIsEditingMembers(false)}>
         <SafeAreaView style={styles.fullModalContainer}>
           <View style={styles.modalHeader}>
@@ -466,57 +525,31 @@ const GroupSettings = () => {
             <Text style={styles.modalTitleLarge}>Remove Members</Text>
             <View style={{ width: 44 }} />
           </View>
-          
           <FlatList
             data={group?.members}
             keyExtractor={(item) => item._id}
             contentContainerStyle={{ padding: 20 }}
-            ListHeaderComponent={() => (
-              <Text style={styles.modalSubtitleLeft}>
-                Removing a member will immediately revoke their access to the chat and all future meetings for this group.
-              </Text>
-            )}
             renderItem={({ item }) => {
-              const memberId = item._id.toString();
-              const groupOwnerId = ((group?.owner as any)?._id || group?.owner || "").toString();
-              const isMemberOwner = memberId === groupOwnerId;
-              
-              // Permission Logic from GroupDetailsView:
-              // Owners can remove anyone but themselves.
-              // Mods can remove anyone who isn't the owner or another mod.
-              const isMemberMod = group?.moderators?.some((m: any) => (m?._id || m).toString() === memberId);
-              const canRemoveThisUser = (isUserOwner && !isMemberOwner) || (isUserMod && !isMemberOwner && !isMemberMod);
+              const mId = item._id.toString();
+              const isMbrOwner = mId === ((group?.owner as any)?._id || group?.owner || "").toString();
+              const isMbrMod = group?.moderators?.some((m: any) => (m?._id || m).toString() === mId);
+              const canRemove = (isUserOwner && !isMbrOwner) || (isUserMod && !isMbrOwner && !isMbrMod);
 
               return (
                 <View style={styles.selectMemberRow}>
                   <View style={styles.memberInfo}>
-                    <Image 
-                      source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} 
-                      style={styles.memberAvatar} 
-                    />
+                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
                     <View>
                       <Text style={styles.memberName}>{item.firstName} {item.lastName}</Text>
-                      <Text style={styles.memberRole}>{isMemberOwner ? 'Owner' : isMemberMod ? 'Moderator' : 'Member'}</Text>
+                      <Text style={styles.memberRole}>{isMbrOwner ? 'Owner' : isMbrMod ? 'Moderator' : 'Member'}</Text>
                     </View>
                   </View>
                   
-                  {canRemoveThisUser ? (
-                    <TouchableOpacity 
-                      onPress={() => handleRemoveMemberPress(item)}
-                      disabled={isRemovingMemberId === memberId}
-                      style={styles.removeCircle}
-                    >
-                      {isRemovingMemberId === memberId ? (
-                        <ActivityIndicator size="small" color="#EF4444" />
-                      ) : (
-                        <Feather name="x-circle" size={24} color="#EF4444" />
-                      )}
+                  {canRemove ? (
+                    <TouchableOpacity onPress={() => Alert.alert("Remove Member", `Remove ${item.firstName} from the group?`, [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: () => performMemberRemoval(mId) }])} disabled={isRemovingMemberId === mId}>
+                        {isRemovingMemberId === mId ? <ActivityIndicator size="small" color="#EF4444" /> : <Feather name="x-circle" size={24} color="#EF4444" />}
                     </TouchableOpacity>
-                  ) : isMemberOwner ? (
-                    <View style={styles.ownerBadgeShield}>
-                      <Feather name="shield" size={16} color="#4F46E5" />
-                    </View>
-                  ) : null}
+                  ) : isMbrOwner ? <View style={styles.ownerBadgeShield}><Feather name="shield" size={16} color="#4F46E5" /></View> : null}
                 </View>
               );
             }}
@@ -570,8 +603,7 @@ const styles = StyleSheet.create({
   textWhite: { color: 'white' },
   textWhite70: { color: 'rgba(255,255,255,0.7)' },
   checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
-  checkboxActive: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: 'white' },
-  removeCircle: { padding: 4 }
+  checkboxActive: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: 'white' }
 });
 
 export default GroupSettings;

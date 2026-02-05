@@ -22,19 +22,14 @@ interface GroupDetailsViewProps {
     onSearchChange: (text: string) => void;
     searchResults: User[] | undefined;
     onInvite: (id: string) => void;
-    isInviting: boolean;
-    onDeleteGroup: () => void;
-    isDeletingGroup: boolean;
-    onLeaveGroup: () => void;
-    isLeavingGroup: boolean;
     onAddOneOffEvent?: () => void;
 }
 
 /**
  * GroupDetailsView
  * Displays the technical details of the group, members, and management tools.
- * Redundant Edit Schedule and Manage Moderator features have been removed
- * as they are now centralized in the Group Settings screen.
+ * Termination actions (Delete/Leave) have been moved to the Group Settings 
+ * screen to finalize the centralization of group management.
  */
 export const GroupDetailsView = ({
     groupDetails,
@@ -45,8 +40,6 @@ export const GroupDetailsView = ({
     onSearchChange,
     searchResults,
     onInvite,
-    onDeleteGroup,
-    onLeaveGroup,
     onAddOneOffEvent
 }: GroupDetailsViewProps) => {
     const isOwner = currentUser._id === groupDetails.owner;
@@ -99,7 +92,6 @@ export const GroupDetailsView = ({
                         <Feather name="plus" size={16} color="#4F46E5" />
                         <Text style={styles.actionPillText}>Add Meeting</Text>
                     </TouchableOpacity>
-                    {/* Note: Edit Schedule has been moved to Settings */}
                 </View>
             )}
 
@@ -159,15 +151,8 @@ export const GroupDetailsView = ({
                     ))}
                 </View>
             )}
-
-            {/* 5. Group Termination Actions */}
-            <View style={{ borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 24 }}>
-                {isOwner ? (
-                    <TouchableOpacity onPress={onDeleteGroup} style={[styles.actionBtn, styles.deleteBtn]}><Feather name="trash-2" size={20} color="#EF4444" /><Text style={styles.deleteBtnText}>Delete Group</Text></TouchableOpacity>
-                ) : (
-                    <TouchableOpacity onPress={onLeaveGroup} style={[styles.actionBtn, styles.deleteBtn]}><Feather name="log-out" size={20} color="#EF4444" /><Text style={styles.deleteBtnText}>Leave Group</Text></TouchableOpacity>
-                )}
-            </View>
+            
+            {/* Note: All Group Termination Actions (Delete/Leave) have been moved to Settings */}
         </View>
     );
 };
@@ -193,8 +178,5 @@ const styles = StyleSheet.create({
     modBadgeText: { fontSize: 8, fontWeight: 'bold', color: '#2563EB', textTransform: 'uppercase' },
     searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14, paddingHorizontal: 12, height: 50 },
     searchInput: { flex: 1, marginLeft: 10, fontSize: 15 },
-    searchResult: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-    actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F7FF', padding: 16, borderRadius: 16, marginBottom: 12 },
-    deleteBtn: { backgroundColor: '#FEF2F2' },
-    deleteBtnText: { marginLeft: 10, color: '#EF4444', fontWeight: 'bold', fontSize: 16 }
+    searchResult: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }
 });
