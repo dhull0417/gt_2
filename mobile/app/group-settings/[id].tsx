@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { 
   View, 
   Text, 
@@ -10,7 +10,9 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Image,
+  FlatList
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -49,15 +51,36 @@ const GroupSettings = () => {
   const [tempLocation, setTempLocation] = useState("");
   const [isSavingLocation, setIsSavingLocation] = useState(false);
 
+  // --- State for Moderator Management ---
+  const [isEditingMods, setIsEditingMods] = useState(false);
+  const [selectedModIds, setSelectedModIds] = useState<string[]>([]);
+  const [isSavingMods, setIsSavingMods] = useState(false);
+
+  // --- State for Member Management ---
+  const [isEditingMembers, setIsEditingMembers] = useState(false);
+  const [isRemovingMemberId, setIsRemovingMemberId] = useState<string | null>(null);
+
+  // --- Robust Permission Logic ---
+  const isUserOwner = useMemo(() => {
+    if (!currentUser || !group) return false;
+    const ownerId = (group.owner as any)?._id || group.owner;
+    return currentUser._id.toString() === ownerId.toString();
+  }, [currentUser, group]);
+
+  const isUserMod = useMemo(() => {
+    if (!currentUser || !group) return false;
+    const userId = currentUser._id.toString();
+    return group.moderators?.some((m: any) => (m?._id || m).toString() === userId);
+  }, [currentUser, group]);
+
+  const canAccessSettings = useMemo(() => {
+    return isUserOwner || isUserMod;
+  }, [isUserOwner, isUserMod]);
+
   // --- ACCESS CONTROL GUARD ---
   useEffect(() => {
     if (!isLoadingGroup && !isLoadingUser && group && currentUser) {
-      const userId = currentUser._id;
-      const g = group as any;
-      const isOwner = g.owner === userId || g.owner?._id === userId;
-      const isMod = g.moderators?.some((m: any) => (m?._id || m) === userId);
-
-      if (!isOwner && !isMod) {
+      if (!canAccessSettings) {
         Alert.alert(
           "Permission Denied", 
           "Only owners and moderators can access group settings."
@@ -65,7 +88,7 @@ const GroupSettings = () => {
         router.back();
       }
     }
-  }, [group, currentUser, isLoadingGroup, isLoadingUser]);
+  }, [group, currentUser, isLoadingGroup, isLoadingUser, canAccessSettings]);
 
   const settingsOptions = [
     { id: 'name', label: 'Edit Name', icon: 'type', color: '#3B82F6', bg: '#EFF6FF' },
@@ -93,6 +116,16 @@ const GroupSettings = () => {
       case 'location':
         setTempLocation(group?.defaultLocation || "");
         setIsEditingLocation(true);
+        break;
+      case 'mods':
+        const currentModIds = (group?.moderators || []).map((m: any) => 
+            typeof m === 'string' ? m : m._id
+        );
+        setSelectedModIds(currentModIds);
+        setIsEditingMods(true);
+        break;
+      case 'members':
+        setIsEditingMembers(true);
         break;
       case 'schedule':
         router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id } });
@@ -157,8 +190,6 @@ const GroupSettings = () => {
   const handleSaveLocation = async () => {
     if (!id) return;
     const trimmedLoc = tempLocation.trim();
-    
-    // Safety check: don't call if no change
     if (trimmedLoc === group?.defaultLocation) {
         setIsEditingLocation(false);
         return;
@@ -166,22 +197,76 @@ const GroupSettings = () => {
 
     setIsSavingLocation(true);
     try {
-        // This triggers the backend updateGroup which now handles event syncing
         await groupApi.updateGroup(api, { groupId: id, defaultLocation: trimmedLoc });
-        
-        // Invalidate all relevant data to refresh UI everywhere
         await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['events'] })
         ]);
-        
         setIsEditingLocation(false);
         Alert.alert("Success", "Default location and future events updated.");
     } catch (error: any) {
         Alert.alert("Error", error.response?.data?.error || "Failed to update location.");
     } finally {
         setIsSavingLocation(false);
+    }
+  };
+
+  // --- MODERATOR LOGIC ---
+  const handleToggleModSelection = (userId: string) => {
+    setSelectedModIds(prev => 
+        prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const handleSaveModerators = async () => {
+    if (!id) return;
+    setIsSavingMods(true);
+    try {
+        await groupApi.updateModerators(api, { 
+            groupId: id, 
+            moderatorIds: selectedModIds 
+        });
+        await queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+        setIsEditingMods(false);
+        Alert.alert("Success", "Moderator list updated.");
+    } catch (error: any) {
+        Alert.alert("Error", error.response?.data?.error || "Failed to update moderators.");
+    } finally {
+        setIsSavingMods(false);
+    }
+  };
+
+  // --- MEMBER REMOVAL LOGIC ---
+  const handleRemoveMemberPress = (member: User) => {
+    Alert.alert(
+      "Remove Member",
+      `Are you sure you want to remove ${member.firstName} ${member.lastName} from the group?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Remove", 
+          style: "destructive", 
+          onPress: () => performMemberRemoval(member._id) 
+        }
+      ]
+    );
+  };
+
+  const performMemberRemoval = async (memberId: string) => {
+    if (!id) return;
+    setIsRemovingMemberId(memberId);
+    try {
+        await groupApi.removeMember(api, { groupId: id, memberIdToRemove: memberId });
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
+            queryClient.invalidateQueries({ queryKey: ['groups'] }),
+            queryClient.invalidateQueries({ queryKey: ['events'] })
+        ]);
+    } catch (error: any) {
+        Alert.alert("Error", error.response?.data?.error || "Failed to remove member.");
+    } finally {
+        setIsRemovingMemberId(null);
     }
   };
 
@@ -195,7 +280,6 @@ const GroupSettings = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
           <Feather name="x" size={28} color="#374151" />
@@ -229,6 +313,16 @@ const GroupSettings = () => {
                   {option.id === 'capacity' && (
                     <Text style={styles.optionSubLabel}>
                       Current Limit: {group?.defaultCapacity === 0 ? 'Unlimited' : group?.defaultCapacity}
+                    </Text>
+                  )}
+                  {option.id === 'mods' && (
+                    <Text style={styles.optionSubLabel}>
+                      {(group?.moderators?.length || 0)} moderators assigned
+                    </Text>
+                  )}
+                  {option.id === 'members' && (
+                    <Text style={styles.optionSubLabel}>
+                      {(group?.members?.length || 0)} total members
                     </Text>
                   )}
                 </View>
@@ -284,24 +378,150 @@ const GroupSettings = () => {
             <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Default Location</Text>
                 <Text style={styles.modalSubtitle}>Updates location for all associated events.</Text>
-                <TextInput 
-                    style={styles.modalInput} 
-                    value={tempLocation} 
-                    onChangeText={setTempLocation} 
-                    placeholder="e.g. Starbucks or Zoom link..." 
-                    autoFocus 
-                    selectTextOnFocus 
-                />
+                <TextInput style={styles.modalInput} value={tempLocation} onChangeText={setTempLocation} placeholder="e.g. Starbucks or Zoom link..." autoFocus selectTextOnFocus />
                 <View style={styles.modalButtons}>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingLocation(false)}>
-                        <Text style={styles.modalBtnTextCancel}>Cancel</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingLocation(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
                     <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveLocation} disabled={isSavingLocation}>
                         {isSavingLocation ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
                     </TouchableOpacity>
                 </View>
             </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Edit Moderators Modal */}
+      <Modal visible={isEditingMods} transparent animationType="slide" onRequestClose={() => setIsEditingMods(false)}>
+        <SafeAreaView style={styles.fullModalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setIsEditingMods(false)} style={styles.headerIconButton}>
+              <Feather name="x" size={24} color="#374151" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitleLarge}>Manage Moderators</Text>
+            <TouchableOpacity onPress={handleSaveModerators} disabled={isSavingMods} style={styles.headerIconButton}>
+                {isSavingMods ? <ActivityIndicator size="small" color="#4F46E5" /> : <Text style={styles.saveBtnText}>Save</Text>}
+            </TouchableOpacity>
+          </View>
+          
+          <FlatList
+            data={group?.members}
+            keyExtractor={(item) => item._id}
+            contentContainerStyle={{ padding: 20 }}
+            ListHeaderComponent={() => (
+              <Text style={styles.modalSubtitleLeft}>
+                Only the group owner can assign moderators. Moderators can edit group settings, schedules, and manage events.
+              </Text>
+            )}
+            renderItem={({ item }) => {
+              const memberId = item._id.toString();
+              const groupOwnerId = ((group?.owner as any)?._id || group?.owner || "").toString();
+              
+              const isOwner = memberId === groupOwnerId;
+              const isSelected = selectedModIds.includes(memberId);
+              
+              return (
+                <TouchableOpacity 
+                  style={[styles.selectMemberRow, isSelected && !isOwner && styles.selectMemberRowActive]} 
+                  onPress={() => !isOwner && handleToggleModSelection(memberId)}
+                  disabled={isOwner || !isUserOwner}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.memberInfo}>
+                    <Image 
+                      source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} 
+                      style={styles.memberAvatar} 
+                    />
+                    <View>
+                      <Text style={[styles.memberName, isSelected && !isOwner && styles.textWhite]}>
+                        {item.firstName} {item.lastName}
+                      </Text>
+                      <Text style={[styles.memberRole, isSelected && !isOwner && styles.textWhite70]}>
+                        {isOwner ? 'Owner' : isSelected ? 'Moderator' : 'Member'}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  {isOwner ? (
+                    <View style={styles.ownerBadgeShield}>
+                      <Feather name="shield" size={16} color="#4F46E5" />
+                    </View>
+                  ) : (
+                    <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
+                      {isSelected && <Feather name="check" size={14} color="white" />}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
+
+      {/* Remove Members Modal (Mirrored UI from Mods, logic from Details) */}
+      <Modal visible={isEditingMembers} transparent animationType="slide" onRequestClose={() => setIsEditingMembers(false)}>
+        <SafeAreaView style={styles.fullModalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setIsEditingMembers(false)} style={styles.headerIconButton}>
+              <Feather name="chevron-down" size={28} color="#374151" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitleLarge}>Remove Members</Text>
+            <View style={{ width: 44 }} />
+          </View>
+          
+          <FlatList
+            data={group?.members}
+            keyExtractor={(item) => item._id}
+            contentContainerStyle={{ padding: 20 }}
+            ListHeaderComponent={() => (
+              <Text style={styles.modalSubtitleLeft}>
+                Removing a member will immediately revoke their access to the chat and all future meetings for this group.
+              </Text>
+            )}
+            renderItem={({ item }) => {
+              const memberId = item._id.toString();
+              const groupOwnerId = ((group?.owner as any)?._id || group?.owner || "").toString();
+              const isMemberOwner = memberId === groupOwnerId;
+              
+              // Permission Logic from GroupDetailsView:
+              // Owners can remove anyone but themselves.
+              // Mods can remove anyone who isn't the owner or another mod.
+              const isMemberMod = group?.moderators?.some((m: any) => (m?._id || m).toString() === memberId);
+              const canRemoveThisUser = (isUserOwner && !isMemberOwner) || (isUserMod && !isMemberOwner && !isMemberMod);
+
+              return (
+                <View style={styles.selectMemberRow}>
+                  <View style={styles.memberInfo}>
+                    <Image 
+                      source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} 
+                      style={styles.memberAvatar} 
+                    />
+                    <View>
+                      <Text style={styles.memberName}>{item.firstName} {item.lastName}</Text>
+                      <Text style={styles.memberRole}>{isMemberOwner ? 'Owner' : isMemberMod ? 'Moderator' : 'Member'}</Text>
+                    </View>
+                  </View>
+                  
+                  {canRemoveThisUser ? (
+                    <TouchableOpacity 
+                      onPress={() => handleRemoveMemberPress(item)}
+                      disabled={isRemovingMemberId === memberId}
+                      style={styles.removeCircle}
+                    >
+                      {isRemovingMemberId === memberId ? (
+                        <ActivityIndicator size="small" color="#EF4444" />
+                      ) : (
+                        <Feather name="x-circle" size={24} color="#EF4444" />
+                      )}
+                    </TouchableOpacity>
+                  ) : isMemberOwner ? (
+                    <View style={styles.ownerBadgeShield}>
+                      <Feather name="shield" size={16} color="#4F46E5" />
+                    </View>
+                  ) : null}
+                </View>
+              );
+            }}
+          />
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -333,7 +553,25 @@ const styles = StyleSheet.create({
   modalBtnCancel: { backgroundColor: '#F3F4F6' },
   modalBtnSave: { backgroundColor: '#4F46E5' },
   modalBtnTextCancel: { fontSize: 16, fontWeight: '700', color: '#4B5563' },
-  modalBtnTextSave: { fontSize: 16, fontWeight: '700', color: 'white' }
+  modalBtnTextSave: { fontSize: 16, fontWeight: '700', color: 'white' },
+  fullModalContainer: { flex: 1, backgroundColor: 'white' },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  modalTitleLarge: { fontSize: 20, fontWeight: '900', color: '#111827' },
+  modalSubtitleLeft: { fontSize: 14, color: '#6B7280', marginHorizontal: 20, marginTop: 20, marginBottom: 10, fontWeight: '500', lineHeight: 20 },
+  memberInfo: { flexDirection: 'row', alignItems: 'center' },
+  memberAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
+  memberName: { fontSize: 16, fontWeight: '700', color: '#1F2937' },
+  memberRole: { fontSize: 12, color: '#9CA3AF', fontWeight: '600', marginTop: 1 },
+  ownerBadgeShield: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center' },
+  saveBtnText: { color: '#4F46E5', fontWeight: '900', fontSize: 16 },
+  headerIconButton: { padding: 4 },
+  selectMemberRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: 18, marginHorizontal: 20, marginBottom: 10, backgroundColor: '#F9FAFB' },
+  selectMemberRowActive: { backgroundColor: '#4F46E5' },
+  textWhite: { color: 'white' },
+  textWhite70: { color: 'rgba(255,255,255,0.7)' },
+  checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
+  checkboxActive: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: 'white' },
+  removeCircle: { padding: 4 }
 });
 
 export default GroupSettings;
