@@ -1,25 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { 
     View, 
     Text, 
     Image, 
     TouchableOpacity, 
     TextInput, 
-    ActivityIndicator, 
-    Modal, 
-    Alert, 
     StyleSheet, 
     ScrollView,
-    Dimensions,
-    KeyboardAvoidingView,
-    Platform
+    Dimensions
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
+import { GroupDetails, User } from '@/utils/api';
 import { formatSchedule } from '@/utils/schedule';
-import { useQueryClient } from '@tanstack/react-query';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface GroupDetailsViewProps {
     groupDetails: GroupDetails; 
@@ -35,15 +27,14 @@ interface GroupDetailsViewProps {
     isDeletingGroup: boolean;
     onLeaveGroup: () => void;
     isLeavingGroup: boolean;
-    onEditSchedule?: () => void;
     onAddOneOffEvent?: () => void;
 }
 
 /**
- * Project 6 Refined: GroupDetailsView
+ * GroupDetailsView
  * Displays the technical details of the group, members, and management tools.
- * Notification lead time is displayed in the core info card.
- * Muting has been moved to the Chat Header.
+ * Redundant Edit Schedule and Manage Moderator features have been removed
+ * as they are now centralized in the Group Settings screen.
  */
 export const GroupDetailsView = ({
     groupDetails,
@@ -54,12 +45,8 @@ export const GroupDetailsView = ({
     onSearchChange,
     searchResults,
     onInvite,
-    isInviting,
     onDeleteGroup,
-    isDeletingGroup,
     onLeaveGroup,
-    isLeavingGroup,
-    onEditSchedule,
     onAddOneOffEvent
 }: GroupDetailsViewProps) => {
     const isOwner = currentUser._id === groupDetails.owner;
@@ -70,71 +57,6 @@ export const GroupDetailsView = ({
 
     const canManage = isOwner || isMod;
 
-    const api = useApiClient();
-    const queryClient = useQueryClient();
-
-    // --- Quick Settings State ---
-    const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
-    const [tempLocation, setTempLocation] = useState('');
-    const [tempCapacity, setTempCapacity] = useState<number>(0);
-    const [isSavingSettings, setIsSavingSettings] = useState(false);
-
-    // --- Moderator Management State ---
-    const [isModModalVisible, setIsModModalVisible] = useState(false);
-    const [selectedModIds, setSelectedModIds] = useState<string[]>([]);
-    const [isSavingMods, setIsSavingMods] = useState(false);
-
-    useEffect(() => {
-        if (isSettingsModalVisible) {
-            setTempLocation(groupDetails.defaultLocation || '');
-            setTempCapacity(groupDetails.defaultCapacity || 0);
-        }
-    }, [isSettingsModalVisible, groupDetails]);
-
-    useEffect(() => {
-        if (isModModalVisible) {
-            const currentModIds = (groupDetails.moderators || []).map((m: User | string) => 
-                typeof m === 'string' ? m : m._id
-            );
-            setSelectedModIds(currentModIds);
-        }
-    }, [isModModalVisible, groupDetails.moderators]);
-
-    const handleSaveSettings = async () => {
-        setIsSavingSettings(true);
-        try {
-            await api.put(`/api/groups/${groupDetails._id}`, { 
-                defaultLocation: tempLocation,
-                defaultCapacity: tempCapacity 
-            });
-            queryClient.invalidateQueries({ queryKey: ['groupDetails', groupDetails._id] });
-            setIsSettingsModalVisible(false);
-            Alert.alert("Success", "Group settings updated.");
-        } catch (error: any) {
-            Alert.alert("Error", "Failed to update settings.");
-        } finally {
-            setIsSavingSettings(false);
-        }
-    };
-
-    const handleToggleModSelection = (userId: string) => {
-        setSelectedModIds(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
-    };
-
-    const handleSaveModerators = async () => {
-        setIsSavingMods(true);
-        try {
-            await groupApi.updateModerators(api, { groupId: groupDetails._id, moderatorIds: selectedModIds });
-            queryClient.invalidateQueries({ queryKey: ['groupDetails', groupDetails._id] });
-            setIsModModalVisible(false);
-            Alert.alert("Success", "Moderator list updated.");
-        } catch (error: any) {
-            Alert.alert("Error", "Failed to update moderators.");
-        } finally {
-            setIsSavingMods(false);
-        }
-    };
-
     return (
         <View style={styles.container}>
             {/* 1. Core Details Card */}
@@ -142,12 +64,6 @@ export const GroupDetailsView = ({
                 <View style={styles.card}>
                     <View style={styles.cardHeader}>
                         <Text style={styles.cardTitle}>Details & Capacity</Text>
-                        {canManage && (
-                            <TouchableOpacity onPress={() => setIsSettingsModalVisible(true)} style={styles.badgeBtnBlue}>
-                                <Feather name="edit-2" size={12} color="#4F46E5" />
-                                <Text style={styles.badgeBtnTextBlue}>Edit</Text>
-                            </TouchableOpacity>
-                        )}
                     </View>
                     
                     <View style={styles.infoRow}>
@@ -167,7 +83,6 @@ export const GroupDetailsView = ({
                         <Text style={styles.infoText}>Limit: {groupDetails.defaultCapacity === 0 ? "Unlimited" : groupDetails.defaultCapacity}</Text>
                     </View>
 
-                    {/* PROJECT 6: Notification Lead Time row */}
                     <View style={styles.infoRow}>
                         <Feather name="bell" size={18} color="#4F46E5" />
                         <Text style={styles.infoText}>
@@ -184,23 +99,11 @@ export const GroupDetailsView = ({
                         <Feather name="plus" size={16} color="#4F46E5" />
                         <Text style={styles.actionPillText}>Add Meeting</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={onEditSchedule} style={styles.actionPill}>
-                        <Feather name="clock" size={16} color="#4F46E5" />
-                        <Text style={styles.actionPillText}>Edit Schedule</Text>
-                    </TouchableOpacity>
+                    {/* Note: Edit Schedule has been moved to Settings */}
                 </View>
             )}
 
-            {/* 3. Moderator Shield Access */}
-            {isOwner && (
-                <TouchableOpacity onPress={() => setIsModModalVisible(true)} style={styles.manageModsBtn} activeOpacity={0.7}>
-                    <View style={styles.manageModsIcon}><Feather name="shield" size={18} color="white" /></View>
-                    <Text style={styles.manageModsText}>Manage Moderators</Text>
-                    <Feather name="chevron-right" size={20} color="#4F46E5" />
-                </TouchableOpacity>
-            )}
-
-            {/* 4. Member List */}
+            {/* 3. Member List */}
             <View style={{ marginBottom: 24 }}>
                 <Text style={styles.sectionTitle}>Members ({groupDetails.members.length})</Text>
                 {groupDetails.members.map(member => {
@@ -234,7 +137,7 @@ export const GroupDetailsView = ({
                 })}
             </View>
 
-            {/* 5. Invite Section */}
+            {/* 4. Invite Section */}
             {canManage && (
                 <View style={{ marginBottom: 32 }}>
                     <Text style={styles.sectionTitle}>Invite Members</Text>
@@ -257,81 +160,7 @@ export const GroupDetailsView = ({
                 </View>
             )}
 
-            {/* Modal: Quick Settings */}
-            <Modal visible={isSettingsModalVisible} animationType="slide" transparent>
-                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
-                    <View style={styles.modalOverlay}>
-                        <View style={styles.modalContainerCompact}>
-                            <View style={styles.modalHeader}>
-                                <TouchableOpacity onPress={() => setIsSettingsModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
-                                <Text style={styles.modalTitle}>Edit Group Details</Text>
-                                <TouchableOpacity onPress={handleSaveSettings} disabled={isSavingSettings}>
-                                    {isSavingSettings ? <ActivityIndicator size="small" color="#4F46E5" /> : <Text style={styles.saveBtnText}>Save</Text>}
-                                </TouchableOpacity>
-                            </View>
-                            <ScrollView style={{ paddingVertical: 10 }}>
-                                <Text style={styles.label}>Default Location</Text>
-                                <View style={styles.inputBox}>
-                                    <Feather name="map-pin" size={18} color="#4F46E5" />
-                                    <TextInput style={styles.input} value={tempLocation} onChangeText={setTempLocation} placeholder="e.g. Starbucks" />
-                                </View>
-                                <Text style={[styles.label, {marginTop: 20}]}>Default Attendee Limit</Text>
-                                <View style={styles.capacityRow}>
-                                    <TouchableOpacity onPress={() => setTempCapacity(prev => Math.max(0, prev - 1))} style={styles.capBtnSmall}>
-                                        <Feather name="minus" size={20} color="#4F46E5" />
-                                    </TouchableOpacity>
-                                    <Text style={styles.capValSmall}>{tempCapacity === 0 ? "Unlimited" : tempCapacity}</Text>
-                                    <TouchableOpacity onPress={() => setTempCapacity(prev => prev + 1)} style={styles.capBtnSmall}>
-                                        <Feather name="plus" size={20} color="#4F46E5" />
-                                    </TouchableOpacity>
-                                </View>
-                            </ScrollView>
-                        </View>
-                    </View>
-                </KeyboardAvoidingView>
-            </Modal>
-
-            {/* Modal: Moderator Assignment */}
-            <Modal visible={isModModalVisible} animationType="slide" transparent onRequestClose={() => setIsModModalVisible(false)}>
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContainer}>
-                        <View style={styles.modalHeader}>
-                            <TouchableOpacity onPress={() => setIsModModalVisible(false)} style={styles.headerIconButton}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
-                            <Text style={styles.modalTitle}>Assign Moderators</Text>
-                            <TouchableOpacity onPress={handleSaveModerators} disabled={isSavingMods} style={styles.headerIconButton}>
-                                {isSavingMods ? <ActivityIndicator size="small" color="#4F46E5" /> : <Text style={styles.saveBtnText}>Save</Text>}
-                            </TouchableOpacity>
-                        </View>
-                        <ScrollView style={styles.memberList} showsVerticalScrollIndicator={false}>
-                            {groupDetails.members.filter(m => m._id !== groupDetails.owner).map(member => {
-                                const isSelected = selectedModIds.includes(member._id);
-                                return (
-                                    <TouchableOpacity 
-                                        key={member._id} 
-                                        style={[styles.selectMemberRow, isSelected && styles.selectMemberRowActive]} 
-                                        onPress={() => handleToggleModSelection(member._id)} 
-                                        activeOpacity={0.8}
-                                    >
-                                        <Image 
-                                            source={{ uri: member.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${member.username?.[0]}` }} 
-                                            style={styles.avatarSmall} 
-                                        />
-                                        <View style={{ flex: 1, marginLeft: 12 }}>
-                                            <Text style={[styles.selectMemberName, isSelected && styles.textWhite]}>{member.firstName} {member.lastName}</Text>
-                                            <Text style={[styles.selectMemberHandle, isSelected && styles.textWhite70]}>@{member.username}</Text>
-                                        </View>
-                                        <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
-                                            {isSelected && <Feather name="check" size={14} color="white" />}
-                                        </View>
-                                    </TouchableOpacity>
-                                );
-                            })}
-                        </ScrollView>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* 6. Group Termination Actions */}
+            {/* 5. Group Termination Actions */}
             <View style={{ borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 24 }}>
                 {isOwner ? (
                     <TouchableOpacity onPress={onDeleteGroup} style={[styles.actionBtn, styles.deleteBtn]}><Feather name="trash-2" size={20} color="#EF4444" /><Text style={styles.deleteBtnText}>Delete Group</Text></TouchableOpacity>
@@ -350,14 +179,9 @@ const styles = StyleSheet.create({
     cardTitle: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
     infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     infoText: { marginLeft: 12, fontSize: 16, fontWeight: '600', color: '#374151', flex: 1 },
-    badgeBtnBlue: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEF2FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
-    badgeBtnTextBlue: { color: '#4F46E5', fontSize: 10, fontWeight: 'bold', marginLeft: 4 },
     managerActionsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
     actionPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F7FF', paddingVertical: 12, borderRadius: 14, borderBottomWidth: 1, borderBottomColor: '#E0E7FF' },
     actionPillText: { marginLeft: 8, color: '#4F46E5', fontWeight: 'bold', fontSize: 13 },
-    manageModsBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 16, borderRadius: 20, marginBottom: 32, borderWidth: 1, borderColor: '#EEF2FF', elevation: 2 },
-    manageModsIcon: { backgroundColor: '#4F46E5', width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-    manageModsText: { flex: 1, marginLeft: 12, fontSize: 16, fontWeight: 'bold', color: '#1F2937' },
     sectionTitle: { fontSize: 20, fontWeight: '900', color: '#111827', marginBottom: 16 },
     memberCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     avatar: { width: 44, height: 44, borderRadius: 14, marginRight: 12, backgroundColor: '#F3F4F6' },
@@ -372,28 +196,5 @@ const styles = StyleSheet.create({
     searchResult: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F7FF', padding: 16, borderRadius: 16, marginBottom: 12 },
     deleteBtn: { backgroundColor: '#FEF2F2' },
-    deleteBtnText: { marginLeft: 10, color: '#EF4444', fontWeight: 'bold', fontSize: 16 },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-    modalContainer: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, height: SCREEN_HEIGHT * 0.8, padding: 24, paddingBottom: 40 },
-    modalContainerCompact: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 60 },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: 18, fontWeight: '900', color: '#111827' },
-    label: { fontSize: 14, fontWeight: 'bold', color: '#9CA3AF', marginBottom: 8, textTransform: 'uppercase' },
-    inputBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
-    input: { flex: 1, marginLeft: 12, fontSize: 16, color: '#374151' },
-    capacityRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
-    capBtnSmall: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center' },
-    capValSmall: { fontSize: 20, fontWeight: '800', color: '#111827', width: 100, textAlign: 'center' },
-    saveBtnText: { color: '#4F46E5', fontWeight: '900', fontSize: 16 },
-    memberList: { flex: 1 },
-    selectMemberRow: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 18, marginBottom: 10, backgroundColor: '#F9FAFB' },
-    selectMemberRowActive: { backgroundColor: '#4F46E5' },
-    avatarSmall: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#E5E7EB' },
-    selectMemberName: { fontSize: 16, fontWeight: 'bold', color: '#374151' },
-    selectMemberHandle: { fontSize: 12, color: '#9CA3AF' },
-    textWhite: { color: 'white' },
-    textWhite70: { color: 'rgba(255,255,255,0.7)' },
-    checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
-    checkboxActive: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: 'white' },
-    headerIconButton: { padding: 4 }
+    deleteBtnText: { marginLeft: 10, color: '#EF4444', fontWeight: 'bold', fontSize: 16 }
 });
