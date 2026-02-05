@@ -21,8 +21,8 @@ import { User, useApiClient, userApi, groupApi } from '@/utils/api';
 
 /**
  * Group Settings Screen
- * Features administrative controls for owners/moderators.
- * Includes explicit name synchronization logic for associated events.
+ * Access is strictly restricted to the group owner and designated moderators.
+ * Features central management for group name, schedule, JIT, and more.
  */
 const GroupSettings = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -36,21 +36,29 @@ const GroupSettings = () => {
     queryFn: () => userApi.getCurrentUser(api),
   });
 
+  // --- State for Edit Name Modal ---
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
   const [isSavingName, setIsSavingName] = useState(false);
+
+  // --- State for Edit Capacity Modal ---
+  const [isEditingCapacity, setIsEditingCapacity] = useState(false);
+  const [tempCapacity, setTempCapacity] = useState("");
+  const [isSavingCapacity, setIsSavingCapacity] = useState(false);
 
   // --- ACCESS CONTROL GUARD ---
   useEffect(() => {
     if (!isLoadingGroup && !isLoadingUser && group && currentUser) {
       const userId = currentUser._id;
-      // Using 'any' to bypass strict inference issues during troubleshooting
       const g = group as any;
       const isOwner = g.owner === userId || g.owner?._id === userId;
       const isMod = g.moderators?.some((m: any) => (m?._id || m) === userId);
 
       if (!isOwner && !isMod) {
-        Alert.alert("Permission Denied", "Only owners and moderators can access settings.");
+        Alert.alert(
+          "Permission Denied", 
+          "Only owners and moderators can access group settings."
+        );
         router.back();
       }
     }
@@ -68,23 +76,40 @@ const GroupSettings = () => {
   ];
 
   const handleOptionPress = (optionId: string) => {
-    if (optionId === 'name') {
-      setTempName(group?.name || "");
-      setIsEditingName(true);
-    } else if (optionId === 'schedule') {
-      router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id! } });
+    if (!id) return;
+
+    console.log(`[DEBUG] Option Pressed: ${optionId}`);
+
+    switch (optionId) {
+      case 'name':
+        setTempName(group?.name || "");
+        setIsEditingName(true);
+        break;
+      case 'capacity':
+        // Populate current limit (set to 0 for unlimited)
+        setTempCapacity(group?.defaultCapacity?.toString() || "0");
+        setIsEditingCapacity(true);
+        break;
+      case 'schedule':
+        router.push({ 
+            pathname: '/group-edit-schedule/[id]', 
+            params: { id: id } 
+        });
+        break;
+      case 'jit':
+        router.push({ 
+            pathname: '/group-edit-jit/[id]', 
+            params: { id: id } 
+        });
+        break;
+      default:
+        console.log(`[DEBUG] No logic defined for option: ${optionId}`);
+        break;
     }
   };
 
-  /**
-   * handleSaveName
-   * Performs the update and ensures associated event names are refreshed.
-   * This handles the requirement to gather associated event updates 
-   * by forcing the client to refetch all relevant caches (groups, details, events).
-   */
   const handleSaveName = async () => {
     if (!id || !tempName.trim()) return;
-    
     if (tempName === group?.name) {
         setIsEditingName(false);
         return;
@@ -92,31 +117,50 @@ const GroupSettings = () => {
 
     setIsSavingName(true);
     try {
-        console.log(`[SYNC] Starting name update for Group: ${id} to "${tempName}"`);
-        
-        // 1. Execute group update command via API
-        // This triggers the backend to update both the Group and its related Events
-        const response = await groupApi.updateGroup(api, { groupId: id, name: tempName.trim() });
-        
-        console.log("[SYNC] Server acknowledged update:", JSON.stringify(response, null, 2));
-
-        // 2. Global UI synchronization
-        // Invalidate 'events' specifically to ensure all event cards update their titles immediately
+        await groupApi.updateGroup(api, { groupId: id, name: tempName.trim() });
         await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['events'] })
         ]);
-        
-        console.log("[SYNC] Global refresh triggered.");
-        
         setIsEditingName(false);
-        Alert.alert("Success", "Name updated for the group and all associated events.");
     } catch (error: any) {
-        console.error("[SYNC] Propagation Error:", error);
-        Alert.alert("Error", error.response?.data?.error || "Failed to update group name.");
+        const msg = error.response?.data?.error || "Failed to update group name.";
+        Alert.alert("Error", msg);
     } finally {
         setIsSavingName(false);
+    }
+  };
+
+  const handleSaveCapacity = async () => {
+    if (!id) return;
+    
+    // Parse the input; default to 0 if empty or invalid
+    const capacityNum = parseInt(tempCapacity || "0", 10);
+    
+    if (capacityNum === group?.defaultCapacity) {
+      setIsEditingCapacity(false);
+      return;
+    }
+
+    setIsSavingCapacity(true);
+    try {
+        await groupApi.updateGroup(api, { 
+          groupId: id, 
+          defaultCapacity: isNaN(capacityNum) ? 0 : capacityNum 
+        });
+
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
+            queryClient.invalidateQueries({ queryKey: ['groups'] }),
+            queryClient.invalidateQueries({ queryKey: ['events'] })
+        ]);
+        setIsEditingCapacity(false);
+    } catch (error: any) {
+        const msg = error.response?.data?.error || "Failed to update attendee limit.";
+        Alert.alert("Error", msg);
+    } finally {
+        setIsSavingCapacity(false);
     }
   };
 
@@ -130,7 +174,7 @@ const GroupSettings = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      {/* Native header style */}
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
           <Feather name="x" size={28} color="#374151" />
@@ -152,57 +196,82 @@ const GroupSettings = () => {
                 <View style={[styles.iconContainer, { backgroundColor: option.bg }]}>
                   <Feather name={option.icon as any} size={20} color={option.color} />
                 </View>
-                <Text style={[styles.optionLabel, option.destructive && styles.destructiveLabel]}>
-                  {option.label}
-                </Text>
+                <View>
+                  <Text style={[styles.optionLabel, option.destructive && styles.destructiveLabel]}>
+                    {option.label}
+                  </Text>
+                  {option.id === 'capacity' && (
+                    <Text style={styles.optionSubLabel}>
+                      Current: {group?.defaultCapacity === 0 ? 'Unlimited' : group?.defaultCapacity}
+                    </Text>
+                  )}
+                </View>
               </View>
               <Feather name="chevron-right" size={18} color="#D1D5DB" />
             </TouchableOpacity>
           ))}
         </View>
+        
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            Updating the group name will automatically update all associated meeting titles.
+            Only group moderators and owners can view or modify these settings.
           </Text>
         </View>
       </ScrollView>
 
-      {/* Name Input Modal */}
-      <Modal visible={isEditingName} transparent animationType="fade">
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
-          style={styles.modalOverlay}
-        >
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Update Group Name</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={tempName}
-              onChangeText={setTempName}
-              autoFocus
-              placeholderTextColor="#9CA3AF"
-              selectTextOnFocus
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalBtn, styles.modalBtnCancel]} 
-                onPress={() => setIsEditingName(false)}
-              >
-                <Text style={styles.modalBtnTextCancel}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalBtn, styles.modalBtnSave]} 
-                onPress={handleSaveName} 
-                disabled={isSavingName}
-              >
-                {isSavingName ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <Text style={styles.modalBtnTextSave}>Save</Text>
-                )}
-              </TouchableOpacity>
+      {/* Edit Name Modal */}
+      <Modal visible={isEditingName} transparent animationType="fade" onRequestClose={() => setIsEditingName(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Edit Group Name</Text>
+                <TextInput
+                    style={styles.modalInput}
+                    value={tempName}
+                    onChangeText={setTempName}
+                    placeholder="Enter group name"
+                    autoFocus
+                    maxLength={50}
+                    placeholderTextColor="#9CA3AF"
+                    selectTextOnFocus
+                />
+                <View style={styles.modalButtons}>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingName(false)}>
+                        <Text style={styles.modalBtnTextCancel}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveName} disabled={isSavingName || !tempName.trim()}>
+                        {isSavingName ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
+                    </TouchableOpacity>
+                </View>
             </View>
-          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Edit Capacity Modal */}
+      <Modal visible={isEditingCapacity} transparent animationType="fade" onRequestClose={() => setIsEditingCapacity(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Attendee Limit</Text>
+                <Text style={styles.modalSubtitle}>Set to 0 for unlimited members.</Text>
+                <TextInput
+                    style={styles.modalInput}
+                    value={tempCapacity}
+                    onChangeText={setTempCapacity}
+                    placeholder="e.g. 15"
+                    keyboardType="numeric"
+                    autoFocus
+                    maxLength={5}
+                    placeholderTextColor="#9CA3AF"
+                    selectTextOnFocus
+                />
+                <View style={styles.modalButtons}>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingCapacity(false)}>
+                        <Text style={styles.modalBtnTextCancel}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveCapacity} disabled={isSavingCapacity}>
+                        {isSavingCapacity ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
+                    </TouchableOpacity>
+                </View>
+            </View>
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
@@ -221,12 +290,14 @@ const styles = StyleSheet.create({
   optionLeft: { flexDirection: 'row', alignItems: 'center' },
   iconContainer: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
   optionLabel: { fontSize: 16, fontWeight: '700', color: '#374151' },
+  optionSubLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '500', marginTop: 2 },
   destructiveLabel: { color: '#EF4444' },
   footer: { padding: 32, alignItems: 'center' },
   footerText: { fontSize: 12, color: '#9CA3AF', textAlign: 'center', fontWeight: '500', lineHeight: 18 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent: { width: '100%', backgroundColor: 'white', borderRadius: 24, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 16, textAlign: 'center' },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 4, textAlign: 'center' },
+  modalSubtitle: { fontSize: 14, color: '#6B7280', marginBottom: 16, textAlign: 'center', fontWeight: '500' },
   modalInput: { backgroundColor: '#F3F4F6', borderRadius: 12, padding: 16, fontSize: 16, color: '#111827', borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 20 },
   modalButtons: { flexDirection: 'row', gap: 12 },
   modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

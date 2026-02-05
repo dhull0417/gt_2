@@ -242,7 +242,8 @@ export const updateGroup = asyncHandler(async (req, res) => {
         eventsToDisplay, 
         defaultLocation,
         generationLeadDays,
-        generationLeadTime 
+        generationLeadTime,
+        defaultCapacity // FIXED: Now accepting capacity updates in the main controller
     } = req.body;
 
     const group = await Group.findById(groupId);
@@ -254,7 +255,6 @@ export const updateGroup = asyncHandler(async (req, res) => {
     }
 
     // --- NAME SYNC LOGIC ---
-    // If the name is being updated, push it to all associated events
     if (name && name !== group.name) {
         group.name = name;
         await Event.updateMany(
@@ -267,9 +267,14 @@ export const updateGroup = asyncHandler(async (req, res) => {
     if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
     if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
     if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
+    
+    // FIXED: Persist the default capacity to the group document
+    if (defaultCapacity !== undefined) {
+        group.defaultCapacity = Math.max(0, Number(defaultCapacity));
+    }
 
     const updatedGroup = await group.save();
-    res.status(200).json({ group: updatedGroup, message: "Group and events updated successfully." });
+    res.status(200).json({ group: updatedGroup, message: "Group updated successfully." });
 });
 
 export const updateModerators = asyncHandler(async (req, res) => {

@@ -62,11 +62,12 @@ const AuthLayout = () => {
     const inTabsGroup = segments[0] === '(tabs)';
     const inAuthGroup = segments[0] === '(auth)';
     
-    // FIX: Added 'group-settings' to allowed routes to prevent Auth redirect loops
+    // Allowed routes list to ensure the user isn't redirected to the dashboard during configuration flows
     const inAllowedModalGroup = [
       'profile-setup',
       'account',
       'group-edit-schedule',
+      'group-edit-jit', // Added for the new JIT edit wizard
       'group-settings',
       'event-edit',
       'schedule-event',
@@ -101,6 +102,7 @@ const AuthLayout = () => {
       <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
       <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true }} />
       <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
+      <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
       <Stack.Screen name="group-settings" options={{ headerShown: false }} />
       <Stack.Screen name="event-edit" options={{ headerShown: false }} />
       <Stack.Screen name="schedule-event" options={{ headerShown: false }} />
