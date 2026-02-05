@@ -196,11 +196,9 @@ const GroupScreen = () => {
 
   const { openChatId } = useLocalSearchParams<{ openChatId?: string }>();
 
-  // FIX: Added isErrorGroups to destructuring
   const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups } = useGetGroups();
   const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(selectedGroup?._id || null);
   
-  // Destructured isLoadingUser to use in loading checks
   const { data: currentUser, refetch: refetchUser, isLoading: isLoadingUser } = useQuery<User, Error>({ 
     queryKey: ['currentUser'], 
     queryFn: () => userApi.getCurrentUser(api),
@@ -213,7 +211,6 @@ const GroupScreen = () => {
     if (!selectedGroup) stableUserRef.current = null;
   }, [selectedGroup?._id]);
 
-  // LIVE NAME SYNC: Ensure state and header update immediately when backend name changes
   useEffect(() => {
     if (groupDetails && selectedGroup && groupDetails._id === selectedGroup._id) {
       if (groupDetails.name !== selectedGroup.name) {
@@ -225,7 +222,6 @@ const GroupScreen = () => {
   const canManageGroup = useMemo(() => {
     if (!groupDetails || !currentUser) return false;
     const userId = currentUser._id;
-    // Direct cast to avoid TypeScript 'never' inference on populations
     const g = groupDetails as any;
     const isOwner = (g.owner?._id || g.owner) === userId;
     const isMod = g.moderators?.some((m: any) => (m?._id || m) === userId);
@@ -264,13 +260,11 @@ const GroupScreen = () => {
     }
   };
   
-  const { mutate: deleteGroup, isPending: isDeletingGroup } = useDeleteGroup();
-  const { mutate: leaveGroup, isPending: isLeavingGroup } = useLeaveGroup();
   const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
   
   const [searchQuery, setSearchQuery] = useState('');
   const { data: searchResults } = useSearchUsers(searchQuery);
-  const { mutate: inviteUser, isPending: isInviting } = useInviteUser();
+  const { mutate: inviteUser } = useInviteUser();
   const { data: notifications } = useGetNotifications();
   const hasUnreadNotifications = notifications?.some(n => !n.read);
 
@@ -300,48 +294,6 @@ const GroupScreen = () => {
             Alert.alert("Success", "Invite sent!");
         }
     });
-  };
-
-  const handleEditSchedule = () => {
-    if (!selectedGroup) return;
-    setIsGroupDetailVisible(false);
-    router.push({
-      pathname: '/group-edit-schedule/[id]',
-      params: { id: selectedGroup._id }
-    });
-  };
-
-  const handleAddOneOffEvent = () => {
-    if (!selectedGroup) return;
-    setIsGroupDetailVisible(false);
-    router.push({
-        pathname: '/create-group',
-        params: { existingGroupId: selectedGroup._id, initialType: 'event' }
-    });
-  };
-
-  const handleDeleteGroup = () => {
-    if (!selectedGroup) return;
-    Alert.alert("Delete Group", `Are you sure you want to permanently delete "${selectedGroup.name}"?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => {
-        deleteGroup({ groupId: selectedGroup._id }, {
-          onSuccess: () => handleCloseGroupDetail(),
-        });
-      }},
-    ]);
-  };
-
-  const handleLeaveGroup = () => {
-    if (!selectedGroup) return;
-    Alert.alert("Leave Group", "Are you sure you want to leave this group?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Leave", style: "destructive", onPress: () => {
-        leaveGroup({ groupId: selectedGroup._id }, {
-          onSuccess: () => handleCloseGroupDetail(),
-        });
-      }},
-    ]);
   };
 
   const handleRemoveMember = (memberIdToRemove: string) => {
@@ -381,9 +333,7 @@ const GroupScreen = () => {
   };
 
   const renderGroupList = () => {
-    // FIX: Changed (!currentUser && refetchUser) to (!currentUser && isLoadingUser) to fix code 2774
     if (isLoadingGroups || (!currentUser && isLoadingUser)) return <ActivityIndicator size="large" color="#4F46E5" className="mt-8"/>;
-    // isErrorGroups is now defined from destructuring hook above, fixing code 2304
     if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
     if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
 
@@ -445,7 +395,6 @@ const GroupScreen = () => {
               >
                 <Feather name="arrow-left" size={24} color="#4F46E5"/>
               </TouchableOpacity>
-              {/* Header Title: Use live query name primarily to avoid stale state display */}
               <Text className="text-xl font-bold text-gray-900 flex-1" numberOfLines={1}>
                 {groupDetails?.name || selectedGroup.name}
               </Text>
@@ -453,7 +402,6 @@ const GroupScreen = () => {
             
             <View className="flex-row items-center">
               {activeTab === 'Chat' ? (
-                // ACTION ROW FOR CHAT TAB: No Settings Button
                 <>
                   <TouchableOpacity 
                     onPress={handleMutePress}
@@ -472,7 +420,6 @@ const GroupScreen = () => {
                   </TouchableOpacity>
                 </>
               ) : (
-                // ACTION ROW FOR DETAILS TAB: Settings Button only here
                 canManageGroup && (
                   <TouchableOpacity 
                     onPress={handleSettingsPress}
@@ -521,13 +468,7 @@ const GroupScreen = () => {
                         onSearchChange={setSearchQuery}
                         searchResults={searchResults}
                         onInvite={handleInvite}
-                        isInviting={isInviting}
-                        onDeleteGroup={handleDeleteGroup}
-                        isDeletingGroup={isDeletingGroup}
-                        onLeaveGroup={handleLeaveGroup}
-                        isLeavingGroup={isLeavingGroup}
-                        onEditSchedule={handleEditSchedule}
-                        onAddOneOffEvent={handleAddOneOffEvent}
+                        // Removed onAddOneOffEvent as it is now handled internally by GroupDetailsView
                       />
                     )}
                   </View>

@@ -39,9 +39,15 @@ const usaTimezones = [
     { label: "Hawaii (HST)", value: "Pacific/Honolulu" },
 ];
 
+// UPDATED: Labels are now fully spelled out
 const daysOfWeek = [
-    { label: "S", value: 0 }, { label: "M", value: 1 }, { label: "T", value: 2 },
-    { label: "W", value: 3 }, { label: "T", value: 4 }, { label: "F", value: 5 }, { label: "S", value: 6 },
+    { label: "Sunday", value: 0 }, 
+    { label: "Monday", value: 1 }, 
+    { label: "Tuesday", value: 2 },
+    { label: "Wednesday", value: 3 }, 
+    { label: "Thursday", value: 4 }, 
+    { label: "Friday", value: 5 }, 
+    { label: "Saturday", value: 6 },
 ];
 
 const occurrences = ['1st', '2nd', '3rd', '4th', '5th', 'Last'];
@@ -129,7 +135,6 @@ const EditScheduleScreen = () => {
             setNotificationTime(group.generationLeadTime || "09:00 AM");
             
             if (sched?.startDate) {
-                // Ensure we parse stored date correctly
                 const dt = DateTime.fromISO(sched.startDate);
                 if (dt.isValid) setKickoffDate(dt.toISODate()!);
             }
@@ -151,24 +156,22 @@ const EditScheduleScreen = () => {
         const payload = {
             schedule: {
                 frequency: isMultipleMode ? 'custom' : (routines[0]?.frequency || 'once'),
-                startDate: kickoffDate, // Preserved
+                startDate: kickoffDate,
                 routines: routines
             },
-            timezone: currentTZ, // Preserved or edited in time selection step
-            defaultLocation: location, // Preserved
-            generationLeadDays: leadDays, // Preserved
-            generationLeadTime: notificationTime // Preserved
+            timezone: currentTZ,
+            defaultLocation: location,
+            generationLeadDays: leadDays,
+            generationLeadTime: notificationTime
         };
 
         try {
             await api.patch(`/api/groups/${id}/schedule`, payload);
-
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
                 queryClient.invalidateQueries({ queryKey: ['events'] }),
                 queryClient.invalidateQueries({ queryKey: ['groups'] })
             ]);
-
             Alert.alert("Success", "Group schedule updated.");
             router.back();
         } catch (error: any) {
@@ -192,7 +195,6 @@ const EditScheduleScreen = () => {
         const newRoutines = isMultipleMode ? [...routines, routine] : [routine];
         setRoutines(newRoutines);
         
-        // Reset local builder state for potential next routine
         setTempDayTimes([]);
         setLoopIndex(0);
         setSelectedDays([]);
@@ -202,9 +204,9 @@ const EditScheduleScreen = () => {
         setTempTime("05:00 PM");
 
         if (isMultipleMode && newRoutines.length < 5) {
-            setStep(11); // Add another rule?
+            setStep(11); 
         } else {
-            setStep(15); // Skip directly to review/save
+            setStep(15); 
         }
     };
 
@@ -220,24 +222,20 @@ const EditScheduleScreen = () => {
             if (currentFreq === 'monthly') return setStep(8);
             if (currentFreq === 'ordinal') return setStep(10);
         }
-
         if (step === 7) {
             if (selectedDays.length === 1) { setIsSameTime(true); return setStep(6); }
             return setStep(5);
         }
-
         if (step === 8) {
             if (selectedDates.length === 0) return Alert.alert("Required", "Select at least one date.");
             if (selectedDates.length === 1) { setIsSameTime(true); return setStep(6); }
             return setStep(5);
         }
-
         if (step === 10) {
             setIsSameTime(true); 
             setStep(6);
             return;
         }
-
         if (step === 6) {
             const targets = getTargets();
             if (isSameTime) {
@@ -259,8 +257,7 @@ const EditScheduleScreen = () => {
                 return;
             }
         }
-
-        if (step === 11 || step === 9) setStep(15);
+        if (step === 11) setStep(15);
         else setStep(prev => prev + 1);
     };
 
@@ -320,7 +317,8 @@ const EditScheduleScreen = () => {
                 heading = `Time for the ${val}${sfx}`;
             } else {
                 const dayData = daysOfWeek.find(d => d.value === val);
-                heading = `Time for ${dayData?.label === "S" ? (val === 0 ? "Sunday" : "Saturday") : dayData?.label}`;
+                // Simplified: Uses the full label directly
+                heading = `Time for ${dayData?.label || ""}`;
             }
         }
 
@@ -366,18 +364,15 @@ const EditScheduleScreen = () => {
                                 let label = "";
                                 if (r.frequency === 'ordinal' && r.rules?.[0]) {
                                     const dayData = daysOfWeek.find(d => d.value === r.rules![0].day);
-                                    const dayName = dayData?.label === "S" ? (dayData.value === 0 ? "Sunday" : "Saturday") : dayData?.label;
-                                    label = `${r.rules[0].occurrence} ${dayName}`;
+                                    label = `${r.rules[0].occurrence} ${dayData?.label || ""}`;
                                 } else {
                                     const dayData = daysOfWeek.find(d => d.value === dt.day);
-                                    const dayName = dayData?.label === "S" ? (dayData.value === 0 ? "Sunday" : "Saturday") : dayData?.label;
-                                    label = dt.date ? `The ${dt.date}${dt.date === 1 ? 'st' : dt.date === 2 ? 'nd' : dt.date === 3 ? 'rd' : 'th'}` : dayName || "";
+                                    label = dt.date ? `The ${dt.date}${dt.date === 1 ? 'st' : dt.date === 2 ? 'nd' : dt.date === 3 ? 'rd' : 'th'}` : dayData?.label || "";
                                 }
                                 return <Text key={dti} style={styles.summaryValSmall}>• {label} @ {dt.time}</Text>
                             })}
                         </View>
                     ))}
-                    
                     <Text style={styles.summaryLabel}>Preserved Settings</Text>
                     <Text style={styles.summaryValSmall}>• Start Date: {DateTime.fromISO(kickoffDate).toLocaleString(DateTime.DATE_MED)}</Text>
                     <Text style={styles.summaryValSmall}>• JIT: {leadDays} days @ {notificationTime}</Text>
@@ -393,20 +388,12 @@ const EditScheduleScreen = () => {
         </View>
     );
 
-    if (loadingGroup || !currentUser) {
-        return (
-            <View style={styles.center}>
-                <ActivityIndicator size="large" color="#4F46E5" />
-            </View>
-        );
-    }
+    if (loadingGroup || !currentUser) return <View style={styles.center}><ActivityIndicator size="large" color="#4F46E5" /></View>;
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-                
                 {step === 4 && renderStep4_Frequency()}
-
                 {step === 5 && (
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Same time for all days?</Text>
@@ -417,19 +404,31 @@ const EditScheduleScreen = () => {
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
                 )}
-
                 {step === 6 && renderStep6_TimeSelection()}
-
                 {step === 7 && (
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Select weekdays</Text>
                         <View style={{flex: 1, justifyContent: 'center'}}>{daysOfWeek.map(d=>(
-                            <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays((prev)=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label === "S" ? (d.value === 0 ? "Sunday" : "Saturday") : d.label}</Text></TouchableOpacity>
+                            <TouchableOpacity 
+                                key={d.value} 
+                                style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} 
+                                onPress={()=>setSelectedDays((prev)=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}
+                            >
+                                <View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>
+                                    {selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}
+                                </View>
+                                {/* Simplified: Renders the full label directly */}
+                                <Text style={styles.frequencyText}>{d.label}</Text>
+                            </TouchableOpacity>
                         ))}</View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}><Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}>
+                            <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+                            <TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}>
+                                <Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4F46E5'} />
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 )}
-
                 {step === 8 && (
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Choose dates</Text>
@@ -439,7 +438,6 @@ const EditScheduleScreen = () => {
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDates.length}><Feather name="arrow-right-circle" size={48} color={!selectedDates.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
                     </View>
                 )}
-
                 {step === 10 && (
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Select pattern</Text>
@@ -451,7 +449,6 @@ const EditScheduleScreen = () => {
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
                 )}
-
                 {step === 11 && (
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Add another rule?</Text>
@@ -463,7 +460,6 @@ const EditScheduleScreen = () => {
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
                     </View>
                 )}
-
                 {step === 15 && renderStep15_Summary()}
             </KeyboardAvoidingView>
         </SafeAreaView>

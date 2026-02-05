@@ -4,21 +4,30 @@ import { View, Text, FlatList, StyleSheet, ViewToken } from 'react-native';
 interface TimePickerProps {
   onTimeChange: (time: string) => void;
   initialValue?: string; // Can accept an initial time string
+  hideLabel?: boolean;   // Prop to toggle the internal label
 }
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);
-const MINUTES = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
+const MINUTES = Array.from({ length: 12 }, (_, i) => (i * 5).toString().padStart(2, '0'));
 const PERIODS = ['AM', 'PM'];
 const ITEM_HEIGHT = 50;
 const VISIBLE_ITEMS = 3;
 const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
 
-const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue }) => {
+/**
+ * Custom Wheel TimePicker
+ * Uses FlatLists to create a smooth scrolling selection experience.
+ */
+const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hideLabel = false }) => {
   const parseInitialTime = () => {
     if (!initialValue) return { initialHour: 5, initialMinute: '00', initialPeriod: 'PM' };
     const [time, period] = initialValue.split(' ');
     const [hour, minute] = time.split(':');
-    return { initialHour: parseInt(hour, 10), initialMinute: minute, initialPeriod: period as 'AM' | 'PM' };
+    return { 
+      initialHour: parseInt(hour, 10), 
+      initialMinute: minute, 
+      initialPeriod: period as 'AM' | 'PM' 
+    };
   };
 
   const { initialHour, initialMinute, initialPeriod } = parseInitialTime();
@@ -30,27 +39,27 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue }) =
   const minuteRef = useRef<FlatList>(null);
   const periodRef = useRef<FlatList>(null);
 
+  // Scroll to initial values on mount
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
         hourRef.current?.scrollToIndex({ index: HOURS.indexOf(hour), animated: false });
         minuteRef.current?.scrollToIndex({ index: MINUTES.indexOf(minute), animated: false });
         periodRef.current?.scrollToIndex({ index: PERIODS.indexOf(period), animated: false });
     }, 100);
+    return () => clearTimeout(timer);
   }, []);
 
+  // Update parent whenever selection changes
   useEffect(() => {
-    onTimeChange(`${hour}:${minute} ${period}`);
+    onTimeChange(`${hour.toString().padStart(2, '0')}:${minute} ${period}`);
   }, [hour, minute, period, onTimeChange]);
 
-  // --- THIS IS THE FIX: Simplified and type-safe logic ---
+  // Type-safe logic for detecting the central item in the "wheel"
   const handleViewableItemsChanged = (
     viewableItems: Array<ViewToken>, 
     setState: React.Dispatch<React.SetStateAction<any>>
   ) => {
-    // Find the first item that FlatList has marked as "viewable"
     const centralItem = viewableItems.find(item => item.isViewable);
-    
-    // If a viewable item is found, update the state with its value
     if (centralItem && typeof centralItem.item !== 'undefined') {
         setState(centralItem.item);
     }
@@ -59,9 +68,11 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue }) =
   const onViewableHourChanged = useCallback(({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
     handleViewableItemsChanged(viewableItems, setHour);
   }, []);
+
   const onViewableMinuteChanged = useCallback(({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
     handleViewableItemsChanged(viewableItems, setMinute);
   }, []);
+
   const onViewablePeriodChanged = useCallback(({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
     handleViewableItemsChanged(viewableItems, setPeriod);
   }, []);
@@ -78,8 +89,9 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue }) =
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Set Meeting Time</Text>
+      
       <View style={styles.pickersContainer}>
+        {/* Hour Column */}
         <FlatList
           ref={hourRef}
           data={HOURS}
@@ -94,6 +106,8 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue }) =
           viewabilityConfig={viewabilityConfig}
           getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
         />
+
+        {/* Minute Column */}
         <FlatList
           ref={minuteRef}
           data={MINUTES}
@@ -108,6 +122,8 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue }) =
           viewabilityConfig={viewabilityConfig}
           getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
         />
+
+        {/* Period Column (AM/PM) */}
         <FlatList
           ref={periodRef}
           data={PERIODS}
@@ -122,6 +138,8 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue }) =
           viewabilityConfig={viewabilityConfig}
           getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
         />
+
+        {/* Visual Overlay for the selection area */}
         <View style={styles.highlightView} pointerEvents="none" />
       </View>
     </View>
@@ -131,25 +149,28 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue }) =
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    marginVertical: 16,
     alignItems: 'center',
   },
   title: {
-    fontSize: 18,
-    lineHeight: 28,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 16,
+    fontSize: 12, 
+    fontWeight: 'bold', 
+    color: '#9CA3AF', 
+    textTransform: 'uppercase', 
+    marginBottom: 8, 
+    marginTop: 16,
     textAlign: 'center',
   },
   pickersContainer: {
     flexDirection: 'row',
     height: PICKER_HEIGHT,
-    width: '90%',
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden'
   },
   picker: {
     flex: 1,
@@ -164,22 +185,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   itemText: {
-    fontSize: 24,
-    color: '#6B7280',
+    fontSize: 22,
+    color: '#9CA3AF',
   },
   selectedItemText: {
-    fontSize: 30,
-    color: '#1F2937',
-    fontWeight: 'bold',
+    fontSize: 26,
+    color: '#4F46E5',
+    fontWeight: '900',
   },
   highlightView: {
     position: 'absolute',
     top: ITEM_HEIGHT,
     height: ITEM_HEIGHT,
     width: '100%',
-    borderTopWidth: 2,
-    borderBottomWidth: 2,
-    borderColor: '#D1D5DB',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#EEF2FF',
+    backgroundColor: 'rgba(79, 70, 229, 0.05)',
   },
 });
 

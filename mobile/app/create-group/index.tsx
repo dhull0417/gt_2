@@ -59,9 +59,18 @@ const usaTimezones = [
     { label: "Hawaii (HST)", value: "Pacific/Honolulu" },
 ];
 
+/**
+ * UPDATED: Labels are now fully spelled out to ensure clarity throughout the wizard.
+ * This ensures consistency with the Edit Schedule flow.
+ */
 const daysOfWeek = [
-    { label: "S", value: 0 }, { label: "M", value: 1 }, { label: "T", value: 2 },
-    { label: "W", value: 3 }, { label: "T", value: 4 }, { label: "F", value: 5 }, { label: "S", value: 6 },
+    { label: "Sunday", value: 0 }, 
+    { label: "Monday", value: 1 }, 
+    { label: "Tuesday", value: 2 },
+    { label: "Wednesday", value: 3 }, 
+    { label: "Thursday", value: 4 }, 
+    { label: "Friday", value: 5 }, 
+    { label: "Saturday", value: 6 },
 ];
 
 const occurrences = ['1st', '2nd', '3rd', '4th', '5th', 'Last'];
@@ -97,8 +106,10 @@ const CreateGroupScreen = () => {
   const { initialType } = useLocalSearchParams<{ initialType?: string }>();
   
   // --- Flow State ---
-  const [step, setStep] = useState(0); 
-  const [creationType, setCreationType] = useState<CreationType>(null);
+  // Start at step 1 to bypass selection
+  const [step, setStep] = useState(1); 
+  // Default to group
+  const [creationType, setCreationType] = useState<CreationType>('group');
   
   // --- Group Identity ---
   const [groupName, setGroupName] = useState("");
@@ -275,21 +286,59 @@ const CreateGroupScreen = () => {
   };
 
   const handleBack = () => {
-    if (step === 0) return router.back();
-    if (step === 6 && !isSameTime && loopIndex > 0) {
-        setLoopIndex(loopIndex - 1);
-        setTempDayTimes(prev => prev.slice(0, -1));
-        return;
+    if (step === 1) return router.back();
+
+    // Custom "Back" logic to match the non-sequential steps in handleNext
+    if (step === 10) {
+        // From Ordinal pattern back to Frequency selection
+        return setStep(4);
     }
-    if (step === 11) {
-        setRoutines(prev => prev.slice(0, -1));
-        return setStep(6);
+
+    if (step === 7 || step === 8) {
+        // From Weekday or Date selection back to Frequency selection
+        return setStep(4);
     }
+
+    if (step === 5) {
+        // From "Same time for all days?" choice back to the previous input step
+        if (currentFreq === 'daily') return setStep(4);
+        if (currentFreq === 'weekly' || currentFreq === 'biweekly') return setStep(7);
+        if (currentFreq === 'monthly') return setStep(8);
+    }
+
+    if (step === 6) {
+        // From Time Selection
+        if (!isSameTime && loopIndex > 0) {
+            setLoopIndex(loopIndex - 1);
+            setTempDayTimes(prev => prev.slice(0, -1));
+            return;
+        }
+        
+        // If at start of Time Selection loop, go back to previous logic screen
+        if (currentFreq === 'ordinal') return setStep(10);
+        
+        // If 1 item was selected, handleNext skipped step 5, so handleBack must skip it too
+        if ((currentFreq === 'weekly' || currentFreq === 'biweekly') && selectedDays.length === 1) return setStep(7);
+        if (currentFreq === 'monthly' && selectedDates.length === 1) return setStep(8);
+        
+        return setStep(5);
+    }
+
     if (step === 9) {
+        // From "When to start?" back to the end of the schedule builder
         if (isMultipleMode) return setStep(11);
         return setStep(6);
     }
+
+    if (step === 11) {
+        // From "Add another rule?" back to time selection for the current routine
+        return setStep(6);
+    }
+
+    // Modal navigation
     if (step === 15 || step === 14) return setStep(13);
+
+    // Default sequential back
     setStep(prev => prev - 1);
   };
 
@@ -346,8 +395,8 @@ const CreateGroupScreen = () => {
                             style={styles.selectedMemberChip}
                             onPress={() => toggleMember(member)}
                           >
-                              <Text style={styles.selectedMemberText}>@{member.username}</Text>
-                              <Feather name="x-circle" size={14} color="#6B7280" style={{ marginLeft: 6 }} />
+                            <Text style={styles.selectedMemberText}>@{member.username}</Text>
+                            <Feather name="x-circle" size={14} color="#6B7280" style={{ marginLeft: 6 }} />
                           </TouchableOpacity>
                       ))}
                   </ScrollView>
@@ -421,7 +470,8 @@ const CreateGroupScreen = () => {
               heading = `Time for the ${val}${sfx}`;
           } else {
               const dayData = daysOfWeek.find(d => d.value === val);
-              heading = `Time for ${dayData?.label === "S" ? (val === 0 ? "Sunday" : "Saturday") : dayData?.label}`;
+              // FIXED: Use the full label (e.g. "Monday") to remain consistent across the app
+              heading = `Time for ${dayData?.label || ""}`;
           }
       }
 
@@ -442,7 +492,7 @@ const CreateGroupScreen = () => {
                         onValueChange={(itemValue: string) => setCurrentTZ(itemValue)} 
                         itemStyle={styles.pickerItem}
                       >
-                          {usaTimezones.map(tz=><Picker.Item key={tz.value} label={tz.label} value={tz.value} color="#111827"/>)}
+                        {usaTimezones.map(tz=><Picker.Item key={tz.value} label={tz.label} value={tz.value} color="#111827"/>)}
                       </Picker>
                   </View>
               </View>
@@ -473,12 +523,10 @@ const CreateGroupScreen = () => {
                               let label = "";
                               if (r.frequency === 'ordinal' && r.rules?.[0]) {
                                   const dayData = daysOfWeek.find(d => d.value === r.rules![0].day);
-                                  const dayName = dayData?.label === "S" ? (dayData.value === 0 ? "Sunday" : "Saturday") : dayData?.label;
-                                  label = `${r.rules[0].occurrence} ${dayName}`;
+                                  label = `${r.rules[0].occurrence} ${dayData?.label || ""}`;
                               } else {
                                   const dayData = daysOfWeek.find(d => d.value === dt.day);
-                                  const dayName = dayData?.label === "S" ? (dayData.value === 0 ? "Sunday" : "Saturday") : dayData?.label;
-                                  label = dt.date ? `The ${dt.date}${dt.date === 1 ? 'st' : dt.date === 2 ? 'nd' : dt.date === 3 ? 'rd' : 'th'}` : dayName || "";
+                                  label = dt.date ? `The ${dt.date}${dt.date === 1 ? 'st' : dt.date === 2 ? 'nd' : dt.date === 3 ? 'rd' : 'th'}` : (dayData?.label || "");
                               }
                               return <Text key={dti} style={styles.summaryValSmall}>• {label} @ {dt.time}</Text>
                           })}
@@ -512,21 +560,6 @@ const CreateGroupScreen = () => {
             </View>
 
             <View style={{ flex: 1 }}>
-                {step === 0 && (
-                    <View style={styles.stepContainerPadded}>
-                        <Text style={styles.headerTitle}>New:</Text>
-                        <View style={styles.centeredContent}>
-                            <TouchableOpacity style={styles.selectionButton} onPress={() => { setCreationType('group'); handleNext(); }}>
-                                <Text style={styles.selectionButtonText}>Group</Text>
-                                <Text style={styles.selectionButtonSubtext}>Recurring schedule with members</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.selectionButton} onPress={() => { setCreationType('event'); handleNext(); }}>
-                                <Text style={styles.selectionButtonText}>Event</Text>
-                                <Text style={styles.selectionButtonSubtext}>Single instance override</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                )}
                 {step === 1 && (
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Name your group</Text>
@@ -571,7 +604,7 @@ const CreateGroupScreen = () => {
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Select weekdays</Text>
                         <View style={{flex: 1, justifyContent: 'center'}}>{daysOfWeek.map(d=>(
-                            <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays((prev: number[])=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label === "S" ? (d.value === 0 ? "Sunday" : "Saturday") : d.label}</Text></TouchableOpacity>
+                            <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays((prev: number[])=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label}</Text></TouchableOpacity>
                         ))}</View>
                         <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}><Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
                     </View>
@@ -590,7 +623,6 @@ const CreateGroupScreen = () => {
                 {step === 9 && (
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>When to start?</Text>
-                        {/* FIXED CALENDAR: Measurement fixed Saturday layout drift */}
                         <View style={styles.calendarContainer} onLayout={onCalendarContainerLayout}>
                             <View style={styles.calendarNav}>
                                 <TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4F46E5"/></TouchableOpacity>
@@ -603,7 +635,7 @@ const CreateGroupScreen = () => {
                                     <View style={styles.calendarGridContainer}>
                                         {daysOfWeek.map((day, i) => (
                                             <View key={`lbl-${i}`} style={[styles.calendarDayBox, { width: calculatedDayWidth }]}>
-                                                <Text style={styles.dayLabelText}>{day.label}</Text>
+                                                <Text style={styles.dayLabelText}>{day.label.charAt(0)}</Text>
                                             </View>
                                         ))}
                                     </View>
@@ -617,7 +649,7 @@ const CreateGroupScreen = () => {
                                                     onPress={()=>setKickoffDate(day.toISODate()!)} 
                                                     style={[
                                                         styles.calendarDayBox, 
-                                                        { width: calculatedDayWidth },
+                                                        { width: calculatedDayWidth }, 
                                                         isSel && styles.calendarDayBoxSelected
                                                     ]}
                                                 >

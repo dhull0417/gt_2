@@ -38,6 +38,14 @@ const TabsLayout = () => {
       />
       <Tabs.Screen
         name="groups"
+        // The listeners prop must be a direct child of Tabs.Screen (not inside options)
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // 1. Reset the nested stack within the tab to the 'index' screen
+            // 2. If the screen is already active, this forces it to pop to the top
+            navigation.navigate('groups', { screen: 'index' });
+          },
+        })}
         options={{
           title: 'Groups',
           tabBarIcon: ({ color, size }) => <Feather name="users" size={size} color={color} />,

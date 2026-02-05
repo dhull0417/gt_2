@@ -163,12 +163,14 @@ interface CreateGroupResponse {
   message: string;
 }
 
+// FIXED: Added 'name' property to match backend expectation and resolve TS2353
 interface CreateOneOffEventPayload {
   groupId: string;
   date: Date;
   time: string;
   timezone: string;
   capacity?: number;
+  name?: string; 
   location?: string;
 }
 
@@ -295,7 +297,6 @@ export const notificationApi = {
     const response = await api.get<Notification[]>('/api/notifications');
     return response.data;
   },
-  // 👇 RENAMED to match the hook's expectation
   acceptInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
     const response = await api.post(`/api/notifications/${notificationId}/accept`);
     return response.data;

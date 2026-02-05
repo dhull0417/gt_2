@@ -39,12 +39,12 @@ const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
 // --- Components ---
 
 const RsvpStatusDot = ({ event, userId }: { event: Event; userId: string }) => {
-    let dotColor = '#FBBF24'; // Yellow (Undecided) default
+    let dotColor = 'grey'; // Grey (Undecided) default
 
     if (event.in.includes(userId)) {
-        dotColor = '#10B981'; // Green (In)
+        dotColor = '#4FD1C5'; // Green (In)
     } else if (event.out.includes(userId)) {
-        dotColor = '#EF4444'; // Red (Out)
+        dotColor = '#FF7A6E'; // Red (Out)
     }
 
     return (
@@ -78,7 +78,10 @@ const RsvpCounts = ({ event }: { event: Event }) => {
             </View>
 
             <View className="flex-row items-center">
-                <Text className="text-indigo-600 font-bold text-[10px] uppercase">
+                <Text 
+                  className="font-bold text-[10px] uppercase" 
+                  style={{ color: '#4A90E2' }}
+                >
                     Max Attendees: {event.capacity === 0 ? 'Unlimited' : event.capacity}
                 </Text>
             </View>
@@ -121,7 +124,7 @@ const EventCard = ({
               style={{ 
                 fontSize: 20, 
                 fontWeight: 'bold', 
-                color: isCancelled ? '#9CA3AF' : '#1F2937',
+                color: isCancelled ? '#9CA3AF' : '#4FD1C5',
                 textDecorationLine: isCancelled ? 'line-through' : 'none' 
               }}
             >
@@ -163,9 +166,9 @@ const EventCard = ({
             className={`flex-1 py-3 rounded-xl items-center justify-center shadow-sm ${
                 isWaitlisted ? 'bg-blue-600' :
                 (isFull && !isIn) ? 'bg-orange-500' : 
-                'bg-green-500'
+                '' 
             }`}
-            style={{ backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#10B981' }}
+            style={{ backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#4FD1C5' }}
           >
             <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
                 {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
@@ -174,7 +177,8 @@ const EventCard = ({
           <TouchableOpacity
             onPress={() => onRsvp('out')}
             disabled={isRsvping}
-            className="flex-1 py-3 bg-red-500 rounded-xl items-center justify-center shadow-sm"
+            className="flex-1 py-3 rounded-xl items-center justify-center shadow-sm"
+            style={{ backgroundColor: '#FF7A6E' }}
           >
             <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
           </TouchableOpacity>
@@ -245,18 +249,10 @@ const DashboardScreen = () => {
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
-      <View className="flex-row justify-between items-center px-6 py-4 border-b border-gray-200 bg-white">
-        <Link href="/notifications" asChild>
-            <TouchableOpacity>
-                <Feather name="bell" size={24} color="#4F46E5" />
-            </TouchableOpacity>
-        </Link>
+      <View className="items-center px-6 py-4 border-b border-gray-200 bg-white">
         <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#111827' }}>
           Home
         </Text>
-        <TouchableOpacity onPress={() => router.push('/create-group')}>
-            <Feather name="plus-circle" size={24} color="#4F46E5" />
-        </TouchableOpacity>
       </View>
 
       <ScrollView className="p-4">
@@ -269,7 +265,7 @@ const DashboardScreen = () => {
         ) : (
           <>
             <View className="mb-10 mt-2">
-              <Text style={{ fontSize: 32, fontWeight: '900', color: '#1F2937', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
+              <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
                 You coming?
               </Text>
               {nextUndecidedEvent ? (
@@ -291,13 +287,13 @@ const DashboardScreen = () => {
             </View>
 
             <View className="pb-10">
-              <Text style={{ fontSize: 32, fontWeight: '900', color: '#1F2937', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
+              <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
                 Upcoming
               </Text>
 
               {events?.length === 0 && (
                 <View className="bg-white p-5 my-2 rounded-2xl items-center border border-gray-100">
-                  <Text style={{ fontSize: 16, color: '#6B7280' }}>
+                  <Text style={{ fontSize: 16, color: '#4A90E2' }}>
                     You have no upcoming events.
                   </Text>
                 </View>
@@ -307,7 +303,7 @@ const DashboardScreen = () => {
                 if (groupEvents.length === 0) return null;
                 return (
                   <View key={groupTitle}>
-                    <Text style={{ fontSize: 12, fontWeight: '900', color: '#9CA3AF', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '900', color: '#FF7A6E', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
                       {groupTitle}
                     </Text>
                     {groupEvents.map((event: Event) => (
