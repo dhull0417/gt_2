@@ -2,7 +2,7 @@
   "expo": {
     "name": "GroupThat",
     "slug": "groupthat",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.jpg",
     "scheme": "groupthat",
@@ -29,7 +29,12 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.dallinhull.groupthat",
-      "runtimeVersion": "1.0.0"
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "runtimeVersion": "1.1.0"
     },
     "web": {
       "bundler": "metro",
