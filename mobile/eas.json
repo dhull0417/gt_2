@@ -6,7 +6,10 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "store",
+      "ios": {
+        "appleTeamId": "9P29PK6A6D"
+      }
     },
     "preview": {
       "distribution": "internal",
