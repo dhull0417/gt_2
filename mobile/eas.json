@@ -18,8 +18,12 @@
       }
     },
     "production": {
+      "distribution": "store",
       "autoIncrement": true,
       "channel": "production",
+      "ios": {
+        "appleTeamId": "9P29PK6A6D"
+      },
       "android": {
         "buildType": "app-bundle"
       }
