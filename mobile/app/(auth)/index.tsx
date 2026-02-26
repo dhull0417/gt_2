@@ -1,5 +1,5 @@
 import { useSocialAuth } from "@/hooks/useSocialAuth";
-import { Text, Image, View, TouchableOpacity, ActivityIndicator, StyleSheet } from "react-native";
+import { Text, Image, View, TouchableOpacity, ActivityIndicator, StyleSheet, Linking } from "react-native";
 import { useRouter } from "expo-router"; // 1. Import useRouter
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from '@expo/vector-icons';
@@ -7,6 +7,12 @@ import { Feather } from '@expo/vector-icons';
 export default function Index() {
   const { handleSocialAuth, isLoading } = useSocialAuth();
   const router = useRouter(); // 2. Get the router instance
+
+  const handleOpenPrivacyPolicy = () => {
+    Linking.openURL("https://dhull0417.github.io/groupthat-privacy/").catch((err) => 
+      console.error("Couldn't load page", err)
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -80,9 +86,7 @@ export default function Index() {
           <View>
             <Text style={styles.footerText}>
               By signing up, you agree to our
-              <Text style={styles.linkText}> Terms</Text>, 
-              <Text style={styles.linkText}> Privacy Policy</Text>, and 
-              <Text style={styles.linkText}> Cookie Use</Text> 
+              <Text style={styles.linkText} onPress={handleOpenPrivacyPolicy}> Privacy Policy</Text>
             </Text>
           </View>
       </View>

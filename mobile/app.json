@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dallinhull.groupthat",
+      "appleTeamId": "9P29PK6A6D",
       "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "GroupThat needs camera access to let you take a profile picture.",

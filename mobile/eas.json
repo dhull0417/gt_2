@@ -6,7 +6,7 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal",
+      "distribution": "internal"
     },
     "preview": {
       "distribution": "internal",
@@ -18,9 +18,6 @@
       "distribution": "store",
       "autoIncrement": true,
       "channel": "production",
-      "ios": {
-        "appleTeamId": "9P29PK6A6D"
-      },
       "android": {
         "buildType": "app-bundle"
       }
