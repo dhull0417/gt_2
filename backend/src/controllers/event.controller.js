@@ -269,10 +269,9 @@ export const deleteEvent = asyncHandler(async (req, res) => {
                 const triggerDT = nextDT.minus({ days: parentGroup.generationLeadDays || 0 }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                 const exists = await Event.findOne({ group: parentGroup._id, date: nextDate });
-
                 
                 if (now >= triggerDT && !exists) {
-                    await Event.create({
+                    const newEvent = await Event.create({
                         group: parentGroup._id,
                         name: parentGroup.name,
                         date: nextDate,

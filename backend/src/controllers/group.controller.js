@@ -75,6 +75,25 @@ export const createGroup = asyncHandler(async (req, res) => {
       { $addToSet: { groups: newGroup._id } }
   );
 
+  // --- NOTIFICATION LOGIC ---
+  const newlyAddedUserIds = uniqueMemberIds.filter(id => id.toString() !== owner._id.toString());
+  if (newlyAddedUserIds.length > 0) {
+      const newlyAddedUsers = await User.find({ _id: { $in: newlyAddedUserIds } });
+      if (newlyAddedUsers.length > 0) {
+          await notifyUsers(newlyAddedUsers, {
+              title: "You've been added to a group!",
+              body: `${owner.firstName} ${owner.lastName} added you to the group "${newGroup.name}".`,
+              data: { groupId: newGroup._id.toString(), type: 'group_added' }
+          });
+          const notificationDocs = newlyAddedUsers.map(member => ({
+              recipient: member._id, sender: owner._id, type: 'group-added',
+              group: newGroup._id, read: false, status: 'read'
+          }));
+          await Notification.insertMany(notificationDocs);
+      }
+  }
+  // --- END NOTIFICATION LOGIC ---
+
   // Initial Generation with Window Filling
   if (newGroup.schedule && newGroup.schedule.routines) {
       try {
@@ -254,6 +273,8 @@ export const updateGroup = asyncHandler(async (req, res) => {
         return res.status(403).json({ error: "Permission denied." });
     }
 
+    const oldName = group.name;
+
     // --- NAME SYNC LOGIC ---
     if (name && name !== group.name) {
         group.name = name;
@@ -261,29 +282,18 @@ export const updateGroup = asyncHandler(async (req, res) => {
             { group: groupId }, 
             { $set: { name: name } }
         );
-    }
 
-    // --- CAPACITY SYNC LOGIC ---
-    if (defaultCapacity !== undefined) {
-        const capacityNum = Math.max(0, Number(defaultCapacity));
-        if (capacityNum !== group.defaultCapacity) {
-            group.defaultCapacity = capacityNum;
-            await Event.updateMany(
-                { group: groupId },
-                { $set: { capacity: capacityNum } }
-            );
+        // --- NOTIFICATION LOGIC ---
+        const membersToNotify = await User.find({ _id: { $in: group.members } });
+        if (membersToNotify.length > 0) {
+            await notifyUsers(membersToNotify, {
+                title: "Group Name Changed",
+                body: `The group "${oldName}" is now named "${group.name}".`,
+                data: { groupId: group._id.toString(), type: 'group_updated' }
+            });
         }
     }
 
-    // --- LOCATION SYNC LOGIC ---
-    // If the location is being updated, push it to all associated events
-    if (defaultLocation !== undefined && defaultLocation !== group.defaultLocation) {
-        group.defaultLocation = defaultLocation;
-        await Event.updateMany(
-            { group: groupId },
-            { $set: { location: defaultLocation } }
-        );
-    }
 
     if (eventsToDisplay) group.eventsToDisplay = parseInt(eventsToDisplay);
     if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
@@ -417,6 +427,14 @@ export const addMember = asyncHandler(async (req, res) => {
         body: `${requester.firstName} added you to "${group.name}".`, 
         data: { groupId: group._id.toString(), type: 'group-added' } 
     });
+    // Create an in-app notification as well
+    await Notification.create({
+        recipient: userToAdd._id,
+        sender: requester._id,
+        type: 'group-added',
+        group: group._id,
+        read: false
+    });
   } catch (err) { console.error(err); }
   
   await syncStreamUser(userToAdd);
@@ -496,6 +514,17 @@ export const createOneOffEvent = asyncHandler(async (req, res) => {
         capacity: capacity !== undefined ? capacity : group.defaultCapacity,
         isOverride: true,
     });
+
+    // --- NOTIFICATION LOGIC ---
+    const membersToNotify = await User.find({ _id: { $in: group.members } });
+    if (membersToNotify.length > 0) {
+        await notifyUsers(membersToNotify, {
+            title: "New Event Scheduled",
+            body: `A new event, "${newEvent.name}", has been scheduled for your group "${group.name}".`,
+            data: { eventId: newEvent._id.toString(), type: 'event_created', groupId: group._id.toString() }
+        });
+    }
+
     res.status(201).json({ event: newEvent, message: "One-off event scheduled." });
 });
 

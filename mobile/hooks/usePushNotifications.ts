@@ -89,7 +89,6 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
       }
 
       // Logic for standard notification taps
-      if (data?.type === 'event_created' && data?.eventId) {
       const { type, eventId, groupId, channelId } = data || {};
 
       const eventTypes = ['event_created', 'event_updated', 'event_cancellation', 'waitlist_promotion'];
@@ -98,17 +97,13 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
       if (eventTypes.includes(type) && eventId) {
         router.push({
           pathname: '/(tabs)',
-          params: { openEventId: String(data.eventId) }
           params: { openEventId: String(eventId) }
         });
-      } else if (data?.type === 'chat' && data?.channelId) {
       } else if (groupTypes.includes(type) && groupId) {
         router.push({
           pathname: '/(tabs)/groups',
-          params: { openChatId: String(data.channelId) }
           params: { openChatId: String(groupId) }
         });
-      }
       } else if (type === 'chat' && channelId) {
         router.push({
           pathname: '/(tabs)/groups',
