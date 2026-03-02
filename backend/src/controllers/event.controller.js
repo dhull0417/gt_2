@@ -83,6 +83,10 @@ export const updateEvent = asyncHandler(async (req, res) => {
     
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
+    const oldDateStr = new Date(event.date).toLocaleDateString();
+    const oldTime = event.time;
+    const oldLocation = event.location;
+
     if (!canManageGroup(requester._id, event.group)) {
         return res.status(403).json({ error: "Permission denied." });
     }
@@ -95,6 +99,20 @@ export const updateEvent = asyncHandler(async (req, res) => {
     
     event.isOverride = true;
     await event.save();
+
+    const newDateStr = new Date(event.date).toLocaleDateString();
+    const hasChanged = oldDateStr !== newDateStr || oldTime !== event.time || (location !== undefined && oldLocation !== event.location) || capacity !== undefined;
+
+    if (hasChanged) {
+        const membersToNotify = await User.find({ _id: { $in: event.members } });
+        if (membersToNotify.length > 0) {
+            await notifyUsers(membersToNotify, {
+                title: `Event Updated: ${event.name}`,
+                body: `The details for "${event.name}" have been updated. Tap to see what's new.`,
+                data: { eventId: event._id.toString(), type: 'event_updated' }
+            });
+        }
+    }
 
     res.status(200).json({ message: "Event updated successfully.", event });
 });
@@ -252,6 +270,7 @@ export const deleteEvent = asyncHandler(async (req, res) => {
 
                 const exists = await Event.findOne({ group: parentGroup._id, date: nextDate });
 
+                
                 if (now >= triggerDT && !exists) {
                     await Event.create({
                         group: parentGroup._id,
@@ -265,6 +284,17 @@ export const deleteEvent = asyncHandler(async (req, res) => {
                         isOverride: false,
                         capacity: parentGroup.defaultCapacity 
                     });
+
+                    // Notify users about the newly created recurring event
+                    const membersToNotify = await User.find({ _id: { $in: parentGroup.members } });
+                    if (membersToNotify.length > 0) {
+                        await notifyUsers(membersToNotify, {
+                            title: "New Event Scheduled",
+                            body: `A new event for "${parentGroup.name}" has been scheduled for ${new Date(nextDate).toLocaleDateString()}.`,
+                            data: { eventId: newEvent._id.toString(), type: 'event_created', groupId: parentGroup._id.toString() }
+                        });
+                    }
+
                     currentAnchor = nextDate;
                 } else {
                     break;

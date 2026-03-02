@@ -73,7 +73,6 @@ const AuthLayout = () => {
       'schedule-event',
       'create-group',
       'group',
-      'group-details',
       'notifications'
     ].includes(segments[0]);
 
@@ -107,7 +106,6 @@ const AuthLayout = () => {
       <Stack.Screen name="event-edit" options={{ headerShown: false }} />
       <Stack.Screen name="schedule-event" options={{ headerShown: false }} />
       <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />      
-      <Stack.Screen name="group-details" options={{ headerShown: false }} />
       <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />
     </Stack>
   );
