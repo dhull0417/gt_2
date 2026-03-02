@@ -15,7 +15,7 @@ export const useSocialAuth = () => {
                 await setActive({ session: createdSessionId });
             }
         } catch (err) {
-            console.log("Error in aocial auth", err)
+            console.log("Error in social auth", err)
             const provider = strategy ==="oauth_google" ? "Google" : "Apple";
             Alert.alert("Error", `Failed to sign in with ${provider}. Please try again.`)
         } finally {

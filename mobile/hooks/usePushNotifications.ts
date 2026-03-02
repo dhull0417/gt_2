@@ -77,8 +77,12 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
           try {
             // Perform the RSVP silently via API
             await api.post(`/api/events/${eventId}/rsvp`, { status });
-          } catch (err) {
-            console.error("Background RSVP failed:", err);
+          } catch (err: any) {
+            // If the error is a 401, it's likely a stale token. We can't refresh
+            // it in the background, so we fail silently. Log other errors.
+            if (err.response?.status !== 401) {
+              console.error("Background RSVP failed:", err);
+            }
           }
         }
         return;

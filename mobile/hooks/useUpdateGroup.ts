@@ -20,12 +20,12 @@ export const useUpdateGroup = () => {
     mutationFn: (variables: UpdateGroupVariables) => 
       groupApi.updateGroup(api, variables),
     
-    onSuccess: async (data) => {
+    onSuccess: async (data, variables) => {
       Alert.alert("Success", "Group updated successfully!");
       await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['groups'] }),
           queryClient.invalidateQueries({ queryKey: ['events'] }),
-          queryClient.invalidateQueries({ queryKey: ['groupDetails', data.group._id] })
+          queryClient.invalidateQueries({ queryKey: ['groupDetails', variables.groupId] })
       ]);
       router.back();
     },

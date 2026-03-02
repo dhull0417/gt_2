@@ -15,10 +15,9 @@ export const useRemoveMember = () => {
     mutationFn: (variables: RemoveMemberVariables) =>
       groupApi.removeMember(api, variables),
     
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       Alert.alert("Success", data.message);
-      // Invalidate the specific group's details to refresh the member list
-      // This will be handled in the component for access to the groupId
+      queryClient.invalidateQueries({ queryKey: ['groupDetails', variables.groupId] });
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Could not remove member.";

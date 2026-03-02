@@ -16,12 +16,12 @@ export const useRemoveScheduledDay = () => {
     mutationFn: (variables: RemoveScheduledDayVariables) => 
       groupApi.removeScheduledDay(api, variables),
     
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       Alert.alert("Success", "The recurring day has been removed from the schedule.");
       // Invalidate everything to ensure UI consistency
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
-      queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+      queryClient.invalidateQueries({ queryKey: ['groupDetails', variables.groupId] });
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Failed to update schedule.";

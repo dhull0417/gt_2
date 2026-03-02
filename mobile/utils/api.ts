@@ -144,6 +144,12 @@ interface RemoveMemberPayload {
   memberIdToRemove: string;
 }
 
+interface RemoveScheduledDayPayload {
+  groupId: string;
+  day: number;
+  frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
+}
+
 interface UpdateEventPayload {
   eventId: string;
   date: Date;
@@ -259,7 +265,11 @@ export const groupApi = {
     const response = await api.post(`/api/groups/${payload.groupId}/remove-member`, { memberIdToRemove: payload.memberIdToRemove });
     return response.data;
   },
-  updateGroupSchedule: async (api: AxiosInstance, groupId: string, data: any): Promise<{ message: string }> => {
+  removeScheduledDay: async (api: AxiosInstance, payload: RemoveScheduledDayPayload): Promise<{ message: string }> => {
+    const response = await api.post(`/api/groups/${payload.groupId}/schedule/remove`, payload);
+    return response.data;
+  },
+  updateGroupSchedule: async (api: AxiosInstance, groupId: string, data: Partial<Schedule>): Promise<{ message: string }> => {
     const response = await api.patch(`/api/groups/${groupId}/schedule`, data);
     return response.data;
   },
