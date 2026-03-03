@@ -61,6 +61,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
     const { 
         date, 
         time,
+        // timezone is intentionally omitted from destructuring
         capacity, 
         location 
     } = req.body; 
@@ -80,16 +81,18 @@ export const updateEvent = asyncHandler(async (req, res) => {
     const oldLocation = event.location;
     const oldCapacity = event.capacity;
 
+    // --- The source of truth for timezone is ALWAYS the parent group ---
+    const groupTimezone = event.group.timezone;
+
     // --- Partial Update & Validation ---
     const newDate = date || event.date;
     const newTime = time || event.time;
-    const newTimezone = timezone || event.timezone;
 
     // Validate if date/time is being changed to a past date
     if (date || time) {
         const timeParts = parseTimeString(newTime);
-        const eventDateTime = DateTime.fromJSDate(new Date(newDate), { zone: newTimezone }).set({ hour: timeParts.hours, minute: timeParts.minutes });
-        const now = DateTime.now().setZone(newTimezone);
+        const eventDateTime = DateTime.fromJSDate(new Date(newDate), { zone: groupTimezone }).set({ hour: timeParts.hours, minute: timeParts.minutes });
+        const now = DateTime.now().setZone(groupTimezone);
 
         if (eventDateTime < now) {
             return res.status(400).json({ error: "Cannot reschedule an event to the past." });
@@ -99,7 +102,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
     // Apply updates
     event.date = newDate;
     event.time = newTime;
-    event.timezone = newTimezone;
+    event.timezone = groupTimezone; // Always enforce the group's timezone
     if (capacity !== undefined) event.capacity = capacity;
     if (location !== undefined) event.location = location; 
     

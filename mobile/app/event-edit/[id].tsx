@@ -58,7 +58,8 @@ const EventEditScreen = () => {
     
     const handleSaveChanges = () => {
         if (!id) return;
-        updateEvent({ eventId: id, date, time: meetTime, timezone });
+        // Do not send timezone. The backend will automatically use the group's default.
+        updateEvent({ eventId: id, date, time: meetTime });
     };
 
     if (!eventToEdit) {

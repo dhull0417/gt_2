@@ -101,7 +101,6 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
             eventId: string;
             date?: Date;
             time?: string;
-            timezone?: string;
             capacity?: number;
             location?: string;
         } = { eventId: event._id };
@@ -111,11 +110,9 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
         // Check for changes
         if (newDate.toISOString().split('T')[0] !== new Date(event.date).toISOString().split('T')[0]) {
             payload.date = newDate;
-            payload.timezone = event.timezone; // Backend requires timezone if date/time changes
         }
         if (newTime !== event.time) {
             payload.time = newTime;
-            payload.timezone = event.timezone; // Backend requires timezone if date/time changes
         }
         if (newLocation !== (event.location || '')) {
             payload.location = newLocation;

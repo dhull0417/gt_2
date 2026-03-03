@@ -174,7 +174,7 @@ interface CreateOneOffEventPayload {
   groupId: string;
   date: Date;
   time: string;
-  timezone: string;
+  timezone?: string;
   capacity?: number;
   name?: string; 
   location?: string;

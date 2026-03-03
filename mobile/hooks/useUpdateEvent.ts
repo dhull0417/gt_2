@@ -5,9 +5,8 @@ import { useRouter } from "expo-router";
 
 interface UpdateEventVariables {
   eventId: string;
-  date: Date;
-  time: string;
-  timezone: string;
+  date?: Date;
+  time?: string;
 }
 
 export const useUpdateEvent = () => {
