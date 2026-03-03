@@ -116,7 +116,7 @@ export interface Notification {
 interface CreateGroupPayload {
   name: string;
   schedule?: Schedule | null; // Optional to support "Set schedule now? No"
-  timezone: string;
+  timezone?: string;
   eventsToDisplay: number;
   members?: string[];
   defaultCapacity?: number;
@@ -152,9 +152,9 @@ interface RemoveScheduledDayPayload {
 
 interface UpdateEventPayload {
   eventId: string;
-  date: Date;
-  time: string;
-  timezone: string;
+  date?: Date;
+  time?: string;
+  timezone?: string;
   capacity?: number;
   location?: string;
 }

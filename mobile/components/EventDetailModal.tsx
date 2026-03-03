@@ -18,6 +18,8 @@ import { Event, User, useApiClient, userApi, eventApi } from '@/utils/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import { useRouter } from 'expo-router';
+import TimePicker from './TimePicker';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 interface EventDetailModalProps {
   event: Event | null;
@@ -33,8 +35,12 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     
     // --- Edit Mode State ---
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+    const [newDate, setNewDate] = useState(new Date());
+    const [tempDate, setTempDate] = useState(new Date()); // Use a temporary state for the iOS picker
+    const [newTime, setNewTime] = useState('');
     const [newCapacity, setNewCapacity] = useState('');
     const [newLocation, setNewLocation] = useState('');
+    const [showDatePicker, setShowDatePicker] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
 
     useEffect(() => {
@@ -90,24 +96,47 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     };
 
     const handleUpdateEventDetails = async () => {
-        const capInt = parseInt(newCapacity);
-        if (isNaN(capInt) || capInt < 0) {
-            Alert.alert("Invalid Input", "Please enter a valid capacity (0 for unlimited).");
-            return;
+        // Build a payload with only the changed fields
+        const payload: {
+            eventId: string;
+            date?: Date;
+            time?: string;
+            timezone?: string;
+            capacity?: number;
+            location?: string;
+        } = { eventId: event._id };
+
+        const capInt = parseInt(newCapacity, 10);
+        
+        // Check for changes
+        if (newDate.toISOString().split('T')[0] !== new Date(event.date).toISOString().split('T')[0]) {
+            payload.date = newDate;
+            payload.timezone = event.timezone; // Backend requires timezone if date/time changes
+        }
+        if (newTime !== event.time) {
+            payload.time = newTime;
+            payload.timezone = event.timezone; // Backend requires timezone if date/time changes
+        }
+        if (newLocation !== (event.location || '')) {
+            payload.location = newLocation;
+        }
+        if (!isNaN(capInt) && capInt !== event.capacity) {
+            payload.capacity = capInt;
         }
 
+        // If nothing changed, just close the modal
+        if (Object.keys(payload).length <= 1) {
+            setIsEditModalVisible(false);
+            return;
+        }
+        
         setIsUpdating(true);
         try {
-            await eventApi.updateEvent(api, { 
-                eventId: event._id, 
-                capacity: capInt,
-                location: newLocation,
-                date: new Date(event.date),
-                time: event.time,
-                timezone: event.timezone
-            });
+            await eventApi.updateEvent(api, payload);
             
             await queryClient.invalidateQueries({ queryKey: ['events'] });
+            await queryClient.invalidateQueries({ queryKey: ['eventDetails', event._id] });
+            setEvent(prev => prev ? { ...prev, ...payload } as Event : null);
             setIsEditModalVisible(false);
             Alert.alert("Success", "Meeting details updated.");
         } catch (error: any) {
@@ -115,6 +144,22 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
         } finally {
             setIsUpdating(false);
         }
+    };
+
+    // --- Date Picker Handlers ---
+    const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+        const currentDate = selectedDate || tempDate;
+        if (Platform.OS === 'android') {
+            setShowDatePicker(false);
+            setNewDate(currentDate); // On Android, the change is immediate
+        } else {
+            setTempDate(currentDate); // On iOS, update temp state as user spins the wheel
+        }
+    };
+
+    const confirmIosDate = () => {
+        setNewDate(tempDate); // Finalize the date selection from the temporary state
+        setShowDatePicker(false);
     };
 
     const handleCancelEvent = () => {
@@ -149,6 +194,9 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                 {canManage && !isCancelled ? (
                     <TouchableOpacity 
                         onPress={() => {
+                            setNewDate(new Date(event.date));
+                            setTempDate(new Date(event.date)); // Initialize temp state for the picker
+                            setNewTime(event.time);
                             setNewCapacity(event.capacity.toString());
                             setNewLocation(event.location || '');
                             setIsEditModalVisible(true);
@@ -291,8 +339,19 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                                 </TouchableOpacity>
                             </View>
                             
-                            <View style={styles.modalBody}>
-                                <Text style={styles.fieldLabel}>Location Override</Text>
+                            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+                                <Text style={styles.fieldLabel}>Date</Text>
+                                <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
+                                    <Feather name="calendar" size={18} color="#4F46E5" />
+                                    <Text style={styles.dateInputText}>
+                                        {newDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Time</Text>
+                                <TimePicker onTimeChange={setNewTime} initialValue={newTime} />
+
+                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Location Override</Text>
                                 <View style={styles.inputContainer}>
                                     <Feather name="map-pin" size={18} color="#4F46E5" />
                                     <TextInput 
@@ -310,11 +369,45 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                                     value={newCapacity}
                                     onChangeText={setNewCapacity}
                                 />
-                            </View>
+                            </ScrollView>
                         </View>
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
+
+            {/* --- THIS IS THE NEW MODAL FOR THE DATE PICKER --- */}
+            {showDatePicker && (
+                Platform.OS === 'ios' ? (
+                    <Modal
+                        animationType="slide"
+                        transparent={true}
+                        visible={showDatePicker}
+                        onRequestClose={() => setShowDatePicker(false)}
+                    >
+                        <View style={styles.datePickerOverlay}>
+                            <View style={styles.datePickerContent}>
+                                <DateTimePicker
+                                    value={tempDate}
+                                    mode="date"
+                                    display="spinner"
+                                    onChange={onDateChange}
+                                    textColor='black'
+                                />
+                                <TouchableOpacity onPress={confirmIosDate} style={styles.doneButton}>
+                                    <Text style={styles.doneButtonText}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </Modal>
+                ) : (
+                    <DateTimePicker
+                        value={newDate} // Android picker can use the final state directly
+                        mode="date"
+                        display="default"
+                        onChange={onDateChange}
+                    />
+                )
+            )}
         </View>
     );
 };
@@ -325,7 +418,7 @@ const styles = StyleSheet.create({
     closeButton: { padding: 4 },
     headerTitleContainer: { flex: 1, alignItems: 'center' },
     headerTitle: { fontSize: 14, fontWeight: '900', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
-    editHeaderBtn: { padding: 8, backgroundColor: '#EEF2FF', borderRadius: 10 },
+    editHeaderBtn: { padding: 8, backgroundColor: '#EEF2FF', borderRadius: 10, borderWidth: 1, borderColor: '#C7D2FE' },
     content: { flex: 1, padding: 24 },
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
@@ -378,11 +471,17 @@ const styles = StyleSheet.create({
     modalHeaderInner: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
     modalTitleInner: { fontSize: 18, fontWeight: '900', color: '#111827' },
     saveBtnText: { color: '#4F46E5', fontWeight: '900', fontSize: 16 },
-    modalBody: { gap: 8 },
+    modalBody: { paddingBottom: 60 },
     fieldLabel: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 4 },
     inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
     textInput: { flex: 1, marginLeft: 12, fontSize: 16, color: '#374151' },
     capInput: { backgroundColor: '#F9FAFB', height: 64, borderRadius: 14, textAlign: 'center', fontSize: 24, fontWeight: '900', color: '#111827', borderWidth: 1, borderColor: '#E5E7EB' },
+    dateInput: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
+    dateInputText: { marginLeft: 12, fontSize: 16, color: '#374151', fontWeight: '600' },
+    datePickerOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    datePickerContent: { backgroundColor: 'white', borderTopRightRadius: 20, borderTopLeftRadius: 20, padding: 16 },
+    doneButton: { backgroundColor: '#4F46E5', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+    doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
 });
 
 export default EventDetailModal;

@@ -60,48 +60,59 @@ export const updateEvent = asyncHandler(async (req, res) => {
     const { eventId } = req.params;
     const { 
         date, 
-        time, 
-        timezone, 
+        time,
         capacity, 
         location 
     } = req.body; 
-
-    if (!date || !time || !timezone) {
-        return res.status(400).json({ error: "Date, time, and timezone are required." });
-    }
-    
-    const timeParts = parseTimeString(time);
-    const eventDateTime = DateTime.fromJSDate(new Date(date), { zone: timezone }).set({ hour: timeParts.hours, minute: timeParts.minutes });
-    const now = DateTime.now().setZone(timezone);
-
-    if (eventDateTime < now) {
-        return res.status(400).json({ error: "Cannot reschedule an event to the past." });
-    }
 
     const event = await Event.findById(eventId).populate('group');
     const requester = await User.findOne({ clerkId }).lean();
     
     if (!event || !requester) return res.status(404).json({ error: "Resource not found." });
 
-    const oldDateStr = new Date(event.date).toLocaleDateString();
-    const oldTime = event.time;
-    const oldLocation = event.location;
-
     if (!canManageGroup(requester._id, event.group)) {
         return res.status(403).json({ error: "Permission denied." });
     }
 
-    event.date = date;
-    event.time = time;
-    event.timezone = timezone;
+    // Store old values for notification check
+    const oldDateStr = new Date(event.date).toLocaleDateString();
+    const oldTime = event.time;
+    const oldLocation = event.location;
+    const oldCapacity = event.capacity;
+
+    // --- Partial Update & Validation ---
+    const newDate = date || event.date;
+    const newTime = time || event.time;
+    const newTimezone = timezone || event.timezone;
+
+    // Validate if date/time is being changed to a past date
+    if (date || time) {
+        const timeParts = parseTimeString(newTime);
+        const eventDateTime = DateTime.fromJSDate(new Date(newDate), { zone: newTimezone }).set({ hour: timeParts.hours, minute: timeParts.minutes });
+        const now = DateTime.now().setZone(newTimezone);
+
+        if (eventDateTime < now) {
+            return res.status(400).json({ error: "Cannot reschedule an event to the past." });
+        }
+    }
+
+    // Apply updates
+    event.date = newDate;
+    event.time = newTime;
+    event.timezone = newTimezone;
     if (capacity !== undefined) event.capacity = capacity;
     if (location !== undefined) event.location = location; 
     
     event.isOverride = true;
     await event.save();
 
+    // --- Notification Logic ---
     const newDateStr = new Date(event.date).toLocaleDateString();
-    const hasChanged = oldDateStr !== newDateStr || oldTime !== event.time || (location !== undefined && oldLocation !== event.location) || capacity !== undefined;
+    const dateOrTimeChanged = oldDateStr !== newDateStr || oldTime !== event.time;
+    const locationChanged = location !== undefined && oldLocation !== event.location;
+    const capacityChanged = capacity !== undefined && oldCapacity !== event.capacity;
+    
+    const hasChanged = dateOrTimeChanged || locationChanged || capacityChanged;
 
     if (hasChanged) {
         const membersToNotify = await User.find({ _id: { $in: event.members } });
