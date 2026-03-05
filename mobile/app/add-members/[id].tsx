@@ -65,7 +65,6 @@ const AddMembersScreen = () => {
                     value={searchQuery} 
                     onChangeText={setSearchQuery} 
                     autoCapitalize="none"
-                    autoFocus
                 />
             </View>
 

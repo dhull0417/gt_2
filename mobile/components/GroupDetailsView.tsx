@@ -207,20 +207,20 @@ export const GroupDetailsView = ({
             </View>
 
             {/* 2. Quick Actions */}
-            {canManage && (
-                <View style={styles.managerActionsRow}>
+            <View style={styles.managerActionsRow}>
+                {canManage && (
                     <TouchableOpacity onPress={() => setWizardVisible(true)} style={styles.actionPill}>
                         <Feather name="plus" size={16} color="#4F46E5" />
                         <Text style={styles.actionPillText}>Add Meeting</Text>
                     </TouchableOpacity>
+                )}
 
-                    {/* Invite Link Action */}
-                    <TouchableOpacity onPress={handleInvitePress} style={styles.actionPill}>
-                        <Feather name="user-plus" size={16} color="#4F46E5" />
-                        <Text style={styles.actionPillText}>Invite Friends</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
+                {/* Invite Friends Action - Visible to all members */}
+                <TouchableOpacity onPress={handleInvitePress} style={styles.actionPill}>
+                    <Feather name="user-plus" size={16} color="#4F46E5" />
+                    <Text style={styles.actionPillText}>Invite Friends</Text>
+                </TouchableOpacity>
+            </View>
 
             {/* 3. Member List */}
             <View style={{ marginBottom: 24 }}>
