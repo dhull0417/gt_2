@@ -468,6 +468,7 @@ const GroupScreen = () => {
                         onSearchChange={setSearchQuery}
                         searchResults={searchResults}
                         onInvite={handleInvite}
+                        onLeaveSuccess={handleCloseGroupDetail}
                         // Removed onAddOneOffEvent as it is now handled internally by GroupDetailsView
                       />
                     )}

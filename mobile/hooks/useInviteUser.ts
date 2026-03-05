@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, groupApi } from "../utils/api";
 import { Alert } from "react-native";
 
@@ -9,16 +9,17 @@ interface InviteUserVariables {
 
 export const useInviteUser = () => {
   const api = useApiClient();
+  const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: InviteUserVariables) => 
+    mutationFn: (variables: InviteUserVariables) =>
       groupApi.inviteUser(api, variables),
     
     onSuccess: (data) => {
-      Alert.alert("Success", data.message);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to send invitation.";
+      const errorMessage = error.response?.data?.error || "Failed to send invite.";
       Alert.alert("Error", errorMessage);
     },
   });

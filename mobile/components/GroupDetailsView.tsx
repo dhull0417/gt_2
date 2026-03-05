@@ -5,13 +5,16 @@ import {
     Image, 
     TouchableOpacity, 
     StyleSheet,
-    Share,
+    Share, 
+    ActivityIndicator,
     Alert
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { GroupDetails, User } from '@/utils/api';
+import { useRouter } from 'expo-router';
 import AddMeetingWizard from './AddMeetingWizard';
 
+import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 interface GroupDetailsViewProps {
     groupDetails: GroupDetails; 
     currentUser: User;
@@ -19,6 +22,7 @@ interface GroupDetailsViewProps {
     onRemoveMember: (memberIdToRemove: string) => void;
     searchQuery: string;
     onSearchChange: (text: string) => void;
+    onLeaveSuccess: () => void;
     searchResults: User[] | undefined;
     onInvite: (id: string) => void;
 }
@@ -40,11 +44,14 @@ export const GroupDetailsView = ({
     searchQuery,
     onSearchChange,
     searchResults,
-    onInvite
+    onInvite,
+    onLeaveSuccess
 }: GroupDetailsViewProps) => {
     
     // --- Wizard Visibility State ---
     const [wizardVisible, setWizardVisible] = useState(false);
+    const router = useRouter();
+    const { mutate: leaveGroup, isPending: isLeaving } = useLeaveGroup();
     
 
     // --- Permissions ---
@@ -54,6 +61,13 @@ export const GroupDetailsView = ({
     ) ?? false;
     const canManage = isOwner || isMod;
 
+    const handleInvitePress = () => {
+        router.push({
+            pathname: '/add-members/[id]',
+            params: { id: groupDetails._id }
+        });
+    };
+
     /**
      * Share Link Logic
      * Triggers the native share sheet with the group invitation link.
@@ -61,13 +75,31 @@ export const GroupDetailsView = ({
     const handleShareLink = async () => {
         try {
             await Share.share({
-                message: `Join my group "${groupDetails.name}" on the app! Use this link to join: https://yourapp.com/groups/${groupDetails._id}`,
-                url: `https://yourapp.com/groups/${groupDetails._id}`,
-                title: `Invite to ${groupDetails.name}`
+                message: `Join my group "${groupDetails.name}" on GroupThat! Download the app to get started: https://dhull0417.github.io/groupthat-testing/`,
+                title: `Join ${groupDetails.name} on GroupThat`
             });
         } catch (error: any) {
             Alert.alert("Error", "Could not share invite link.");
         }
+    };
+
+    const handleLeaveGroup = () => {
+        Alert.alert(
+            "Leave Group",
+            `Are you sure you want to leave "${groupDetails.name}"?`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Leave",
+                    style: "destructive",
+                    onPress: () => {
+                        leaveGroup({ groupId: groupDetails._id }, {
+                            onSuccess: onLeaveSuccess
+                        });
+                    }
+                }
+            ]
+        );
     };
 
     /**
@@ -183,9 +215,9 @@ export const GroupDetailsView = ({
                     </TouchableOpacity>
 
                     {/* Invite Link Action */}
-                    <TouchableOpacity onPress={handleShareLink} style={styles.actionPill}>
-                        <Feather name="share-2" size={16} color="#4F46E5" />
-                        <Text style={styles.actionPillText}>Invite Link</Text>
+                    <TouchableOpacity onPress={handleInvitePress} style={styles.actionPill}>
+                        <Feather name="user-plus" size={16} color="#4F46E5" />
+                        <Text style={styles.actionPillText}>Invite Friends</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -223,6 +255,17 @@ export const GroupDetailsView = ({
                 })}
             </View>
 
+            {/* --- LEAVE GROUP BUTTON (for non-managers) --- */}
+            {!canManage && (
+                <View style={styles.footerActionContainer}>
+                    <TouchableOpacity onPress={handleLeaveGroup} style={styles.leaveButton} disabled={isLeaving}>
+                        {isLeaving 
+                            ? <ActivityIndicator color="#fff" /> 
+                            : <Text style={styles.leaveButtonText}>Leave Group</Text>
+                        }
+                    </TouchableOpacity>
+                </View>
+            )}
             {/* --- Add Meeting Wizard Modal --- */}
             <AddMeetingWizard 
                 visible={wizardVisible} 
@@ -255,5 +298,8 @@ const styles = StyleSheet.create({
     memberHandle: { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
     ownerBadge: { backgroundColor: '#EEF2FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 8, borderWidth: 1, borderColor: '#C3DAFE' },
     modBadge: { backgroundColor: '#F3F4F6', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 8, borderWidth: 1, borderColor: '#E5E7EB' },
-    badgeText: { fontSize: 10, fontWeight: 'bold', color: '#4F46E5', textTransform: 'uppercase' }
+    badgeText: { fontSize: 10, fontWeight: 'bold', color: '#4F46E5', textTransform: 'uppercase' },
+    footerActionContainer: { paddingHorizontal: 20, paddingVertical: 24, borderTopWidth: 1, borderTopColor: '#F3F4F6', marginTop: 16 },
+    leaveButton: { backgroundColor: '#EF4444', paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+    leaveButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 });

@@ -71,6 +71,7 @@ const AuthLayout = () => {
       'group-settings',
       'event-edit',
       'schedule-event',
+      'add-members',
       'create-group',
       'group',
       'notifications'
@@ -105,6 +106,7 @@ const AuthLayout = () => {
       <Stack.Screen name="group-settings" options={{ headerShown: false }} />
       <Stack.Screen name="event-edit" options={{ headerShown: false }} />
       <Stack.Screen name="schedule-event" options={{ headerShown: false }} />
+      <Stack.Screen name="add-members" options={{ headerShown: false }} />
       <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />      
       <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />
     </Stack>
