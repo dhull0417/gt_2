@@ -47,11 +47,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#C7D2FE',
+    borderColor: '#4A90E2',
     marginRight: 8,
   },
   detailsButtonText: {
-    color: '#4F46E5',
+    color: '#4A90E2',
     fontWeight: 'bold',
     fontSize: 14,
   },
@@ -141,7 +141,7 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
   if (!client || !isConnected || !channel) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4F46E5" />
+        <ActivityIndicator size="large" color="#4A90E2" />
         <Text style={{ marginTop: 16, color: '#6B7280' }}>Connecting to chat...</Text>
       </View>
     );
@@ -333,7 +333,7 @@ const GroupScreen = () => {
   };
 
   const renderGroupList = () => {
-    if (isLoadingGroups || (!currentUser && isLoadingUser)) return <ActivityIndicator size="large" color="#4F46E5" className="mt-8"/>;
+    if (isLoadingGroups || (!currentUser && isLoadingUser)) return <ActivityIndicator size="large" color="#4FD1C5" className="mt-8"/>;
     if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
     if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
 
@@ -357,7 +357,7 @@ const GroupScreen = () => {
           </View>
           {group.lastMessage ? (
             <Text className="text-sm text-gray-500 mt-1" numberOfLines={1}>
-              <Text className="font-semibold text-indigo-600">{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
+              <Text style={{ color: '#4A90E2', fontWeight: '600' }}>{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
             </Text>
           ) : (
             <Text className="text-sm text-gray-400 italic mt-1">No messages yet</Text>
@@ -371,14 +371,14 @@ const GroupScreen = () => {
     <SafeAreaView className='flex-1 bg-gray-50' edges={['top', 'left', 'right']}>
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
         <TouchableOpacity onPress={() => router.push('/notifications')}>
-          <Feather name="bell" size={26} color="#4F46E5" />
+          <Feather name="bell" size={26} color="#4A90E2" />
           {hasUnreadNotifications && (
             <View className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
           )}
         </TouchableOpacity>
         <Text className="text-xl font-bold text-gray-900">Groups</Text>
         <TouchableOpacity onPress={() => router.push('/create-group')}>
-          <Feather name="plus-circle" size={26} color="#4F46E5" />
+          <Feather name="plus-circle" size={26} color="#4A90E2" />
         </TouchableOpacity>
       </View>
       <ScrollView className="px-4">
@@ -393,7 +393,7 @@ const GroupScreen = () => {
                 onPress={() => activeTab === 'Details' ? setActiveTab('Chat') : handleCloseGroupDetail()} 
                 className="mr-3 p-1"
               >
-                <Feather name="arrow-left" size={24} color="#4F46E5"/>
+                <Feather name="arrow-left" size={24} color="#FF7A6E"/>
               </TouchableOpacity>
               <Text className="text-xl font-bold text-gray-900 flex-1" numberOfLines={1}>
                 {groupDetails?.name || selectedGroup.name}
@@ -434,7 +434,7 @@ const GroupScreen = () => {
           </View>
 
           {!(stableUserRef.current || currentUser) ? (
-              <ActivityIndicator size="large" color="#4F46E5" style={{ marginTop: 50 }} />
+              <ActivityIndicator size="large" color="#4A90E2" style={{ marginTop: 50 }} />
           ) : (
             <ChatProvider user={stableUserRef.current || currentUser!}>
                {activeTab === 'Chat' ? (
@@ -445,7 +445,7 @@ const GroupScreen = () => {
                 >
                   {(isLoadingDetails || !groupDetails) ? (
                     <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color="#4F46E5" />
+                      <ActivityIndicator size="large" color="#4A90E2" />
                     </View>
                   ) : (
                       <GroupChat group={groupDetails} />
@@ -455,7 +455,7 @@ const GroupScreen = () => {
                 <ScrollView className="flex-1 bg-gray-50" keyboardShouldPersistTaps="handled">
                   <View className="p-6">
                     {(isLoadingDetails || !groupDetails) ? (
-                        <ActivityIndicator size="large" color="#4F46E5" className="my-8" />
+                        <ActivityIndicator size="large" color="#4A90E2" className="my-8" />
                     ) : isErrorDetails ? (
                         <Text className="text-center text-red-500 mt-4">Failed to load group details.</Text>
                     ) : (

@@ -122,7 +122,7 @@ export default function PhoneLogin() {
       {/* Header / Back Button */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Feather name="arrow-left" size={24} color="#000" />
+          <Feather name="arrow-left" size={24} color="#FF7A6E" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Phone Login</Text>
       </View>
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   button: {
-    backgroundColor: '#4F46E5',
+    backgroundColor: '#4A90E2',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: '#4F46E5',
+    color: '#4A90E2',
     fontWeight: '500',
   },
 });

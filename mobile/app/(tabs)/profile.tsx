@@ -56,7 +56,7 @@ const HomeScreen = () => {
 
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
         {isLoading ? (
-            <ActivityIndicator size="large" color="#4f46e5" className="mt-16" />
+            <ActivityIndicator size="large" color="#4A90E2" className="mt-16" />
         ) : isError || !currentUser ? (
             <Text className="text-center text-red-500 mt-8">Failed to load profile.</Text>
         ) : (
@@ -79,7 +79,7 @@ const HomeScreen = () => {
                   <Text className="text-xs text-gray-500 mb-1 text-center">Your Unique User ID (Tap to Copy)</Text>
                   <TouchableOpacity onPress={handleCopyId} className="flex-row justify-center items-center">
                       <Text className="text-sm text-gray-700 font-mono mr-2" selectable>{currentUser._id}</Text>
-                      <Feather name="copy" size={16} color="#4f46e5" />
+                      <Feather name="copy" size={16} color="#4A90E2" />
                   </TouchableOpacity>
               </View>
             </View>
@@ -98,7 +98,7 @@ const HomeScreen = () => {
                     className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
                 >
                     <View className="flex-row items-center">
-                        <Feather name="share-2" size={20} color="#4f46e5" className="mr-2" />
+                        <Feather name="share-2" size={20} color="#4A90E2" className="mr-2" />
                         <Text className="text-indigo-600 text-lg font-bold ml-2">Share App</Text>
                     </View>
                 </TouchableOpacity>

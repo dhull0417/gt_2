@@ -257,7 +257,7 @@ const DashboardScreen = () => {
 
       <ScrollView className="p-4">
         {isLoading ? (
-          <ActivityIndicator size="large" color="#4f46e5" className="mt-16" />
+          <ActivityIndicator size="large" color="#4A90E2" className="mt-16" />
         ) : isError ? (
           <Text style={{ textAlign: 'center', color: '#ef4444', marginTop: 32 }}>
             Failed to load events.

@@ -200,7 +200,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         }}
                         style={styles.editHeaderBtn}
                     >
-                        <Feather name="edit-2" size={20} color="#4F46E5" />
+                        <Feather name="edit-2" size={20} color="#4A90E2" />
                     </TouchableOpacity>
                 ) : <View style={{ width: 44 }} />}
             </View>
@@ -225,13 +225,13 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                             activeOpacity={0.7}
                         >
                             <Text style={styles.chatButtonText}>Chat</Text>
-                            <Feather name="arrow-right" size={14} color="#4F46E5" style={{ marginLeft: 4 }} />
+                            <Feather name="arrow-right" size={14} color="#4FD1C5" style={{ marginLeft: 4 }} />
                         </TouchableOpacity>
                     </View>
                     
                     <View style={styles.infoSection}>
                         <View style={styles.infoRow}>
-                            <View style={styles.iconBox}><Feather name="calendar" size={18} color="#4F46E5" /></View>
+                            <View style={styles.iconBox}><Feather name="calendar" size={18} color="#4A90E2" /></View>
                             <View style={styles.infoTextContainer}>
                                 <Text style={styles.infoValue}>
                                     {new Date(event.date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
@@ -241,7 +241,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         </View>
 
                         <View style={styles.infoRow}>
-                            <View style={styles.iconBox}><Feather name="clock" size={18} color="#4F46E5" /></View>
+                            <View style={styles.iconBox}><Feather name="clock" size={18} color="#4A90E2" /></View>
                             <View style={styles.infoTextContainer}>
                                 <Text style={styles.infoValue}>{event.time}</Text>
                                 <Text style={styles.infoLabel}>Time</Text>
@@ -249,7 +249,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         </View>
 
                         <View style={styles.infoRow}>
-                            <View style={styles.iconBox}><Feather name="map-pin" size={18} color="#4F46E5" /></View>
+                            <View style={styles.iconBox}><Feather name="map-pin" size={18} color="#4A90E2" /></View>
                             <View style={styles.infoTextContainer}>
                                 <Text style={styles.infoValue} numberOfLines={1}>{event.location || "No location set"}</Text>
                                 <Text style={styles.infoLabel}>Location</Text>
@@ -259,7 +259,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         <View style={styles.capacityCard}>
                             <View style={styles.infoRowCompact}>
                                 <View style={[styles.iconBox, { backgroundColor: isFull && !isCancelled ? '#FFF7ED' : '#F5F7FF' }]}>
-                                    <Feather name="users" size={18} color={isFull && !isCancelled ? "#EA580C" : "#4F46E5"} />
+                                    <Feather name="users" size={18} color={isFull && !isCancelled ? "#EA580C" : "#4A90E2"} />
                                 </View>
                                 <View style={styles.infoTextContainer}>
                                     <Text style={[styles.infoValue, isFull && !isCancelled && { color: '#C2410C' }]}>
@@ -314,7 +314,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
 
                 {canManage && (
                     <View style={styles.ownerSection}>
-                        <TouchableOpacity onPress={handleCancelEvent} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4F46E5', borderColor: '#4F46E5' }]}>
+                        <TouchableOpacity onPress={handleCancelEvent} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4A90E2', borderColor: '#4A90E2' }]}>
                             <Text style={[styles.cancelToggleText, isCancelled && { color: 'white' }]}>
                                 {isCancelled ? "Reactivate Meeting" : "Cancel This Meeting"}
                             </Text>
@@ -332,14 +332,14 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                                 <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
                                 <Text style={styles.modalTitleInner}>Edit Meeting</Text>
                                 <TouchableOpacity onPress={handleUpdateEventDetails} disabled={isUpdating}>
-                                    {isUpdating ? <ActivityIndicator size="small" color="#4F46E5" /> : <Text style={styles.saveBtnText}>Save</Text>}
+                                    {isUpdating ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={styles.saveBtnText}>Save</Text>}
                                 </TouchableOpacity>
                             </View>
                             
                             <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
                                 <Text style={styles.fieldLabel}>Date</Text>
                                 <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
-                                    <Feather name="calendar" size={18} color="#4F46E5" />
+                                    <Feather name="calendar" size={18} color="#4A90E2" />
                                     <Text style={styles.dateInputText}>
                                         {newDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                                     </Text>
@@ -350,7 +350,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
 
                                 <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Location Override</Text>
                                 <View style={styles.inputContainer}>
-                                    <Feather name="map-pin" size={18} color="#4F46E5" />
+                                    <Feather name="map-pin" size={18} color="#4A90E2" />
                                     <TextInput 
                                         style={styles.textInput}
                                         placeholder="Specific address or link..."
@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
         marginTop: 2
     },
     chatButtonText: { 
-        color: '#4F46E5', 
+        color: '#4A90E2', 
         fontWeight: 'bold', 
         fontSize: 14 
     },
@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
     modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 60 },
     modalHeaderInner: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
     modalTitleInner: { fontSize: 18, fontWeight: '900', color: '#111827' },
-    saveBtnText: { color: '#4F46E5', fontWeight: '900', fontSize: 16 },
+    saveBtnText: { color: '#4A90E2', fontWeight: '900', fontSize: 16 },
     modalBody: { paddingBottom: 60 },
     fieldLabel: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 4 },
     inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
@@ -477,7 +477,7 @@ const styles = StyleSheet.create({
     dateInputText: { marginLeft: 12, fontSize: 16, color: '#374151', fontWeight: '600' },
     datePickerOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
     datePickerContent: { backgroundColor: 'white', borderTopRightRadius: 20, borderTopLeftRadius: 20, padding: 16 },
-    doneButton: { backgroundColor: '#4F46E5', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+    doneButton: { backgroundColor: '#4A90E2', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 10 },
     doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
 });
 

@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
   },
   selectedItemText: {
     fontSize: 26,
-    color: '#4F46E5',
+    color: '#4A90E2',
     fontWeight: '900',
   },
   highlightView: {

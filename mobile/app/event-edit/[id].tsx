@@ -94,7 +94,7 @@ const EventEditScreen = () => {
                 <TouchableOpacity
                     onPress={handleSaveChanges}
                     disabled={isPending}
-                    style={[styles.saveButton, isPending && { backgroundColor: '#A5B4FC' }]}
+                    style={[styles.saveButton, isPending && { backgroundColor: '#4FD1C5' }]}
                 >
                     <Text style={styles.saveButtonText}>{isPending ? "Saving..." : "Save Changes"}</Text>
                 </TouchableOpacity>
@@ -141,15 +141,15 @@ const EventEditScreen = () => {
 const styles = StyleSheet.create({
     title: { fontSize: 18, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
     dateButton: { paddingVertical: 16, backgroundColor: 'white', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, alignItems: 'center' },
-    dateButtonText: { color: '#4F46E5', fontSize: 18 },
+    dateButtonText: { color: '#4A90E2', fontSize: 18 },
     timezoneContainer: { width: '100%', marginVertical: 16 },
     pickerWrapper: { backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB', overflow: 'hidden' },
-    saveButton: { width: '100%', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 24, backgroundColor: '#4F46E5' },
+    saveButton: { width: '100%', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 24, backgroundColor: '#4FD1C5' },
     saveButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
     pickerItem: { color: 'black', fontSize: 18 },
     modalContainer: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
     datePickerContent: { backgroundColor: 'white', borderTopRightRadius: 20, borderTopLeftRadius: 20, padding: 16 },
-    doneButton: { backgroundColor: '#4F46E5', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+    doneButton: { backgroundColor: '#4A90E2', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 10 },
     doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
 });
 

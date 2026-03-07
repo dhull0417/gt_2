@@ -300,8 +300,8 @@ const EditScheduleScreen = () => {
                     })}
                 </View>
                 <View style={styles.footerNavSpread}>
-                    <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
-                    <TouchableOpacity onPress={handleNext} disabled={!currentFreq}><Feather name="arrow-right-circle" size={48} color={!currentFreq ? "#D1D5DB" : "#4F46E5"} /></TouchableOpacity>
+                    <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity>
+                    <TouchableOpacity onPress={handleNext} disabled={!currentFreq}><Feather name="arrow-right-circle" size={48} color={!currentFreq ? "#D1D5DB" : "#4FD1C5"} /></TouchableOpacity>
                 </View>
             </View>
         );
@@ -344,8 +344,8 @@ const EditScheduleScreen = () => {
                     </View>
                 </View>
                 <View style={styles.footerNavSpread}>
-                    <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
-                    <TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+                    <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity>
+                    <TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4FD1C5" /></TouchableOpacity>
                 </View>
             </View>
         );
@@ -380,7 +380,7 @@ const EditScheduleScreen = () => {
                 </View>
             </ScrollView>
             <View style={styles.footerNavSpread}>
-                <TouchableOpacity onPress={handleBack}><Feather name="arrow-left" size={32} color="#6B7280" /></TouchableOpacity>
+                <TouchableOpacity onPress={handleBack}><Feather name="arrow-left" size={32} color="#FF7A6E" /></TouchableOpacity>
                 <TouchableOpacity style={styles.finishBtn} onPress={handleUpdateSchedule} disabled={isUpdating}>
                     {isUpdating ? <ActivityIndicator color="white" /> : <Text style={styles.finishBtnText}>Save Changes</Text>}
                 </TouchableOpacity>
@@ -388,7 +388,7 @@ const EditScheduleScreen = () => {
         </View>
     );
 
-    if (loadingGroup || !currentUser) return <View style={styles.center}><ActivityIndicator size="large" color="#4F46E5" /></View>;
+    if (loadingGroup || !currentUser) return <View style={styles.center}><ActivityIndicator size="large" color="#4A90E2" /></View>;
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
@@ -401,7 +401,7 @@ const EditScheduleScreen = () => {
                             <TouchableOpacity style={styles.choiceBtn} onPress={()=>{setIsSameTime(true); setStep(6);}}><Text style={styles.choiceBtnText}>Yes</Text></TouchableOpacity>
                             <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>{setIsSameTime(false); setStep(6);}}><Text style={styles.choiceBtnTextOutline}>No</Text></TouchableOpacity>
                         </View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity></View>
                     </View>
                 )}
                 {step === 6 && renderStep6_TimeSelection()}
@@ -422,9 +422,9 @@ const EditScheduleScreen = () => {
                             </TouchableOpacity>
                         ))}</View>
                         <View style={styles.footerNavSpread}>
-                            <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+                            <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity>
                             <TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}>
-                                <Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4F46E5'} />
+                                <Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4FD1C5'} />
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -435,7 +435,7 @@ const EditScheduleScreen = () => {
                         <View style={styles.dateGrid}>{Array.from({length:31}, (_,i)=>i+1).map(d=>(
                             <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d)&&styles.dateBoxSelected]} onPress={()=>setSelectedDates((prev)=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d])}><Text style={[styles.dateText, selectedDates.includes(d)&&styles.dateTextSelected]}>{d}</Text></TouchableOpacity>
                         ))}</View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDates.length}><Feather name="arrow-right-circle" size={48} color={!selectedDates.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDates.length}><Feather name="arrow-right-circle" size={48} color={!selectedDates.length?'#CCC':'#4FD1C5'} /></TouchableOpacity></View>
                     </View>
                 )}
                 {step === 10 && (
@@ -446,7 +446,7 @@ const EditScheduleScreen = () => {
                             <View style={{height: 20}}/>
                             <View style={styles.pickerWrapper}><Picker selectedValue={ordinalDay} onValueChange={(v: number)=>setOrdinalDay(v)} itemStyle={styles.pickerItem}>{daysOfWeek.map(d=><Picker.Item key={d.value} label={d.label} value={d.value} color="#111827"/>)}</Picker></View>
                         </View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4FD1C5" /></TouchableOpacity></View>
                     </View>
                 )}
                 {step === 11 && (
@@ -457,7 +457,7 @@ const EditScheduleScreen = () => {
                             <TouchableOpacity style={styles.choiceBtn} onPress={()=>setStep(4)}><Text style={styles.choiceBtnText}>Add More</Text></TouchableOpacity>
                             <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>setStep(15)}><Text style={styles.choiceBtnTextOutline}>Continue</Text></TouchableOpacity>
                         </View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity></View>
                     </View>
                 )}
                 {step === 15 && renderStep15_Summary()}
@@ -472,25 +472,25 @@ const styles = StyleSheet.create({
     centeredContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     headerTitle: { fontSize: 26, fontWeight: '900', color: '#111827', textAlign: 'center', marginBottom: 8 },
     headerSub: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 20 },
-    choiceBtn: { width: '100%', backgroundColor: '#4F46E5', paddingVertical: 18, borderRadius: 16, alignItems: 'center', marginBottom: 16 },
+    choiceBtn: { width: '100%', backgroundColor: '#4FD1C5', paddingVertical: 18, borderRadius: 16, alignItems: 'center', marginBottom: 16 },
     choiceBtnText: { color: 'white', fontSize: 18, fontWeight: '800' },
     choiceBtnOutline: { width: '100%', borderWidth: 2, borderColor: '#E5E7EB', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
     choiceBtnTextOutline: { color: '#6B7280', fontSize: 18, fontWeight: '800' },
     frequencyButton: { flexDirection: 'row', alignItems: 'center', padding: 18, marginBottom: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 16 },
-    frequencyButtonSelected: { backgroundColor: '#F5F7FF', borderColor: '#4F46E5' },
+    frequencyButtonSelected: { backgroundColor: '#F5F7FF', borderColor: '#4A90E2' },
     frequencyText: { fontSize: 17, color: '#374151', fontWeight: '700', marginLeft: 12 },
     frequencySub: { fontSize: 12, color: '#9CA3AF', marginTop: 2, marginLeft: 12 },
     radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D1D5DB' },
-    radioCircleSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    radioCircleSelected: { backgroundColor: '#4A90E2', borderColor: '#4A90E2' },
     checkboxCircle: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center' },
-    checkboxCircleSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    checkboxCircleSelected: { backgroundColor: '#4A90E2', borderColor: '#4A90E2' },
     footerNavSpread: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingBottom: 20 },
     pickerWrapper: { backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden' },
     pickerItem: { height: 120, color: '#111827', fontSize: 18 },
     pickerTitle: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 8, marginTop: 16 },
     dateGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
     dateBox: { width: '12%', height: 45, justifyContent: 'center', alignItems: 'center', margin: '1%', borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
-    dateBoxSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    dateBoxSelected: { backgroundColor: '#4A90E2', borderColor: '#4A90E2' },
     dateText: { fontSize: 14, fontWeight: '600' },
     dateTextSelected: { color: '#FFF' },
     loopProgress: { fontSize: 12, color: '#9CA3AF', textAlign: 'center', fontWeight: 'bold', textTransform: 'uppercase' },
@@ -499,8 +499,8 @@ const styles = StyleSheet.create({
     summaryVal: { fontSize: 18, fontWeight: '700', color: '#1F2937', marginTop: 4 },
     summaryValSmall: { fontSize: 15, color: '#374151', marginTop: 2 },
     routineSummaryBox: { marginTop: 10, padding: 12, backgroundColor: '#F9FAFB', borderRadius: 12 },
-    routineSummaryType: { fontSize: 10, fontWeight: '900', color: '#4F46E5', marginBottom: 4 },
-    finishBtn: { backgroundColor: '#4F46E5', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12 },
+    routineSummaryType: { fontSize: 10, fontWeight: '900', color: '#4A90E2', marginBottom: 4 },
+    finishBtn: { backgroundColor: '#4A90E2', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12 },
     finishBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 });
 

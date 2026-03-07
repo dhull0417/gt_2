@@ -154,11 +154,11 @@ export const GroupDetailsView = ({
         <View style={styles.container}>
             {/* 1. Core Details Card */}
             <View style={styles.card}>
-                <View style={styles.cardHeader}><Text style={styles.cardTitle}>Details & Capacity</Text></View>
+                <View style={styles.cardHeader}><Text style={styles.cardTitle}>Details</Text></View>
                 
                 {/* Detailed Schedule Section */}
                 <View style={styles.infoRowTop}>
-                    <Feather name="calendar" size={18} color="#4F46E5" style={{ marginTop: 2 }} />
+                    <Feather name="calendar" size={18} color="#4A90E2" style={{ marginTop: 2 }} />
                     <View style={styles.scheduleContent}>
                         {groupDetails.schedule?.routines && groupDetails.schedule.routines.length > 0 ? (
                             groupDetails.schedule.routines.map((routine, rIdx) => (
@@ -177,7 +177,7 @@ export const GroupDetailsView = ({
 
                 {/* Location Info */}
                 <View style={styles.infoRow}>
-                    <Feather name="map-pin" size={18} color="#4F46E5" />
+                    <Feather name="map-pin" size={18} color="#4A90E2" />
                     <Text style={styles.infoText} numberOfLines={1}>
                         {groupDetails.defaultLocation || "No default location set"}
                     </Text>
@@ -185,13 +185,13 @@ export const GroupDetailsView = ({
 
                 {/* Capacity Limit */}
                 <View style={styles.infoRow}>
-                    <Feather name="users" size={18} color="#4F46E5" />
+                    <Feather name="users" size={18} color="#4A90E2" />
                     <Text style={styles.infoText}>Limit: {groupDetails.defaultCapacity === 0 ? "Unlimited" : groupDetails.defaultCapacity}</Text>
                 </View>
 
                 {/* JIT Schedule Info */}
                 <View style={styles.infoRow}>
-                    <Feather name="bell" size={18} color="#4F46E5" />
+                    <Feather name="bell" size={18} color="#4A90E2" />
                     <Text style={styles.infoText}>
                         JIT: {groupDetails.generationLeadDays} day lead @ {groupDetails.generationLeadTime}
                     </Text>
@@ -199,7 +199,7 @@ export const GroupDetailsView = ({
 
                 {/* Timezone Info - Restored visibility */}
                 <View style={styles.infoRow}>
-                    <Feather name="globe" size={18} color="#4F46E5" />
+                    <Feather name="globe" size={18} color="#4A90E2" />
                     <Text style={styles.infoText}>
                         Timezone: {groupDetails.timezone || "Not set"}
                     </Text>
@@ -210,14 +210,14 @@ export const GroupDetailsView = ({
             <View style={styles.managerActionsRow}>
                 {canManage && (
                     <TouchableOpacity onPress={() => setWizardVisible(true)} style={styles.actionPill}>
-                        <Feather name="plus" size={16} color="#4F46E5" />
+                        <Feather name="plus" size={16} color="#4A90E2" />
                         <Text style={styles.actionPillText}>Add Meeting</Text>
                     </TouchableOpacity>
                 )}
 
                 {/* Invite Friends Action - Visible to all members */}
                 <TouchableOpacity onPress={handleInvitePress} style={styles.actionPill}>
-                    <Feather name="user-plus" size={16} color="#4F46E5" />
+                    <Feather name="user-plus" size={16} color="#4A90E2" />
                     <Text style={styles.actionPillText}>Invite Friends</Text>
                 </TouchableOpacity>
             </View>
@@ -286,11 +286,11 @@ const styles = StyleSheet.create({
     infoText: { marginLeft: 12, fontSize: 16, fontWeight: '600', color: '#374151', flex: 1 },
     scheduleContent: { marginLeft: 12, flex: 1 },
     routineBlock: { marginBottom: 8 },
-    frequencyLabel: { fontSize: 14, fontWeight: '800', color: '#4F46E5', marginBottom: 4, textTransform: 'capitalize' },
+    frequencyLabel: { fontSize: 14, fontWeight: '800', color: '#4A90E2', marginBottom: 4, textTransform: 'capitalize' },
     scheduleDetailText: { fontSize: 15, fontWeight: '600', color: '#374151', marginBottom: 2 },
     managerActionsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
-    actionPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F7FF', paddingVertical: 12, borderRadius: 14, borderBottomWidth: 1, borderBottomColor: '#E0E7FF' },
-    actionPillText: { marginLeft: 8, color: '#4F46E5', fontWeight: 'bold', fontSize: 13 },
+    actionPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f9ff', paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: '#4A90E2' },
+    actionPillText: { marginLeft: 8, color: '#4A90E2', fontWeight: 'bold', fontSize: 13 },
     sectionTitle: { fontSize: 20, fontWeight: '900', color: '#111827', marginBottom: 16 },
     memberCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     avatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12, backgroundColor: '#F3F4F6' },
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
     memberHandle: { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
     ownerBadge: { backgroundColor: '#EEF2FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 8, borderWidth: 1, borderColor: '#C3DAFE' },
     modBadge: { backgroundColor: '#F3F4F6', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 8, borderWidth: 1, borderColor: '#E5E7EB' },
-    badgeText: { fontSize: 10, fontWeight: 'bold', color: '#4F46E5', textTransform: 'uppercase' },
+    badgeText: { fontSize: 10, fontWeight: 'bold', color: '#4FD1C5', textTransform: 'uppercase' },
     footerActionContainer: { paddingHorizontal: 20, paddingVertical: 24, borderTopWidth: 1, borderTopColor: '#F3F4F6', marginTop: 16 },
     leaveButton: { backgroundColor: '#EF4444', paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
     leaveButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },

@@ -15,7 +15,7 @@ const EventEditLayout = () => {
                     presentation: 'modal',
                     headerLeft: () => (
                         <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
-                            <Feather name="x" size={24} color="#4f46e5" />
+                            <Feather name="x" size={24} color="#4A90E2" />
                         </TouchableOpacity>
                     ),
                 }} 

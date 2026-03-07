@@ -105,7 +105,7 @@ const App = () => {
     if (loadingGroup) {
         return (
             <View style={styles.center}>
-                <ActivityIndicator size="large" color="#4F46E5" />
+                <ActivityIndicator size="large" color="#4A90E2" />
             </View>
         );
     }
@@ -143,7 +143,7 @@ const App = () => {
                                     style={styles.stepperBtn}
                                     activeOpacity={0.7}
                                 >
-                                    <Feather name="minus" size={24} color="#4F46E5" />
+                                    <Feather name="minus" size={24} color="#FF7A6E" />
                                 </TouchableOpacity>
                                 
                                 <View style={{ alignItems: 'center', width: 120 }}>
@@ -156,7 +156,7 @@ const App = () => {
                                     style={styles.stepperBtn}
                                     activeOpacity={0.7}
                                 >
-                                    <Feather name="plus" size={24} color="#4F46E5" />
+                                    <Feather name="plus" size={24} color="#4FD1C5" />
                                 </TouchableOpacity>
                             </View>
 
@@ -171,7 +171,7 @@ const App = () => {
                     {/* Footer Navigation (Creation Flow Arrows) */}
                     <View style={styles.footerNavSpread}>
                         <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}>
-                            <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                            <Feather name="arrow-left-circle" size={48} color="#FF7A6E" />
                         </TouchableOpacity>
                         
                         <TouchableOpacity 
@@ -180,9 +180,9 @@ const App = () => {
                             activeOpacity={0.7}
                         >
                             {isUpdating ? (
-                                <ActivityIndicator size="small" color="#4F46E5" />
+                                <ActivityIndicator size="small" color="#4A90E2" />
                             ) : (
-                                <Feather name="arrow-right-circle" size={48} color="#4F46E5" />
+                                <Feather name="arrow-right-circle" size={48} color="#4FD1C5" />
                             )}
                         </TouchableOpacity>
                     </View>

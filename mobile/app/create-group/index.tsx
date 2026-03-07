@@ -405,7 +405,7 @@ const CreateGroupScreen = () => {
 
           <View style={{ flex: 1 }}>
               {isSearchingUsers ? (
-                  <ActivityIndicator size="small" color="#4F46E5" style={{ marginTop: 20 }} />
+                  <ActivityIndicator size="small" color="#4A90E2" style={{ marginTop: 20 }} />
               ) : (
                   <FlatList 
                     data={searchResults || []} 
@@ -413,7 +413,7 @@ const CreateGroupScreen = () => {
                     renderItem={({item})=>(
                         <TouchableOpacity style={styles.resultRow} onPress={()=>toggleMember(item)}>
                             <Text style={styles.resultText}>@{item.username}</Text>
-                            {selectedMembers.some(m=>m._id===item._id) && <Feather name="check-circle" size={24} color="#4F46E5" />}
+                            {selectedMembers.some(m=>m._id===item._id) && <Feather name="check-circle" size={24} color="#4A90E2" />}
                         </TouchableOpacity>
                     )}
                   />
@@ -421,13 +421,13 @@ const CreateGroupScreen = () => {
           </View>
 
           <TouchableOpacity style={styles.shareLinkBtn} onPress={handleShareInvite}>
-              <Feather name="share-2" size={20} color="#4F46E5" />
+              <Feather name="share-2" size={20} color="#4A90E2" />
               <Text style={styles.shareLinkText}>Share Invite Link</Text>
           </TouchableOpacity>
 
           <View style={styles.footerNavSpread}>
-              <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
-              <TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+              <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity>
+              <TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4FD1C5" /></TouchableOpacity>
           </View>
       </View>
   );
@@ -453,8 +453,8 @@ const CreateGroupScreen = () => {
                   })}
               </View>
               <View style={styles.footerNavSpread}>
-                  <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
-                  <TouchableOpacity onPress={handleNext} disabled={!currentFreq}><Feather name="arrow-right-circle" size={48} color={!currentFreq ? "#D1D5DB" : "#4F46E5"} /></TouchableOpacity>
+                  <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity>
+                  <TouchableOpacity onPress={handleNext} disabled={!currentFreq}><Feather name="arrow-right-circle" size={48} color={!currentFreq ? "#4FD1C5" : "#4FD1C5"} /></TouchableOpacity>
               </View>
           </View>
       );
@@ -497,8 +497,8 @@ const CreateGroupScreen = () => {
                   </View>
               </View>
               <View style={styles.footerNavSpread}>
-                  <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
-                  <TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity>
+                  <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity>
+                  <TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4FD1C5" /></TouchableOpacity>
               </View>
           </View>
       );
@@ -541,7 +541,7 @@ const CreateGroupScreen = () => {
               </View>
           </ScrollView>
           <View style={styles.footerNavSpread}>
-              <TouchableOpacity onPress={handleBack}><Feather name="arrow-left" size={32} color="#6B7280" /></TouchableOpacity>
+              <TouchableOpacity onPress={handleBack}><Feather name="arrow-left" size={32} color="#FF7A6E" /></TouchableOpacity>
               <TouchableOpacity style={styles.finishBtn} onPress={handleCreateRequest} disabled={isPending}>
                   {isPending ? <ActivityIndicator color="white" /> : <Text style={styles.finishBtnText}>Confirm</Text>}
               </TouchableOpacity>
@@ -566,8 +566,8 @@ const CreateGroupScreen = () => {
                         <View style={styles.imagePlaceholder}><Image source={GroupImage} style={styles.image} resizeMode="cover" /></View>
                         <TextInput style={styles.textInput} placeholder="The coolest group..." value={groupName} onChangeText={setGroupName} />
                         <View style={styles.footerNavSpread}>
-                            <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity>
-                            <TouchableOpacity onPress={handleNext} disabled={!groupName}><Feather name="arrow-right-circle" size={48} color={!groupName ? '#CCC' : '#4F46E5'} /></TouchableOpacity>
+                            <TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity>
+                            <TouchableOpacity onPress={handleNext} disabled={!groupName}><Feather name="arrow-right-circle" size={48} color={!groupName ? '#CCC' : '#4FD1C5'} /></TouchableOpacity>
                         </View>
                     </View>
                 )}
@@ -581,7 +581,7 @@ const CreateGroupScreen = () => {
                             <TouchableOpacity style={styles.choiceBtn} onPress={()=>setStep(4)}><Text style={styles.choiceBtnText}>Yes</Text></TouchableOpacity>
                             <TouchableOpacity style={styles.choiceBtnOutline} onPress={handleCreateRequest}><Text style={styles.choiceBtnTextOutline}>No</Text></TouchableOpacity>
                         </View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity></View>
                     </View>
                 )}
 
@@ -594,7 +594,7 @@ const CreateGroupScreen = () => {
                             <TouchableOpacity style={styles.choiceBtn} onPress={()=>{setIsSameTime(true); setStep(6);}}><Text style={styles.choiceBtnText}>Yes</Text></TouchableOpacity>
                             <TouchableOpacity style={styles.choiceBtnOutline} onPress={()=>{setIsSameTime(false); setStep(6);}}><Text style={styles.choiceBtnTextOutline}>No</Text></TouchableOpacity>
                         </View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity></View>
                     </View>
                 )}
 
@@ -606,7 +606,7 @@ const CreateGroupScreen = () => {
                         <View style={{flex: 1, justifyContent: 'center'}}>{daysOfWeek.map(d=>(
                             <TouchableOpacity key={d.value} style={[styles.frequencyButton, selectedDays.includes(d.value)&&styles.frequencyButtonSelected]} onPress={()=>setSelectedDays((prev: number[])=>prev.includes(d.value)?prev.filter(x=>x!==d.value):[...prev,d.value])}><View style={[styles.checkboxCircle, selectedDays.includes(d.value)&&styles.checkboxCircleSelected]}>{selectedDays.includes(d.value)&&<Feather name="check" size={14} color="white"/>}</View><Text style={styles.frequencyText}>{d.label}</Text></TouchableOpacity>
                         ))}</View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}><Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDays.length}><Feather name="arrow-right-circle" size={48} color={!selectedDays.length?'#CCC':'#4FD1C5'} /></TouchableOpacity></View>
                     </View>
                 )}
 
@@ -616,7 +616,7 @@ const CreateGroupScreen = () => {
                         <View style={styles.dateGrid}>{Array.from({length:31}, (_,i)=>i+1).map(d=>(
                             <TouchableOpacity key={d} style={[styles.dateBox, selectedDates.includes(d)&&styles.dateBoxSelected]} onPress={()=>setSelectedDates((prev: number[])=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d])}><Text style={[styles.dateText, selectedDates.includes(d)&&styles.dateTextSelected]}>{d}</Text></TouchableOpacity>
                         ))}</View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDates.length}><Feather name="arrow-right-circle" size={48} color={!selectedDates.length?'#CCC':'#4F46E5'} /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity><TouchableOpacity onPress={handleNext} disabled={!selectedDates.length}><Feather name="arrow-right-circle" size={48} color={!selectedDates.length?'#CCC':'#4FD1C5'} /></TouchableOpacity></View>
                     </View>
                 )}
 
@@ -625,9 +625,9 @@ const CreateGroupScreen = () => {
                         <Text style={styles.headerTitle}>When to start?</Text>
                         <View style={styles.calendarContainer} onLayout={onCalendarContainerLayout}>
                             <View style={styles.calendarNav}>
-                                <TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4F46E5"/></TouchableOpacity>
+                                <TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4A90E2"/></TouchableOpacity>
                                 <Text style={styles.calendarMonthText}>{calendarMonth.toFormat('MMMM yyyy')}</Text>
-                                <TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.plus({months:1}))}><Feather name="chevron-right" size={24} color="#4F46E5"/></TouchableOpacity>
+                                <TouchableOpacity onPress={()=>setCalendarMonth((prev: DateTime)=>prev.plus({months:1}))}><Feather name="chevron-right" size={24} color="#4A90E2"/></TouchableOpacity>
                             </View>
                             
                             {calculatedDayWidth > 0 ? (
@@ -663,7 +663,7 @@ const CreateGroupScreen = () => {
                                 </>
                             ) : <ActivityIndicator style={{ margin: 20 }} />}
                         </View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(12)}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(12)}><Feather name="arrow-right-circle" size={48} color="#4FD1C5" /></TouchableOpacity></View>
                     </View>
                 )}
 
@@ -675,7 +675,7 @@ const CreateGroupScreen = () => {
                             <View style={{height: 20}}/>
                             <View style={styles.pickerWrapper}><Picker selectedValue={ordinalDay} onValueChange={(itemValue: number)=>setOrdinalDay(itemValue)} itemStyle={styles.pickerItem}>{daysOfWeek.map(d=><Picker.Item key={d.value} label={d.label} value={d.value} color="#111827"/>)}</Picker></View>
                         </View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity><TouchableOpacity onPress={handleNext}><Feather name="arrow-right-circle" size={48} color="#4FD1C5" /></TouchableOpacity></View>
                     </View>
                 )}
 
@@ -689,7 +689,7 @@ const CreateGroupScreen = () => {
                         </View>
                         <View style={styles.footerNavSpread}>
                             <TouchableOpacity onPress={handleBack}>
-                                <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                                <Feather name="arrow-left-circle" size={48} color="#FF7A6E" />
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -708,14 +708,14 @@ const CreateGroupScreen = () => {
                             <FadeInView delay={400} style={styles.jitCard}>
                                 <View style={styles.leadDaysRow}>
                                     <TouchableOpacity onPress={() => setLeadDays(Math.max(0, leadDays - 1))} style={styles.stepperBtn}>
-                                        <Feather name="minus" size={24} color="#4F46E5" />
+                                        <Feather name="minus" size={24} color="#4A90E2" />
                                     </TouchableOpacity>
                                     <View style={{ alignItems: 'center', width: 120 }}>
                                         <Text style={styles.leadVal}>{leadDays}</Text>
                                         <Text style={styles.leadLabel}>Days Lead</Text>
                                     </View>
                                     <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={styles.stepperBtn}>
-                                        <Feather name="plus" size={24} color="#4F46E5" />
+                                        <Feather name="plus" size={24} color="#4A90E2" />
                                     </TouchableOpacity>
                                 </View>
 
@@ -725,7 +725,7 @@ const CreateGroupScreen = () => {
                                 <TimePicker onTimeChange={setNotificationTime} initialValue={notificationTime} />
                             </FadeInView>
                         </View>
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(13)}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(13)}><Feather name="arrow-right-circle" size={48} color="#4FD1C5" /></TouchableOpacity></View>
                     </View>
                 )}
 
@@ -738,7 +738,7 @@ const CreateGroupScreen = () => {
                         </View>
                         <View style={styles.footerNavSpread}>
                             <TouchableOpacity onPress={handleBack}>
-                                <Feather name="arrow-left-circle" size={48} color="#4F46E5" />
+                                <Feather name="arrow-left-circle" size={48} color="#FF7A6E" />
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -748,7 +748,7 @@ const CreateGroupScreen = () => {
                     <View style={styles.stepContainerPadded}>
                         <Text style={styles.headerTitle}>Location Info</Text>
                         <TextInput style={styles.textInput} placeholder="e.g. Starbucks or Zoom link..." value={location} onChangeText={setLocation} />
-                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#4F46E5" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(15)}><Feather name="arrow-right-circle" size={48} color="#4F46E5" /></TouchableOpacity></View>
+                        <View style={styles.footerNavSpread}><TouchableOpacity onPress={handleBack}><Feather name="arrow-left-circle" size={48} color="#FF7A6E" /></TouchableOpacity><TouchableOpacity onPress={()=>setStep(15)}><Feather name="arrow-right-circle" size={48} color="#4FD1C5" /></TouchableOpacity></View>
                     </View>
                 )}
 
@@ -775,7 +775,7 @@ const styles = StyleSheet.create({
     headerSub: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 20 },
     imagePlaceholder: { width: '100%', aspectRatio: 16/9, marginVertical: 24, borderRadius: 16, overflow: 'hidden', backgroundColor: '#E5E7EB' },
     image: { width: '100%', height: 200 },
-    textInput: { width: '100%', padding: 16, borderBottomWidth: 2, borderColor: '#4F46E5', fontSize: 18, fontWeight: '600', backgroundColor: 'white', borderRadius: 12 },
+    textInput: { width: '100%', padding: 16, borderBottomWidth: 2, borderColor: '#4A90E2', fontSize: 18, fontWeight: '600', backgroundColor: 'white', borderRadius: 12 },
     searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 16 },
     searchInput: { flex: 1, marginLeft: 10, fontSize: 16 },
     sectionLabel: { fontSize: 12, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 8, marginLeft: 4 },
@@ -788,25 +788,25 @@ const styles = StyleSheet.create({
     selectionButton: { width: '100%', padding: 20, backgroundColor: 'white', borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E5E7EB', elevation: 2 },
     selectionButtonText: { fontSize: 20, fontWeight: 'bold', color: '#1F2937' },
     selectionButtonSubtext: { fontSize: 14, color: '#6B7280', marginTop: 4 },
-    choiceBtn: { width: '100%', backgroundColor: '#4F46E5', paddingVertical: 18, borderRadius: 16, alignItems: 'center', marginBottom: 16 },
+    choiceBtn: { width: '100%', backgroundColor: '#4FD1C5', paddingVertical: 18, borderRadius: 16, alignItems: 'center', marginBottom: 16 },
     choiceBtnText: { color: 'white', fontSize: 18, fontWeight: '800' },
     choiceBtnOutline: { width: '100%', borderWidth: 2, borderColor: '#E5E7EB', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
     choiceBtnTextOutline: { color: '#6B7280', fontSize: 18, fontWeight: '800' },
     frequencyButton: { flexDirection: 'row', alignItems: 'center', padding: 18, marginBottom: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 16 },
-    frequencyButtonSelected: { backgroundColor: '#F5F7FF', borderColor: '#4F46E5' },
+    frequencyButtonSelected: { backgroundColor: '#F5F7FF', borderColor: '#4A90E2' },
     frequencyText: { fontSize: 17, color: '#374151', fontWeight: '700', marginLeft: 12 },
     frequencySub: { fontSize: 12, color: '#9CA3AF', marginTop: 2, marginLeft: 12 },
     radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D1D5DB' },
-    radioCircleSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    radioCircleSelected: { backgroundColor: '#4A90E2', borderColor: '#4A90E2' },
     checkboxCircle: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center' },
-    checkboxCircleSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    checkboxCircleSelected: { backgroundColor: '#4A90E2', borderColor: '#4A90E2' },
     footerNavSpread: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingBottom: 20 },
     pickerWrapper: { backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden' },
     pickerItem: { height: 120, color: '#111827', fontSize: 18 },
     pickerTitle: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 8, marginTop: 16 },
     dateGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
     dateBox: { width: '12%', height: 45, justifyContent: 'center', alignItems: 'center', margin: '1%', borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#FFF' },
-    dateBoxSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    dateBoxSelected: { backgroundColor: '#4A90E2', borderColor: '#4A90E25' },
     dateText: { fontSize: 14, fontWeight: '600' },
     dateTextSelected: { color: '#FFF' },
     calendarContainer: { backgroundColor: 'white', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden' },
@@ -814,7 +814,7 @@ const styles = StyleSheet.create({
     calendarMonthText: { fontSize: 18, fontWeight: 'bold' },
     calendarGridContainer: { flexDirection: 'row', flexWrap: 'wrap', width: '100%' },
     calendarDayBox: { height: 45, alignItems: 'center', justifyContent: 'center' },
-    calendarDayBoxSelected: { backgroundColor: '#4F46E5', borderRadius: 25 },
+    calendarDayBoxSelected: { backgroundColor: '#4A90E2', borderRadius: 25 },
     calendarDayText: { fontSize: 16 },
     calendarDayTextSelected: { color: 'white', fontWeight: 'bold' },
     description: { fontSize: 15, color: '#6B7280', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
@@ -831,12 +831,12 @@ const styles = StyleSheet.create({
     summaryVal: { fontSize: 18, fontWeight: '700', color: '#1F2937', marginTop: 4 },
     summaryValSmall: { fontSize: 15, color: '#374151', marginTop: 2 },
     routineSummaryBox: { marginTop: 10, padding: 12, backgroundColor: '#F9FAFB', borderRadius: 12 },
-    routineSummaryType: { fontSize: 10, fontWeight: '900', color: '#4F46E5', marginBottom: 4 },
+    routineSummaryType: { fontSize: 10, fontWeight: '900', color: '#4A90E2', marginBottom: 4 },
     sectionLabelCenter: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 16, textAlign: 'center' },
-    finishBtn: { backgroundColor: '#4F46E5', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12 },
+    finishBtn: { backgroundColor: '#4A90E2', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12 },
     finishBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-    shareLinkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#F5F7FF', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#4F46E5', marginVertical: 16 },
-    shareLinkText: { color: '#4F46E5', fontWeight: '700', fontSize: 16, marginLeft: 10 },
+    shareLinkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#F5F7FF', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#4A90E2', marginVertical: 16 },
+    shareLinkText: { color: '#4A90E2', fontWeight: '700', fontSize: 16, marginLeft: 10 },
     dayLabelText: { fontSize: 10, fontWeight: '900', color: '#9CA3AF' }
 });
 

@@ -139,9 +139,9 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
                         <Text style={styles.wizardTitle}>Select Event Date</Text>
                         <View style={styles.calendarContainer} onLayout={onCalendarContainerLayout}>
                             <View style={styles.calendarNav}>
-                                <TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4F46E5"/></TouchableOpacity>
+                                <TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4A90E2"/></TouchableOpacity>
                                 <Text style={styles.calendarMonthText}>{calendarMonth.toFormat('MMMM yyyy')}</Text>
-                                <TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.plus({months:1}))}><Feather name="chevron-right" size={24} color="#4F46E5"/></TouchableOpacity>
+                                <TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.plus({months:1}))}><Feather name="chevron-right" size={24} color="#4A90E2"/></TouchableOpacity>
                             </View>
                             <View style={styles.calendarGridContainer}>
                                 {daysOfWeekFull.map((day, i) => (
@@ -203,9 +203,9 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
                     <View style={styles.wizardStep}>
                         <Text style={styles.wizardTitle}>Max Attendees?</Text>
                         <View style={styles.stepperContainer}>
-                            <TouchableOpacity onPress={() => setEventCapacity(Math.max(0, eventCapacity - 1))} style={styles.stepperBtn}><Feather name="minus" size={24} color="#4F46E5" /></TouchableOpacity>
+                            <TouchableOpacity onPress={() => setEventCapacity(Math.max(0, eventCapacity - 1))} style={styles.stepperBtn}><Feather name="minus" size={24} color="#FF7A6E" /></TouchableOpacity>
                             <View style={{ alignItems: 'center', width: 120 }}><Text style={styles.stepperVal}>{eventCapacity === 0 ? "∞" : eventCapacity}</Text><Text style={styles.stepperLabel}>{eventCapacity === 0 ? "Unlimited" : "Spots"}</Text></View>
-                            <TouchableOpacity onPress={() => setEventCapacity(eventCapacity + 1)} style={styles.stepperBtn}><Feather name="plus" size={24} color="#4F46E5" /></TouchableOpacity>
+                            <TouchableOpacity onPress={() => setEventCapacity(eventCapacity + 1)} style={styles.stepperBtn}><Feather name="plus" size={24} color="#4FD1C5" /></TouchableOpacity>
                         </View>
                         <View style={styles.rowBtn}>
                             <TouchableOpacity onPress={() => setStep(2)} style={styles.backBtn}><Text style={styles.backBtnText}>Back</Text></TouchableOpacity>
@@ -248,15 +248,15 @@ const styles = StyleSheet.create({
     calendarMonthText: { fontWeight: 'bold', fontSize: 16 },
     calendarGridContainer: { flexDirection: 'row', flexWrap: 'wrap', width: '100%' },
     calendarDayBox: { height: 45, alignItems: 'center', justifyContent: 'center' },
-    calendarDayBoxSelected: { backgroundColor: '#4F46E5', borderRadius: 25 },
+    calendarDayBoxSelected: { backgroundColor: '#4A90E2', borderRadius: 25 },
     calendarDayText: { fontSize: 14 },
     calendarDayTextSelected: { color: 'white', fontWeight: 'bold' },
     dayLabelText: { fontSize: 10, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase' },
-    nextBtn: { backgroundColor: '#4F46E5', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 'auto' },
+    nextBtn: { backgroundColor: '#4A90E2', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 'auto' },
     nextBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
     backBtn: { backgroundColor: '#F3F4F6', padding: 16, borderRadius: 12, alignItems: 'center', flex: 1 },
     backBtnText: { color: '#374151', fontWeight: 'bold' },
-    finishBtn: { backgroundColor: '#4F46E5', padding: 16, borderRadius: 12, alignItems: 'center', flex: 2 },
+    finishBtn: { backgroundColor: '#4A90E2', padding: 16, borderRadius: 12, alignItems: 'center', flex: 2 },
     finishBtnText: { color: 'white', fontWeight: 'bold' },
     rowBtn: { flexDirection: 'row', gap: 12, marginTop: 'auto' },
     pickerLabel: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginTop: 24, marginBottom: 8, textAlign: 'center' },
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     stepperBtn: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#F5F7FF', alignItems: 'center', justifyContent: 'center' },
     stepperVal: { fontSize: 40, fontWeight: '900', color: '#111827' },
     stepperLabel: { fontSize: 10, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase' },
-    input: { backgroundColor: '#F9FAFB', padding: 16, borderRadius: 12, fontSize: 16, borderBottomWidth: 2, borderBottomColor: '#4F46E5' }
+    input: { backgroundColor: '#F9FAFB', padding: 16, borderRadius: 12, fontSize: 16, borderBottomWidth: 2, borderBottomColor: '#4A90E2' }
 });
 
 export default AddMeetingWizard;

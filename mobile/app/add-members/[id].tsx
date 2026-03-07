@@ -70,7 +70,7 @@ const AddMembersScreen = () => {
 
             <View style={{ flex: 1 }}>
                 {isSearchingUsers ? (
-                    <ActivityIndicator size="small" color="#4F46E5" style={{ marginTop: 20 }} />
+                    <ActivityIndicator size="small" color="#4A90E2" style={{ marginTop: 20 }} />
                 ) : (
                     <FlatList 
                         data={searchResults || []} 
@@ -100,7 +100,7 @@ const AddMembersScreen = () => {
             </View>
 
             <TouchableOpacity style={styles.shareLinkBtn} onPress={handleShareInvite}>
-                <Feather name="share-2" size={20} color="#4F46E5" />
+                <Feather name="share-2" size={20} color="#4A90E2" />
                 <Text style={styles.shareLinkText}>Share Invite Link</Text>
             </TouchableOpacity>
         </SafeAreaView>
@@ -115,10 +115,10 @@ const styles = StyleSheet.create({
     resultName: { fontSize: 16, fontWeight: '600', color: '#374151' },
     resultUsername: { fontSize: 14, color: '#6B7280' },
     inviteButton: { backgroundColor: '#EEF2FF', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-    inviteButtonText: { color: '#4F46E5', fontWeight: 'bold' },
+    inviteButtonText: { color: '#4A90E2', fontWeight: 'bold' },
     emptyText: { textAlign: 'center', marginTop: 32, color: '#6B7280', fontSize: 16 },
-    shareLinkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#F5F7FF', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#4F46E5', marginTop: 16 },
-    shareLinkText: { color: '#4F46E5', fontWeight: '700', fontSize: 16, marginLeft: 10 },
+    shareLinkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#F5F7FF', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#4A90E2', marginTop: 16 },
+    shareLinkText: { color: '#4A90E2', fontWeight: '700', fontSize: 16, marginLeft: 10 },
 });
 
 export default AddMembersScreen;

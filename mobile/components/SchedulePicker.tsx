@@ -127,13 +127,13 @@ useEffect(() => {
 const styles = StyleSheet.create({
     row: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 16 },
     freqButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#D1D5DB', marginRight: 8, marginBottom: 8, backgroundColor: '#FFF' },
-    freqActive: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    freqActive: { backgroundColor: '#4A90E2', borderColor: '#4A90E2' },
     freqText: { color: '#374151', fontSize: 14, fontWeight: '500' },
     textActive: { color: '#FFF' },
     
     daysContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
     dayButton: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', margin: 4, backgroundColor: '#FFF' },
-    dayActive: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
+    dayActive: { backgroundColor: '#4A90E2', borderColor: '#4A90E2' },
     dayText: { fontSize: 12, color: '#374151' },
 
     calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },

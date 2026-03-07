@@ -340,7 +340,7 @@ const GroupSettings = () => {
   if (isLoadingGroup || isLoadingUser) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#4F46E5" />
+        <ActivityIndicator size="large" color="#4A90E2" />
       </View>
     );
   }
@@ -465,7 +465,7 @@ const GroupSettings = () => {
             </TouchableOpacity>
             <Text style={styles.modalTitleLarge}>Manage Moderators</Text>
             <TouchableOpacity onPress={handleSaveModerators} disabled={isSavingMods} style={styles.headerIconButton}>
-                {isSavingMods ? <ActivityIndicator size="small" color="#4F46E5" /> : <Text style={styles.saveBtnText}>Save</Text>}
+                {isSavingMods ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={styles.saveBtnText}>Save</Text>}
             </TouchableOpacity>
           </View>
           
@@ -501,7 +501,7 @@ const GroupSettings = () => {
                   
                   {isOwner ? (
                     <View style={styles.ownerBadgeShield}>
-                      <Feather name="shield" size={16} color="#4F46E5" />
+                      <Feather name="shield" size={16} color="#4A90E2" />
                     </View>
                   ) : (
                     <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
@@ -549,7 +549,7 @@ const GroupSettings = () => {
                     <TouchableOpacity onPress={() => Alert.alert("Remove Member", `Remove ${item.firstName} from the group?`, [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: () => performMemberRemoval(mId) }])} disabled={isRemovingMemberId === mId}>
                         {isRemovingMemberId === mId ? <ActivityIndicator size="small" color="#EF4444" /> : <Feather name="x-circle" size={24} color="#EF4444" />}
                     </TouchableOpacity>
-                  ) : isMbrOwner ? <View style={styles.ownerBadgeShield}><Feather name="shield" size={16} color="#4F46E5" /></View> : null}
+                  ) : isMbrOwner ? <View style={styles.ownerBadgeShield}><Feather name="shield" size={16} color="#4A90E2" /></View> : null}
                 </View>
               );
             }}
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
   modalButtons: { flexDirection: 'row', gap: 12 },
   modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   modalBtnCancel: { backgroundColor: '#F3F4F6' },
-  modalBtnSave: { backgroundColor: '#4F46E5' },
+  modalBtnSave: { backgroundColor: '#4FD1C5' },
   modalBtnTextCancel: { fontSize: 16, fontWeight: '700', color: '#4B5563' },
   modalBtnTextSave: { fontSize: 16, fontWeight: '700', color: 'white' },
   fullModalContainer: { flex: 1, backgroundColor: 'white' },
@@ -596,10 +596,10 @@ const styles = StyleSheet.create({
   memberName: { fontSize: 16, fontWeight: '700', color: '#1F2937' },
   memberRole: { fontSize: 12, color: '#9CA3AF', fontWeight: '600', marginTop: 1 },
   ownerBadgeShield: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center' },
-  saveBtnText: { color: '#4F46E5', fontWeight: '900', fontSize: 16 },
+  saveBtnText: { color: '#4A90E2', fontWeight: '900', fontSize: 16 },
   headerIconButton: { padding: 4 },
   selectMemberRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: 18, marginHorizontal: 20, marginBottom: 10, backgroundColor: '#F9FAFB' },
-  selectMemberRowActive: { backgroundColor: '#4F46E5' },
+  selectMemberRowActive: { backgroundColor: '#4A90E2' },
   textWhite: { color: 'white' },
   textWhite70: { color: 'rgba(255,255,255,0.7)' },
   checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },

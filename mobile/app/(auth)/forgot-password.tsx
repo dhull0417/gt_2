@@ -36,7 +36,7 @@ const ForgotPasswordScreen = () => {
       >
         <View className="flex-row items-center px-4 pt-2">
           <TouchableOpacity onPress={() => router.back()}>
-            <Feather name="arrow-left" size={28} color="#4f46e5" />
+            <Feather name="arrow-left" size={28} color="#FF7A6E" />
           </TouchableOpacity>
         </View>
         <ScrollView
