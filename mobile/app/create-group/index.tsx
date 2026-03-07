@@ -359,7 +359,7 @@ const CreateGroupScreen = () => {
   const handleShareInvite = async () => {
       try {
           await Share.share({
-              message: `Join my group "${groupName}" on the app! Sign up here: https://yourapplink.com`,
+              message: `Join my group "${groupName}" on the app! Sign up here: https://dhull0417.github.io/groupthat-testing/`,
           });
       } catch (error) {
           console.error("Share error:", error);
