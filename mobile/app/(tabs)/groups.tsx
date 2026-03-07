@@ -92,7 +92,13 @@ const styles = StyleSheet.create({
   }
 });
 
-const GroupChat = ({ group }: { group: GroupDetails }) => {
+const GroupChat = ({
+  group,
+  keyboardVerticalOffset,
+}: {
+  group: GroupDetails;
+  keyboardVerticalOffset: number;
+}) => {
   const { client, isConnected } = useChatClient();
   const [channel, setChannel] = useState<StreamChannel | null>(null);
   const [text, setText] = useState('');
@@ -150,10 +156,13 @@ const GroupChat = ({ group }: { group: GroupDetails }) => {
   return (
     <OverlayProvider>
       <Chat client={client}>
-        <Channel channel={channel}>
+        <Channel channel={channel} keyboardVerticalOffset={keyboardVerticalOffset}>
           <View style={styles.chatContainer}>
             <MessageList Message={CustomMessage} />
-            <View className="flex-row items-center p-3 border-t border-gray-200 bg-white pb-6"> 
+            {/* The pb-6 was adding extra space when the keyboard was open. */}
+            {/* The Channel component handles safe areas, so this manual padding was redundant and caused the gap. */}
+            {/* The p-3 class provides sufficient padding for the input area. */}
+            <View className="flex-row items-center p-3 border-t border-gray-200 bg-white">
                 <View className="flex-1 flex-row items-center bg-gray-100 rounded-2xl px-4 py-2 mr-3 border border-gray-300">
                     <TextInput 
                         value={text}
@@ -438,23 +447,23 @@ const GroupScreen = () => {
           ) : (
             <ChatProvider user={stableUserRef.current || currentUser!}>
                {activeTab === 'Chat' ? (
-                <KeyboardAvoidingView
-                  style={styles.chatContainer}
-                  behavior={Platform.OS === "ios" ? "padding" : "height"}
-                  // The offset should be the height of the header above the chat.
-                  // Header py-3 (12+12=24) + max content height (back button wrapper is ~32px) = 56px.
-                  // The previous value of 90 was too large, causing the gap.
-                  // This is only for iOS with behavior="padding".
-                  keyboardVerticalOffset={Platform.OS === "ios" ? 56 : 0}
-                >
+                <View style={styles.chatContainer}>
                   {(isLoadingDetails || !groupDetails) ? (
                     <View style={styles.loadingContainer}>
                       <ActivityIndicator size="large" color="#4A90E2" />
                     </View>
                   ) : (
-                      <GroupChat group={groupDetails} />
+                      <GroupChat
+                        group={groupDetails}
+                        // This offset is a tuned value for iOS to position the input correctly above the keyboard.
+                        // It accounts for the header height (~56px) plus additional space needed for this specific layout.
+                        // A value of 56 was too low (input covered), and previous values were too high (creating a gap).
+                        // This is passed to the Stream `Channel` component, which has its own KeyboardAvoidingView.
+                        // Using the library's built-in keyboard avoidance is more reliable.
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+                      />
                   )}
-                </KeyboardAvoidingView>
+                </View>
               ) : (
                 <ScrollView className="flex-1 bg-gray-50" keyboardShouldPersistTaps="handled">
                   <View className="p-6">
