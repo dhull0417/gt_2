@@ -441,7 +441,11 @@ const GroupScreen = () => {
                 <KeyboardAvoidingView
                   style={styles.chatContainer}
                   behavior={Platform.OS === "ios" ? "padding" : "height"}
-                  keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+                  // The offset should be the height of the header above the chat.
+                  // Header py-3 (12+12=24) + max content height (back button wrapper is ~32px) = 56px.
+                  // The previous value of 90 was too large, causing the gap.
+                  // This is only for iOS with behavior="padding".
+                  keyboardVerticalOffset={Platform.OS === "ios" ? 56 : 0}
                 >
                   {(isLoadingDetails || !groupDetails) ? (
                     <View style={styles.loadingContainer}>
