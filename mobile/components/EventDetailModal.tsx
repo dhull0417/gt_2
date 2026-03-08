@@ -70,7 +70,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     const isWaitlisted = event.waitlist?.includes(currentUser._id) || false;
     const isIn = event.in?.includes(currentUser._id) || false;
 
-    const goingUsers = (event.members || []).filter(m => event.in?.includes(m._id));
+    const goingUsers = (event.members || []).filter(m => event.in);
 
     const handleRsvpAction = (status: 'in' | 'out') => {
         rsvp({ eventId: event._id, status }, {
@@ -294,7 +294,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                             disabled={isRsvping}
                             style={[styles.rsvpButton, styles.rsvpOut, event.out?.includes(currentUser._id) && { backgroundColor: '#EF4444', borderBottomColor: '#B91C1C' }]}
                         >
-                            <Text style={[styles.rsvpButtonText, !event.out?.includes(currentUser._id) && { color: '#6B7280' }]}>I'm Out</Text>
+                            <Text style={[styles.rsvpButtonText, !event.out?.includes(currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
     rsvpIn: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
     rsvpOut: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
     rsvpButtonText: { color: 'white', fontWeight: '900', fontSize: 14, textTransform: 'uppercase' },
-    sectionTitle: { fontSize: 18, fontWeight: '900', color: '#111827', marginBottom: 16 },
+    sectionTitle: { fontSize: 18, fontWeight: '900', color: '#4FD1C5', marginBottom: 16 },
     memberRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#F3F4F6' },
     memberInfo: { marginLeft: 12 },

@@ -457,7 +457,12 @@ const GroupSettings = () => {
       </Modal>
 
       {/* Edit Moderators Modal */}
-      <Modal visible={isEditingMods} transparent animationType="slide" onRequestClose={() => setIsEditingMods(false)}>
+      <Modal
+        visible={isEditingMods}
+        transparent={false} // Set to false to allow SafeAreaView to correctly apply top inset
+        animationType="slide"
+        onRequestClose={() => setIsEditingMods(false)}
+      >
         <SafeAreaView style={styles.fullModalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setIsEditingMods(false)} style={styles.headerIconButton}>
@@ -516,7 +521,12 @@ const GroupSettings = () => {
       </Modal>
 
       {/* Remove Members Modal */}
-      <Modal visible={isEditingMembers} transparent animationType="slide" onRequestClose={() => setIsEditingMembers(false)}>
+      <Modal
+        visible={isEditingMembers}
+        transparent={false} // Set to false to allow SafeAreaView to correctly apply top inset
+        animationType="slide"
+        onRequestClose={() => setIsEditingMembers(false)}
+      >
         <SafeAreaView style={styles.fullModalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setIsEditingMembers(false)} style={styles.headerIconButton}>

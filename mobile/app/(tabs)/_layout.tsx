@@ -31,6 +31,19 @@ const TabsLayout = () => {
     >
       <Tabs.Screen
         name="index"
+        // Reset the nested stack within the tab to the 'index' screen
+        // If the screen is already active, this forces it to pop to the top
+        // This ensures tapping the tab always brings you to the root of that tab.
+        listeners={({ navigation }: { navigation: any }) => ({
+          tabPress: (e: any) => {
+            e.preventDefault(); // Prevent default behavior to handle navigation manually
+            // By navigating to the tab's name, we trigger the default behavior
+            // which is to go to the initial screen of the stack. If the tab is
+            // already active, it will pop the stack to the top. This directs the
+            // user to `app/(tabs)/index.tsx`.
+            navigation.navigate('index');
+          },
+        })}
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => <Feather name="home" size={size} color={color} />,
@@ -39,11 +52,15 @@ const TabsLayout = () => {
       <Tabs.Screen
         name="groups"
         // The listeners prop must be a direct child of Tabs.Screen (not inside options)
-        listeners={({ navigation }) => ({
-          tabPress: (e) => {
-            // 1. Reset the nested stack within the tab to the 'index' screen
-            // 2. If the screen is already active, this forces it to pop to the top
-            navigation.navigate('groups', { screen: 'index' });
+        // This ensures tapping the tab always brings you to the root of that tab.
+        listeners={({ navigation }: { navigation: any }) => ({
+          tabPress: (e: any) => {
+            e.preventDefault(); // Prevent default behavior to handle navigation manually
+            // By navigating to the tab's name, we trigger the default behavior
+            // which is to go to the initial screen of the stack. If the tab is
+            // already active, it will pop the stack to the top. This directs the
+            // user to `app/(tabs)/groups.tsx`.
+            navigation.navigate('groups');
           },
         })}
         options={{
@@ -53,6 +70,19 @@ const TabsLayout = () => {
       />
       <Tabs.Screen
         name="profile"
+        // Reset the nested stack within the tab to the 'index' screen
+        // If the screen is already active, this forces it to pop to the top
+        // This ensures tapping the tab always brings you to the root of that tab.
+        listeners={({ navigation }: { navigation: any }) => ({
+          tabPress: (e: any) => {
+            e.preventDefault(); // Prevent default behavior to handle navigation manually
+            // By navigating to the tab's name, we trigger the default behavior
+            // which is to go to the initial screen of the stack. If the tab is
+            // already active, it will pop the stack to the top. This directs the
+            // user to `app/(tabs)/profile.tsx`.
+            navigation.navigate('profile');
+          },
+        })}
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => <Feather name="user" size={size} color={color} />,
