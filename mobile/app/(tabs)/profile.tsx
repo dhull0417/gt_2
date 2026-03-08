@@ -7,6 +7,7 @@ import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useFocusEffect } from 'expo-router';
+import * as Updates from 'expo-updates';
 
 const HomeScreen = () => {
   const { signOut } = useAuth();
@@ -45,6 +46,22 @@ const HomeScreen = () => {
       }
     } catch (error: any) {
       Alert.alert(error.message);
+    }
+  };
+
+  const handleCheckForUpdate = async () => {
+    try {
+      const update = await Updates.checkForUpdateAsync();
+      if (update.isAvailable) {
+        await Updates.fetchUpdateAsync();
+        Alert.alert('Update Downloaded', 'The app will restart to apply the update.', [
+          { text: 'Restart', onPress: () => Updates.reloadAsync() },
+        ]);
+      } else {
+        Alert.alert('No Update', 'You are already running the latest version.');
+      }
+    } catch (error: any) {
+      Alert.alert('Error Checking', error.message);
     }
   };
 
@@ -109,6 +126,22 @@ const HomeScreen = () => {
                 >
                     <Text className="text-white text-lg font-bold">Sign Out</Text>
                 </TouchableOpacity>
+
+                {/* Debug Info Section - Only visible to help debug EAS Updates */}
+                <View className="mt-8 p-4 bg-gray-200 rounded-lg">
+                    <Text className="font-bold text-gray-700 mb-2">Debug Info (EAS Updates)</Text>
+                    <Text className="text-xs text-gray-600">Channel: {Updates.channel || 'None (Check eas.json)'}</Text>
+                    <Text className="text-xs text-gray-600">Runtime Version: {Updates.runtimeVersion}</Text>
+                    <Text className="text-xs text-gray-600">Update ID: {Updates.updateId || 'Embedded Bundle'}</Text>
+                    <Text className="text-xs text-gray-600">Is Embedded: {Updates.isEmbeddedLaunch ? 'Yes' : 'No'}</Text>
+                    
+                    <TouchableOpacity
+                        onPress={handleCheckForUpdate}
+                        className="mt-3 py-2 bg-gray-400 rounded items-center"
+                    >
+                        <Text className="text-white font-bold text-xs">Check for Updates</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
           </>
         )}

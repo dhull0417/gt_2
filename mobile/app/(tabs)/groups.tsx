@@ -203,7 +203,7 @@ const GroupScreen = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const { openChatId } = useLocalSearchParams<{ openChatId?: string }>();
+  const { openChatId, reset } = useLocalSearchParams<{ openChatId?: string, reset?: string }>();
 
   const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups } = useGetGroups();
   const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(selectedGroup?._id || null);
@@ -219,6 +219,16 @@ const GroupScreen = () => {
   useEffect(() => {
     if (!selectedGroup) stableUserRef.current = null;
   }, [selectedGroup?._id]);
+
+  useEffect(() => {
+    // This effect is triggered when the 'reset' param is passed from the tab layout,
+    // which happens when the user taps the 'Groups' tab icon while already in the tab.
+    // It ensures that any open group detail/chat view is closed, returning the
+    // user to the main list of groups, fulfilling the "pop to root" behavior.
+    if (reset) {
+      handleCloseGroupDetail();
+    }
+  }, [reset]);
 
   useEffect(() => {
     if (groupDetails && selectedGroup && groupDetails._id === selectedGroup._id) {

@@ -1,6 +1,6 @@
 // app/(tabs)/_layout.tsx
 import React from 'react';
-import { Tabs, Redirect } from 'expo-router';
+import { Tabs, Redirect, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/clerk-expo';
@@ -37,10 +37,7 @@ const TabsLayout = () => {
         listeners={({ navigation }: { navigation: any }) => ({
           tabPress: (e: any) => {
             e.preventDefault(); // Prevent default behavior to handle navigation manually
-            // By navigating to the tab's name, we trigger the default behavior
-            // which is to go to the initial screen of the stack. If the tab is
-            // already active, it will pop the stack to the top. This directs the
-            // user to `app/(tabs)/index.tsx`.
+            // Navigate to the root of the tab, which resets the navigation stack.
             navigation.navigate('index');
           },
         })}
@@ -56,11 +53,11 @@ const TabsLayout = () => {
         listeners={({ navigation }: { navigation: any }) => ({
           tabPress: (e: any) => {
             e.preventDefault(); // Prevent default behavior to handle navigation manually
-            // By navigating to the tab's name, we trigger the default behavior
-            // which is to go to the initial screen of the stack. If the tab is
-            // already active, it will pop the stack to the top. This directs the
-            // user to `app/(tabs)/groups.tsx`.
-            navigation.navigate('groups');
+            // When the tab is pressed, navigate to the 'groups' screen with a 'reset'
+            // parameter. This parameter includes a timestamp to ensure it's always a
+            // new value. This triggers a `useEffect` in the groups screen to close
+            // any open detail/chat views, effectively "popping to root".
+            navigation.navigate('groups', { reset: Date.now().toString() });
           },
         })}
         options={{
@@ -76,10 +73,7 @@ const TabsLayout = () => {
         listeners={({ navigation }: { navigation: any }) => ({
           tabPress: (e: any) => {
             e.preventDefault(); // Prevent default behavior to handle navigation manually
-            // By navigating to the tab's name, we trigger the default behavior
-            // which is to go to the initial screen of the stack. If the tab is
-            // already active, it will pop the stack to the top. This directs the
-            // user to `app/(tabs)/profile.tsx`.
+            // Navigate to the root of the tab, which resets the navigation stack.
             navigation.navigate('profile');
           },
         })}
