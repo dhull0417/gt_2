@@ -23,6 +23,7 @@ export const sendPushNotifications = async (notifications) => {
       body: pushNotification.body,
       data: pushNotification.data || {},
       priority: 'high',
+      channelId: 'default',
     });
   }
 
