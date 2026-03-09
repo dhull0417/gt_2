@@ -62,7 +62,7 @@ const VerifyNewEmailScreen = () => {
                     <TouchableOpacity
                         onPress={onVerifyPress}
                         disabled={isLoading}
-                        className={`w-full py-4 mt-8 rounded-lg items-center shadow ${isLoading ? 'bg-indigo-300' : 'bg-indigo-600'}`}
+                        className={`w-full py-4 mt-8 rounded-lg items-center shadow ${isLoading ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
                     >
                         <Text className="text-white text-lg font-bold">{isLoading ? "Verifying..." : "Verify and Save"}</Text>
                     </TouchableOpacity>

@@ -177,7 +177,7 @@ const GroupChat = ({
                 <TouchableOpacity 
                     onPress={handleRawSend} 
                     disabled={isSending || !text.trim()}
-                    className={`p-3 rounded-xl ${!text.trim() ? 'bg-gray-200' : 'bg-indigo-600'}`}
+                    className={`p-3 rounded-xl ${!text.trim() ? 'bg-gray-200' : 'bg-[#4A90E2]'}`}
                 >
                     {isSending ? (
                         <ActivityIndicator size="small" color="#fff" />

@@ -8,7 +8,6 @@ import { Feather } from '@expo/vector-icons';
 const SignUpScreen = () => {
   const router = useRouter();
   const { isLoaded, signUp, setActive } = useSignUp();
-  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -24,7 +23,7 @@ const SignUpScreen = () => {
     }
     setIsLoading(true);
     try {
-      const signUpAttempt = await signUp.create({ username, emailAddress: email, password });
+      const signUpAttempt = await signUp.create({ emailAddress: email, password });
       
       if (signUpAttempt.status === 'complete') {
         // Set the session as active, which will update the global auth state
@@ -57,14 +56,6 @@ const SignUpScreen = () => {
             keyboardShouldPersistTaps="handled"
         >
             <Text className="text-3xl font-bold text-gray-800 mb-8">Create Account</Text>
-            <TextInput
-                autoCapitalize="none"
-                value={username}
-                onChangeText={setUsername}
-                placeholder="Username"
-                placeholderTextColor="#9CA3AF"
-                className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
-            />
             <TextInput
                 autoCapitalize="none"
                 keyboardType="email-address"
@@ -111,14 +102,14 @@ const SignUpScreen = () => {
             <TouchableOpacity
                 onPress={onSignUpPress}
                 disabled={isLoading}
-                className={`w-full py-4 rounded-lg items-center shadow ${isLoading ? 'bg-indigo-300' : 'bg-indigo-600'}`}
+                className={`w-full py-4 rounded-lg items-center shadow ${isLoading ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
             >
                 <Text className="text-white text-lg font-bold">Create Account</Text>
             </TouchableOpacity>
             <View className="flex-row justify-center mt-6">
                 <Text className="text-base text-gray-600">Already have an account? </Text>
                 <Link href="/(auth)/sign-in">
-                    <Text className="text-base text-indigo-600 font-bold">Sign In</Text>
+                    <Text className="text-base text-[#4A90E2] font-bold">Sign In</Text>
                 </Link>
             </View>
         </ScrollView>

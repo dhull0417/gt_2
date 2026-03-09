@@ -78,7 +78,7 @@ export default function Index() {
               onPress={() => router.push('/(auth)/sign-in')}
             >
               <View style={styles.buttonContent}>
-                  <Text style={styles.buttonText}>Continue with Username or Email</Text>
+                  <Text style={styles.buttonText}>Continue with Email</Text>
               </View>
             </TouchableOpacity>
           </View>

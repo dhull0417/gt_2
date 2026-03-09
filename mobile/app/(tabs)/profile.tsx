@@ -106,7 +106,7 @@ const HomeScreen = () => {
                     onPress={() => router.push('/account')}
                     className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
                 >
-                    <Text className="text-indigo-600 text-lg font-bold">Update Account Info</Text>
+                    <Text className="text-[#4A90E2] text-lg font-bold">Update Account Info</Text>
                 </TouchableOpacity>
 
                 {/* 👇 NEW SHARE BUTTON 👇 */}
@@ -116,7 +116,7 @@ const HomeScreen = () => {
                 >
                     <View className="flex-row items-center">
                         <Feather name="share-2" size={20} color="#4A90E2" className="mr-2" />
-                        <Text className="text-indigo-600 text-lg font-bold ml-2">Share App</Text>
+                        <Text className="text-[#4A90E2] text-lg font-bold ml-2">Share App</Text>
                     </View>
                 </TouchableOpacity>
 

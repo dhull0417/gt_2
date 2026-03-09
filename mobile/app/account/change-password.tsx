@@ -85,7 +85,7 @@ const ChangePasswordScreen = () => {
                     <TouchableOpacity
                         onPress={handleSave}
                         disabled={isPending}
-                        className={`w-full py-4 rounded-lg items-center shadow ${isPending ? 'bg-indigo-300' : 'bg-indigo-600'}`}
+                        className={`w-full py-4 rounded-lg items-center shadow ${isPending ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
                     >
                         <Text className="text-white text-lg font-bold">{isPending ? "Saving..." : "Save New Password"}</Text>
                     </TouchableOpacity>

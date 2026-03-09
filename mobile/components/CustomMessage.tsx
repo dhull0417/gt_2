@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 4,
   },
   bubbleRight: {
-    backgroundColor: '#4A90E2', // Indigo-600
+    backgroundColor: '#4A90E2', // [#4A90E2]
     borderBottomRightRadius: 4,
   },
   textLeft: {

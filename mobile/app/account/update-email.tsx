@@ -60,7 +60,7 @@ const UpdateEmailScreen = () => {
                     <TouchableOpacity
                         onPress={onUpdateEmailPress}
                         disabled={isLoading}
-                        className={`w-full py-4 rounded-lg items-center shadow ${isLoading ? 'bg-indigo-300' : 'bg-indigo-600'}`}
+                        className={`w-full py-4 rounded-lg items-center shadow ${isLoading ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
                     >
                         <Text className="text-white text-lg font-bold">{isLoading ? "Sending..." : "Continue"}</Text>
                     </TouchableOpacity>

@@ -8,7 +8,7 @@ import { Feather } from '@expo/vector-icons';
 const SignInScreen = () => {
   const router = useRouter();
   const { signIn, setActive, isLoaded } = useSignIn();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isPasswordVisible, setPasswordVisible] = useState(false);
@@ -18,7 +18,7 @@ const SignInScreen = () => {
     setIsLoading(true);
     try {
       const signInAttempt = await signIn.create({
-        identifier: username,
+        identifier: email,
         password,
       });
 
@@ -54,9 +54,10 @@ const SignInScreen = () => {
           <Text className="text-3xl font-bold text-gray-800 mb-8">Sign In</Text>
           <TextInput
             autoCapitalize="none"
-            value={username}
-            onChangeText={setUsername}
-            placeholder="Username or Email"
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+            placeholder="Email Address"
             placeholderTextColor="#9CA3AF"
             className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
           />
@@ -89,7 +90,7 @@ const SignInScreen = () => {
           <TouchableOpacity
             onPress={onSignInPress}
             disabled={isLoading}
-            className={`w-full py-4 rounded-lg items-center shadow ${isLoading ? 'bg-indigo-300' : 'bg-indigo-600'}`}
+            className={`w-full py-4 rounded-lg items-center shadow ${isLoading ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
           >
             <Text className="text-white text-lg font-bold">Sign In</Text>
           </TouchableOpacity>
@@ -97,7 +98,7 @@ const SignInScreen = () => {
               <Text className="text-base text-gray-600">Don't have an account? </Text>
               <Link href="/(auth)/sign-up" asChild>
                 <TouchableOpacity>
-                  <Text className="text-base text-indigo-600 font-bold">Sign Up</Text>
+                  <Text className="text-base text-[#4A90E2] font-bold">Sign Up</Text>
                 </TouchableOpacity>
               </Link>
           </View>
