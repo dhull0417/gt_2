@@ -470,7 +470,7 @@ const GroupScreen = () => {
                         // A value of 56 was too low (input covered), and previous values were too high (creating a gap).
                         // This is passed to the Stream `Channel` component, which has its own KeyboardAvoidingView.
                         // Using the library's built-in keyboard avoidance is more reliable.
-                        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}
                       />
                   )}
                 </View>
