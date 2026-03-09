@@ -8,6 +8,15 @@ import { useMarkNotificationsAsRead } from '@/hooks/useMarkNotificationsAsRead';
 import { Notification, User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 
+// Extended type to handle new notification types until api.ts is updated
+type ExtendedNotification = Omit<Notification, 'type'> & {
+    type: 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'event-rsvp-in' | 'event-rsvp-out' | 'event-waitlist-join' | 'waitlist-promotion';
+    event?: {
+        _id: string;
+        name: string;
+    };
+};
+
 // A simple time ago function for demonstration
 const timeAgo = (date: string) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
@@ -24,7 +33,7 @@ const timeAgo = (date: string) => {
     return Math.floor(seconds) + "s ago";
 };
 
-const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void }) => {
+const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { notification: ExtendedNotification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void }) => {
     const router = useRouter();
 
     const getIcon = () => {
@@ -148,7 +157,7 @@ const NotificationsScreen = () => {
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
             <FlatList
-                data={notifications}
+                data={notifications as unknown as ExtendedNotification[]}
                 renderItem={({ item }) => <NotificationItem notification={item} currentUser={currentUser} onAccept={handleAccept} onDecline={handleDecline} />}
                 keyExtractor={item => item._id}
                 contentContainerStyle={{ paddingVertical: 8 }}
