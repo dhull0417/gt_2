@@ -465,11 +465,6 @@ const GroupScreen = () => {
                   ) : (
                       <GroupChat
                         group={groupDetails}
-                        // This offset is a tuned value for iOS to position the input correctly above the keyboard.
-                        // It accounts for the header height (~56px) plus additional space needed for this specific layout.
-                        // A value of 56 was too low (input covered), and previous values were too high (creating a gap).
-                        // This is passed to the Stream `Channel` component, which has its own KeyboardAvoidingView.
-                        // Using the library's built-in keyboard avoidance is more reliable.
                         keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}
                       />
                   )}
