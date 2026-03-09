@@ -17,6 +17,7 @@ import { Feather } from '@expo/vector-icons';
 import { Event, User, useApiClient, userApi, eventApi } from '@/utils/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
+import { useGetEvents } from '@/hooks/useGetEvents';
 import { useRouter } from 'expo-router';
 import TimePicker from './TimePicker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -32,6 +33,8 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     const queryClient = useQueryClient();
     
     const [event, setEvent] = useState<Event | null>(initialEvent);
+    const { data: allEvents } = useGetEvents();
+    const [activeTab, setActiveTab] = useState<'in' | 'out' | 'waitlist'>('in');
     
     // --- Edit Mode State ---
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
@@ -47,12 +50,35 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
         setEvent(initialEvent);
     }, [initialEvent]);
 
+    // Sync with global event list updates (e.g. from background refresh or other mutations)
+    useEffect(() => {
+        if (allEvents && event) {
+            const updated = allEvents.find(e => e._id === event._id);
+            if (updated) {
+                setEvent(updated);
+            }
+        }
+    }, [allEvents]);
+
     const { data: currentUser } = useQuery<User, Error>({
         queryKey: ['currentUser'],
         queryFn: () => userApi.getCurrentUser(api),
     });
 
     const { mutate: rsvp, isPending: isRsvping } = useRsvp();
+
+    // Map waitlist IDs to user objects to preserve order (0 is first in line)
+    // Calculated early to be used in useEffect safely
+    const waitlistUsers = (event?.waitlist || [])
+        .map(id => (event?.members || []).find(m => m._id === id))
+        .filter((u): u is User => !!u);
+
+    // Reset tab if waitlist becomes empty while selected
+    useEffect(() => {
+        if (activeTab === 'waitlist' && waitlistUsers.length === 0) {
+            setActiveTab('in');
+        }
+    }, [waitlistUsers.length, activeTab]);
 
     if (!event || !currentUser) return null;
 
@@ -70,12 +96,18 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     const isWaitlisted = event.waitlist?.includes(currentUser._id) || false;
     const isIn = event.in?.includes(currentUser._id) || false;
 
-    const goingUsers = (event.members || []).filter(m => event.in);
+    // Filter users based on their status
+    const goingUsers = (event.members || []).filter(m => event.in?.includes(m._id));
+    const outUsers = (event.members || []).filter(m => event.out?.includes(m._id));
+
 
     const handleRsvpAction = (status: 'in' | 'out') => {
         rsvp({ eventId: event._id, status }, {
             onSuccess: (data: any) => {
                 queryClient.invalidateQueries({ queryKey: ['events'] });
+                if (data.event) {
+                    setEvent(data.event);
+                }
                 if (data.message && data.message.toLowerCase().includes('waitlist')) {
                     Alert.alert("Waitlisted", "The event is full. You've been added to the waitlist queue.");
                 }
@@ -129,11 +161,13 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
         
         setIsUpdating(true);
         try {
-            await eventApi.updateEvent(api, payload);
+            const response = await eventApi.updateEvent(api, payload);
             
             await queryClient.invalidateQueries({ queryKey: ['events'] });
             await queryClient.invalidateQueries({ queryKey: ['eventDetails', event._id] });
-            setEvent(prev => prev ? { ...prev, ...payload } as Event : null);
+            if (response && response.event) {
+                setEvent(response.event);
+            }
             setIsEditModalVisible(false);
             Alert.alert("Success", "Meeting details updated.");
         } catch (error: any) {
@@ -177,6 +211,19 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                 }
             }
         ]);
+    };
+
+    const renderUserList = (users: User[], isWaitlist = false) => {
+        if (users.length === 0) return <Text style={styles.emptyText}>No one in this list.</Text>;
+        return users.map((user, index) => (
+            <View key={user._id} style={styles.memberRow}>
+                {isWaitlist && <Text style={styles.waitlistIndex}>{index + 1}</Text>}
+                <Image source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0]}` }} style={styles.avatar} />
+                <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
+                </View>
+            </View>
+        ));
     };
 
     return (
@@ -229,44 +276,27 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         </TouchableOpacity>
                     </View>
                     
-                    <View style={styles.infoSection}>
-                        <View style={styles.infoRow}>
-                            <View style={styles.iconBox}><Feather name="calendar" size={18} color="#4A90E2" /></View>
-                            <View style={styles.infoTextContainer}>
-                                <Text style={styles.infoValue}>
-                                    {new Date(event.date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
-                                </Text>
-                                <Text style={styles.infoLabel}>Date</Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.infoRow}>
-                            <View style={styles.iconBox}><Feather name="clock" size={18} color="#4A90E2" /></View>
-                            <View style={styles.infoTextContainer}>
-                                <Text style={styles.infoValue}>{event.time}</Text>
-                                <Text style={styles.infoLabel}>Time</Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.infoRow}>
-                            <View style={styles.iconBox}><Feather name="map-pin" size={18} color="#4A90E2" /></View>
-                            <View style={styles.infoTextContainer}>
-                                <Text style={styles.infoValue} numberOfLines={1}>{event.location || "No location set"}</Text>
-                                <Text style={styles.infoLabel}>Location</Text>
-                            </View>
+                    <View style={styles.detailsCard}>
+                        <View style={styles.detailItem}>
+                            <Text style={styles.detailLabel}>Date & Time</Text>
+                            <Text style={styles.detailValue}>
+                                {new Date(event.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} • {event.time}
+                            </Text>
                         </View>
                         
-                        <View style={styles.capacityCard}>
-                            <View style={styles.infoRowCompact}>
-                                <View style={[styles.iconBox, { backgroundColor: isFull && !isCancelled ? '#FFF7ED' : '#F5F7FF' }]}>
-                                    <Feather name="users" size={18} color={isFull && !isCancelled ? "#EA580C" : "#4A90E2"} />
-                                </View>
-                                <View style={styles.infoTextContainer}>
-                                    <Text style={[styles.infoValue, isFull && !isCancelled && { color: '#C2410C' }]}>
-                                        {event.capacity === 0 ? "Unlimited" : `${event.in?.length || 0} / ${event.capacity}`}
-                                    </Text>
-                                    <Text style={styles.infoLabel}>Max Capacity</Text>
-                                </View>
+                        <View style={styles.detailSeparator} />
+
+                        <View style={styles.detailRow}>
+                            <View style={[styles.detailItem, { flex: 1, marginRight: 16 }]}>
+                                <Text style={styles.detailLabel}>Location</Text>
+                                <Text style={styles.detailValue} numberOfLines={1}>{event.location || "No location set"}</Text>
+                            </View>
+                            
+                            <View style={styles.detailItem}>
+                                <Text style={styles.detailLabel}>Capacity</Text>
+                                <Text style={[styles.detailValue, isFull && !isCancelled && { color: '#C2410C' }]}>
+                                    {event.capacity === 0 ? "Unlimited" : `${event.in?.length || 0}/${event.capacity}`}
+                                </Text>
                             </View>
                         </View>
                     </View>
@@ -282,17 +312,20 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                                 styles.rsvpButton, styles.rsvpIn,
                                 isWaitlisted && { backgroundColor: '#2563EB', borderBottomColor: '#1E40AF' },
                                 (isFull && !isIn) && { backgroundColor: '#F97316', borderBottomColor: '#C2410C' },
-                                isIn && { backgroundColor: '#10B981', borderBottomColor: '#059669' }
+                                isIn && { backgroundColor: '#4FD1C5', borderBottomColor: '#3FABA1' }
                             ]}
                         >
-                            <Text style={styles.rsvpButtonText}>
-                                {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "Going"}
+                            <Text style={[
+                                styles.rsvpButtonText,
+                                (!isIn && !isWaitlisted && !isFull) && { color: '#4FD1C5' }
+                            ]}>
+                                {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                             </Text>
                         </TouchableOpacity>
                         <TouchableOpacity 
                             onPress={() => handleRsvpAction('out')}
                             disabled={isRsvping}
-                            style={[styles.rsvpButton, styles.rsvpOut, event.out?.includes(currentUser._id) && { backgroundColor: '#EF4444', borderBottomColor: '#B91C1C' }]}
+                            style={[styles.rsvpButton, styles.rsvpOut, event.out?.includes(currentUser._id) && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
                         >
                             <Text style={[styles.rsvpButtonText, !event.out?.includes(currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
                         </TouchableOpacity>
@@ -300,16 +333,38 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                 )}
 
                 <View style={{ marginBottom: 40 }}>
-                    <Text style={styles.sectionTitle}>Going ({event.in?.length || 0})</Text>
-                    {goingUsers.length > 0 ? goingUsers.map(user => (
-                        <View key={user._id} style={styles.memberRow}>
-                            <Image source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0]}` }} style={styles.avatar} />
-                            <View style={styles.memberInfo}>
-                                <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
-                                <Text style={styles.memberUsername}>@{user.username}</Text>
-                            </View>
-                        </View>
-                    )) : <Text style={styles.emptyText}>No one confirmed yet.</Text>}
+                    {/* Tabs */}
+                    <View style={styles.tabContainer}>
+                        <TouchableOpacity 
+                            onPress={() => setActiveTab('in')} 
+                            style={[styles.tabItem, activeTab === 'in' && { borderBottomColor: '#4FD1C5' }]}
+                        >
+                            <Text style={[styles.tabText, activeTab === 'in' && { color: '#4FD1C5' }]}>In ({goingUsers.length})</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                            onPress={() => setActiveTab('out')} 
+                            style={[styles.tabItem, activeTab === 'out' && { borderBottomColor: '#FF7A6E' }]}
+                        >
+                            <Text style={[styles.tabText, activeTab === 'out' && { color: '#FF7A6E' }]}>Out ({outUsers.length})</Text>
+                        </TouchableOpacity>
+
+                        {waitlistUsers.length > 0 && (
+                            <TouchableOpacity 
+                                onPress={() => setActiveTab('waitlist')} 
+                                style={[styles.tabItem, activeTab === 'waitlist' && { borderBottomColor: '#2563EB' }]}
+                            >
+                                <Text style={[styles.tabText, activeTab === 'waitlist' && { color: '#2563EB' }]}>Waitlist ({waitlistUsers.length})</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {/* List Content */}
+                    <View style={styles.listContainer}>
+                        {activeTab === 'in' && renderUserList(goingUsers)}
+                        {activeTab === 'out' && renderUserList(outUsers)}
+                        {activeTab === 'waitlist' && renderUserList(waitlistUsers, true)}
+                    </View>
                 </View>
 
                 {canManage && (
@@ -440,20 +495,23 @@ const styles = StyleSheet.create({
         fontSize: 14 
     },
     strikeThrough: { textDecorationLine: 'line-through', color: '#D1D5DB' },
-    infoSection: { gap: 16 },
-    infoRow: { flexDirection: 'row', alignItems: 'center' },
-    infoRowCompact: { flexDirection: 'row', alignItems: 'center' },
-    iconBox: { width: 40, height: 40, backgroundColor: '#F5F7FF', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-    infoTextContainer: { marginLeft: 16, flex: 1 },
-    infoValue: { fontSize: 16, fontWeight: '800', color: '#1F2937' },
-    infoLabel: { fontSize: 10, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase' },
-    capacityCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F9FAFB', padding: 4, paddingRight: 16, borderRadius: 16 },
-    rsvpRow: { flexDirection: 'row', gap: 12, marginVertical: 32 },
+    detailsCard: { backgroundColor: '#F9FAFB', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#F3F4F6' },
+    detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
+    detailItem: {},
+    detailLabel: { fontSize: 11, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 0 },
+    detailValue: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
+    detailSeparator: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 12 },
+    rsvpRow: { flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 60},
     rsvpButton: { flex: 1, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 4 },
     rsvpIn: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
     rsvpOut: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
     rsvpButtonText: { color: 'white', fontWeight: '900', fontSize: 14, textTransform: 'uppercase' },
-    sectionTitle: { fontSize: 18, fontWeight: '900', color: '#4FD1C5', marginBottom: 16 },
+    // Tabs
+    tabContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', marginBottom: 16 },
+    tabItem: { flex: 1, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent', alignItems: 'center' },
+    tabText: { fontSize: 16, fontWeight: 'bold', color: '#9CA3AF' },
+    listContainer: { minHeight: 50 },
+    waitlistIndex: { fontSize: 16, fontWeight: 'bold', color: '#9CA3AF', marginRight: 12, width: 24, textAlign: 'center' },
     memberRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#F3F4F6' },
     memberInfo: { marginLeft: 12 },

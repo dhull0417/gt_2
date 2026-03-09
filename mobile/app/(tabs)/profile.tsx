@@ -5,7 +5,6 @@ import { useAuth } from '@clerk/clerk-expo';
 import { useQuery } from '@tanstack/react-query';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Updates from 'expo-updates';
 
@@ -21,10 +20,15 @@ const HomeScreen = () => {
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
-  const handleCopyId = async () => {
-      if (currentUser?._id) {
-          await Clipboard.setStringAsync(currentUser._id);
-          Alert.alert("Copied!", "Your User ID has been copied to the clipboard.");
+  const handleShareUsername = async () => {
+      if (currentUser?.username) {
+          try {
+              await Share.share({
+                  message: `Add me on GroupThat! My username is: ${currentUser.username}`,
+              });
+          } catch (error: any) {
+              Alert.alert(error.message);
+          }
       }
   };
 
@@ -92,13 +96,10 @@ const HomeScreen = () => {
               <Text className="text-base text-gray-500 mt-1">
                   {currentUser.email}
               </Text>
-              <View className="w-full bg-gray-100 p-3 mt-6 rounded-lg">
-                  <Text className="text-xs text-gray-500 mb-1 text-center">Your Unique User ID (Tap to Copy)</Text>
-                  <TouchableOpacity onPress={handleCopyId} className="flex-row justify-center items-center">
-                      <Text className="text-sm text-gray-700 font-mono mr-2" selectable>{currentUser._id}</Text>
-                      <Feather name="copy" size={16} color="#4A90E2" />
-                  </TouchableOpacity>
-              </View>
+              <TouchableOpacity onPress={handleShareUsername} className="mt-6 flex-row items-center bg-gray-100 px-4 py-2 rounded-full">
+                  <Feather name="share" size={14} color="#6B7280" />
+                  <Text className="text-gray-600 text-sm ml-2 font-medium">Share Username</Text>
+              </TouchableOpacity>
             </View>
 
             <View className="px-4 mt-8 space-y-4">

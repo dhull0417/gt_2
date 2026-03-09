@@ -14,12 +14,18 @@ const notificationSchema = new mongoose.Schema({
     type: {
         type: String,
         required: true,
-        // 👇 UPDATED: Added 'group-added' to the list
-        enum: ['group-invite', 'invite-accepted', 'invite-declined', 'group-added'],
+        enum: [
+            'group-invite', 'invite-accepted', 'invite-declined', 'group-added', 
+            'event-rsvp-in', 'event-rsvp-out', 'event-waitlist-join', 'waitlist-promotion'
+        ],
     },
     group: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Group',
+    },
+    event: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Event',
     },
     status: {
         type: String,

@@ -16,6 +16,7 @@ export const getNotifications = asyncHandler(async (req, res) => {
     const notifications = await Notification.find({ recipient: user._id })
         .populate('sender', 'firstName lastName profilePicture')
         .populate('group', 'name')
+        .populate('event', 'name')
         .sort({ createdAt: -1 });
 
     res.status(200).json(notifications);

@@ -2,6 +2,7 @@ import asyncHandler from "express-async-handler";
 import Event from "../models/event.model.js";
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
+import Notification from "../models/notification.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { DateTime } from "luxon";
@@ -150,12 +151,13 @@ export const handleRsvp = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "Invalid Event ID." });
   }
 
-  const event = await Event.findById(eventId);
+  const event = await Event.findById(eventId).populate('group');
   if (!event) return res.status(404).json({ error: "Event not found." });
   if (event.status === 'cancelled') return res.status(400).json({ error: "Cannot RSVP to a cancelled event." });
 
   const userId = currentUser._id;
   const userIdStr = userId.toString();
+  const groupOwnerId = event.group.owner;
 
   // 1. PROJECT 6: Clean move logic
   event.in = event.in.filter(id => id.toString() !== userIdStr);
@@ -164,6 +166,20 @@ export const handleRsvp = asyncHandler(async (req, res) => {
   event.waitlist = event.waitlist.filter(id => id.toString() !== userIdStr);
 
   let responseMessage = "RSVP updated successfully.";
+  const isOwner = groupOwnerId.toString() === userIdStr;
+
+  // Prepare recipients (Owner + Moderators - Current User)
+  const recipientIds = new Set();
+  if (groupOwnerId.toString() !== userIdStr) recipientIds.add(groupOwnerId.toString());
+  if (event.group.moderators) {
+      event.group.moderators.forEach(mod => {
+          const mId = mod.toString();
+          if (mId !== userIdStr) recipientIds.add(mId);
+      });
+  }
+  const notificationRecipients = recipientIds.size > 0 
+      ? await User.find({ _id: { $in: Array.from(recipientIds) } }) 
+      : [];
 
   if (status === 'in') {
     const isUnlimited = event.capacity === 0;
@@ -171,12 +187,66 @@ export const handleRsvp = asyncHandler(async (req, res) => {
 
     if (isUnlimited || hasSpace) {
       event.in.push(userId);
+      
+      // Notify Owner & Moderators: User Going
+      if (notificationRecipients.length > 0) {
+          await notifyUsers(notificationRecipients, {
+              title: "New RSVP",
+              body: `${currentUser.firstName} is going to "${event.name}".`,
+              data: { eventId: event._id.toString(), type: 'event_rsvp' }
+          });
+          const notifs = notificationRecipients.map(r => ({
+              recipient: r._id,
+              sender: currentUser._id,
+              type: 'event-rsvp-in',
+              group: event.group._id,
+              event: event._id,
+              read: false
+          }));
+          await Notification.insertMany(notifs);
+      }
     } else {
       event.waitlist.push(userId);
       responseMessage = "Event is full. You've been added to the waitlist.";
+      
+      // Notify Owner & Moderators: User Waitlisted
+      if (notificationRecipients.length > 0) {
+          await notifyUsers(notificationRecipients, {
+              title: "Waitlist Join",
+              body: `${currentUser.firstName} joined the waitlist for "${event.name}".`,
+              data: { eventId: event._id.toString(), type: 'event_rsvp' }
+          });
+          const notifs = notificationRecipients.map(r => ({
+              recipient: r._id,
+              sender: currentUser._id,
+              type: 'event-waitlist-join',
+              group: event.group._id,
+              event: event._id,
+              read: false
+          }));
+          await Notification.insertMany(notifs);
+      }
     }
   } else if (status === 'out') {
     event.out.push(userId);
+    
+    // Notify Owner & Moderators: User Out
+    if (notificationRecipients.length > 0) {
+        await notifyUsers(notificationRecipients, {
+            title: "RSVP Update",
+            body: `${currentUser.firstName} is out for "${event.name}".`,
+            data: { eventId: event._id.toString(), type: 'event_rsvp' }
+        });
+        const notifs = notificationRecipients.map(r => ({
+            recipient: r._id,
+            sender: currentUser._id,
+            type: 'event-rsvp-out',
+            group: event.group._id,
+            event: event._id,
+            read: false
+        }));
+        await Notification.insertMany(notifs);
+    }
 
     // 2. Waitlist Promotion Logic
     if (event.capacity > 0 && event.waitlist.length > 0) {
@@ -190,6 +260,37 @@ export const handleRsvp = asyncHandler(async (req, res) => {
               body: `A spot opened up for ${event.name}. You are now confirmed!`,
               data: { eventId: event._id.toString(), type: 'waitlist_promotion' }
           });
+
+          // Notify promoted user in-app
+          await Notification.create({
+              recipient: promotedUser._id,
+              sender: groupOwnerId,
+              type: 'waitlist-promotion',
+              group: event.group._id,
+              event: event._id,
+              read: false
+          });
+
+          // Notify Owner & Moderators: Waitlist Promotion
+          // Filter out the promoted user if they happen to be a moderator/owner (they got the personal notif above)
+          const promotionAdmins = notificationRecipients.filter(u => u._id.toString() !== promotedUser._id.toString());
+          
+          if (promotionAdmins.length > 0) {
+             await notifyUsers(promotionAdmins, {
+                title: "Waitlist Promotion",
+                body: `${promotedUser.firstName} was moved from waitlist to going for "${event.name}".`,
+                data: { eventId: event._id.toString(), type: 'waitlist_promotion' }
+             });
+             const promoNotifs = promotionAdmins.map(admin => ({
+                recipient: admin._id,
+                sender: promotedUser._id,
+                type: 'waitlist-promotion',
+                group: event.group._id,
+                event: event._id,
+                read: false
+            }));
+            await Notification.insertMany(promoNotifs);
+          }
       }
     }
   }
