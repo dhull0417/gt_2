@@ -15,7 +15,7 @@ import {
     KeyboardAvoidingView,
     ViewStyle,
     StyleProp,
-    LayoutChangeMeetup
+    LayoutChangeEvent
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -80,7 +80,7 @@ const FadeInView = ({ children, delay = 0, duration = 400, style }: FadeInViewPr
 /**
  * Edit Schedule Screen
  * Mirroring the Create Group flow Scheduling steps exactly.
- * Focused ONLY on Frequency, Days/Dates, and Meeting Times.
+ * Focused ONLY on Frequency, Days/Dates, and Meetup Times.
  */
 const EditScheduleScreen = () => {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -310,7 +310,7 @@ const EditScheduleScreen = () => {
     const renderStep6_TimeSelection = () => {
         const targets = getTargets();
         const val = targets[loopIndex];
-        let heading = "Meeting time";
+        let heading = "Meetup time";
         if (!isSameTime) {
             if (currentFreq === 'monthly') {
                 const sfx = val === 1 ? 'st' : val === 2 ? 'nd' : val === 3 ? 'rd' : 'th';

@@ -20,7 +20,7 @@ import { useRsvp } from '@/hooks/useRsvp';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { useRouter } from 'expo-router';
 import TimePicker from './TimePicker';
-import DateTimePicker, { DateTimePickerMeetup } from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 interface MeetupDetailModalProps {
   meetup: Meetup | null;
@@ -169,7 +169,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 setMeetup(response.meetup);
             }
             setIsEditModalVisible(false);
-            Alert.alert("Success", "Meeting details updated.");
+            Alert.alert("Success", "Meetup details updated.");
         } catch (error: any) {
             Alert.alert("Update Failed", error.response?.data?.error || error.message);
         } finally {
@@ -178,7 +178,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     };
 
     // --- Date Picker Handlers ---
-    const onDateChange = (meetup: DateTimePickerMeetup, selectedDate?: Date) => {
+    const onDateChange = (meetup: DateTimePickerEvent, selectedDate?: Date) => {
         const currentDate = selectedDate || tempDate;
         if (Platform.OS === 'android') {
             setShowDatePicker(false);
@@ -233,7 +233,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <Feather name="chevron-down" size={32} color="#9CA3AF" />
                 </TouchableOpacity>
                 <View style={styles.headerTitleContainer}>
-                    <Text style={styles.headerTitle}>Meeting Details</Text>
+                    <Text style={styles.headerTitle}>Meetup Details</Text>
                 </View>
                 {canManage && !isCancelled ? (
                     <TouchableOpacity 
@@ -257,7 +257,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     {isCancelled && (
                         <View style={styles.cancelBanner}>
                             <Feather name="alert-triangle" size={18} color="#B91C1C" />
-                            <Text style={styles.cancelBannerText}>Meeting Cancelled</Text>
+                            <Text style={styles.cancelBannerText}>Meetup Cancelled</Text>
                         </View>
                     )}
                     
@@ -371,7 +371,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <View style={styles.ownerSection}>
                         <TouchableOpacity onPress={handleCancelMeetup} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4A90E2', borderColor: '#4A90E2' }]}>
                             <Text style={[styles.cancelToggleText, isCancelled && { color: 'white' }]}>
-                                {isCancelled ? "Reactivate Meeting" : "Cancel This Meeting"}
+                                {isCancelled ? "Reactivate Meetup" : "Cancel This Meetup"}
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -385,7 +385,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         <View style={styles.modalContent}>
                             <View style={styles.modalHeaderInner}>
                                 <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
-                                <Text style={styles.modalTitleInner}>Edit Meeting</Text>
+                                <Text style={styles.modalTitleInner}>Edit Meetup</Text>
                                 <TouchableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating}>
                                     {isUpdating ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={styles.saveBtnText}>Save</Text>}
                                 </TouchableOpacity>

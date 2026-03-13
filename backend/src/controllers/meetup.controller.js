@@ -328,8 +328,8 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
     const membersToNotify = await User.find({ _id: { $in: meetup.members } });
     if (membersToNotify.length > 0) {
         await notifyUsers(membersToNotify, {
-            title: "Meeting Cancelled",
-            body: `The meeting "${meetup.name}" on ${new Date(meetup.date).toLocaleDateString()} has been cancelled.`,
+            title: "Meetup Cancelled",
+            body: `The meetup "${meetup.name}" on ${new Date(meetup.date).toLocaleDateString()} has been cancelled.`,
             data: { meetupId: meetup._id.toString(), type: 'meetup_cancellation' }
         });
     }
@@ -362,7 +362,7 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
 
     await Meetup.findByIdAndDelete(meetupId);
 
-    // If we delete the current recurring meeting, fill any gaps that are due by lead time
+    // If we delete the current recurring meetup, fill any gaps that are due by lead time
     if (wasRecurring && parentGroup.schedule) {
         try {
             const now = DateTime.now().setZone(parentGroup.timezone);
@@ -415,7 +415,7 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
                 }
             }
         } catch (regenError) {
-            console.error("Failed to regenerate meetings after deletion:", regenError);
+            console.error("Failed to regenerate meetups after deletion:", regenError);
         }
     }
 

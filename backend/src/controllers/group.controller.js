@@ -127,8 +127,8 @@ export const createGroup = asyncHandler(async (req, res) => {
                           continue;
                       }
 
-                      const nextMeetingDT = DateTime.fromJSDate(nextDate).setZone(timezone);
-                      const triggerDT = nextMeetingDT.minus({ days: newGroup.generationLeadDays });
+                      const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(timezone);
+                      const triggerDT = nextMeetupDT.minus({ days: newGroup.generationLeadDays });
 
                       if (now >= triggerDT) {
                           await Meetup.create({
@@ -220,8 +220,8 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                             continue;
                         }
 
-                        const nextMeetingDT = DateTime.fromJSDate(nextDate).setZone(group.timezone);
-                        const triggerDT = nextMeetingDT.minus({ days: group.generationLeadDays });
+                        const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(group.timezone);
+                        const triggerDT = nextMeetupDT.minus({ days: group.generationLeadDays });
 
                         if (now >= triggerDT) {
                             await Meetup.create({

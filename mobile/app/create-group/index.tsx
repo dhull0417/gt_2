@@ -19,7 +19,7 @@ import {
     KeyboardAvoidingView,
     ViewStyle,
     StyleProp,
-    LayoutChangeMeetup
+    LayoutChangeEvent
 } from "react-native";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
 import { useSearchUsers } from "../../hooks/useSearchUsers";
@@ -157,8 +157,8 @@ const CreateGroupScreen = () => {
     return days;
   }, [calendarMonth]);
 
-  const onCalendarContainerLayout = (meetup: LayoutChangeMeetup) => {
-      const { width: measuredWidth } = meetup.nativeMeetup.layout;
+  const onCalendarContainerLayout = (meetup: LayoutChangeEvent) => {
+      const { width: measuredWidth } = meetup.nativeEvent.layout;
       // Safety margin -0.5 prmeetups Saturday wrap due to rounding
       setCalculatedDayWidth((measuredWidth / 7) - 0.5);
   };
@@ -463,7 +463,7 @@ const CreateGroupScreen = () => {
   const renderStep6_TimeSelection = () => {
       const targets = getTargets();
       const val = targets[loopIndex];
-      let heading = "Meeting time";
+      let heading = "Meetup time";
       if (!isSameTime) {
           if (currentFreq === 'monthly') {
               const sfx = val === 1 ? 'st' : val === 2 ? 'nd' : val === 3 ? 'rd' : 'th';

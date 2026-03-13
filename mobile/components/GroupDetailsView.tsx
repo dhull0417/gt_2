@@ -12,7 +12,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { GroupDetails, User } from '@/utils/api';
 import { useRouter } from 'expo-router';
-import AddMeetingWizard from './AddMeetingWizard';
+import AddMeetupWizard from './AddMeetupWizard';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 interface GroupDetailsViewProps {
@@ -103,7 +103,7 @@ export const GroupDetailsView = ({
     };
 
     /**
-     * Helper to render meeting lines.
+     * Helper to render meetup lines.
      */
     const renderScheduleLines = (frequency: string, dayTimes: any[]) => {
         const timeEntries = dayTimes && dayTimes.length > 0 ? dayTimes : [{ time: "Time TBD" }];
@@ -139,7 +139,7 @@ export const GroupDetailsView = ({
             } else if (typeof dt.day === 'number') {
                 dayLabel = daysOfWeekFull[dt.day];
             } else {
-                dayLabel = "Meeting";
+                dayLabel = "Meetup";
             }
 
             return (
@@ -211,7 +211,7 @@ export const GroupDetailsView = ({
                 {canManage && (
                     <TouchableOpacity onPress={() => setWizardVisible(true)} style={styles.actionPill}>
                         <Feather name="plus" size={16} color="#4A90E2" />
-                        <Text style={styles.actionPillText}>Add Meeting</Text>
+                        <Text style={styles.actionPillText}>Add Meetup</Text>
                     </TouchableOpacity>
                 )}
 
@@ -266,8 +266,8 @@ export const GroupDetailsView = ({
                     </TouchableOpacity>
                 </View>
             )}
-            {/* --- Add Meeting Wizard Modal --- */}
-            <AddMeetingWizard 
+            {/* --- Add Meetup Wizard Modal --- */}
+            <AddMeetupWizard 
                 visible={wizardVisible} 
                 onClose={() => setWizardVisible(false)} 
                 groupDetails={groupDetails} 

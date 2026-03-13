@@ -36,7 +36,7 @@ export interface Routine {
 
 export interface Schedule {
   frequency: Frequency;
-  startDate?: string;    // ISO date string for when to start generating meetings
+  startDate?: string;    // ISO date string for when to start generating meetups
   routines?: Routine[];  // Used for 'Multiple Rules' (Project 7)
   days?: number[];       // Legacy/Support for simple schedules
 }

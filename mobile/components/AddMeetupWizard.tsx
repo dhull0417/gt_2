@@ -7,7 +7,7 @@ import {
     StyleSheet, 
     Modal, 
     ActivityIndicator, 
-    LayoutChangeMeetup, 
+    LayoutChangeEvent, 
     Alert,
     Platform
 } from 'react-native';
@@ -18,7 +18,7 @@ import TimePicker from './TimePicker';
 import { Picker } from '@react-native-picker/picker';
 import { useQueryClient } from '@tanstack/react-query';
 
-interface AddMeetingWizardProps {
+interface AddMeetupWizardProps {
     visible: boolean;
     onClose: () => void;
     groupDetails: GroupDetails;
@@ -45,10 +45,10 @@ const usaTimezones = [
 ];
 
 /**
- * AddMeetingWizard
+ * AddMeetupWizard
  * A streamlined 4-step wizard for creating one-off meetups.
  */
-const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardProps) => {
+const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProps) => {
     const api = useApiClient();
     const queryClient = useQueryClient();
 
@@ -78,8 +78,8 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
         return days;
     }, [calendarMonth]);
 
-    const onCalendarContainerLayout = (meetup: LayoutChangeMeetup) => {
-        const { width: measuredWidth } = meetup.nativeMeetup.layout;
+    const onCalendarContainerLayout = (meetup: LayoutChangeEvent) => {
+        const { width: measuredWidth } = meetup.nativeEvent.layout;
         /**
          * FIX: Divider logic to ensure 7 items fit perfectly.
          * The safety margin -0.5 prmeetups floating point rounding from forcing a wrap.
@@ -103,11 +103,11 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
                 location: meetupLocation,
                 name: groupDetails.name 
             });
-            Alert.alert("Success", "Meeting added!");
+            Alert.alert("Success", "Meetup added!");
             resetAndClose();
             queryClient.invalidateQueries({ queryKey: ['meetups'] });
         } catch (error: any) {
-            Alert.alert("Error", error.response?.data?.error || "Failed to add meeting.");
+            Alert.alert("Error", error.response?.data?.error || "Failed to add meetup.");
         } finally {
             setIsSaving(false);
         }
@@ -130,7 +130,7 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
             <View style={styles.modalContent}>
                 <View style={styles.modalHeader}>
                     <TouchableOpacity onPress={resetAndClose}><Feather name="x" size={24} color="#374151" /></TouchableOpacity>
-                    <Text style={styles.modalHeaderTitle}>Add Meeting</Text>
+                    <Text style={styles.modalHeaderTitle}>Add Meetup</Text>
                     <View style={{ width: 24 }} />
                 </View>
 
@@ -227,7 +227,7 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
                         <View style={styles.rowBtn}>
                             <TouchableOpacity onPress={() => setStep(3)} style={styles.backBtn}><Text style={styles.backBtnText}>Back</Text></TouchableOpacity>
                             <TouchableOpacity onPress={handleCreateMeetup} disabled={isSaving} style={styles.finishBtn}>
-                                {isSaving ? <ActivityIndicator color="white" /> : <Text style={styles.finishBtnText}>Create Meeting</Text>}
+                                {isSaving ? <ActivityIndicator color="white" /> : <Text style={styles.finishBtnText}>Create Meetup</Text>}
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -268,4 +268,4 @@ const styles = StyleSheet.create({
     input: { backgroundColor: '#F9FAFB', padding: 16, borderRadius: 12, fontSize: 16, borderBottomWidth: 2, borderBottomColor: '#4A90E2' }
 });
 
-export default AddMeetingWizard;
+export default AddMeetupWizard;

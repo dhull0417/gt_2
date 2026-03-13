@@ -295,7 +295,7 @@ const GroupScreen = () => {
           "Mute Notifications",
           "How long would you like to silence this chat?",
           [
-              { text: "Until Next Meeting", onPress: () => performMuteUpdate('untilNext') },
+              { text: "Until Next Meetup", onPress: () => performMuteUpdate('untilNext') },
               { text: "Indefinitely", onPress: () => performMuteUpdate('indefinite') },
               { text: "Cancel", style: "cancel" }
           ]

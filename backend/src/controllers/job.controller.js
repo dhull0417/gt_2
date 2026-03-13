@@ -77,7 +77,7 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
 
                 const anchorDate = lastMeetup ? lastMeetup.date : currentAnchor;
 
-                const nextMeetingDate = calculateNextMeetupDate(
+                const nextMeetupDate = calculateNextMeetupDate(
                     routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
                     dtEntry.time,
                     timezone,
@@ -86,26 +86,26 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
                     routine.frequency === 'ordinal' ? routine.rules?.[0] : null
                 );
 
-                const nextMeetingDT = DateTime.fromJSDate(nextMeetingDate).setZone(timezone);
+                const nextMeetupDT = DateTime.fromJSDate(nextMeetupDate).setZone(timezone);
 
                 // --- TROUBLESHOOTING LOG: STEP 2 ---
                 if (group.name === "Hello") {
                     const kickoffDT = DateTime.fromJSDate(kickoffDate).setZone(timezone);
-                    console.log(`[KICKOFF DEBUG] Kickoff: ${kickoffDT.toLocaleString(DateTime.DATETIME_MED)} | Target: ${nextMeetingDT.toLocaleString(DateTime.DATETIME_MED)} | Skip? ${nextMeetingDate < kickoffDate}`);
+                    console.log(`[KICKOFF DEBUG] Kickoff: ${kickoffDT.toLocaleString(DateTime.DATETIME_MED)} | Target: ${nextMeetupDT.toLocaleString(DateTime.DATETIME_MED)} | Skip? ${nextMeetupDate < kickoffDate}`);
                 }
 
-                if (nextMeetingDate < kickoffDate) {
-                    currentAnchor = nextMeetingDate;
+                if (nextMeetupDate < kickoffDate) {
+                    currentAnchor = nextMeetupDate;
                     continue;
                 }
 
-                if (nextMeetingDT < now.setZone(timezone)) {
-                    currentAnchor = nextMeetingDate;
+                if (nextMeetupDT < now.setZone(timezone)) {
+                    currentAnchor = nextMeetupDate;
                     continue;
                 }
 
                 const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
-                const triggerDT = nextMeetingDT
+                const triggerDT = nextMeetupDT
                     .minus({ days: group.generationLeadDays || 0 })
                     .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
@@ -118,17 +118,17 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
 
                 const alreadyExists = await Meetup.findOne({ 
                     group: group._id, 
-                    date: nextMeetingDate,
+                    date: nextMeetupDate,
                     time: dtEntry.time
                 });
 
                 if (!alreadyExists) {
-                    console.log(`[JIT] Creating: ${group.name} | Date: ${nextMeetingDT.toISODate()}`);
+                    console.log(`[JIT] Creating: ${group.name} | Date: ${nextMeetupDT.toISODate()}`);
                     
                     const newMeetup = await Meetup.create({
                         group: group._id,
                         name: group.name,
-                        date: nextMeetingDate,
+                        date: nextMeetupDate,
                         time: dtEntry.time,
                         timezone: timezone,
                         location: group.defaultLocation || "",
@@ -141,7 +141,7 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
                     const members = await User.find({ _id: { $in: group.members } });
                     await notifyUsers(members, {
                         title: `Upcoming: ${group.name}`,
-                        body: `${nextMeetingDT.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)} at ${dtEntry.time}`,
+                        body: `${nextMeetupDT.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)} at ${dtEntry.time}`,
                         data: { 
                             type: 'meetup_created', 
                             meetupId: newMeetup._id.toString(),
@@ -153,7 +153,7 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
                     generatedCount++;
                 }
 
-                currentAnchor = nextMeetingDate;
+                currentAnchor = nextMeetupDate;
             }
         }
     }
