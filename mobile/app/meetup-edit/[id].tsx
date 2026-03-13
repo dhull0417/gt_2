@@ -3,11 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { useUpdateEvent } from '@/hooks/useUpdateEvent';
-import { Event } from '@/utils/api';
+import { useUpdateMeetup } from '@/hooks/useUpdateMeetup';
+import { Meetup } from '@/utils/api';
 import TimePicker from '@/components/TimePicker';
 import { Picker } from '@react-native-picker/picker';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerMeetup } from '@react-native-community/datetimepicker';
 
 const usaTimezones = [
     { label: "Eastern (ET)", value: "America/New_York" },
@@ -19,12 +19,12 @@ const usaTimezones = [
     { label: "Hawaii (HST)", value: "Pacific/Honolulu" },
 ];
 
-const EventEditScreen = () => {
+const MeetupEditScreen = () => {
     const { id } = useLocalSearchParams<{ id: string }>();
     const queryClient = useQueryClient();
-    const { mutate: updateEvent, isPending } = useUpdateEvent();
+    const { mutate: updateMeetup, isPending } = useUpdateMeetup();
     
-    const eventToEdit = queryClient.getQueryData<Event[]>(['events'])?.find(e => e._id === id);
+    const meetupToEdit = queryClient.getQueryData<Meetup[]>(['meetups'])?.find(e => e._id === id);
 
     const [date, setDate] = useState(new Date());
     const [tempDate, setTempDate] = useState(new Date()); // Temporary state for the picker
@@ -33,16 +33,16 @@ const EventEditScreen = () => {
     const [timezone, setTimezone] = useState("America/Denver");
 
     useEffect(() => {
-        if (eventToEdit) {
-            const initialDate = new Date(eventToEdit.date);
+        if (meetupToEdit) {
+            const initialDate = new Date(meetupToEdit.date);
             setDate(initialDate);
             setTempDate(initialDate);
-            setMeetTime(eventToEdit.time);
-            setTimezone(eventToEdit.timezone);
+            setMeetTime(meetupToEdit.time);
+            setTimezone(meetupToEdit.timezone);
         }
-    }, [eventToEdit]);
+    }, [meetupToEdit]);
 
-    const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    const onDateChange = (meetup: DateTimePickerMeetup, selectedDate?: Date) => {
         if (Platform.OS === 'android') {
             setShowDatePicker(false);
         }
@@ -59,11 +59,11 @@ const EventEditScreen = () => {
     const handleSaveChanges = () => {
         if (!id) return;
         // Do not send timezone. The backend will automatically use the group's default.
-        updateEvent({ eventId: id, date, time: meetTime });
+        updateMeetup({ meetupId: id, date, time: meetTime });
     };
 
-    if (!eventToEdit) {
-        return <Text style={{textAlign: 'center', marginTop: 20}}>Event not found. Please go back and try again.</Text>;
+    if (!meetupToEdit) {
+        return <Text style={{textAlign: 'center', marginTop: 20}}>Meetup not found. Please go back and try again.</Text>;
     }
 
     return (
@@ -153,4 +153,4 @@ const styles = StyleSheet.create({
     doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
 });
 
-export default EventEditScreen;
+export default MeetupEditScreen;

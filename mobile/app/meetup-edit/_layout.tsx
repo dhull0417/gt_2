@@ -3,7 +3,7 @@ import React from 'react';
 import { TouchableOpacity } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-const EventEditLayout = () => {
+const MeetupEditLayout = () => {
     const router = useRouter();
     
     return (
@@ -11,7 +11,7 @@ const EventEditLayout = () => {
             <Stack.Screen 
                 name="[id]" 
                 options={{ 
-                    headerTitle: 'Edit Event',
+                    headerTitle: 'Edit Meetup',
                     presentation: 'modal',
                     headerLeft: () => (
                         <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
@@ -24,4 +24,4 @@ const EventEditLayout = () => {
     );
 };
 
-export default EventEditLayout;
+export default MeetupEditLayout;

@@ -54,8 +54,8 @@ const groupSchema = new mongoose.Schema({
   generationLeadDays: { type: Number, default: 2, min: 0 },
   generationLeadTime: { type: String, default: "09:00 AM" },
   
-  // Used by the JIT job to determine how many events to keep in the "pipeline"
-  eventsToDisplay: { 
+  // Used by the JIT job to determine how many meetups to keep in the "pipeline"
+  meetupsToDisplay: { 
     type: Number, 
     default: 1, 
     min: 1, 

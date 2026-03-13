@@ -55,7 +55,7 @@ const userSchema = new mongoose.Schema(
                 ref: "Group",
             },
         ],
-        mutedUntilNextEvent: [
+        mutedUntilNextMeetup: [
             {
                 type: mongoose.Schema.Types.ObjectId,
                 ref: "Group",

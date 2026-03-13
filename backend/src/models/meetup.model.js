@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const eventSchema = new mongoose.Schema({
+const meetupSchema = new mongoose.Schema({
   group: { type: mongoose.Schema.Types.ObjectId, ref: "Group", required: true },
   name: { type: String, required: true },
   date: { type: Date, required: true },
@@ -17,6 +17,6 @@ const eventSchema = new mongoose.Schema({
   capacity: { type: Number, default: 0 },
 }, { timestamps: true });
 
-const Event = mongoose.model("Event", eventSchema);
+const Meetup = mongoose.model("Meetup", meetupSchema);
 
-export default Event;
+export default Meetup;

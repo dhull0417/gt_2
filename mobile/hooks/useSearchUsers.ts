@@ -35,7 +35,7 @@ export const useSearchUsers = (username: string) => {
     },
     
     // Only run if the debounced string has content
-    // (I removed the > 2 length check because the 500ms delay prevents spam anyway, allowing users to search for short names like "Al")
+    // (I removed the > 2 length check because the 500ms delay prmeetups spam anyway, allowing users to search for short names like "Al")
     enabled: !!debouncedUsername && debouncedUsername.length > 0,
     
     staleTime: 1000 * 60, // Cache results for 1 minute (Your existing setting)

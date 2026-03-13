@@ -118,7 +118,7 @@ useEffect(() => {
             
             {/* Daily UI */}
             {frequency === 'daily' && (
-                <Text style={styles.infoText}>Event will occur every day.</Text>
+                <Text style={styles.infoText}>Meetup will occur every day.</Text>
             )}
         </View>
     );

@@ -20,7 +20,7 @@ export const useCreateGroup = () => {
     onSuccess: (data) => {
       Alert.alert("Success", "Group created successfully!");
       queryClient.invalidateQueries({ queryKey: ['groups'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['meetups'] });
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Failed to create group.";

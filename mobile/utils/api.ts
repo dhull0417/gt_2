@@ -52,7 +52,7 @@ export interface User {
   profilePicture?: string;
   groups?: string[];
   mutedGroups: string[];
-  mutedUntilNextEvent: string[];
+  mutedUntilNextMeetup: string[];
   streamToken: string;
 }
 
@@ -81,7 +81,7 @@ export interface GroupDetails extends Group {
   defaultCapacity: number;
 }
 
-export interface Event {
+export interface Meetup {
   _id: string;
   group: {
     _id: string;
@@ -117,7 +117,7 @@ interface CreateGroupPayload {
   name: string;
   schedule?: Schedule | null; // Optional to support "Set schedule now? No"
   timezone?: string;
-  eventsToDisplay: number;
+  meetupsToDisplay: number;
   members?: string[];
   defaultCapacity?: number;
   defaultLocation?: string;
@@ -150,8 +150,8 @@ interface RemoveScheduledDayPayload {
   frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
 }
 
-interface UpdateEventPayload {
-  eventId: string;
+interface UpdateMeetupPayload {
+  meetupId: string;
   date?: Date;
   time?: string;
   timezone?: string;
@@ -160,7 +160,7 @@ interface UpdateEventPayload {
 }
 
 interface RsvpPayload {
-  eventId: string;
+  meetupId: string;
   status: 'in' | 'out';
 }
 
@@ -170,7 +170,7 @@ interface CreateGroupResponse {
 }
 
 // FIXED: Added 'name' property to match backend expectation and resolve TS2353
-interface CreateOneOffEventPayload {
+interface CreateOneOffMeetupPayload {
   groupId: string;
   date: Date;
   time: string;
@@ -233,8 +233,8 @@ export const groupApi = {
     const response = await api.put<{ group: Group }>(`/api/groups/${groupId}`, details);
     return response.data;
   },
-  createOneOffEvent: async (api: AxiosInstance, { groupId, ...details }: CreateOneOffEventPayload): Promise<{ event: Event }> => {
-    const response = await api.post<{ event: Event }>(`/api/groups/${groupId}/events`, details);
+  createOneOffMeetup: async (api: AxiosInstance, { groupId, ...details }: CreateOneOffMeetupPayload): Promise<{ meetup: Meetup }> => {
+    const response = await api.post<{ meetup: Meetup }>(`/api/groups/${groupId}/meetups`, details);
     return response.data;
   },
   inviteUser: async (api: AxiosInstance, payload: InviteUserPayload): Promise<{ message: string }> => {
@@ -279,25 +279,25 @@ export const groupApi = {
   }
 };
 
-export const eventApi = {
-  getEvents: async (api: AxiosInstance): Promise<Event[]> => {
-    const response = await api.get<Event[]>("/api/events");
+export const meetupApi = {
+  getMeetups: async (api: AxiosInstance): Promise<Meetup[]> => {
+    const response = await api.get<Meetup[]>("/api/meetups");
     return response.data;
   },
-  handleRsvp: async (api: AxiosInstance, { eventId, status }: RsvpPayload): Promise<{ message: string }> => {
-    const response = await api.post(`/api/events/${eventId}/rsvp`, { status });
+  handleRsvp: async (api: AxiosInstance, { meetupId, status }: RsvpPayload): Promise<{ message: string }> => {
+    const response = await api.post(`/api/meetups/${meetupId}/rsvp`, { status });
     return response.data;
   },
-  updateEvent: async (api: AxiosInstance, { eventId, ...details }: UpdateEventPayload): Promise<{ event: Event }> => {
-    const response = await api.put<{ event: Event }>(`/api/events/${eventId}`, details);
+  updateMeetup: async (api: AxiosInstance, { meetupId, ...details }: UpdateMeetupPayload): Promise<{ meetup: Meetup }> => {
+    const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}`, details);
     return response.data;
   },
-  deleteEvent: async (api: AxiosInstance, eventId: string): Promise<{ message: string }> => {
-    const response = await api.delete(`/api/events/${eventId}`);
+  deleteMeetup: async (api: AxiosInstance, meetupId: string): Promise<{ message: string }> => {
+    const response = await api.delete(`/api/meetups/${meetupId}`);
     return response.data;
   },
-  cancelEvent: async (api: AxiosInstance, eventId: string): Promise<{ message: string }> => {
-    const response = await api.patch(`/api/events/${eventId}/cancel`);
+  cancelMeetup: async (api: AxiosInstance, meetupId: string): Promise<{ message: string }> => {
+    const response = await api.patch(`/api/meetups/${meetupId}/cancel`);
     return response.data;
   }
 };

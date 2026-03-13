@@ -4,7 +4,7 @@ import { clerkMiddleware } from "@clerk/express";
 
 import userRoutes from "./routes/user.route.js";
 import groupRoutes from "./routes/group.route.js";
-import eventRoutes from "./routes/event.route.js";
+import meetupRoutes from "./routes/meetup.route.js";
 import jobRoutes from "./routes/job.route.js";
 import chatRoutes from "./routes/chat.route.js";
 import notificationRoutes from "./routes/notification.route.js"; 
@@ -27,7 +27,7 @@ app.get("/", (req, res) => res.send("Hello from server"));
 
 app.use("/api/users", userRoutes);
 app.use("/api/groups", groupRoutes);
-app.use("/api/events", eventRoutes);
+app.use("/api/meetups", meetupRoutes);
 app.use("/api/jobs", jobRoutes); 
 app.use("/api/chat", chatRoutes); 
 app.use("/api/notifications", notificationRoutes); 

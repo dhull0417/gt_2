@@ -19,7 +19,7 @@ import {
     KeyboardAvoidingView,
     ViewStyle,
     StyleProp,
-    LayoutChangeEvent
+    LayoutChangeMeetup
 } from "react-native";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
 import { useSearchUsers } from "../../hooks/useSearchUsers";
@@ -37,7 +37,7 @@ const CARD_WIDTH = width * 0.90;
 // Fallback high-quality image for the creation flow
 const GroupImage = { uri: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=1000' };
 
-type CreationType = 'group' | 'event' | null;
+type CreationType = 'group' | 'meetup' | null;
 
 interface UserStub {
     _id: string;
@@ -157,9 +157,9 @@ const CreateGroupScreen = () => {
     return days;
   }, [calendarMonth]);
 
-  const onCalendarContainerLayout = (event: LayoutChangeEvent) => {
-      const { width: measuredWidth } = event.nativeEvent.layout;
-      // Safety margin -0.5 prevents Saturday wrap due to rounding
+  const onCalendarContainerLayout = (meetup: LayoutChangeMeetup) => {
+      const { width: measuredWidth } = meetup.nativeMeetup.layout;
+      // Safety margin -0.5 prmeetups Saturday wrap due to rounding
       setCalculatedDayWidth((measuredWidth / 7) - 0.5);
   };
 
@@ -178,7 +178,7 @@ const CreateGroupScreen = () => {
         members: selectedMembers.map(m => m._id),
         generationLeadDays: leadDays,
         generationLeadTime: notificationTime,
-        eventsToDisplay: 1,
+        meetupsToDisplay: 1,
         defaultLocation: location
     };
 
@@ -701,7 +701,7 @@ const CreateGroupScreen = () => {
                         <View style={{ flex: 1 }}>
                             <FadeInView delay={250}>
                                 <Text style={styles.description}>
-                                    Lead time for event creation and member notification:
+                                    Lead time for meetup creation and member notification:
                                 </Text>
                             </FadeInView>
 

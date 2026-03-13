@@ -8,7 +8,7 @@ import {
   updateGroup,
   leaveGroup, 
   removeMember, 
-  createOneOffEvent, 
+  createOneOffMeetup, 
   inviteUser, 
   updateGroupSchedule,
   updateModerators,
@@ -30,10 +30,10 @@ router.patch("/:groupId/moderator", protectRoute, toggleModerator);
 router.patch("/:groupId/moderators", protectRoute, updateModerators); 
 
 
-// --- Schedule & Events ---
-// This route handles recurring schedule updates and automatic event regeneration
+// --- Schedule & Meetups ---
+// This route handles recurring schedule updates and automatic meetup regeneration
 router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
-router.post("/:groupId/events", protectRoute, createOneOffEvent);
+router.post("/:groupId/meetups", protectRoute, createOneOffMeetup);
 
 // --- Membership & Invites ---
 router.post("/:groupId/add-member", protectRoute, addMember);

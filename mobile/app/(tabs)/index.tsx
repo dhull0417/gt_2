@@ -2,19 +2,18 @@ import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Sty
 import React, { useCallback, useMemo, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useGetEvents } from '@/hooks/useGetEvents';
+import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { useRsvp } from '@/hooks/useRsvp';
-import { Event, User, useApiClient, userApi } from '@/utils/api';
+import { Meetup, User, useApiClient, userApi } from '@/utils/api';
 import { useFocusEffect, useRouter, Link } from 'expo-router';
-import EventDetailModal from '@/components/EventDetailModal';
+import MeetupDetailModal from '@/components/MeetupDetailModal';
 import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 
-type GroupedEvents = {
-  'Within 3 days': Event[];
-  'Within 1 week': Event[];
-  'Within 2 weeks': Event[];
-  'Future': Event[];
+type GroupedMeetups = {
+  'Within 1 week': Meetup[];
+  'Within 2 weeks': Meetup[];
+  'Future': Meetup[];
 };
 
 // --- Helper Functions ---
@@ -38,12 +37,12 @@ const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
 
 // --- Components ---
 
-const RsvpStatusDot = ({ event, userId }: { event: Event; userId: string }) => {
+const RsvpStatusDot = ({ meetup, userId }: { meetup: Meetup; userId: string }) => {
     let dotColor = 'grey'; // Grey (Undecided) default
 
-    if (event.in.includes(userId)) {
+    if (meetup.in.includes(userId)) {
         dotColor = '#4FD1C5'; // Green (In)
-    } else if (event.out.includes(userId)) {
+    } else if (meetup.out.includes(userId)) {
         dotColor = '#FF7A6E'; // Red (Out)
     }
 
@@ -64,17 +63,17 @@ const RsvpStatusDot = ({ event, userId }: { event: Event; userId: string }) => {
     );
 };
 
-const RsvpCounts = ({ event }: { event: Event }) => {
+const RsvpCounts = ({ meetup }: { meetup: Meetup }) => {
     return (
         <View className="flex-row items-center mt-3 flex-wrap">
             <View className="flex-row items-center mr-4">
                 <View className="w-2 h-2 rounded-full bg-green-500 mr-1.5" />
-                <Text className="text-gray-600 font-medium">{event.in.length} In</Text>
+                <Text className="text-gray-600 font-medium">{meetup.in.length} In</Text>
             </View>
 
             <View className="flex-row items-center mr-4">
                 <View className="w-2 h-2 rounded-full bg-red-500 mr-1.5" />
-                <Text className="text-gray-600 font-medium">{event.out.length} Out</Text>
+                <Text className="text-gray-600 font-medium">{meetup.out.length} Out</Text>
             </View>
 
             <View className="flex-row items-center">
@@ -82,32 +81,32 @@ const RsvpCounts = ({ event }: { event: Event }) => {
                   className="font-bold text-[10px] uppercase" 
                   style={{ color: '#4A90E2' }}
                 >
-                    Max Attendees: {event.capacity === 0 ? 'Unlimited' : event.capacity}
+                    Max Attendees: {meetup.capacity === 0 ? 'Unlimited' : meetup.capacity}
                 </Text>
             </View>
         </View>
     );
 };
 
-const EventCard = ({
-  event,
+const MeetupCard = ({
+  meetup,
   onPress,
   showRsvpButtons,
   onRsvp,
   isRsvping,
   currentUser
 }: {
-  event: Event;
+  meetup: Meetup;
   onPress: () => void;
   showRsvpButtons: boolean;
   onRsvp: (status: 'in' | 'out') => void;
   isRsvping: boolean;
   currentUser: User | undefined;
 }) => {
-  const isCancelled = event.status === 'cancelled';
-  const isFull = event.capacity > 0 && event.in.length >= event.capacity;
-  const isWaitlisted = currentUser ? event.waitlist.includes(currentUser._id) : false;
-  const isIn = currentUser ? event.in.includes(currentUser._id) : false;
+  const isCancelled = meetup.status === 'cancelled';
+  const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
+  const isWaitlisted = currentUser ? meetup.waitlist.includes(currentUser._id) : false;
+  const isIn = currentUser ? meetup.in.includes(currentUser._id) : false;
 
   return (
     <View 
@@ -116,7 +115,7 @@ const EventCard = ({
       }`}
     >
       <TouchableOpacity onPress={onPress} disabled={isCancelled}>
-        {!isCancelled && currentUser && <RsvpStatusDot event={event} userId={currentUser._id} />}
+        {!isCancelled && currentUser && <RsvpStatusDot meetup={meetup} userId={currentUser._id} />}
 
         <View className="flex-row justify-between items-start">
           <View className="flex-1 pr-6">
@@ -128,7 +127,7 @@ const EventCard = ({
                 textDecorationLine: isCancelled ? 'line-through' : 'none' 
               }}
             >
-              {event.name}
+              {meetup.name}
             </Text>
             {isCancelled && (
               <View className="bg-red-100 self-start px-2 py-0.5 rounded-md mt-1">
@@ -139,10 +138,10 @@ const EventCard = ({
         </View>
 
         <Text style={{ fontSize: 16, color: isCancelled ? '#9CA3AF' : '#4B5563', marginTop: 4 }}>
-          {formatDate(event.date, event.timezone)} at {event.time} {getTimezoneAbbreviation(event.date, event.timezone)}
+          {formatDate(meetup.date, meetup.timezone)} at {meetup.time} {getTimezoneAbbreviation(meetup.date, meetup.timezone)}
         </Text>
 
-        {!isCancelled && <RsvpCounts event={event} />}
+        {!isCancelled && <RsvpCounts meetup={meetup} />}
 
         <View className="flex-row mt-2">
             {isFull && !isCancelled && !isIn && (
@@ -159,7 +158,7 @@ const EventCard = ({
       </TouchableOpacity>
 
       {showRsvpButtons && !isCancelled && (
-        <View className="flex-row space-x-4 mt-4 pt-4 border-t border-gray-100">
+        <View className="flex-row gap-4 mt-4 pt-4 border-t border-gray-100">
           <TouchableOpacity
             onPress={() => onRsvp('in')}
             disabled={isRsvping}
@@ -194,55 +193,53 @@ const DashboardScreen = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [selectedMeetup, setSelectedMeetup] = useState<Meetup | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
 
-  const { data: events, isLoading, isError, refetch } = useGetEvents();
+  const { data: meetups, isLoading, isError, refetch } = useGetMeetups();
   const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
   const { mutate: rsvp, isPending: isRsvping } = useRsvp();
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
-  const nextUndecidedEvent = useMemo(() => {
-    if (!events || !currentUser) return null;
-    return events.find(event => event.status !== 'cancelled' && event.undecided.includes(currentUser._id));
-  }, [events, currentUser]);
+  const nextUndecidedMeetup = useMemo(() => {
+    if (!meetups || !currentUser) return null;
+    return meetups.find(meetup => meetup.status !== 'cancelled' && meetup.undecided.includes(currentUser._id));
+  }, [meetups, currentUser]);
 
-  const groupedEvents = useMemo(() => {
-    const groups: GroupedEvents = {
-      'Within 3 days': [],
+  const groupedMeetups = useMemo(() => {
+    const groups: GroupedMeetups = {
       'Within 1 week': [],
       'Within 2 weeks': [],
       'Future': [],
     };
-    if (!events) return groups;
+    if (!meetups) return groups;
     const today = DateTime.now().startOf('day');
-    events.forEach(event => {
-      const eventDate = DateTime.fromISO(event.date);
-      const diffInDays = eventDate.diff(today, 'days').days;
-      if (diffInDays <= 3) groups['Within 3 days'].push(event);
-      else if (diffInDays <= 7) groups['Within 1 week'].push(event);
-      else if (diffInDays <= 14) groups['Within 2 weeks'].push(event);
-      else groups['Future'].push(event);
+    meetups.forEach(meetup => {
+      const meetupDate = DateTime.fromISO(meetup.date);
+      const diffInDays = meetupDate.diff(today, 'days').days;
+      if (diffInDays <= 7) groups['Within 1 week'].push(meetup);
+      else if (diffInDays <= 14) groups['Within 2 weeks'].push(meetup);
+      else groups['Future'].push(meetup);
     });
     return groups;
-  }, [events]);
+  }, [meetups]);
 
-  const handleOpenModal = (event: Event) => {
-    setSelectedEvent(event);
+  const handleOpenModal = (meetup: Meetup) => {
+    setSelectedMeetup(meetup);
     setIsModalVisible(true);
   };
 
   const handleCloseModal = () => {
     setIsModalVisible(false);
-    setSelectedEvent(null);
+    setSelectedMeetup(null);
   };
 
-  const handleDashboardRsvp = (eventId: string, status: 'in' | 'out') => {
+  const handleDashboardRsvp = (meetupId: string, status: 'in' | 'out') => {
     if (!currentUser) return;
-    rsvp({ eventId, status }, {
+    rsvp({ meetupId, status }, {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['events'] });
+        queryClient.invalidateQueries({ queryKey: ['meetups'] });
       }
     });
   };
@@ -260,7 +257,7 @@ const DashboardScreen = () => {
           <ActivityIndicator size="large" color="#4A90E2" className="mt-16" />
         ) : isError ? (
           <Text style={{ textAlign: 'center', color: '#ef4444', marginTop: 32 }}>
-            Failed to load events.
+            Failed to load meetups.
           </Text>
         ) : (
           <>
@@ -268,12 +265,12 @@ const DashboardScreen = () => {
               <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
                 You coming?
               </Text>
-              {nextUndecidedEvent ? (
-                <EventCard
-                  event={nextUndecidedEvent}
-                  onPress={() => handleOpenModal(nextUndecidedEvent)}
+              {nextUndecidedMeetup ? (
+                <MeetupCard
+                  meetup={nextUndecidedMeetup}
+                  onPress={() => handleOpenModal(nextUndecidedMeetup)}
                   showRsvpButtons={true}
-                  onRsvp={(status) => handleDashboardRsvp(nextUndecidedEvent._id, status)}
+                  onRsvp={(status) => handleDashboardRsvp(nextUndecidedMeetup._id, status)}
                   isRsvping={isRsvping}
                   currentUser={currentUser}
                 />
@@ -291,26 +288,26 @@ const DashboardScreen = () => {
                 Upcoming
               </Text>
 
-              {events?.length === 0 && (
+              {meetups?.length === 0 && (
                 <View className="bg-white p-5 my-2 rounded-2xl items-center border border-gray-100">
                   <Text style={{ fontSize: 16, color: '#4A90E2' }}>
-                    You have no upcoming events.
+                    You have no upcoming meetups.
                   </Text>
                 </View>
               )}
 
-              {Object.entries(groupedEvents).map(([groupTitle, groupEvents]) => {
-                if (groupEvents.length === 0) return null;
+              {Object.entries(groupedMeetups).map(([groupTitle, groupMeetups]) => {
+                if (groupMeetups.length === 0) return null;
                 return (
                   <View key={groupTitle}>
                     <Text style={{ fontSize: 12, fontWeight: '900', color: '#FF7A6E', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
                       {groupTitle}
                     </Text>
-                    {groupEvents.map((event: Event) => (
-                        <EventCard
-                            key={event._id}
-                            event={event}
-                            onPress={() => handleOpenModal(event)}
+                    {groupMeetups.map((meetup: Meetup) => (
+                        <MeetupCard
+                            key={meetup._id}
+                            meetup={meetup}
+                            onPress={() => handleOpenModal(meetup)}
                             showRsvpButtons={false}
                             onRsvp={() => {}}
                             isRsvping={false}
@@ -333,7 +330,7 @@ const DashboardScreen = () => {
       >
         {/* Use SafeAreaView with edges explicitly defined to protect the top of the details screen */}
         <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top', 'bottom']}>
-            <EventDetailModal event={selectedEvent} onClose={handleCloseModal} />
+            <MeetupDetailModal meetup={selectedMeetup} onClose={handleCloseModal} />
         </SafeAreaView>
       </Modal>
     </SafeAreaView>

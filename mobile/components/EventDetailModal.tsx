@@ -14,26 +14,26 @@ import {
     Platform
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { Event, User, useApiClient, userApi, eventApi } from '@/utils/api';
+import { Meetup, User, useApiClient, userApi, meetupApi } from '@/utils/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
-import { useGetEvents } from '@/hooks/useGetEvents';
+import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { useRouter } from 'expo-router';
 import TimePicker from './TimePicker';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerMeetup } from '@react-native-community/datetimepicker';
 
-interface EventDetailModalProps {
-  event: Event | null;
+interface MeetupDetailModalProps {
+  meetup: Meetup | null;
   onClose: () => void;
 }
 
-const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProps) => {
+const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModalProps) => {
     const api = useApiClient();
     const router = useRouter();
     const queryClient = useQueryClient();
     
-    const [event, setEvent] = useState<Event | null>(initialEvent);
-    const { data: allEvents } = useGetEvents();
+    const [meetup, setMeetup] = useState<Meetup | null>(initialMeetup);
+    const { data: allMeetups } = useGetMeetups();
     const [activeTab, setActiveTab] = useState<'in' | 'out' | 'waitlist'>('in');
     
     // --- Edit Mode State ---
@@ -47,18 +47,18 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     const [isUpdating, setIsUpdating] = useState(false);
 
     useEffect(() => {
-        setEvent(initialEvent);
-    }, [initialEvent]);
+        setMeetup(initialMeetup);
+    }, [initialMeetup]);
 
-    // Sync with global event list updates (e.g. from background refresh or other mutations)
+    // Sync with global meetup list updates (e.g. from background refresh or other mutations)
     useEffect(() => {
-        if (allEvents && event) {
-            const updated = allEvents.find(e => e._id === event._id);
+        if (allMeetups && meetup) {
+            const updated = allMeetups.find(e => e._id === meetup._id);
             if (updated) {
-                setEvent(updated);
+                setMeetup(updated);
             }
         }
-    }, [allEvents]);
+    }, [allMeetups]);
 
     const { data: currentUser } = useQuery<User, Error>({
         queryKey: ['currentUser'],
@@ -69,8 +69,8 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
 
     // Map waitlist IDs to user objects to preserve order (0 is first in line)
     // Calculated early to be used in useEffect safely
-    const waitlistUsers = (event?.waitlist || [])
-        .map(id => (event?.members || []).find(m => m._id === id))
+    const waitlistUsers = (meetup?.waitlist || [])
+        .map(id => (meetup?.members || []).find(m => m._id === id))
         .filter((u): u is User => !!u);
 
     // Reset tab if waitlist becomes empty while selected
@@ -80,36 +80,36 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
         }
     }, [waitlistUsers.length, activeTab]);
 
-    if (!event || !currentUser) return null;
+    if (!meetup || !currentUser) return null;
 
     // --- Permissions Logic ---
-    const isOwner = typeof event.group === 'object' ? event.group.owner === currentUser._id : false; 
-    const groupData = event.group as any;
-    const isMod = typeof event.group === 'object' && Array.isArray(groupData.moderators)
+    const isOwner = typeof meetup.group === 'object' ? meetup.group.owner === currentUser._id : false; 
+    const groupData = meetup.group as any;
+    const isMod = typeof meetup.group === 'object' && Array.isArray(groupData.moderators)
         ? groupData.moderators.some((m: any) => typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id)
         : false;
 
     const canManage = isOwner || isMod;
     
-    const isCancelled = event.status === 'cancelled';
-    const isFull = event.capacity > 0 && (event.in?.length || 0) >= event.capacity;
-    const isWaitlisted = event.waitlist?.includes(currentUser._id) || false;
-    const isIn = event.in?.includes(currentUser._id) || false;
+    const isCancelled = meetup.status === 'cancelled';
+    const isFull = meetup.capacity > 0 && (meetup.in?.length || 0) >= meetup.capacity;
+    const isWaitlisted = meetup.waitlist?.includes(currentUser._id) || false;
+    const isIn = meetup.in?.includes(currentUser._id) || false;
 
     // Filter users based on their status
-    const goingUsers = (event.members || []).filter(m => event.in?.includes(m._id));
-    const outUsers = (event.members || []).filter(m => event.out?.includes(m._id));
+    const goingUsers = (meetup.members || []).filter(m => meetup.in?.includes(m._id));
+    const outUsers = (meetup.members || []).filter(m => meetup.out?.includes(m._id));
 
 
     const handleRsvpAction = (status: 'in' | 'out') => {
-        rsvp({ eventId: event._id, status }, {
+        rsvp({ meetupId: meetup._id, status }, {
             onSuccess: (data: any) => {
-                queryClient.invalidateQueries({ queryKey: ['events'] });
-                if (data.event) {
-                    setEvent(data.event);
+                queryClient.invalidateQueries({ queryKey: ['meetups'] });
+                if (data.meetup) {
+                    setMeetup(data.meetup);
                 }
                 if (data.message && data.message.toLowerCase().includes('waitlist')) {
-                    Alert.alert("Waitlisted", "The event is full. You've been added to the waitlist queue.");
+                    Alert.alert("Waitlisted", "The meetup is full. You've been added to the waitlist queue.");
                 }
             }
         });
@@ -123,33 +123,33 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
         // Navigate to groups tab and pass the specific group ID to open
         router.push({
             pathname: '/(tabs)/groups',
-            params: { openChatId: event.group._id }
+            params: { openChatId: meetup.group._id }
         });
     };
 
-    const handleUpdateEventDetails = async () => {
+    const handleUpdateMeetupDetails = async () => {
         // Build a payload with only the changed fields
         const payload: {
-            eventId: string;
+            meetupId: string;
             date?: Date;
             time?: string;
             capacity?: number;
             location?: string;
-        } = { eventId: event._id };
+        } = { meetupId: meetup._id };
 
         const capInt = parseInt(newCapacity, 10);
         
         // Check for changes
-        if (newDate.toISOString().split('T')[0] !== new Date(event.date).toISOString().split('T')[0]) {
+        if (newDate.toISOString().split('T')[0] !== new Date(meetup.date).toISOString().split('T')[0]) {
             payload.date = newDate;
         }
-        if (newTime !== event.time) {
+        if (newTime !== meetup.time) {
             payload.time = newTime;
         }
-        if (newLocation !== (event.location || '')) {
+        if (newLocation !== (meetup.location || '')) {
             payload.location = newLocation;
         }
-        if (!isNaN(capInt) && capInt !== event.capacity) {
+        if (!isNaN(capInt) && capInt !== meetup.capacity) {
             payload.capacity = capInt;
         }
 
@@ -161,12 +161,12 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
         
         setIsUpdating(true);
         try {
-            const response = await eventApi.updateEvent(api, payload);
+            const response = await meetupApi.updateMeetup(api, payload);
             
-            await queryClient.invalidateQueries({ queryKey: ['events'] });
-            await queryClient.invalidateQueries({ queryKey: ['eventDetails', event._id] });
-            if (response && response.event) {
-                setEvent(response.event);
+            await queryClient.invalidateQueries({ queryKey: ['meetups'] });
+            await queryClient.invalidateQueries({ queryKey: ['meetupDetails', meetup._id] });
+            if (response && response.meetup) {
+                setMeetup(response.meetup);
             }
             setIsEditModalVisible(false);
             Alert.alert("Success", "Meeting details updated.");
@@ -178,7 +178,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
     };
 
     // --- Date Picker Handlers ---
-    const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    const onDateChange = (meetup: DateTimePickerMeetup, selectedDate?: Date) => {
         const currentDate = selectedDate || tempDate;
         if (Platform.OS === 'android') {
             setShowDatePicker(false);
@@ -193,17 +193,17 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
         setShowDatePicker(false);
     };
 
-    const handleCancelEvent = () => {
+    const handleCancelMeetup = () => {
         const action = isCancelled ? "Reactivate" : "Cancel";
-        Alert.alert(`${action} Event`, `Are you sure?`, [
+        Alert.alert(`${action} Meetup`, `Are you sure?`, [
             { text: "No", style: "cancel" },
             { 
                 text: "Yes", 
                 style: isCancelled ? "default" : "destructive", 
                 onPress: async () => {
                     try {
-                        await eventApi.cancelEvent(api, event._id);
-                        queryClient.invalidateQueries({ queryKey: ['events'] });
+                        await meetupApi.cancelMeetup(api, meetup._id);
+                        queryClient.invalidateQueries({ queryKey: ['meetups'] });
                         if (!isCancelled) onClose(); 
                     } catch (e: any) {
                         Alert.alert("Error", e.response?.data?.error || e.message);
@@ -238,11 +238,11 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                 {canManage && !isCancelled ? (
                     <TouchableOpacity 
                         onPress={() => {
-                            setNewDate(new Date(event.date));
-                            setTempDate(new Date(event.date)); // Initialize temp state for the picker
-                            setNewTime(event.time);
-                            setNewCapacity(event.capacity.toString());
-                            setNewLocation(event.location || '');
+                            setNewDate(new Date(meetup.date));
+                            setTempDate(new Date(meetup.date)); // Initialize temp state for the picker
+                            setNewTime(meetup.time);
+                            setNewCapacity(meetup.capacity.toString());
+                            setNewLocation(meetup.location || '');
                             setIsEditModalVisible(true);
                         }}
                         style={styles.editHeaderBtn}
@@ -262,8 +262,8 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                     )}
                     
                     <View style={styles.titleRow}>
-                        <Text style={[styles.eventTitle, isCancelled && styles.strikeThrough]}>
-                            {event.name}
+                        <Text style={[styles.meetupTitle, isCancelled && styles.strikeThrough]}>
+                            {meetup.name}
                         </Text>
                         {/* New Chat Button Link */}
                         <TouchableOpacity 
@@ -280,7 +280,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         <View style={styles.detailItem}>
                             <Text style={styles.detailLabel}>Date & Time</Text>
                             <Text style={styles.detailValue}>
-                                {new Date(event.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} • {event.time}
+                                {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} • {meetup.time}
                             </Text>
                         </View>
                         
@@ -289,13 +289,13 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         <View style={styles.detailRow}>
                             <View style={[styles.detailItem, { flex: 1, marginRight: 16 }]}>
                                 <Text style={styles.detailLabel}>Location</Text>
-                                <Text style={styles.detailValue} numberOfLines={1}>{event.location || "No location set"}</Text>
+                                <Text style={styles.detailValue} numberOfLines={1}>{meetup.location || "No location set"}</Text>
                             </View>
                             
                             <View style={styles.detailItem}>
                                 <Text style={styles.detailLabel}>Capacity</Text>
                                 <Text style={[styles.detailValue, isFull && !isCancelled && { color: '#C2410C' }]}>
-                                    {event.capacity === 0 ? "Unlimited" : `${event.in?.length || 0}/${event.capacity}`}
+                                    {meetup.capacity === 0 ? "Unlimited" : `${meetup.in?.length || 0}/${meetup.capacity}`}
                                 </Text>
                             </View>
                         </View>
@@ -325,9 +325,9 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                         <TouchableOpacity 
                             onPress={() => handleRsvpAction('out')}
                             disabled={isRsvping}
-                            style={[styles.rsvpButton, styles.rsvpOut, event.out?.includes(currentUser._id) && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
+                            style={[styles.rsvpButton, styles.rsvpOut, meetup.out?.includes(currentUser._id) && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
                         >
-                            <Text style={[styles.rsvpButtonText, !event.out?.includes(currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
+                            <Text style={[styles.rsvpButtonText, !meetup.out?.includes(currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -369,7 +369,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
 
                 {canManage && (
                     <View style={styles.ownerSection}>
-                        <TouchableOpacity onPress={handleCancelEvent} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4A90E2', borderColor: '#4A90E2' }]}>
+                        <TouchableOpacity onPress={handleCancelMeetup} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4A90E2', borderColor: '#4A90E2' }]}>
                             <Text style={[styles.cancelToggleText, isCancelled && { color: 'white' }]}>
                                 {isCancelled ? "Reactivate Meeting" : "Cancel This Meeting"}
                             </Text>
@@ -386,7 +386,7 @@ const EventDetailModal = ({ event: initialEvent, onClose }: EventDetailModalProp
                             <View style={styles.modalHeaderInner}>
                                 <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
                                 <Text style={styles.modalTitleInner}>Edit Meeting</Text>
-                                <TouchableOpacity onPress={handleUpdateEventDetails} disabled={isUpdating}>
+                                <TouchableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating}>
                                     {isUpdating ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={styles.saveBtnText}>Save</Text>}
                                 </TouchableOpacity>
                             </View>
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
     titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
-    eventTitle: { fontSize: 28, fontWeight: '900', color: '#111827', letterSpacing: -1, lineHeight: 32, flex: 1 },
+    meetupTitle: { fontSize: 28, fontWeight: '900', color: '#111827', letterSpacing: -1, lineHeight: 32, flex: 1 },
     // Chat Button Styling
     chatButton: { 
         flexDirection: 'row', 
@@ -539,4 +539,4 @@ const styles = StyleSheet.create({
     doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
 });
 
-export default EventDetailModal;
+export default MeetupDetailModal;

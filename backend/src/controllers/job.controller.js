@@ -1,9 +1,9 @@
 import asyncHandler from "express-async-handler";
-import Event from "../models/event.model.js";
+import Meetup from "../models/meetup.model.js";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import { DateTime } from "luxon";
-import { calculateNextEventDate } from "../utils/date.utils.js";
+import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { notifyUsers } from "../utils/push.notifications.js";
 
 /**
@@ -19,22 +19,22 @@ const parseTimeString = (timeStr) => {
 };
 
 /**
- * @desc    Cron job to clean up expired events and generate new ones "Just-in-Time"
- * @route   POST /api/jobs/regenerate-events
+ * @desc    Cron job to clean up expired meetups and generate new ones "Just-in-Time"
+ * @route   POST /api/jobs/regenerate-meetups
  */
-export const regenerateEvents = asyncHandler(async (req, res) => {
-  console.log("Cron job started: JIT Event Generation...");
+export const regenerateMeetups = asyncHandler(async (req, res) => {
+  console.log("Cron job started: JIT Meetup Generation...");
   const now = DateTime.now(); 
   
-  // 1. Cleanup Expired Events
-  const expiredEvents = await Event.find({ date: { $lt: now.toJSDate() } }).select('_id group name date').lean();
-  if (expiredEvents.length > 0) {
-    const groupIdsToUnmute = [...new Set(expiredEvents.map(e => e.group.toString()))];
+  // 1. Cleanup Expired Meetups
+  const expiredMeetups = await Meetup.find({ date: { $lt: now.toJSDate() } }).select('_id group name date').lean();
+  if (expiredMeetups.length > 0) {
+    const groupIdsToUnmute = [...new Set(expiredMeetups.map(e => e.group.toString()))];
     await User.updateMany(
-      { mutedUntilNextEvent: { $in: groupIdsToUnmute } },
-      { $pull: { mutedUntilNextEvent: { $in: groupIdsToUnmute } } }
+      { mutedUntilNextMeetup: { $in: groupIdsToUnmute } },
+      { $pull: { mutedUntilNextMeetup: { $in: groupIdsToUnmute } } }
     );
-    await Event.deleteMany({ _id: { $in: expiredEvents.map(e => e._id) } });
+    await Meetup.deleteMany({ _id: { $in: expiredMeetups.map(e => e._id) } });
   }
 
   // 2. Replenish Groups via JIT Logic
@@ -66,7 +66,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
             while (fillingWindow && safetyCounter < 20) {
                 safetyCounter++;
 
-                const lastEvent = await Event.findOne({ 
+                const lastMeetup = await Meetup.findOne({ 
                     group: group._id, 
                     isOverride: false,
                     time: dtEntry.time,
@@ -75,9 +75,9 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
                 .sort({ date: -1 })
                 .lean();
 
-                const anchorDate = lastEvent ? lastEvent.date : currentAnchor;
+                const anchorDate = lastMeetup ? lastMeetup.date : currentAnchor;
 
-                const nextMeetingDate = calculateNextEventDate(
+                const nextMeetingDate = calculateNextMeetupDate(
                     routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
                     dtEntry.time,
                     timezone,
@@ -116,7 +116,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
                     break;
                 }
 
-                const alreadyExists = await Event.findOne({ 
+                const alreadyExists = await Meetup.findOne({ 
                     group: group._id, 
                     date: nextMeetingDate,
                     time: dtEntry.time
@@ -125,7 +125,7 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
                 if (!alreadyExists) {
                     console.log(`[JIT] Creating: ${group.name} | Date: ${nextMeetingDT.toISODate()}`);
                     
-                    const newEvent = await Event.create({
+                    const newMeetup = await Meetup.create({
                         group: group._id,
                         name: group.name,
                         date: nextMeetingDate,
@@ -143,11 +143,11 @@ export const regenerateEvents = asyncHandler(async (req, res) => {
                         title: `Upcoming: ${group.name}`,
                         body: `${nextMeetingDT.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)} at ${dtEntry.time}`,
                         data: { 
-                            type: 'event_created', 
-                            eventId: newEvent._id.toString(),
+                            type: 'meetup_created', 
+                            meetupId: newMeetup._id.toString(),
                             groupId: group._id.toString()
                         },
-                        categoryIdentifier: 'EVENT_RSVP'
+                        categoryIdentifier: 'MEETUP_RSVP'
                     });
 
                     generatedCount++;

@@ -16,16 +16,16 @@ const notificationSchema = new mongoose.Schema({
         required: true,
         enum: [
             'group-invite', 'invite-accepted', 'invite-declined', 'group-added', 
-            'event-rsvp-in', 'event-rsvp-out', 'event-waitlist-join', 'waitlist-promotion'
+            'meetup-rsvp-in', 'meetup-rsvp-out', 'meetup-waitlist-join', 'waitlist-promotion'
         ],
     },
     group: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Group',
     },
-    event: {
+    meetup: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Event',
+        ref: 'Meetup',
     },
     status: {
         type: String,

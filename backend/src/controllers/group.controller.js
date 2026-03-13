@@ -1,11 +1,11 @@
 import asyncHandler from "express-async-handler";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
-import Event from "../models/event.model.js";
+import Meetup from "../models/meetup.model.js";
 import Notification from "../models/notification.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
-import { calculateNextEventDate } from "../utils/date.utils.js";
+import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { ENV } from "../config/env.js";
 import { syncStreamUser } from "../utils/stream.js";
 import { notifyUsers } from "../utils/push.notifications.js";
@@ -33,7 +33,7 @@ export const createGroup = asyncHandler(async (req, res) => {
     name, 
     schedule, 
     timezone, 
-    eventsToDisplay, 
+    meetupsToDisplay, 
     members, 
     defaultCapacity,
     defaultLocation,
@@ -58,7 +58,7 @@ export const createGroup = asyncHandler(async (req, res) => {
       name, 
       schedule: schedule || null,
       timezone, 
-      eventsToDisplay: eventsToDisplay || 1, 
+      meetupsToDisplay: meetupsToDisplay || 1, 
       owner: owner._id, 
       members: uniqueMemberIds,
       defaultCapacity: defaultCapacity || 0,
@@ -112,7 +112,7 @@ export const createGroup = asyncHandler(async (req, res) => {
                   let loopSafety = 0;
 
                   while (fillingWindow && loopSafety < 15) {
-                      const nextDate = calculateNextEventDate(
+                      const nextDate = calculateNextMeetupDate(
                           routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
                           dtEntry.time, 
                           timezone, 
@@ -131,7 +131,7 @@ export const createGroup = asyncHandler(async (req, res) => {
                       const triggerDT = nextMeetingDT.minus({ days: newGroup.generationLeadDays });
 
                       if (now >= triggerDT) {
-                          await Event.create({
+                          await Meetup.create({
                               group: newGroup._id, 
                               name: newGroup.name, 
                               date: nextDate, 
@@ -182,7 +182,7 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     
-    await Event.deleteMany({ 
+    await Meetup.deleteMany({ 
         group: group._id, 
         isOverride: false, 
         date: { $gte: today } 
@@ -205,7 +205,7 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                     let loopSafety = 0;
 
                     while (fillingWindow && loopSafety < 15) {
-                        const nextDate = calculateNextEventDate(
+                        const nextDate = calculateNextMeetupDate(
                             routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
                             dtEntry.time, 
                             group.timezone, 
@@ -224,7 +224,7 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                         const triggerDT = nextMeetingDT.minus({ days: group.generationLeadDays });
 
                         if (now >= triggerDT) {
-                            await Event.create({
+                            await Meetup.create({
                                 group: group._id, 
                                 name: group.name, 
                                 date: nextDate, 
@@ -258,7 +258,7 @@ export const updateGroup = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const { 
         name, 
-        eventsToDisplay, 
+        meetupsToDisplay, 
         defaultLocation,
         generationLeadDays,
         generationLeadTime,
@@ -278,7 +278,7 @@ export const updateGroup = asyncHandler(async (req, res) => {
     // --- NAME SYNC LOGIC ---
     if (name && name !== group.name) {
         group.name = name;
-        await Event.updateMany(
+        await Meetup.updateMany(
             { group: groupId }, 
             { $set: { name: name } }
         );
@@ -295,12 +295,12 @@ export const updateGroup = asyncHandler(async (req, res) => {
     }
 
 
-    if (eventsToDisplay) group.eventsToDisplay = parseInt(eventsToDisplay);
+    if (meetupsToDisplay) group.meetupsToDisplay = parseInt(meetupsToDisplay);
     if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
     if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
 
     const updatedGroup = await group.save();
-    res.status(200).json({ group: updatedGroup, message: "Group and events updated successfully." });
+    res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully." });
 });
 
 export const updateModerators = asyncHandler(async (req, res) => {
@@ -418,7 +418,7 @@ export const addMember = asyncHandler(async (req, res) => {
   try {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    await Event.updateMany(
+    await Meetup.updateMany(
         { group: group._id, date: { $gte: today } }, 
         { $addToSet: { members: userToAdd._id, undecided: userToAdd._id } }
     );
@@ -485,11 +485,11 @@ export const removeMember = asyncHandler(async (req, res) => {
 
     await group.updateOne({ $pull: { members: memberToRemove._id, moderators: memberToRemove._id } });
     await memberToRemove.updateOne({ $pull: { groups: group._id } });
-    await Event.updateMany({ group: group._id, date: { $gte: new Date() } }, { $pull: { members: memberToRemove._id, in: memberToRemove._id, out: memberToRemove._id, undecided: memberToRemove._id, waitlist: memberToRemove._id } });
+    await Meetup.updateMany({ group: group._id, date: { $gte: new Date() } }, { $pull: { members: memberToRemove._id, in: memberToRemove._id, out: memberToRemove._id, undecided: memberToRemove._id, waitlist: memberToRemove._id } });
     res.status(200).json({ message: "Member removed." });
 });
 
-export const createOneOffEvent = asyncHandler(async (req, res) => {
+export const createOneOffMeetup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
     const { date, time, timezone, capacity, name, location } = req.body;
@@ -499,13 +499,13 @@ export const createOneOffEvent = asyncHandler(async (req, res) => {
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
     if (!canManageGroup(requester._id, group)) return res.status(403).json({ error: "Permission denied." });
 
-    const eventDate = calculateNextEventDate(date, time, timezone, 'once');
-    if (eventDate < new Date()) return res.status(400).json({ error: "Cannot schedule in the past." });
+    const meetupDate = calculateNextMeetupDate(date, time, timezone, 'once');
+    if (meetupDate < new Date()) return res.status(400).json({ error: "Cannot schedule in the past." });
 
-    const newEvent = await Event.create({
+    const newMeetup = await Meetup.create({
         group: group._id,
         name: name || group.name,
-        date: eventDate,
+        date: meetupDate,
         time: time,
         timezone: timezone,
         location: location !== undefined ? location : group.defaultLocation,
@@ -519,13 +519,13 @@ export const createOneOffEvent = asyncHandler(async (req, res) => {
     const membersToNotify = await User.find({ _id: { $in: group.members } });
     if (membersToNotify.length > 0) {
         await notifyUsers(membersToNotify, {
-            title: "New Event Scheduled",
-            body: `A new event, "${newEvent.name}", has been scheduled for your group "${group.name}".`,
-            data: { eventId: newEvent._id.toString(), type: 'event_created', groupId: group._id.toString() }
+            title: "New Meetup Scheduled",
+            body: `A new meetup, "${newMeetup.name}", has been scheduled for your group "${group.name}".`,
+            data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: group._id.toString() }
         });
     }
 
-    res.status(201).json({ event: newEvent, message: "One-off event scheduled." });
+    res.status(201).json({ meetup: newMeetup, message: "One-off meetup scheduled." });
 });
 
 export const leaveGroup = asyncHandler(async (req, res) => {
@@ -538,7 +538,7 @@ export const leaveGroup = asyncHandler(async (req, res) => {
 
     await group.updateOne({ $pull: { members: user._id, moderators: user._id } });
     await User.updateOne({ _id: user._id }, { $pull: { groups: group._id } });
-    await Event.updateMany({ group: group._id, date: { $gte: new Date() } }, { $pull: { members: user._id, in: user._id, out: user._id, undecided: user._id, waitlist: user._id } });
+    await Meetup.updateMany({ group: group._id, date: { $gte: new Date() } }, { $pull: { members: user._id, in: user._id, out: user._id, undecided: user._id, waitlist: user._id } });
     res.status(200).json({ message: "You have left." });
 });
 
@@ -550,7 +550,7 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
     if (group.owner.toString() !== requester._id.toString()) return res.status(403).json({ error: "Only owner can delete." });
 
-    await Event.deleteMany({ group: groupId });
+    await Meetup.deleteMany({ group: groupId });
     await Notification.deleteMany({ group: groupId });
     await User.updateMany({ _id: { $in: group.members } }, { $pull: { groups: groupId } });
     await Group.findByIdAndDelete(groupId);

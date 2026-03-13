@@ -2,10 +2,10 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
-import { useCreateOneOffEvent } from '@/hooks/useCreateOneOffEvent';
+import { useCreateOneOffMeetup } from '@/hooks/useCreateOneOffMeetup';
 import TimePicker from '@/components/TimePicker';
 import { Picker } from '@react-native-picker/picker';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerMeetup } from '@react-native-community/datetimepicker';
 import { Alert } from 'react-native';
 
 const usaTimezones = [
@@ -18,9 +18,9 @@ const usaTimezones = [
     { label: "Hawaii (HST)", value: "Pacific/Honolulu" },
 ];
 
-const ScheduleEventScreen = () => {
+const ScheduleMeetupScreen = () => {
     const { "group-id": groupId } = useLocalSearchParams<{ "group-id": string }>();
-    const { mutate: createOneOffEvent, isPending } = useCreateOneOffEvent();
+    const { mutate: createOneOffMeetup, isPending } = useCreateOneOffMeetup();
     
     const [date, setDate] = useState(new Date());
     const [tempDate, setTempDate] = useState(new Date());
@@ -28,7 +28,7 @@ const ScheduleEventScreen = () => {
     const [meetTime, setMeetTime] = useState("05:00 PM");
     const [timezone, setTimezone] = useState("America/Denver");
 
-    const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    const onDateChange = (meetup: DateTimePickerMeetup, selectedDate?: Date) => {
         if (Platform.OS === 'android') {
             setShowDatePicker(false);
         }
@@ -42,12 +42,12 @@ const ScheduleEventScreen = () => {
         setShowDatePicker(false);
     };
     
-    const handleScheduleEvent = () => {
+    const handleScheduleMeetup = () => {
         if (!groupId) {
-            Alert.alert("Error", "Could not find the group ID to schedule this event for.");
+            Alert.alert("Error", "Could not find the group ID to schedule this meetup for.");
             return;
         };
-        createOneOffEvent({ groupId, date, time: meetTime, timezone });
+        createOneOffMeetup({ groupId, date, time: meetTime, timezone });
     };
 
     return (
@@ -76,11 +76,11 @@ const ScheduleEventScreen = () => {
                 </View>
                 
                 <TouchableOpacity
-                    onPress={handleScheduleEvent}
+                    onPress={handleScheduleMeetup}
                     disabled={isPending}
                     style={[styles.saveButton, isPending && { backgroundColor: '#4FD1C5' }]}
                 >
-                    <Text style={styles.saveButtonText}>{isPending ? "Scheduling..." : "Schedule Event"}</Text>
+                    <Text style={styles.saveButtonText}>{isPending ? "Scheduling..." : "Schedule Meetup"}</Text>
                 </TouchableOpacity>
             </ScrollView>
 
@@ -135,4 +135,4 @@ const styles = StyleSheet.create({
     doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
 });
 
-export default ScheduleEventScreen;
+export default ScheduleMeetupScreen;

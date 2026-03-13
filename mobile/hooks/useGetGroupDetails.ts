@@ -9,7 +9,7 @@ export const useGetGroupDetails = (groupId: string | null) => {
         queryKey: ['groupDetails', groupId],
         // The query function calls our new API utility function.
         queryFn: () => groupApi.getGroupDetails(api, groupId!),
-        // The 'enabled' option is crucial: it prevents the query from running if no groupId is provided.
+        // The 'enabled' option is crucial: it prmeetups the query from running if no groupId is provided.
         enabled: !!groupId, 
     });
 };

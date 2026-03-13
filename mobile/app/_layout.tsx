@@ -69,8 +69,8 @@ const AuthLayout = () => {
       'group-edit-schedule',
       'group-edit-jit', // Added for the new JIT edit wizard
       'group-settings',
-      'event-edit',
-      'schedule-event',
+      'meetup-edit',
+      'schedule-meetup',
       'add-members',
       'create-group',
       'group',
@@ -104,8 +104,8 @@ const AuthLayout = () => {
       <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
       <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
       <Stack.Screen name="group-settings" options={{ headerShown: false }} />
-      <Stack.Screen name="event-edit" options={{ headerShown: false }} />
-      <Stack.Screen name="schedule-event" options={{ headerShown: false }} />
+      <Stack.Screen name="meetup-edit" options={{ headerShown: false }} />
+      <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />
       <Stack.Screen name="add-members" options={{ headerShown: false }} />
       <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />      
       <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />

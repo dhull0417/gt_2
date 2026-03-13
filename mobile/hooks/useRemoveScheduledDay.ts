@@ -20,7 +20,7 @@ export const useRemoveScheduledDay = () => {
       Alert.alert("Success", "The recurring day has been removed from the schedule.");
       // Invalidate everything to ensure UI consistency
       queryClient.invalidateQueries({ queryKey: ['groups'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['meetups'] });
       queryClient.invalidateQueries({ queryKey: ['groupDetails', variables.groupId] });
     },
     onError: (error: any) => {

@@ -2,26 +2,24 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, meetupApi } from "../utils/api";
 import { Alert } from "react-native";
 
-interface RsvpVariables {
+interface DeleteMeetupVariables {
   meetupId: string;
-  status: 'in' | 'out';
 }
 
-export const useRsvp = () => {
+export const useDeleteMeetup = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: RsvpVariables) =>
-      meetupApi.handleRsvp(api, variables),
+    mutationFn: (variables: DeleteMeetupVariables) => 
+      meetupApi.deleteMeetup(api, variables.meetupId),
     
     onSuccess: (data) => {
-      Alert.alert("Success", "Your RSVP has been recorded.");
-      // Invalidate the main meetups query to refresh all data
+      // The success message will be customized in the component
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || "Failed to update RSVP.";
+      const errorMessage = error.response?.data?.error || "Failed to delete meetup.";
       Alert.alert("Error", errorMessage);
     },
   });

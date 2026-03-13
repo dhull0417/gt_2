@@ -18,7 +18,7 @@ export const useLeaveGroup = () => {
       Alert.alert("Success", data.message);
       // Refresh the main groups list, so the group disappears
       queryClient.invalidateQueries({ queryKey: ['groups'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['meetups'] });
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Could not leave group.";

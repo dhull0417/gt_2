@@ -24,7 +24,7 @@ export const useUpdateGroup = () => {
       Alert.alert("Success", "Group updated successfully!");
       await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['groups'] }),
-          queryClient.invalidateQueries({ queryKey: ['events'] }),
+          queryClient.invalidateQueries({ queryKey: ['meetups'] }),
           queryClient.invalidateQueries({ queryKey: ['groupDetails', variables.groupId] })
       ]);
       router.back();

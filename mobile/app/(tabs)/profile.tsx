@@ -36,7 +36,7 @@ const HomeScreen = () => {
     try {
       // You can customize this message and URL
       const result = await Share.share({
-        message: 'Join me on GroupThat! Organize groups and events easily. Download the app here: https://dhull0417.github.io/groupthat-testing/',
+        message: 'Join me on GroupThat! Organize groups and meetups easily. Download the app here: https://dhull0417.github.io/groupthat-testing/',
       });
 
       if (result.action === Share.sharedAction) {

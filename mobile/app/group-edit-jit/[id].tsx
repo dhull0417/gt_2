@@ -131,7 +131,7 @@ const App = () => {
                     <View style={{ flex: 1 }}>
                         <FadeInView delay={250}>
                             <Text style={styles.description}>
-                                Lead time for event creation and member notification:
+                                Lead time for meetup creation and member notification:
                             </Text>
                         </FadeInView>
 

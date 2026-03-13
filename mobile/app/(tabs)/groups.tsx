@@ -274,7 +274,7 @@ const GroupScreen = () => {
   const isCurrentlyMuted = useMemo(() => {
     if (!selectedGroup || !currentUser) return false;
     return currentUser.mutedGroups?.includes(selectedGroup._id) || 
-           currentUser.mutedUntilNextEvent?.includes(selectedGroup._id);
+           currentUser.mutedUntilNextMeetup?.includes(selectedGroup._id);
   }, [selectedGroup?._id, currentUser]);
 
   const performMuteUpdate = async (type: 'indefinite' | 'untilNext' | 'none') => {
@@ -381,7 +381,7 @@ const GroupScreen = () => {
     if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
 
     return groups.map((group) => {
-      const isMuted = currentUser?.mutedGroups?.includes(group._id) || currentUser?.mutedUntilNextEvent?.includes(group._id);
+      const isMuted = currentUser?.mutedGroups?.includes(group._id) || currentUser?.mutedUntilNextMeetup?.includes(group._id);
       return (
         <TouchableOpacity
           key={group._id}
@@ -511,7 +511,7 @@ const GroupScreen = () => {
                         searchResults={searchResults}
                         onInvite={handleInvite}
                         onLeaveSuccess={handleCloseGroupDetail}
-                        // Removed onAddOneOffEvent as it is now handled internally by GroupDetailsView
+                        // Removed onAddOneOffMeetup as it is now handled internally by GroupDetailsView
                       />
                     )}
                   </View>

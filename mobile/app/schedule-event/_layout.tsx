@@ -3,7 +3,7 @@ import React from 'react';
 import { TouchableOpacity } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-const ScheduleEventLayout = () => {
+const ScheduleMeetupLayout = () => {
     const router = useRouter();
 
     return (
@@ -11,7 +11,7 @@ const ScheduleEventLayout = () => {
             <Stack.Screen 
                 name="[group-id]" 
                 options={{ 
-                    headerTitle: 'Schedule One-Off Event',
+                    headerTitle: 'Schedule One-Off Meetup',
                     presentation: 'modal',
                     // --- ADDED: Custom header button ---
                     headerLeft: () => (
@@ -25,4 +25,4 @@ const ScheduleEventLayout = () => {
     );
 };
 
-export default ScheduleEventLayout;
+export default ScheduleMeetupLayout;

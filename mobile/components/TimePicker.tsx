@@ -140,7 +140,7 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hid
         />
 
         {/* Visual Overlay for the selection area */}
-        <View style={styles.highlightView} pointerEvents="none" />
+        <View style={styles.highlightView} pointerMeetups="none" />
       </View>
     </View>
   );

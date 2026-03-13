@@ -10,8 +10,8 @@ import { Feather } from '@expo/vector-icons';
 
 // Extended type to handle new notification types until api.ts is updated
 type ExtendedNotification = Omit<Notification, 'type'> & {
-    type: 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'event-rsvp-in' | 'event-rsvp-out' | 'event-waitlist-join' | 'waitlist-promotion';
-    event?: {
+    type: 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion';
+    meetup?: {
         _id: string;
         name: string;
     };
@@ -42,9 +42,9 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
             case 'invite-accepted': return { name: 'check-circle', color: '#10B981' };
             case 'invite-declined': return { name: 'x-circle', color: '#EF4444' };
             case 'group-added': return { name: 'users', color: '#6366F1' };
-            case 'event-rsvp-in': return { name: 'log-in', color: '#4FD1C5' };
-            case 'event-rsvp-out': return { name: 'log-out', color: '#FF7A6E' };
-            case 'event-waitlist-join': return { name: 'clock', color: '#F59E0B' };
+            case 'meetup-rsvp-in': return { name: 'log-in', color: '#4FD1C5' };
+            case 'meetup-rsvp-out': return { name: 'log-out', color: '#FF7A6E' };
+            case 'meetup-waitlist-join': return { name: 'clock', color: '#F59E0B' };
             case 'waitlist-promotion': return { name: 'arrow-up-circle', color: '#A855F7' };
             default: return { name: 'bell', color: '#6B7280' };
         }
@@ -53,7 +53,7 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
     const getMessage = () => {
         const senderName = `${notification.sender.firstName} ${notification.sender.lastName}`;
         const groupName = notification.group?.name;
-        const eventName = notification.event?.name;
+        const meetupName = notification.meetup?.name;
 
         switch (notification.type) {
             case 'group-invite':
@@ -64,17 +64,17 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> declined your invitation to <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'group-added':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> added you to <Text style={styles.bold}>{groupName}</Text>.</Text>;
-            case 'event-rsvp-in':
-                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> is going to <Text style={styles.bold}>{eventName || 'an event'}</Text>.</Text>;
-            case 'event-rsvp-out':
-                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> is out for <Text style={styles.bold}>{eventName || 'an event'}</Text>.</Text>;
-            case 'event-waitlist-join':
-                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> joined the waitlist for <Text style={styles.bold}>{eventName || 'an event'}</Text>.</Text>;
+            case 'meetup-rsvp-in':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> is going to <Text style={styles.bold}>{meetupName || 'an meetup'}</Text>.</Text>;
+            case 'meetup-rsvp-out':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> is out for <Text style={styles.bold}>{meetupName || 'an meetup'}</Text>.</Text>;
+            case 'meetup-waitlist-join':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> joined the waitlist for <Text style={styles.bold}>{meetupName || 'an meetup'}</Text>.</Text>;
             case 'waitlist-promotion':
                 if (notification.recipient === currentUser._id) {
-                    return <Text style={styles.messageText}>You're in! A spot opened up for <Text style={styles.bold}>{eventName || 'an event'}</Text>.</Text>;
+                    return <Text style={styles.messageText}>You're in! A spot opened up for <Text style={styles.bold}>{meetupName || 'an meetup'}</Text>.</Text>;
                 }
-                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> was promoted to "in" for <Text style={styles.bold}>{eventName || 'an event'}</Text>.</Text>;
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> was promoted to "in" for <Text style={styles.bold}>{meetupName || 'an meetup'}</Text>.</Text>;
             default:
                 return <Text style={styles.messageText}>You have a new notification.</Text>;
         }

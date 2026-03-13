@@ -15,7 +15,7 @@ import {
     KeyboardAvoidingView,
     ViewStyle,
     StyleProp,
-    LayoutChangeEvent
+    LayoutChangeMeetup
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -169,7 +169,7 @@ const EditScheduleScreen = () => {
             await api.patch(`/api/groups/${id}/schedule`, payload);
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
-                queryClient.invalidateQueries({ queryKey: ['events'] }),
+                queryClient.invalidateQueries({ queryKey: ['meetups'] }),
                 queryClient.invalidateQueries({ queryKey: ['groups'] })
             ]);
             Alert.alert("Success", "Group schedule updated.");

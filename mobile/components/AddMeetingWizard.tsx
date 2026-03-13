@@ -7,7 +7,7 @@ import {
     StyleSheet, 
     Modal, 
     ActivityIndicator, 
-    LayoutChangeEvent, 
+    LayoutChangeMeetup, 
     Alert,
     Platform
 } from 'react-native';
@@ -46,7 +46,7 @@ const usaTimezones = [
 
 /**
  * AddMeetingWizard
- * A streamlined 4-step wizard for creating one-off events.
+ * A streamlined 4-step wizard for creating one-off meetups.
  */
 const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardProps) => {
     const api = useApiClient();
@@ -57,11 +57,11 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
     const [isSaving, setIsSaving] = useState(false);
 
     // --- Data States ---
-    const [eventDate, setEventDate] = useState<string>(DateTime.now().toISODate()!);
-    const [eventTime, setEventTime] = useState("05:00 PM");
-    const [eventTZ, setEventTZ] = useState(groupDetails.timezone || "America/Denver");
-    const [eventCapacity, setEventCapacity] = useState(groupDetails.defaultCapacity || 0);
-    const [eventLocation, setEventLocation] = useState(groupDetails.defaultLocation || "");
+    const [meetupDate, setMeetupDate] = useState<string>(DateTime.now().toISODate()!);
+    const [meetupTime, setMeetupTime] = useState("05:00 PM");
+    const [meetupTZ, setMeetupTZ] = useState(groupDetails.timezone || "America/Denver");
+    const [meetupCapacity, setMeetupCapacity] = useState(groupDetails.defaultCapacity || 0);
+    const [meetupLocation, setMeetupLocation] = useState(groupDetails.defaultLocation || "");
 
     // --- Calendar Logic ---
     const [calculatedDayWidth, setCalculatedDayWidth] = useState(0);
@@ -78,34 +78,34 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
         return days;
     }, [calendarMonth]);
 
-    const onCalendarContainerLayout = (event: LayoutChangeEvent) => {
-        const { width: measuredWidth } = event.nativeEvent.layout;
+    const onCalendarContainerLayout = (meetup: LayoutChangeMeetup) => {
+        const { width: measuredWidth } = meetup.nativeMeetup.layout;
         /**
          * FIX: Divider logic to ensure 7 items fit perfectly.
-         * The safety margin -0.5 prevents floating point rounding from forcing a wrap.
+         * The safety margin -0.5 prmeetups floating point rounding from forcing a wrap.
          */
         setCalculatedDayWidth((measuredWidth / 7) - 0.5);
     };
 
-    const handleCreateEvent = async () => {
+    const handleCreateMeetup = async () => {
         setIsSaving(true);
         try {
             /**
-             * FIX: Passing eventDate as the raw string (YYYY-MM-DD) instead of new Date().
-             * This prevents local environment timezone shifting that causes the "one day early" bug.
+             * FIX: Passing meetupDate as the raw string (YYYY-MM-DD) instead of new Date().
+             * This prmeetups local environment timezone shifting that causes the "one day early" bug.
              */
-            await groupApi.createOneOffEvent(api, {
+            await groupApi.createOneOffMeetup(api, {
                 groupId: groupDetails._id,
-                date: eventDate as any, 
-                time: eventTime,
-                timezone: eventTZ,
-                capacity: eventCapacity,
-                location: eventLocation,
+                date: meetupDate as any, 
+                time: meetupTime,
+                timezone: meetupTZ,
+                capacity: meetupCapacity,
+                location: meetupLocation,
                 name: groupDetails.name 
             });
             Alert.alert("Success", "Meeting added!");
             resetAndClose();
-            queryClient.invalidateQueries({ queryKey: ['events'] });
+            queryClient.invalidateQueries({ queryKey: ['meetups'] });
         } catch (error: any) {
             Alert.alert("Error", error.response?.data?.error || "Failed to add meeting.");
         } finally {
@@ -115,8 +115,8 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
 
     const resetAndClose = () => {
         setStep(1);
-        setEventDate(DateTime.now().toISODate()!);
-        setEventTime("05:00 PM");
+        setMeetupDate(DateTime.now().toISODate()!);
+        setMeetupTime("05:00 PM");
         onClose();
     };
 
@@ -136,7 +136,7 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
 
                 {step === 1 && (
                     <View style={styles.wizardStep}>
-                        <Text style={styles.wizardTitle}>Select Event Date</Text>
+                        <Text style={styles.wizardTitle}>Select Meetup Date</Text>
                         <View style={styles.calendarContainer} onLayout={onCalendarContainerLayout}>
                             <View style={styles.calendarNav}>
                                 <TouchableOpacity onPress={()=>setCalendarMonth(prev=>prev.minus({months:1}))}><Feather name="chevron-left" size={24} color="#4A90E2"/></TouchableOpacity>
@@ -153,11 +153,11 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
                             <View style={styles.calendarGridContainer}>
                                 {calendarGrid.map((day, idx)=>{
                                     if(!day) return <View key={idx} style={[styles.calendarDayBox, { width: calculatedDayWidth }]}/>;
-                                    const isSel = day.toISODate() === eventDate;
+                                    const isSel = day.toISODate() === meetupDate;
                                     return (
                                         <TouchableOpacity 
                                             key={day.toISODate()} 
-                                            onPress={()=>setEventDate(day.toISODate()!)} 
+                                            onPress={()=>setMeetupDate(day.toISODate()!)} 
                                             style={[styles.calendarDayBox, { width: calculatedDayWidth }, isSel && styles.calendarDayBoxSelected]}
                                         >
                                             <Text style={[styles.calendarDayText, isSel && styles.calendarDayTextSelected]}>{day.day}</Text>
@@ -173,12 +173,12 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
                 {step === 2 && (
                     <View style={styles.wizardStep}>
                         <Text style={styles.wizardTitle}>Select Time</Text>
-                        <TimePicker onTimeChange={setEventTime} initialValue={eventTime} />
+                        <TimePicker onTimeChange={setMeetupTime} initialValue={meetupTime} />
                         <Text style={styles.pickerLabel}>Timezone</Text>
                         <View style={styles.pickerWrapper}>
                             <Picker 
-                                selectedValue={eventTZ} 
-                                onValueChange={setEventTZ} 
+                                selectedValue={meetupTZ} 
+                                onValueChange={setMeetupTZ} 
                                 itemStyle={{ height: 120, color: '#111827' }}
                                 dropdownIconColor="#111827"
                             >
@@ -203,9 +203,9 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
                     <View style={styles.wizardStep}>
                         <Text style={styles.wizardTitle}>Max Attendees?</Text>
                         <View style={styles.stepperContainer}>
-                            <TouchableOpacity onPress={() => setEventCapacity(Math.max(0, eventCapacity - 1))} style={styles.stepperBtn}><Feather name="minus" size={24} color="#FF7A6E" /></TouchableOpacity>
-                            <View style={{ alignItems: 'center', width: 120 }}><Text style={styles.stepperVal}>{eventCapacity === 0 ? "∞" : eventCapacity}</Text><Text style={styles.stepperLabel}>{eventCapacity === 0 ? "Unlimited" : "Spots"}</Text></View>
-                            <TouchableOpacity onPress={() => setEventCapacity(eventCapacity + 1)} style={styles.stepperBtn}><Feather name="plus" size={24} color="#4FD1C5" /></TouchableOpacity>
+                            <TouchableOpacity onPress={() => setMeetupCapacity(Math.max(0, meetupCapacity - 1))} style={styles.stepperBtn}><Feather name="minus" size={24} color="#FF7A6E" /></TouchableOpacity>
+                            <View style={{ alignItems: 'center', width: 120 }}><Text style={styles.stepperVal}>{meetupCapacity === 0 ? "∞" : meetupCapacity}</Text><Text style={styles.stepperLabel}>{meetupCapacity === 0 ? "Unlimited" : "Spots"}</Text></View>
+                            <TouchableOpacity onPress={() => setMeetupCapacity(meetupCapacity + 1)} style={styles.stepperBtn}><Feather name="plus" size={24} color="#4FD1C5" /></TouchableOpacity>
                         </View>
                         <View style={styles.rowBtn}>
                             <TouchableOpacity onPress={() => setStep(2)} style={styles.backBtn}><Text style={styles.backBtnText}>Back</Text></TouchableOpacity>
@@ -219,14 +219,14 @@ const AddMeetingWizard = ({ visible, onClose, groupDetails }: AddMeetingWizardPr
                         <Text style={styles.wizardTitle}>Location Info</Text>
                         <TextInput 
                             style={styles.input} 
-                            value={eventLocation} 
-                            onChangeText={setEventLocation} 
+                            value={meetupLocation} 
+                            onChangeText={setMeetupLocation} 
                             placeholder="e.g. Starbucks or Zoom link..." 
                             autoFocus 
                         />
                         <View style={styles.rowBtn}>
                             <TouchableOpacity onPress={() => setStep(3)} style={styles.backBtn}><Text style={styles.backBtnText}>Back</Text></TouchableOpacity>
-                            <TouchableOpacity onPress={handleCreateEvent} disabled={isSaving} style={styles.finishBtn}>
+                            <TouchableOpacity onPress={handleCreateMeetup} disabled={isSaving} style={styles.finishBtn}>
                                 {isSaving ? <ActivityIndicator color="white" /> : <Text style={styles.finishBtnText}>Create Meeting</Text>}
                             </TouchableOpacity>
                         </View>

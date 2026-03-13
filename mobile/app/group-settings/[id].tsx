@@ -162,7 +162,7 @@ const GroupSettings = () => {
         await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
-            queryClient.invalidateQueries({ queryKey: ['events'] })
+            queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
         setIsEditingName(false);
     } catch (error: any) {
@@ -186,10 +186,10 @@ const GroupSettings = () => {
         await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
-            queryClient.invalidateQueries({ queryKey: ['events'] })
+            queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
         setIsEditingCapacity(false);
-        Alert.alert("Success", "Attendee limit and associated events updated.");
+        Alert.alert("Success", "Attendee limit and associated meetups updated.");
     } catch (error: any) {
         Alert.alert("Error", error.response?.data?.error || "Failed to update attendee limit.");
     } finally {
@@ -211,10 +211,10 @@ const GroupSettings = () => {
         await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
-            queryClient.invalidateQueries({ queryKey: ['events'] })
+            queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
         setIsEditingLocation(false);
-        Alert.alert("Success", "Default location and future events updated.");
+        Alert.alert("Success", "Default location and future meetups updated.");
     } catch (error: any) {
         Alert.alert("Error", error.response?.data?.error || "Failed to update location.");
     } finally {
@@ -271,7 +271,7 @@ const GroupSettings = () => {
         await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
-            queryClient.invalidateQueries({ queryKey: ['events'] })
+            queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
     } catch (error: any) {
         Alert.alert("Error", error.response?.data?.error || "Failed to remove member.");
@@ -444,7 +444,7 @@ const GroupSettings = () => {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
             <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Default Location</Text>
-                <Text style={styles.modalSubtitle}>Updates location for all associated events.</Text>
+                <Text style={styles.modalSubtitle}>Updates location for all associated meetups.</Text>
                 <TextInput style={styles.modalInput} value={tempLocation} onChangeText={setTempLocation} placeholder="e.g. Starbucks or Zoom link..." autoFocus selectTextOnFocus />
                 <View style={styles.modalButtons}>
                     <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingLocation(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
@@ -480,7 +480,7 @@ const GroupSettings = () => {
             contentContainerStyle={{ padding: 20 }}
             ListHeaderComponent={() => (
               <Text style={styles.modalSubtitleLeft}>
-                Only the group owner can assign moderators. Moderators can edit group settings, schedules, and manage events.
+                Only the group owner can assign moderators. Moderators can edit group settings, schedules, and manage meetups.
               </Text>
             )}
             renderItem={({ item }) => {

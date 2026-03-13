@@ -1,7 +1,7 @@
 import { DateTime } from "luxon";
 
 /**
- * Calculates the next event date based on a schedule rule.
+ * Calculates the next meetup date based on a schedule rule.
  * * @param {number|object|string} dayOrRule - Day index (0-6), date (1-31), or ISO string
  * @param {string} time - Time string (e.g., "05:00 PM")
  * @param {string} timezone - Target timezone (e.g., "America/Denver")
@@ -9,7 +9,7 @@ import { DateTime } from "luxon";
  * @param {Date} [fromDate=null] - Anchor date to calculate from
  * @param {object} [ordinalConfig=null] - Configuration for ordinal rules { occurrence, day }
  */
-export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fromDate = null, ordinalConfig = null) => {
+export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fromDate = null, ordinalConfig = null) => {
   // 1. Parse common time components
   const [timeStr, period] = time.split(' ');
   let [hours, minutes] = timeStr.split(':').map(Number);
@@ -17,21 +17,21 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
   if (period && period.toUpperCase() === 'PM' && hours !== 12) hours += 12;
   if (period && period.toUpperCase() === 'AM' && hours === 12) hours = 0;
 
-  // --- A. ONE-OFF EVENTS ---
+  // --- A. ONE-OFF MeetupS ---
   if (frequency === 'once') {
     return DateTime.fromISO(dayOrRule, { zone: timezone })
       .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 })
       .toJSDate();
   }
 
-  // --- B. RECURRING EVENTS ---
-  // Determine start point. If chaining, start 1 second after the last event to move the cursor forward.
+  // --- B. RECURRING MEETUPS ---
+  // Determine start point. If chaining, start 1 second after the last meetup to move the cursor forward.
   const now = fromDate 
     ? DateTime.fromJSDate(fromDate).setZone(timezone).plus({ seconds: 1 })
     : DateTime.now().setZone(timezone);
   
   // Base candidate for the calculation
-  let eventDate = now.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+  let meetupDate = now.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
   // 1. DAILY / WEEKLY / BI-WEEKLY (Merged logic to handle day-specific times)
   // Even for 'daily', we check if a specific 'day' index (0-6) was provided to prevent clustering.
@@ -40,26 +40,26 @@ export const calculateNextEventDate = (dayOrRule, time, timezone, frequency, fro
     const luxonTarget = targetDay === 0 ? 7 : targetDay;
 
     // Search forward from 'now' for the next instance of this specific weekday
-    while (eventDate.weekday !== luxonTarget) {
-      eventDate = eventDate.plus({ days: 1 });
+    while (meetupDate.weekday !== luxonTarget) {
+      meetupDate = meetupDate.plus({ days: 1 });
     }
 
     // If the found weekday/time is in the past (relative to anchor), move to next occurrence
-    if (eventDate <= now) {
+    if (meetupDate <= now) {
       const skipAmount = frequency === 'biweekly' ? { weeks: 2 } : { weeks: 1 };
-      eventDate = eventDate.plus(skipAmount);
+      meetupDate = meetupDate.plus(skipAmount);
     }
-    return eventDate.toJSDate();
+    return meetupDate.toJSDate();
   }
 
   // 2. MONTHLY
   if (typeof dayOrRule === 'number' && frequency === 'monthly') {
     const targetDate = dayOrRule; 
-    eventDate = eventDate.set({ day: targetDate });
-    if (eventDate <= now || eventDate.invalid) {
-      eventDate = eventDate.plus({ months: 1 }).set({ day: targetDate });
+    meetupDate = meetupDate.set({ day: targetDate });
+    if (meetupDate <= now || meetupDate.invalid) {
+      meetupDate = meetupDate.plus({ months: 1 }).set({ day: targetDate });
     }
-    return eventDate.toJSDate();
+    return meetupDate.toJSDate();
   }
 
   // 3. ORDINAL (e.g. 2nd Wednesday)

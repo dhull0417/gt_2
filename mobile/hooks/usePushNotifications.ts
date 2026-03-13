@@ -71,12 +71,12 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
       // Logic for the RSVP Buttons (handled while app is backgrounded)
       if (actionIdentifier === 'GOING' || actionIdentifier === 'OUT') {
         const status = actionIdentifier === 'GOING' ? 'in' : 'out';
-        const eventId = data.eventId;
+        const meetupId = data.meetupId;
 
-        if (eventId) {
+        if (meetupId) {
           try {
             // Perform the RSVP silently via API
-            await api.post(`/api/events/${eventId}/rsvp`, { status });
+            await api.post(`/api/meetups/${meetupId}/rsvp`, { status });
           } catch (err: any) {
             // If the error is a 401, it's likely a stale token. We can't refresh
             // it in the background, so we fail silently. Log other errors.
@@ -89,15 +89,15 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
       }
 
       // Logic for standard notification taps
-      const { type, eventId, groupId, channelId } = data || {};
+      const { type, meetupId, groupId, channelId } = data || {};
 
-      const eventTypes = ['event_created', 'event_updated', 'event_cancellation', 'waitlist_promotion'];
+      const meetupTypes = ['meetup_created', 'meetup_updated', 'meetup_cancellation', 'waitlist_promotion'];
       const groupTypes = ['group_added', 'group_updated'];
 
-      if (eventTypes.includes(type) && eventId) {
+      if (meetupTypes.includes(type) && meetupId) {
         router.push({
           pathname: '/(tabs)',
-          params: { openEventId: String(eventId) }
+          params: { openMeetupId: String(meetupId) }
         });
       } else if (groupTypes.includes(type) && groupId) {
         router.push({

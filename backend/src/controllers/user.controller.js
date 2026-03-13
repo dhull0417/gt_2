@@ -23,13 +23,13 @@ export const toggleGroupMute = asyncHandler(async (req, res) => {
 
   // 1. Clean start: Remove from both lists first to ensure no duplicates or cross-over
   user.mutedGroups = user.mutedGroups.filter(id => id.toString() !== groupId);
-  user.mutedUntilNextEvent = user.mutedUntilNextEvent.filter(id => id.toString() !== groupId);
+  user.mutedUntilNextMeetup = user.mutedUntilNextMeetup.filter(id => id.toString() !== groupId);
 
   // 2. Add to the requested list
   if (muteType === 'indefinite') {
     user.mutedGroups.push(groupId);
   } else if (muteType === 'untilNext') {
-    user.mutedUntilNextEvent.push(groupId);
+    user.mutedUntilNextMeetup.push(groupId);
   }
 
   await user.save();

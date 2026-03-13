@@ -20,8 +20,8 @@ export const useDeleteGroup = () => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       
       // --- THIS IS THE FIX ---
-      // Also invalidate the 'events' query to refresh the events list
-      queryClient.invalidateQueries({ queryKey: ['events'] });
+      // Also invalidate the 'meetups' query to refresh the meetups list
+      queryClient.invalidateQueries({ queryKey: ['meetups'] });
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Failed to delete group.";

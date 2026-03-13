@@ -2,7 +2,7 @@ import asyncHandler from "express-async-handler";
 import Notification from "../models/notification.model.js";
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
-import Event from "../models/event.model.js";
+import Meetup from "../models/meetup.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { ENV } from "../config/env.js"; // <-- ADD THIS LINE
@@ -16,11 +16,11 @@ export const getNotifications = asyncHandler(async (req, res) => {
     const notifications = await Notification.find({ recipient: user._id })
         .populate('sender', 'firstName lastName profilePicture')
         .populate('group', 'name')
-        .populate('event', 'name')
+        .populate('meetup', 'name')
         .sort({ createdAt: -1 });
 
     // Filter out notifications with broken references to prevent client-side crashes.
-    // This can happen if a group, event, or sender is deleted but the notification remains.
+    // This can happen if a group, meetup, or sender is deleted but the notification remains.
     const validNotifications = notifications.filter(notification => {
         // All notifications must have a sender.
         if (!notification.sender) {
@@ -33,9 +33,9 @@ export const getNotifications = asyncHandler(async (req, res) => {
             return false;
         }
 
-        // Future-proofing: If event-related notifications are added, they must have a valid event.
-        // This checks for a null event on any type starting with 'event-'.
-        if (notification.event === null && notification.type.startsWith('event-')) {
+        // Future-proofing: If meetup-related notifications are added, they must have a valid meetup.
+        // This checks for a null meetup on any type starting with 'meetup-'.
+        if (notification.meetup === null && notification.type.startsWith('meetup-')) {
             return false;
         }
 
@@ -68,8 +68,8 @@ export const acceptInvite = asyncHandler(async (req, res) => {
     await group.updateOne({ $addToSet: { members: user._id } });
     await user.updateOne({ $addToSet: { groups: group._id } });
 
-    // Add user to all upcoming events for this group
-    await Event.updateMany(
+    // Add user to all upcoming meetups for this group
+    await Meetup.updateMany(
         { group: group._id, date: { $gte: new Date() } },
         { $addToSet: { members: user._id, undecided: user._id } }
     );
