@@ -26,7 +26,7 @@ import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
 import { ChatProvider, useChatClient } from '@/components/ChatProvider';
 import type { Channel as StreamChannel } from 'stream-chat';
-import { Chat, Channel, MessageList, OverlayProvider } from 'stream-chat-expo';
+import { Chat, Channel, MessageList, MessageSimple, OverlayProvider, type MessageSimpleProps } from 'stream-chat-expo';
 import CustomMessage from '@/components/CustomMessage';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { GroupDetailsView } from '@/components/GroupDetailsView';
@@ -92,6 +92,27 @@ const styles = StyleSheet.create({
   }
 });
 
+/**
+ * This is a "smart" wrapper component created directly within this file
+ * to solve both the TypeScript error and the "disappearing messages" issue
+ * without modifying the original CustomMessage.tsx file.
+ *
+ * It inspects each message:
+ * 1. If it's a standard text message, it uses your CustomMessage component.
+ * 2. For everything else (system messages, deleted messages, attachments), it
+ *    falls back to the library's default MessageSimple component, ensuring
+ *    nothing disappears from the chat feed.
+ */
+const SmartCustomMessage = (props: MessageSimpleProps) => {
+  const { message } = props;
+  const isSimpleTextMessage = message?.type === 'regular' && message.text && !message.deleted_at;
+
+  if (isSimpleTextMessage) {
+    return <CustomMessage {...props} />;
+  }
+  return <MessageSimple {...props} />;
+};
+
 const GroupChat = ({
   group,
   keyboardVerticalOffset,
@@ -156,9 +177,12 @@ const GroupChat = ({
   return (
     <OverlayProvider>
       <Chat client={client}>
-        <Channel channel={channel} keyboardVerticalOffset={keyboardVerticalOffset}>
+        <Channel
+          channel={channel}
+          keyboardVerticalOffset={keyboardVerticalOffset}
+          MessageSimple={SmartCustomMessage}>
           <View style={styles.chatContainer}>
-            <MessageList Message={CustomMessage} />
+            <MessageList />
             {/* The pb-6 was adding extra space when the keyboard was open. */}
             {/* The Channel component handles safe areas, so this manual padding was redundant and caused the gap. */}
             {/* The p-3 class provides sufficient padding for the input area. */}

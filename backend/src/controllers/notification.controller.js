@@ -19,7 +19,30 @@ export const getNotifications = asyncHandler(async (req, res) => {
         .populate('event', 'name')
         .sort({ createdAt: -1 });
 
-    res.status(200).json(notifications);
+    // Filter out notifications with broken references to prevent client-side crashes.
+    // This can happen if a group, event, or sender is deleted but the notification remains.
+    const validNotifications = notifications.filter(notification => {
+        // All notifications must have a sender.
+        if (!notification.sender) {
+            return false;
+        }
+
+        // Notifications related to group invites must have a valid group.
+        const groupRequiredTypes = ['group-invite', 'invite-accepted', 'invite-declined'];
+        if (groupRequiredTypes.includes(notification.type) && !notification.group) {
+            return false;
+        }
+
+        // Future-proofing: If event-related notifications are added, they must have a valid event.
+        // This checks for a null event on any type starting with 'event-'.
+        if (notification.event === null && notification.type.startsWith('event-')) {
+            return false;
+        }
+
+        return true;
+    });
+
+    res.status(200).json(validNotifications);
 });
 
 // Accept a group invitation
