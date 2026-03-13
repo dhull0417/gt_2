@@ -4,7 +4,7 @@ import {
     handleRsvp, 
     updateMeetup, 
     deleteMeetup, 
-    cancelmeetup 
+    cancelMeetup 
 } from "../controllers/meetup.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
