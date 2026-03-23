@@ -92,7 +92,7 @@ export interface Meetup {
   time: string;
   timezone: string;
   location: string;
-  status: 'scheduled' | 'cancelled'; 
+  status: 'scheduled' | 'cancelled' | 'expired'; 
   capacity: number; 
   isOverride: boolean;
   members: User[];

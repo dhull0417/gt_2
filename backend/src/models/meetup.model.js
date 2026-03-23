@@ -7,7 +7,7 @@ const meetupSchema = new mongoose.Schema({
   time: { type: String, required: true },
   timezone: { type: String, required: true },
   location: { type: String, trim: true, default: "" },
-  status: { type: String, enum: ['scheduled', 'cancelled'], default: 'scheduled' },
+  status: { type: String, enum: ['scheduled', 'cancelled', 'expired'], default: 'scheduled' },
   isOverride: { type: Boolean, default: false },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   undecided: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],

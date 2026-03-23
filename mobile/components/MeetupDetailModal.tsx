@@ -92,6 +92,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const canManage = isOwner || isMod;
     
     const isCancelled = meetup.status === 'cancelled';
+    const isExpired = meetup.status === 'expired';
     const isFull = meetup.capacity > 0 && (meetup.in?.length || 0) >= meetup.capacity;
     const isWaitlisted = meetup.waitlist?.includes(currentUser._id) || false;
     const isIn = meetup.in?.includes(currentUser._id) || false;
@@ -235,7 +236,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 <View style={styles.headerTitleContainer}>
                     <Text style={styles.headerTitle}>Meetup Details</Text>
                 </View>
-                {canManage && !isCancelled ? (
+                {canManage && !isCancelled && !isExpired ? (
                     <TouchableOpacity 
                         onPress={() => {
                             setNewDate(new Date(meetup.date));
@@ -260,9 +261,15 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             <Text style={styles.cancelBannerText}>Meetup Cancelled</Text>
                         </View>
                     )}
+                    {isExpired && !isCancelled && (
+                        <View style={[styles.cancelBanner, { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' }]}>
+                            <Feather name="clock" size={18} color="#6B7280" />
+                            <Text style={[styles.cancelBannerText, { color: '#6B7280' }]}>This Meetup Has Ended</Text>
+                        </View>
+                    )}
                     
                     <View style={styles.titleRow}>
-                        <Text style={[styles.meetupTitle, isCancelled && styles.strikeThrough]}>
+                        <Text style={[styles.meetupTitle, (isCancelled || isExpired) && styles.strikeThrough]}>
                             {meetup.name}
                         </Text>
                         {/* New Chat Button Link */}
@@ -279,7 +286,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <View style={styles.detailsCard}>
                         <View style={styles.detailItem}>
                             <Text style={styles.detailLabel}>Date & Time</Text>
-                            <Text style={styles.detailValue}>
+                            <Text style={[styles.detailValue, isExpired && { color: '#6B7280' }]}>
                                 {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} • {meetup.time}
                             </Text>
                         </View>
@@ -289,12 +296,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         <View style={styles.detailRow}>
                             <View style={[styles.detailItem, { flex: 1, marginRight: 16 }]}>
                                 <Text style={styles.detailLabel}>Location</Text>
-                                <Text style={styles.detailValue} numberOfLines={1}>{meetup.location || "No location set"}</Text>
+                                <Text style={[styles.detailValue, isExpired && { color: '#6B7280' }]} numberOfLines={1}>{meetup.location || "No location set"}</Text>
                             </View>
                             
                             <View style={styles.detailItem}>
                                 <Text style={styles.detailLabel}>Capacity</Text>
-                                <Text style={[styles.detailValue, isFull && !isCancelled && { color: '#C2410C' }]}>
+                                <Text style={[styles.detailValue, isFull && !isCancelled && !isExpired && { color: '#C2410C' }, isExpired && { color: '#6B7280' }]}>
                                     {meetup.capacity === 0 ? "Unlimited" : `${meetup.in?.length || 0}/${meetup.capacity}`}
                                 </Text>
                             </View>
@@ -303,7 +310,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 </View>
 
                 {/* RSVP Actions */}
-                {!isCancelled && (
+                {!isCancelled && !isExpired && (
                     <View style={styles.rsvpRow}>
                         <TouchableOpacity 
                             onPress={() => handleRsvpAction('in')}
@@ -367,7 +374,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </View>
                 </View>
 
-                {canManage && (
+                {canManage && !isExpired && (
                     <View style={styles.ownerSection}>
                         <TouchableOpacity onPress={handleCancelMeetup} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4A90E2', borderColor: '#4A90E2' }]}>
                             <Text style={[styles.cancelToggleText, isCancelled && { color: 'white' }]}>

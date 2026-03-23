@@ -32,12 +32,14 @@ export const getMeetups = asyncHandler(async (req, res) => {
   if (!currentUser) {
     return res.status(404).json({ error: "User not found." });
   }
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Fetch meetups from the last 7 days and all upcoming ones.
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  sevenDaysAgo.setHours(0, 0, 0, 0);
 
-  const upcomingMeetups = await Meetup.find({
+  const meetups = await Meetup.find({
     members: currentUser._id,
-    date: { $gte: today },
+    date: { $gte: sevenDaysAgo },
   })
   .populate({
       path: "members",
@@ -49,7 +51,7 @@ export const getMeetups = asyncHandler(async (req, res) => {
   })
   .sort({ date: "asc" });
 
-  res.status(200).json(upcomingMeetups);
+  res.status(200).json(meetups);
 });
 
 /**
@@ -153,7 +155,10 @@ export const handleRsvp = asyncHandler(async (req, res) => {
 
   const meetup = await Meetup.findById(meetupId).populate('group');
   if (!meetup) return res.status(404).json({ error: "Meetup not found." });
-  if (meetup.status === 'cancelled') return res.status(400).json({ error: "Cannot RSVP to a cancelled meetup." });
+  if (meetup.status === 'cancelled' || meetup.status === 'expired') {
+    const statusMessage = meetup.status === 'cancelled' ? 'a cancelled' : 'an expired';
+    return res.status(400).json({ error: `Cannot RSVP to ${statusMessage} meetup.` });
+  }
 
   const userId = currentUser._id;
   const userIdStr = userId.toString();
@@ -319,6 +324,10 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
 
     if (!canManageGroup(requester._id, meetup.group)) {
         return res.status(403).json({ error: "Permission denied." });
+    }
+
+    if (meetup.status === 'expired') {
+        return res.status(400).json({ error: "Cannot cancel a meetup that has already expired." });
     }
 
     meetup.status = 'cancelled';

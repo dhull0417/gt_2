@@ -11,9 +11,8 @@ import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 
 type GroupedMeetups = {
-  'Within 1 week': Meetup[];
-  'Within 2 weeks': Meetup[];
-  'Future': Meetup[];
+  'Upcoming': Meetup[];
+  'Past Week': Meetup[];
 };
 
 // --- Helper Functions ---
@@ -104,6 +103,7 @@ const MeetupCard = ({
   currentUser: User | undefined;
 }) => {
   const isCancelled = meetup.status === 'cancelled';
+  const isExpired = meetup.status === 'expired';
   const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
   const isWaitlisted = currentUser ? meetup.waitlist.includes(currentUser._id) : false;
   const isIn = currentUser ? meetup.in.includes(currentUser._id) : false;
@@ -111,11 +111,12 @@ const MeetupCard = ({
   return (
     <View 
       className={`p-5 my-2 rounded-2xl shadow-sm border relative ${
-        isCancelled ? 'bg-red-50/30 border-red-100 opacity-80' : 'bg-white border-gray-200'
+        isCancelled ? 'bg-red-50/30 border-red-100 opacity-80' : 
+        isExpired ? 'bg-gray-50 border-gray-100 opacity-70' : 'bg-white border-gray-200'
       }`}
     >
-      <TouchableOpacity onPress={onPress} disabled={isCancelled}>
-        {!isCancelled && currentUser && <RsvpStatusDot meetup={meetup} userId={currentUser._id} />}
+      <TouchableOpacity onPress={onPress}>
+        {!isCancelled && !isExpired && currentUser && <RsvpStatusDot meetup={meetup} userId={currentUser._id} />}
 
         <View className="flex-row justify-between items-start">
           <View className="flex-1 pr-6">
@@ -123,7 +124,7 @@ const MeetupCard = ({
               style={{ 
                 fontSize: 20, 
                 fontWeight: 'bold', 
-                color: isCancelled ? '#9CA3AF' : '#4FD1C5',
+                color: isCancelled || isExpired ? '#9CA3AF' : '#4FD1C5',
                 textDecorationLine: isCancelled ? 'line-through' : 'none' 
               }}
             >
@@ -134,17 +135,22 @@ const MeetupCard = ({
                 <Text className="text-red-600 text-[10px] font-black uppercase">Cancelled</Text>
               </View>
             )}
+            {isExpired && (
+              <View className="bg-gray-200 self-start px-2 py-0.5 rounded-md mt-1">
+                <Text className="text-gray-600 text-[10px] font-black uppercase">Past</Text>
+              </View>
+            )}
           </View>
         </View>
 
-        <Text style={{ fontSize: 16, color: isCancelled ? '#9CA3AF' : '#4B5563', marginTop: 4 }}>
+        <Text style={{ fontSize: 16, color: isCancelled || isExpired ? '#9CA3AF' : '#4B5563', marginTop: 4 }}>
           {formatDate(meetup.date, meetup.timezone)} at {meetup.time} {getTimezoneAbbreviation(meetup.date, meetup.timezone)}
         </Text>
 
-        {!isCancelled && <RsvpCounts meetup={meetup} />}
+        {!isCancelled && !isExpired && <RsvpCounts meetup={meetup} />}
 
         <View className="flex-row mt-2">
-            {isFull && !isCancelled && !isIn && (
+            {isFull && !isCancelled && !isExpired && !isIn && (
                 <View className="bg-orange-100 px-2 py-1 rounded-lg mr-2 border border-orange-200">
                     <Text className="text-orange-600 text-[10px] font-black">FULL</Text>
                 </View>
@@ -157,7 +163,7 @@ const MeetupCard = ({
         </View>
       </TouchableOpacity>
 
-      {showRsvpButtons && !isCancelled && (
+      {showRsvpButtons && !isCancelled && !isExpired && (
         <View className="flex-row gap-4 mt-4 pt-4 border-t border-gray-100">
           <TouchableOpacity
             onPress={() => onRsvp('in')}
@@ -204,24 +210,29 @@ const DashboardScreen = () => {
 
   const nextUndecidedMeetup = useMemo(() => {
     if (!meetups || !currentUser) return null;
-    return meetups.find(meetup => meetup.status !== 'cancelled' && meetup.undecided.includes(currentUser._id));
+    return meetups.find(meetup => meetup.status === 'scheduled' && meetup.undecided.includes(currentUser._id));
   }, [meetups, currentUser]);
 
   const groupedMeetups = useMemo(() => {
     const groups: GroupedMeetups = {
-      'Within 1 week': [],
-      'Within 2 weeks': [],
-      'Future': [],
+      'Upcoming': [],
+      'Past Week': [],
     };
     if (!meetups) return groups;
-    const today = DateTime.now().startOf('day');
+
     meetups.forEach(meetup => {
-      const meetupDate = DateTime.fromISO(meetup.date);
-      const diffInDays = meetupDate.diff(today, 'days').days;
-      if (diffInDays <= 7) groups['Within 1 week'].push(meetup);
-      else if (diffInDays <= 14) groups['Within 2 weeks'].push(meetup);
-      else groups['Future'].push(meetup);
+      if (meetup.status === 'expired') {
+        groups['Past Week'].push(meetup);
+      } else {
+        // 'scheduled' and 'cancelled' meetups are considered upcoming
+        groups['Upcoming'].push(meetup);
+      }
     });
+
+    // The 'getMeetups' hook already sorts all meetups ascending by date.
+    // We need to re-sort the 'Past Week' section to be descending (most recent first).
+    groups['Past Week'].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
     return groups;
   }, [meetups]);
 
