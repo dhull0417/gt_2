@@ -29,6 +29,21 @@ interface GroupDetailsViewProps {
 
 const daysOfWeekFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+// Helper to get common timezone abbreviations
+const getTZAbbreviation = (timezone: string) => {
+    switch (timezone) {
+        case "America/New_York": return "ET";
+        case "America/Chicago": return "CT";
+        case "America/Denver": return "MT";
+        case "America/Phoenix": return "MST"; // Mountain Standard Time (no DST)
+        case "America/Los_Angeles": return "PT";
+        case "America/Anchorage": return "AKST";
+        case "Pacific/Honolulu": return "HST";
+        default: 
+            return ""; // Fallback if not explicitly mapped
+    }
+};
+
 /**
  * GroupDetailsView
  * Displays specific schedule routines, member lists, and invitation tools.
@@ -106,6 +121,7 @@ export const GroupDetailsView = ({
      * Helper to render meetup lines.
      */
     const renderScheduleLines = (frequency: string, dayTimes: any[]) => {
+        const groupTimezoneAbbr = getTZAbbreviation(groupDetails.timezone);
         const timeEntries = dayTimes && dayTimes.length > 0 ? dayTimes : [{ time: "Time TBD" }];
 
         if (frequency === 'daily') {
@@ -117,7 +133,7 @@ export const GroupDetailsView = ({
 
                 return matches.map((mt, mtIdx) => (
                     <Text key={`daily-${dayIdx}-${mtIdx}`} style={styles.scheduleDetailText}>
-                        • {dayName} @ {mt.time}
+                        • {dayName} @ {mt.time} {groupTimezoneAbbr}
                     </Text>
                 ));
             });
@@ -144,7 +160,7 @@ export const GroupDetailsView = ({
 
             return (
                 <Text key={dtIdx} style={styles.scheduleDetailText}>
-                    • {dayLabel} @ {dt.time}
+                    • {dayLabel} @ {dt.time} {groupTimezoneAbbr}
                 </Text>
             );
         });
@@ -177,8 +193,8 @@ export const GroupDetailsView = ({
 
                 {/* Location Info */}
                 <View style={styles.infoRow}>
-                    <Feather name="map-pin" size={18} color="#4A90E2" />
-                    <Text style={styles.infoText} numberOfLines={1}>
+                    <Feather name="map-pin" size={18} color="#4A90E2" style={{ marginTop: 2 }} />
+                    <Text style={styles.infoText}>
                         {groupDetails.defaultLocation || "No default location set"}
                     </Text>
                 </View>
@@ -186,22 +202,14 @@ export const GroupDetailsView = ({
                 {/* Capacity Limit */}
                 <View style={styles.infoRow}>
                     <Feather name="users" size={18} color="#4A90E2" />
-                    <Text style={styles.infoText}>Limit: {groupDetails.defaultCapacity === 0 ? "Unlimited" : groupDetails.defaultCapacity}</Text>
+                    <Text style={styles.infoText}>{groupDetails.defaultCapacity === 0 ? "Unlimited Attendees" : groupDetails.defaultCapacity}</Text>
                 </View>
 
                 {/* JIT Schedule Info */}
                 <View style={styles.infoRow}>
                     <Feather name="bell" size={18} color="#4A90E2" />
                     <Text style={styles.infoText}>
-                        JIT: {groupDetails.generationLeadDays} day lead @ {groupDetails.generationLeadTime}
-                    </Text>
-                </View>
-
-                {/* Timezone Info - Restored visibility */}
-                <View style={styles.infoRow}>
-                    <Feather name="globe" size={18} color="#4A90E2" />
-                    <Text style={styles.infoText}>
-                        Timezone: {groupDetails.timezone || "Not set"}
+                        RSVP {groupDetails.generationLeadDays} day{groupDetails.generationLeadDays > 1 ? 's' : ''} before @ {groupDetails.generationLeadTime}
                     </Text>
                 </View>
             </View>

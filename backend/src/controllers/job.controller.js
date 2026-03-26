@@ -81,13 +81,14 @@ export const expirePastMeetups = asyncHandler(async (req, res) => {
  */
 export const cleanupExpiredMeetups = asyncHandler(async (req, res) => {
     console.log("Running job: cleanupExpiredMeetups...");
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    // Delete meetups that expired more than 10 days ago.
+    const tenDaysAgo = new Date();
+    tenDaysAgo.setDate(tenDaysAgo.getDate() - 10); 
+    tenDaysAgo.setHours(0, 0, 0, 0); // Ensure comparison is at start of day
 
-    // Find meetups that are 'expired' and their date is 7 or more days in the past.
     const oldMeetups = await Meetup.find({ 
         status: 'expired',
-        date: { $lte: sevenDaysAgo }
+        date: { $lte: tenDaysAgo }
     });
 
     if (oldMeetups.length === 0) {

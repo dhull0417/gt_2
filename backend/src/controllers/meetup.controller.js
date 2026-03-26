@@ -32,14 +32,14 @@ export const getMeetups = asyncHandler(async (req, res) => {
   if (!currentUser) {
     return res.status(404).json({ error: "User not found." });
   }
-  // Fetch meetups from the last 7 days and all upcoming ones.
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  sevenDaysAgo.setHours(0, 0, 0, 0);
+  // Fetch meetups from the last 10 days and all upcoming ones, to allow viewing expired meetups.
+  const tenDaysAgo = new Date();
+  tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+  tenDaysAgo.setHours(0, 0, 0, 0);
 
   const meetups = await Meetup.find({
     members: currentUser._id,
-    date: { $gte: sevenDaysAgo },
+    date: { $gte: tenDaysAgo },
   })
   .populate({
       path: "members",
