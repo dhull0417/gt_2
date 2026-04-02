@@ -158,11 +158,7 @@ export const handleRsvp = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "Invalid Meetup ID." });
   }
 
-  const isPast = new Date(meetup.date) < new Date();
-        if (meetup.status === 'cancelled' || meetup.status === 'expired' || isPast) {
-            return res.status(400).json({ error: "This event is closed for adjustments." });
-        }
-
+  
   const meetup = await Meetup.findById(meetupId).populate('group');
   if (!meetup) return res.status(404).json({ error: "Meetup not found." });
   if (meetup.status === 'cancelled' || meetup.status === 'expired') {
@@ -182,6 +178,11 @@ export const handleRsvp = asyncHandler(async (req, res) => {
 
   let responseMessage = "RSVP updated successfully.";
   const isOwner = groupOwnerId.toString() === userIdStr;
+
+  const isPast = new Date(meetup.date) < new Date();
+        if (meetup.status === 'cancelled' || meetup.status === 'expired' || isPast) {
+            return res.status(400).json({ error: "This event is closed for adjustments." });
+        }
 
   // Prepare recipients (Owner + Moderators - Current User)
   const recipientIds = new Set();

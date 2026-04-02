@@ -103,20 +103,28 @@ const MeetupCard = ({
   currentUser: User | undefined;
 }) => {
   const isCancelled = meetup.status === 'cancelled';
-  const isExpired = meetup.status === 'expired';
+  // Check if actually expired or the time has physically passed
+  const isPast = new Date(meetup.date) < new Date();
+  const isExpired = meetup.status === 'expired' || isPast;
+
   const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
   const isWaitlisted = currentUser ? meetup.waitlist.includes(currentUser._id) : false;
   const isIn = currentUser ? meetup.in.includes(currentUser._id) : false;
+
+  // Final lock-down state
+  const isReadOnly = isCancelled || isExpired;
 
   return (
     <View 
       className={`p-5 my-2 rounded-2xl shadow-sm border relative ${
         isCancelled ? 'bg-red-50/30 border-red-100 opacity-80' : 
-        isExpired ? 'bg-gray-50 border-gray-100 opacity-70' : 'bg-white border-gray-200'
+        isExpired ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-200'
       }`}
+      style={isExpired && !isCancelled ? { opacity: 0.75 } : {}}
     >
       <TouchableOpacity onPress={onPress}>
-        {!isCancelled && !isExpired && currentUser && <RsvpStatusDot meetup={meetup} userId={currentUser._id} />}
+        {/* Hide RSVP dot if event is over or cancelled */}
+        {!isReadOnly && currentUser && <RsvpStatusDot meetup={meetup} userId={currentUser._id} />}
 
         <View className="flex-row justify-between items-start">
           <View className="flex-1 pr-6">
@@ -124,7 +132,7 @@ const MeetupCard = ({
               style={{ 
                 fontSize: 20, 
                 fontWeight: 'bold', 
-                color: isCancelled || isExpired ? '#9CA3AF' : '#4FD1C5',
+                color: isReadOnly ? '#9CA3AF' : '#4FD1C5',
                 textDecorationLine: isCancelled ? 'line-through' : 'none' 
               }}
             >
@@ -135,22 +143,23 @@ const MeetupCard = ({
                 <Text className="text-red-600 text-[10px] font-black uppercase">Cancelled</Text>
               </View>
             )}
-            {isExpired && (
-              <View className="bg-gray-200 self-start px-2 py-0.5 rounded-md mt-1">
-                <Text className="text-gray-600 text-[10px] font-black uppercase">Past</Text>
+            {isExpired && !isCancelled && (
+              <View className="bg-gray-300 self-start px-2 py-0.5 rounded-md mt-1">
+                <Text className="text-gray-700 text-[10px] font-black uppercase">Past Event</Text>
               </View>
             )}
           </View>
         </View>
 
-        <Text style={{ fontSize: 16, color: isCancelled || isExpired ? '#9CA3AF' : '#4B5563', marginTop: 4 }}>
+        <Text style={{ fontSize: 16, color: isReadOnly ? '#9CA3AF' : '#4B5563', marginTop: 4 }}>
           {formatDate(meetup.date, meetup.timezone)} at {meetup.time} {getTimezoneAbbreviation(meetup.date, meetup.timezone)}
         </Text>
 
-        {!isCancelled && !isExpired && <RsvpCounts meetup={meetup} />}
+        {/* Hide RSVP Counts if read-only to clean up the card */}
+        {!isReadOnly && <RsvpCounts meetup={meetup} />}
 
         <View className="flex-row mt-2">
-            {isFull && !isCancelled && !isExpired && !isIn && (
+            {isFull && !isReadOnly && !isIn && (
                 <View className="bg-orange-100 px-2 py-1 rounded-lg mr-2 border border-orange-200">
                     <Text className="text-orange-600 text-[10px] font-black">FULL</Text>
                 </View>
@@ -161,9 +170,19 @@ const MeetupCard = ({
                 </View>
             )}
         </View>
+
+        {/* Expired visual footer for context */}
+        {isExpired && !isCancelled && (
+          <View className="mt-3 pt-3 border-t border-gray-200 flex-row items-center">
+            <Feather name="info" size={12} color="#9CA3AF" />
+            <Text className="text-[#9CA3AF] text-[11px] font-bold uppercase ml-1.5 tracking-tight">
+              View History & Details
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
 
-      {showRsvpButtons && !isCancelled && !isExpired && (
+      {showRsvpButtons && !isReadOnly && (
         <View className="flex-row gap-4 mt-4 pt-4 border-t border-gray-100">
           <TouchableOpacity
             onPress={() => onRsvp('in')}
@@ -221,7 +240,9 @@ const DashboardScreen = () => {
     if (!meetups) return groups;
 
     meetups.forEach(meetup => {
-      if (meetup.status === 'expired') {
+      // Local check for grouping logic as well to keep UI consistent
+      const isPast = new Date(meetup.date) < new Date();
+      if (meetup.status === 'expired' || isPast) {
         groups['Past Week'].push(meetup);
       } else {
         // 'scheduled' and 'cancelled' meetups are considered upcoming
@@ -229,8 +250,6 @@ const DashboardScreen = () => {
       }
     });
 
-    // The 'getMeetups' hook already sorts all meetups ascending by date.
-    // We need to re-sort the 'Past Week' section to be descending (most recent first).
     groups['Past Week'].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return groups;
@@ -339,7 +358,6 @@ const DashboardScreen = () => {
         presentationStyle="pageSheet"
         onRequestClose={handleCloseModal}
       >
-        {/* Use SafeAreaView with edges explicitly defined to protect the top of the details screen */}
         <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top', 'bottom']}>
             <MeetupDetailModal meetup={selectedMeetup} onClose={handleCloseModal} />
         </SafeAreaView>
