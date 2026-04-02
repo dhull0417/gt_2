@@ -323,7 +323,7 @@ const GroupScreen = () => {
       const targetGroup = groups.find(g => g._id === openChatId);
       if (targetGroup) {
         handleOpenGroupDetail(targetGroup);
-        router.setParams({ openChatId: undefined });
+        router.setParams({ openChatId: undefined }); // Clears the param so it can fire again
       }
     }
   }, [openChatId, groups]);

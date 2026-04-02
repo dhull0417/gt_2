@@ -5,24 +5,24 @@ import { notifyUsers } from "../utils/push.notifications.js";
 /**
  * @desc    Handle GetStream Webhooks for chat notifications
  * @route   POST /api/webhooks/chat
- * * This controller processes real-time meetups from Stream Chat.
+ * * This controller processes real-time events from Stream Chat.
  * It identifies recipients and filters them based on their notification 
  * preferences (Mute feature) before sending push alerts via Expo.
  */
 export const handleChatWebhook = asyncHandler(async (req, res) => {
-  const meetup = req.body;
+  const event = req.body; // Renamed to 'event' for clarity (standard Stream terminology)
 
-  // 1. Only process new message meetups
-  if (meetup.type !== 'message.new') {
-    return res.status(200).json({ message: "Meetup ignored" });
+  // 1. Only process new message events
+  if (event.type !== 'message.new') {
+    return res.status(200).json({ message: "Event ignored" });
   }
 
-  const { message, user: sender, channel } = meetup;
+  const { message, user: sender, channel, members } = event;
 
   // 2. Identify the recipients (all channel members except the sender)
   // GetStream sends the member list within the webhook payload.
-  const memberIds = meetup.members 
-    ? meetup.members.map(m => m.user_id) 
+  const memberIds = members 
+    ? members.map(m => m.user_id) 
     : [];
     
   const recipientIds = memberIds.filter(id => id !== sender.id);
@@ -49,13 +49,19 @@ export const handleChatWebhook = asyncHandler(async (req, res) => {
     if (recipients.length > 0) {
       const channelName = channel.name || "New Message";
       
+      // RECOMMENDATION: Fallback body text if message.text is empty (e.g., an image or file)
+      const notificationBody = message.text 
+        ? `${sender.name || sender.id}: ${message.text}`
+        : `${sender.name || sender.id} sent an attachment`;
+
       // Send the batch of push notifications
       await notifyUsers(recipients, {
         title: channelName,
-        body: `${sender.name || sender.id}: ${message.text}`,
+        body: notificationBody,
         data: { 
           type: 'chat', 
-          channelId: channel.id,
+          groupId: channel.id,   // Explicitly include groupId for the frontend router
+          channelId: channel.id, // Keeping channelId for backward compatibility
           senderId: sender.id 
         }
       });
