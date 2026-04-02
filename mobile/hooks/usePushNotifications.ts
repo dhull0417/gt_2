@@ -6,34 +6,26 @@ import { useApiClient } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 
-// Configure how notifications are handled when the app is in the foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
-    shouldShowBanner: true, // Added to satisfy TypeScript requirement
-    shouldShowList: true,   // Added to satisfy TypeScript requirement
+    shouldShowBanner: true, 
+    shouldShowList: true,   
   }),
 });
 
-/**
- * PROJECT 6: Actionable Notifications
- * This registers the 'EVENT_RSVP' category with the OS.
- * When the backend sends a notification with this category ID,
- * the lock screen will display "I'm In" and "I'm Out" buttons
- * once the user expands the notification (swipe down/long press).
- */
 const defineNotificationCategories = async () => {
   await Notifications.setNotificationCategoryAsync('EVENT_RSVP', [
     {
       identifier: 'GOING',
-      buttonTitle: "I'm In", // Updated label as requested
-      options: { opensAppToForeground: false }, // Executes in background
+      buttonTitle: "I'm In",
+      options: { opensAppToForeground: false },
     },
     {
       identifier: 'OUT',
-      buttonTitle: "I'm Out", // Updated label
+      buttonTitle: "I'm Out",
       options: { opensAppToForeground: false, isDestructive: true },
     },
   ]);
@@ -49,67 +41,66 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
   const api = useApiClient();
   const router = useRouter();
 
+  // Helper to handle navigation logic in one place
+  const handleNotificationNavigation = (data: any) => {
+    const { type, meetupId, groupId, channelId } = data || {};
+    
+    // We use 'groupId' or 'channelId' (Stream uses channelId, but your screen uses openChatId)
+    const targetChatId = groupId || channelId;
+
+    if (type === 'chat' && targetChatId) {
+      router.push({
+        pathname: '/(tabs)/groups',
+        params: { openChatId: String(targetChatId) }
+      });
+    } else if (meetupId) {
+      router.push({
+        pathname: '/(tabs)',
+        params: { openMeetupId: String(meetupId) }
+      });
+    }
+  };
+
   useEffect(() => {
-    // Register categories so the OS knows what 'EVENT_RSVP' means
     defineNotificationCategories();
 
     registerForPushNotificationsAsync().then(token => {
       if (token) setExpoPushToken(token);
     });
 
+    // 1. Handle "Cold Start" (App was closed, now opening via notification)
+    Notifications.getLastNotificationResponseAsync().then(response => {
+        if (response) {
+            handleNotificationNavigation(response.notification.request.content.data);
+        }
+    });
+
+    // 2. Listen for notifications while app is in foreground
     notificationListener.current = Notifications.addNotificationReceivedListener(notif => {
       setNotification(notif);
     });
 
-    /**
-     * Response Listener: Handles button clicks and notification taps.
-     */
+    // 3. Listen for notification taps while app is in background/foreground
     responseListener.current = Notifications.addNotificationResponseReceivedListener(async (response) => {
       const data = response.notification.request.content.data as Record<string, any>;
       const actionIdentifier = response.actionIdentifier;
 
-      // Logic for the RSVP Buttons (handled while app is backgrounded)
+      // RSVP Button Background Logic
       if (actionIdentifier === 'GOING' || actionIdentifier === 'OUT') {
         const status = actionIdentifier === 'GOING' ? 'in' : 'out';
         const meetupId = data.meetupId;
-
         if (meetupId) {
           try {
-            // Perform the RSVP silently via API
             await api.post(`/api/meetups/${meetupId}/rsvp`, { status });
           } catch (err: any) {
-            // If the error is a 401, it's likely a stale token. We can't refresh
-            // it in the background, so we fail silently. Log other errors.
-            if (err.response?.status !== 401) {
-              console.error("Background RSVP failed:", err);
-            }
+            if (err.response?.status !== 401) console.error("Background RSVP failed:", err);
           }
         }
         return;
       }
 
-      // Logic for standard notification taps
-      const { type, meetupId, groupId, channelId } = data || {};
-
-      const meetupTypes = ['meetup_created', 'meetup_updated', 'meetup_cancellation', 'waitlist_promotion'];
-      const groupTypes = ['group_added', 'group_updated'];
-
-      if (meetupTypes.includes(type) && meetupId) {
-        router.push({
-          pathname: '/(tabs)',
-          params: { openMeetupId: String(meetupId) }
-        });
-      } else if (groupTypes.includes(type) && groupId) {
-        router.push({
-          pathname: '/(tabs)/groups',
-          params: { openChatId: String(groupId) }
-        });
-      } else if (type === 'chat' && channelId) {
-        router.push({
-          pathname: '/(tabs)/groups',
-          params: { openChatId: String(channelId) }
-        });
-      } 
+      // Standard Tap Navigation
+      handleNotificationNavigation(data);
     });
 
     return () => {
@@ -118,13 +109,10 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
     };
   }, []);
 
-  // Update token on backend only once we are signed in and synced
   useEffect(() => {
     if (isSignedIn && hasBackendUser && expoPushToken) {
       api.post('/api/users/push-token', { token: expoPushToken }).catch(err => {
-        if (err.response?.status !== 401) {
-          console.error("Failed to save push token", err);
-        }
+        if (err.response?.status !== 401) console.error("Failed to save push token", err);
       });
     }
   }, [isSignedIn, hasBackendUser, expoPushToken]);
@@ -134,7 +122,6 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
 
 async function registerForPushNotificationsAsync() {
   let token: string | undefined;
-
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
       name: 'default',
@@ -143,7 +130,6 @@ async function registerForPushNotificationsAsync() {
       lightColor: '#FF231F7C',
     });
   }
-
   if (Device.isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -152,7 +138,6 @@ async function registerForPushNotificationsAsync() {
       finalStatus = status;
     }
     if (finalStatus !== 'granted') return;
-
     const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
     try {
       token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
@@ -160,6 +145,5 @@ async function registerForPushNotificationsAsync() {
       console.error("Push token error:", e);
     }
   }
-
   return token;
 }
