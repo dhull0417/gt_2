@@ -36,10 +36,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const { data: allMeetups } = useGetMeetups();
     const [activeTab, setActiveTab] = useState<'in' | 'out' | 'waitlist'>('in');
     
-    // --- Edit Mode State ---
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [newDate, setNewDate] = useState(new Date());
-    const [tempDate, setTempDate] = useState(new Date()); // Use a temporary state for the iOS picker
+    const [tempDate, setTempDate] = useState(new Date());
     const [newTime, setNewTime] = useState('');
     const [newCapacity, setNewCapacity] = useState('');
     const [newLocation, setNewLocation] = useState('');
@@ -50,13 +49,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         setMeetup(initialMeetup);
     }, [initialMeetup]);
 
-    // Sync with global meetup list updates (e.g. from background refresh or other mutations)
     useEffect(() => {
         if (allMeetups && meetup) {
             const updated = allMeetups.find(e => e._id === meetup._id);
-            if (updated) {
-                setMeetup(updated);
-            }
+            if (updated) setMeetup(updated);
         }
     }, [allMeetups]);
 
@@ -67,13 +63,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const { mutate: rsvp, isPending: isRsvping } = useRsvp();
 
-    // Map waitlist IDs to user objects to preserve order (0 is first in line)
-    // Calculated early to be used in useEffect safely
     const waitlistUsers = (meetup?.waitlist || [])
         .map(id => (meetup?.members || []).find(m => m._id === id))
         .filter((u): u is User => !!u);
 
-    // Reset tab if waitlist becomes empty while selected
     useEffect(() => {
         if (activeTab === 'waitlist' && waitlistUsers.length === 0) {
             setActiveTab('in');
@@ -82,46 +75,40 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     if (!meetup || !currentUser) return null;
 
-    // --- Permissions Logic ---
+    // --- READ-ONLY & PERMISSIONS LOGIC ---
     const isOwner = typeof meetup.group === 'object' ? meetup.group.owner === currentUser._id : false; 
     const groupData = meetup.group as any;
     const isMod = typeof meetup.group === 'object' && Array.isArray(groupData.moderators)
         ? groupData.moderators.some((m: any) => typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id)
         : false;
 
-    const canManage = isOwner || isMod;
-    
     const isCancelled = meetup.status === 'cancelled';
-    const isExpired = meetup.status === 'expired';
+    const isPast = new Date(meetup.date) < new Date(); 
+    const isExpired = meetup.status === 'expired' || isPast;
+    
+    // RECOMMENDATION: This flag controls all "adjustment" UI
+    const isReadOnly = isCancelled || isExpired;
+    const canManage = (isOwner || isMod) && !isReadOnly; 
+    
     const isFull = meetup.capacity > 0 && (meetup.in?.length || 0) >= meetup.capacity;
     const isWaitlisted = meetup.waitlist?.includes(currentUser._id) || false;
     const isIn = meetup.in?.includes(currentUser._id) || false;
 
-    // Filter users based on their status
     const goingUsers = (meetup.members || []).filter(m => meetup.in?.includes(m._id));
     const outUsers = (meetup.members || []).filter(m => meetup.out?.includes(m._id));
 
-
     const handleRsvpAction = (status: 'in' | 'out') => {
+        if (isReadOnly) return;
         rsvp({ meetupId: meetup._id, status }, {
             onSuccess: (data: any) => {
                 queryClient.invalidateQueries({ queryKey: ['meetups'] });
-                if (data.meetup) {
-                    setMeetup(data.meetup);
-                }
-                if (data.message && data.message.toLowerCase().includes('waitlist')) {
-                    Alert.alert("Waitlisted", "The meetup is full. You've been added to the waitlist queue.");
-                }
+                if (data.meetup) setMeetup(data.meetup);
             }
         });
     };
 
-    /**
-     * Navigates to the group chat
-     */
     const handleGoToChat = () => {
-        onClose(); // Close the modal first
-        // Navigate to groups tab and pass the specific group ID to open
+        onClose();
         router.push({
             pathname: '/(tabs)/groups',
             params: { openChatId: meetup.group._id }
@@ -129,32 +116,15 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     };
 
     const handleUpdateMeetupDetails = async () => {
-        // Build a payload with only the changed fields
-        const payload: {
-            meetupId: string;
-            date?: Date;
-            time?: string;
-            capacity?: number;
-            location?: string;
-        } = { meetupId: meetup._id };
-
+        if (isReadOnly) return;
+        const payload: any = { meetupId: meetup._id };
         const capInt = parseInt(newCapacity, 10);
         
-        // Check for changes
-        if (newDate.toISOString().split('T')[0] !== new Date(meetup.date).toISOString().split('T')[0]) {
-            payload.date = newDate;
-        }
-        if (newTime !== meetup.time) {
-            payload.time = newTime;
-        }
-        if (newLocation !== (meetup.location || '')) {
-            payload.location = newLocation;
-        }
-        if (!isNaN(capInt) && capInt !== meetup.capacity) {
-            payload.capacity = capInt;
-        }
+        if (newDate.toISOString().split('T')[0] !== new Date(meetup.date).toISOString().split('T')[0]) payload.date = newDate;
+        if (newTime !== meetup.time) payload.time = newTime;
+        if (newLocation !== (meetup.location || '')) payload.location = newLocation;
+        if (!isNaN(capInt) && capInt !== meetup.capacity) payload.capacity = capInt;
 
-        // If nothing changed, just close the modal
         if (Object.keys(payload).length <= 1) {
             setIsEditModalVisible(false);
             return;
@@ -163,12 +133,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         setIsUpdating(true);
         try {
             const response = await meetupApi.updateMeetup(api, payload);
-            
             await queryClient.invalidateQueries({ queryKey: ['meetups'] });
-            await queryClient.invalidateQueries({ queryKey: ['meetupDetails', meetup._id] });
-            if (response && response.meetup) {
-                setMeetup(response.meetup);
-            }
+            if (response?.meetup) setMeetup(response.meetup);
             setIsEditModalVisible(false);
             Alert.alert("Success", "Meetup details updated.");
         } catch (error: any) {
@@ -178,23 +144,23 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         }
     };
 
-    // --- Date Picker Handlers ---
-    const onDateChange = (meetup: DateTimePickerEvent, selectedDate?: Date) => {
+    const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
         const currentDate = selectedDate || tempDate;
         if (Platform.OS === 'android') {
             setShowDatePicker(false);
-            setNewDate(currentDate); // On Android, the change is immediate
+            setNewDate(currentDate);
         } else {
-            setTempDate(currentDate); // On iOS, update temp state as user spins the wheel
+            setTempDate(currentDate);
         }
     };
 
     const confirmIosDate = () => {
-        setNewDate(tempDate); // Finalize the date selection from the temporary state
+        setNewDate(tempDate);
         setShowDatePicker(false);
     };
 
     const handleCancelMeetup = () => {
+        if (isReadOnly && !isCancelled) return; // Can't cancel if already ended
         const action = isCancelled ? "Reactivate" : "Cancel";
         Alert.alert(`${action} Meetup`, `Are you sure?`, [
             { text: "No", style: "cancel" },
@@ -236,11 +202,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 <View style={styles.headerTitleContainer}>
                     <Text style={styles.headerTitle}>Meetup Details</Text>
                 </View>
-                {canManage && !isCancelled && !isExpired ? (
+                {/* Hide Edit Button if Read Only */}
+                {canManage ? (
                     <TouchableOpacity 
                         onPress={() => {
                             setNewDate(new Date(meetup.date));
-                            setTempDate(new Date(meetup.date)); // Initialize temp state for the picker
+                            setTempDate(new Date(meetup.date));
                             setNewTime(meetup.time);
                             setNewCapacity(meetup.capacity.toString());
                             setNewLocation(meetup.location || '');
@@ -255,6 +222,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 <View style={{ marginBottom: 32 }}>
+                    {/* Updated Banner Logic */}
                     {isCancelled && (
                         <View style={styles.cancelBanner}>
                             <Feather name="alert-triangle" size={18} color="#B91C1C" />
@@ -269,15 +237,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     )}
                     
                     <View style={styles.titleRow}>
-                        <Text style={[styles.meetupTitle, (isCancelled || isExpired) && styles.strikeThrough]}>
+                        <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough]}>
                             {meetup.name}
                         </Text>
-                        {/* New Chat Button Link */}
-                        <TouchableOpacity 
-                            onPress={handleGoToChat}
-                            style={styles.chatButton}
-                            activeOpacity={0.7}
-                        >
+                        <TouchableOpacity onPress={handleGoToChat} style={styles.chatButton} activeOpacity={0.7}>
                             <Text style={styles.chatButtonText}>Chat</Text>
                             <Feather name="arrow-right" size={14} color="#4FD1C5" style={{ marginLeft: 4 }} />
                         </TouchableOpacity>
@@ -290,18 +253,15 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} • {meetup.time}
                             </Text>
                         </View>
-                        
                         <View style={styles.detailSeparator} />
-
                         <View style={styles.detailRow}>
                             <View style={[styles.detailItem, { flex: 1, marginRight: 16 }]}>
                                 <Text style={styles.detailLabel}>Location</Text>
                                 <Text style={[styles.detailValue, isExpired && { color: '#6B7280' }]} numberOfLines={1}>{meetup.location || "No location set"}</Text>
                             </View>
-                            
                             <View style={styles.detailItem}>
                                 <Text style={styles.detailLabel}>Capacity</Text>
-                                <Text style={[styles.detailValue, isFull && !isCancelled && !isExpired && { color: '#C2410C' }, isExpired && { color: '#6B7280' }]}>
+                                <Text style={[styles.detailValue, isFull && !isReadOnly && { color: '#C2410C' }, isExpired && { color: '#6B7280' }]}>
                                     {meetup.capacity === 0 ? "Unlimited" : `${meetup.in?.length || 0}/${meetup.capacity}`}
                                 </Text>
                             </View>
@@ -309,8 +269,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </View>
                 </View>
 
-                {/* RSVP Actions */}
-                {!isCancelled && !isExpired && (
+                {/* Hide RSVP Actions if Read Only */}
+                {!isReadOnly && (
                     <View style={styles.rsvpRow}>
                         <TouchableOpacity 
                             onPress={() => handleRsvpAction('in')}
@@ -322,10 +282,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 isIn && { backgroundColor: '#4FD1C5', borderBottomColor: '#3FABA1' }
                             ]}
                         >
-                            <Text style={[
-                                styles.rsvpButtonText,
-                                (!isIn && !isWaitlisted && !isFull) && { color: '#4FD1C5' }
-                            ]}>
+                            <Text style={[styles.rsvpButtonText, (!isIn && !isWaitlisted && !isFull) && { color: '#4FD1C5' }]}>
                                 {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                             </Text>
                         </TouchableOpacity>
@@ -340,33 +297,19 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 )}
 
                 <View style={{ marginBottom: 40 }}>
-                    {/* Tabs */}
                     <View style={styles.tabContainer}>
-                        <TouchableOpacity 
-                            onPress={() => setActiveTab('in')} 
-                            style={[styles.tabItem, activeTab === 'in' && { borderBottomColor: '#4FD1C5' }]}
-                        >
+                        <TouchableOpacity onPress={() => setActiveTab('in')} style={[styles.tabItem, activeTab === 'in' && { borderBottomColor: '#4FD1C5' }]}>
                             <Text style={[styles.tabText, activeTab === 'in' && { color: '#4FD1C5' }]}>In ({goingUsers.length})</Text>
                         </TouchableOpacity>
-                        
-                        <TouchableOpacity 
-                            onPress={() => setActiveTab('out')} 
-                            style={[styles.tabItem, activeTab === 'out' && { borderBottomColor: '#FF7A6E' }]}
-                        >
+                        <TouchableOpacity onPress={() => setActiveTab('out')} style={[styles.tabItem, activeTab === 'out' && { borderBottomColor: '#FF7A6E' }]}>
                             <Text style={[styles.tabText, activeTab === 'out' && { color: '#FF7A6E' }]}>Out ({outUsers.length})</Text>
                         </TouchableOpacity>
-
                         {waitlistUsers.length > 0 && (
-                            <TouchableOpacity 
-                                onPress={() => setActiveTab('waitlist')} 
-                                style={[styles.tabItem, activeTab === 'waitlist' && { borderBottomColor: '#2563EB' }]}
-                            >
+                            <TouchableOpacity onPress={() => setActiveTab('waitlist')} style={[styles.tabItem, activeTab === 'waitlist' && { borderBottomColor: '#2563EB' }]}>
                                 <Text style={[styles.tabText, activeTab === 'waitlist' && { color: '#2563EB' }]}>Waitlist ({waitlistUsers.length})</Text>
                             </TouchableOpacity>
                         )}
                     </View>
-
-                    {/* List Content */}
                     <View style={styles.listContainer}>
                         {activeTab === 'in' && renderUserList(goingUsers)}
                         {activeTab === 'out' && renderUserList(outUsers)}
@@ -374,7 +317,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </View>
                 </View>
 
-                {canManage && !isExpired && (
+                {/* Hide Management section if Read Only */}
+                {canManage && (
                     <View style={styles.ownerSection}>
                         <TouchableOpacity onPress={handleCancelMeetup} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4A90E2', borderColor: '#4A90E2' }]}>
                             <Text style={[styles.cancelToggleText, isCancelled && { color: 'white' }]}>

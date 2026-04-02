@@ -74,6 +74,11 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     
     if (!meetup || !requester) return res.status(404).json({ error: "Resource not found." });
 
+    const isPast = new Date(meetup.date) < new Date();
+        if (meetup.status === 'cancelled' || meetup.status === 'expired' || isPast) {
+            return res.status(400).json({ error: "This event is closed for adjustments." });
+        }
+
     if (!canManageGroup(requester._id, meetup.group)) {
         return res.status(403).json({ error: "Permission denied." });
     }
@@ -152,6 +157,11 @@ export const handleRsvp = asyncHandler(async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(meetupId)) {
     return res.status(400).json({ error: "Invalid Meetup ID." });
   }
+
+  const isPast = new Date(meetup.date) < new Date();
+        if (meetup.status === 'cancelled' || meetup.status === 'expired' || isPast) {
+            return res.status(400).json({ error: "This event is closed for adjustments." });
+        }
 
   const meetup = await Meetup.findById(meetupId).populate('group');
   if (!meetup) return res.status(404).json({ error: "Meetup not found." });
@@ -321,6 +331,11 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
     const requester = await User.findOne({ clerkId }).lean();
 
     if (!meetup || !requester) return res.status(404).json({ error: "Resource not found." });
+
+    const isPast = new Date(meetup.date) < new Date();
+        if (meetup.status === 'cancelled' || meetup.status === 'expired' || isPast) {
+            return res.status(400).json({ error: "This event is closed for adjustments." });
+        }
 
     if (!canManageGroup(requester._id, meetup.group)) {
         return res.status(403).json({ error: "Permission denied." });
