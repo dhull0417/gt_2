@@ -103,7 +103,6 @@ const MeetupCard = ({
   currentUser: User | undefined;
 }) => {
   const isCancelled = meetup.status === 'cancelled';
-  // Check if actually expired or the time has physically passed
   const isPast = new Date(meetup.date) < new Date();
   const isExpired = meetup.status === 'expired' || isPast;
 
@@ -111,7 +110,6 @@ const MeetupCard = ({
   const isWaitlisted = currentUser ? meetup.waitlist.includes(currentUser._id) : false;
   const isIn = currentUser ? meetup.in.includes(currentUser._id) : false;
 
-  // Final lock-down state
   const isReadOnly = isCancelled || isExpired;
 
   return (
@@ -123,7 +121,6 @@ const MeetupCard = ({
       style={isExpired && !isCancelled ? { opacity: 0.75 } : {}}
     >
       <TouchableOpacity onPress={onPress}>
-        {/* Hide RSVP dot if event is over or cancelled */}
         {!isReadOnly && currentUser && <RsvpStatusDot meetup={meetup} userId={currentUser._id} />}
 
         <View className="flex-row justify-between items-start">
@@ -155,7 +152,6 @@ const MeetupCard = ({
           {formatDate(meetup.date, meetup.timezone)} at {meetup.time} {getTimezoneAbbreviation(meetup.date, meetup.timezone)}
         </Text>
 
-        {/* Hide RSVP Counts if read-only to clean up the card */}
         {!isReadOnly && <RsvpCounts meetup={meetup} />}
 
         <View className="flex-row mt-2">
@@ -171,7 +167,6 @@ const MeetupCard = ({
             )}
         </View>
 
-        {/* Expired visual footer for context */}
         {isExpired && !isCancelled && (
           <View className="mt-3 pt-3 border-t border-gray-200 flex-row items-center">
             <Feather name="info" size={12} color="#9CA3AF" />
@@ -227,9 +222,20 @@ const DashboardScreen = () => {
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
+  // --- UPDATED LOGIC FOR "YOU COMING?" ---
   const nextUndecidedMeetup = useMemo(() => {
     if (!meetups || !currentUser) return null;
-    return meetups.find(meetup => meetup.status === 'scheduled' && meetup.undecided.includes(currentUser._id));
+    
+    // RECOMMENDATION: We filter for 'scheduled' AND ensure it hasn't passed yet.
+    // This removes 'cancelled', 'expired', and events that happened earlier today.
+    return meetups.find(meetup => {
+        const isPast = new Date(meetup.date) < new Date();
+        return (
+            meetup.status === 'scheduled' && 
+            !isPast && 
+            meetup.undecided.includes(currentUser._id)
+        );
+    });
   }, [meetups, currentUser]);
 
   const groupedMeetups = useMemo(() => {
@@ -240,12 +246,10 @@ const DashboardScreen = () => {
     if (!meetups) return groups;
 
     meetups.forEach(meetup => {
-      // Local check for grouping logic as well to keep UI consistent
       const isPast = new Date(meetup.date) < new Date();
       if (meetup.status === 'expired' || isPast) {
         groups['Past Week'].push(meetup);
       } else {
-        // 'scheduled' and 'cancelled' meetups are considered upcoming
         groups['Upcoming'].push(meetup);
       }
     });
