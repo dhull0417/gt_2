@@ -55,7 +55,11 @@ export const updatePushToken = asyncHandler(async (req, res) => {
   const user = await User.findOneAndUpdate(
     { clerkId },
     { expoPushToken: token },
-    { new: true }
+
+    { upsert: true,
+      new: true,
+     setDefaultsOnInsert: true,
+    }
   );
 
   if (!user) {
