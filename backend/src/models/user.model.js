@@ -70,6 +70,12 @@ const userSchema = new mongoose.Schema(
             type: String,
             required: false,
         },
+        calendarToken: {
+            type: String,
+            required: false,
+            unique: true,
+            sparse: true,
+        },
     },
     { timestamps: true}
 );

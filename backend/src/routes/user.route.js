@@ -1,3 +1,4 @@
+// backend/src/routes/user.route.js
 import express from "express";
 import {
   getCurrentUser,
@@ -8,6 +9,7 @@ import {
   updatePushToken,
   toggleGroupMute
 } from "../controllers/user.controller.js";
+import { getCalendarSyncUrl, getCalendarFeed } from "../controllers/calendar.controller.js"; // <-- Add this import
 import { protectRoute } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
@@ -20,5 +22,12 @@ router.get("/me", protectRoute, getCurrentUser);
 router.put("/profile", protectRoute, updateProfile);
 router.post("/push-token", protectRoute, updatePushToken);
 router.patch("/mute-group", protectRoute, toggleGroupMute);
+
+// --- NEW CALENDAR ROUTES ---
+// Protected: The mobile app fetches the user's specific URL
+router.get("/calendar-url", protectRoute, getCalendarSyncUrl);
+
+// Public: External calendars fetch the ICS file using the token query param
+router.get("/calendar/feed", getCalendarFeed);
 
 export default router;

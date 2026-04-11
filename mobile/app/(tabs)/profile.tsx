@@ -7,6 +7,7 @@ import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Updates from 'expo-updates';
+import * as Clipboard from 'expo-clipboard';
 
 const HomeScreen = () => {
   const { signOut } = useAuth();
@@ -69,6 +70,17 @@ const HomeScreen = () => {
     }
   };
 
+  const handleCopyCalendarLink = async () => {
+    try {
+      // Assuming you set up the backend route to return the full URL
+      const { url } = await userApi.getCalendarSyncUrl(api);
+      await Clipboard.setStringAsync(url);
+      Alert.alert('Copied!', 'Calendar sync link copied to clipboard. Paste this into Google Calendar or Apple Calendar settings.');
+    } catch (error: any) {
+      Alert.alert('Error', 'Could not generate calendar link.');
+    }
+  };
+
   return (
     <SafeAreaView className='flex-1 bg-gray-100'>
       <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
@@ -118,6 +130,16 @@ const HomeScreen = () => {
                     <View className="flex-row items-center">
                         <Feather name="share-2" size={20} color="#4A90E2" className="mr-2" />
                         <Text className="text-[#4A90E2] text-lg font-bold ml-2">Share App</Text>
+                    </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    onPress={handleCopyCalendarLink}
+                    className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
+                >
+                    <View className="flex-row items-center">
+                        <Feather name="calendar" size={20} color="#4A90E2" className="mr-2" />
+                        <Text className="text-[#4A90E2] text-lg font-bold ml-2">Sync to My Calendar</Text>
                     </View>
                 </TouchableOpacity>
 

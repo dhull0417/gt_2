@@ -221,7 +221,11 @@ export const userApi = {
   toggleGroupMute: async (api: AxiosInstance, groupId: string, muteType: 'indefinite' | 'untilNext' | 'none'): Promise<{ muted: boolean }> => {
     const response = await api.patch<{ muted: boolean }>("/api/users/mute-group", { groupId, muteType });
     return response.data;
-  }
+  },
+  getCalendarSyncUrl: async (api: AxiosInstance): Promise<{ url: string }> => {
+    const response = await api.get<{ url: string }>("/api/users/calendar-url");
+    return response.data;
+  },
 };
 
 export const groupApi = {
