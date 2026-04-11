@@ -100,6 +100,8 @@ export interface Meetup {
   in: string[];
   out: string[];
   waitlist: string[]; 
+  visibilityDate?: string; 
+  rsvpOpenDate?: string;
 }
 
 export interface Notification {

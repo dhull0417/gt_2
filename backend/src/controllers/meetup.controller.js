@@ -27,31 +27,25 @@ const parseTimeString = (timeStr) => {
  * @desc    Get upcoming meetups for the current user
  */
 export const getMeetups = asyncHandler(async (req, res) => {
-  const { userId: clerkId } = getAuth(req);
-  const currentUser = await User.findOne({ clerkId }).lean();
-  if (!currentUser) {
-    return res.status(404).json({ error: "User not found." });
-  }
-  // Fetch meetups from the last 10 days and all upcoming ones, to allow viewing expired meetups.
-  const tenDaysAgo = new Date();
-  tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-  tenDaysAgo.setHours(0, 0, 0, 0);
+    const { userId: clerkId } = getAuth(req);
+    const user = await User.findOne({ clerkId });
 
-  const meetups = await Meetup.find({
-    members: currentUser._id,
-    date: { $gte: tenDaysAgo },
-  })
-  .populate({
-      path: "members",
-      select: "firstName lastName _id profilePicture",
-  })
-  .populate({
-      path: "group",
-      select: "owner moderators",
-  })
-  .sort({ date: "asc" });
+    if (!user) return res.status(404).json({ error: "User not found." });
 
-  res.status(200).json(meetups);
+    const now = new Date();
+
+    const meetups = await Meetup.find({
+        group: { $in: user.groups },
+        // --- THE MAGIC FILTER ---
+        $or: [
+            { visibilityDate: { $lte: now } }, // It has passed the visibility threshold
+            { visibilityDate: { $exists: false } } // Fallback for old test data
+        ]
+    })
+    .populate('group', 'name owner') // Adjust populations as needed
+    .sort({ date: 1 });
+
+    res.status(200).json(meetups);
 });
 
 /**

@@ -105,6 +105,7 @@ const MeetupCard = ({
   const isCancelled = meetup.status === 'cancelled';
   const isPast = new Date(meetup.date) < new Date();
   const isExpired = meetup.status === 'expired' || isPast;
+  const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
 
   const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
   const isWaitlisted = currentUser ? meetup.waitlist.includes(currentUser._id) : false;
@@ -178,29 +179,42 @@ const MeetupCard = ({
       </TouchableOpacity>
 
       {showRsvpButtons && !isReadOnly && (
-        <View className="flex-row gap-4 mt-4 pt-4 border-t border-gray-100">
-          <TouchableOpacity
-            onPress={() => onRsvp('in')}
-            disabled={isRsvping}
-            className={`flex-1 py-3 rounded-xl items-center justify-center shadow-sm ${
-                isWaitlisted ? 'bg-blue-600' :
-                (isFull && !isIn) ? 'bg-orange-500' : 
-                '' 
-            }`}
-            style={{ backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#4FD1C5' }}
-          >
-            <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-                {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => onRsvp('out')}
-            disabled={isRsvping}
-            className="flex-1 py-3 rounded-xl items-center justify-center shadow-sm"
-            style={{ backgroundColor: '#FF7A6E' }}
-          >
-            <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
-          </TouchableOpacity>
+        <View className="mt-4 pt-4 border-t border-gray-100">
+          {isRsvpLocked ? (
+            <View className="bg-gray-100 py-3 rounded-xl items-center border border-gray-200">
+              <View className="flex-row items-center">
+                <Feather name="lock" size={14} color="#6B7280" className="mr-2" />
+                <Text className="text-gray-600 font-bold text-sm ml-1.5">
+                  RSVPs open on {formatDate(meetup.rsvpOpenDate!, meetup.timezone)}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View className="flex-row gap-4">
+              <TouchableOpacity
+                onPress={() => onRsvp('in')}
+                disabled={isRsvping}
+                className={`flex-1 py-3 rounded-xl items-center justify-center shadow-sm ${
+                    isWaitlisted ? 'bg-blue-600' :
+                    (isFull && !isIn) ? 'bg-orange-500' : 
+                    '' 
+                }`}
+                style={{ backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#4FD1C5' }}
+              >
+                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
+                    {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => onRsvp('out')}
+                disabled={isRsvping}
+                className="flex-1 py-3 rounded-xl items-center justify-center shadow-sm"
+                style={{ backgroundColor: '#FF7A6E' }}
+              >
+                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
     </View>
