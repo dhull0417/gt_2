@@ -1,7 +1,7 @@
-// backend/src/controllers/calendar.controller.js
 import asyncHandler from "express-async-handler";
 import crypto from "crypto";
 import { DateTime } from "luxon";
+import { getAuth } from "@clerk/express"; // <-- NEW: Import Clerk auth
 import User from "../models/user.model.js";
 import Meetup from "../models/meetup.model.js";
 
@@ -11,8 +11,11 @@ import Meetup from "../models/meetup.model.js";
  * @access  Private
  */
 export const getCalendarSyncUrl = asyncHandler(async (req, res) => {
-    // req.user is set by your protectRoute middleware
-    let user = await User.findById(req.user._id);
+    // 👇 NEW: Use Clerk's getAuth to find the clerkId
+    const { userId: clerkId } = getAuth(req);
+
+    // 👇 NEW: Search by clerkId, not req.user._id
+    let user = await User.findOne({ clerkId });
 
     if (!user) {
         return res.status(404).json({ message: "User not found" });
@@ -20,12 +23,11 @@ export const getCalendarSyncUrl = asyncHandler(async (req, res) => {
 
     // Generate a secure token if the user doesn't have one yet
     if (!user.calendarToken) {
-        user.calendarToken = crypto.randomUUID();
+        // Using the bulletproof crypto method
+        user.calendarToken = crypto.randomBytes(16).toString("hex"); 
         await user.save();
     }
 
-    // Dynamically build the URL based on the current server host
-    // In production, this will use your deployed domain
     const protocol = req.protocol === 'https' ? 'https' : req.headers['x-forwarded-proto'] || 'http';
     const host = req.get('host');
     const syncUrl = `${protocol}://${host}/api/users/calendar/feed?token=${user.calendarToken}`;

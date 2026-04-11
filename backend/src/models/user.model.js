@@ -75,6 +75,10 @@ const userSchema = new mongoose.Schema(
             required: false,
             unique: true,
             sparse: true,
+            default: function() {
+                // Generates a bulletproof 32-character random string
+                return crypto.randomBytes(16).toString("hex");
+            }
         },
     },
     { timestamps: true}
