@@ -108,14 +108,13 @@ export const cleanupExpiredMeetups = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Cron job to generate new meetups "Just-in-Time"
+ * @desc    Cron job to maintain a 30-day rolling window of meetups
  * @route   POST /api/jobs/regenerate-meetups
  */
 export const regenerateMeetups = asyncHandler(async (req, res) => {
-  console.log("Cron job started: JIT Meetup Generation...");
+  console.log("Cron job started: 30-Day Rolling Window Generator...");
   const now = DateTime.now(); 
   
-  // 2. Replenish Groups via JIT Logic
   const groups = await Group.find({ 
     "schedule.routines": { $exists: true, $not: { $size: 0 } } 
   });
@@ -125,14 +124,16 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
   for (const group of groups) {
     const timezone = group.timezone;
     
-    // --- FIX FOR KICKOFF DRIFT ---
-    // We treat the stored UTC date as the 'Local' intended date to prevent the 1-day-early bug.
+    // Treat the stored UTC date as the 'Local' intended date
     const kickoffDate = group.schedule.startDate 
         ? DateTime.fromJSDate(group.schedule.startDate, { zone: 'utc' })
             .setZone(timezone, { keepLocalTime: true })
             .startOf('day')
             .toJSDate()
         : now.setZone(timezone).startOf('day').toJSDate();
+
+    // 1. Define the 30-day hard limit
+    const windowEndDT = now.setZone(timezone).plus({ days: 30 }).endOf('day');
 
     for (const routine of group.schedule.routines) {
         for (const dtEntry of routine.dayTimes) {
@@ -141,7 +142,7 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
             let fillingWindow = true;
             let safetyCounter = 0;
 
-            while (fillingWindow && safetyCounter < 20) {
+            while (fillingWindow && safetyCounter < 50) { // Bumped safety counter for the 30-day span
                 safetyCounter++;
 
                 const lastMeetup = await Meetup.findOne({ 
@@ -166,33 +167,27 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
 
                 const nextMeetupDT = DateTime.fromJSDate(nextMeetupDate).setZone(timezone);
 
-                // --- TROUBLESHOOTING LOG: STEP 2 ---
-                if (group.name === "Hello") {
-                    const kickoffDT = DateTime.fromJSDate(kickoffDate).setZone(timezone);
-                    console.log(`[KICKOFF DEBUG] Kickoff: ${kickoffDT.toLocaleString(DateTime.DATETIME_MED)} | Target: ${nextMeetupDT.toLocaleString(DateTime.DATETIME_MED)} | Skip? ${nextMeetupDate < kickoffDate}`);
-                }
-
-                if (nextMeetupDate < kickoffDate) {
+                if (nextMeetupDate < kickoffDate || nextMeetupDT < now.setZone(timezone)) {
                     currentAnchor = nextMeetupDate;
                     continue;
                 }
 
-                if (nextMeetupDT < now.setZone(timezone)) {
-                    currentAnchor = nextMeetupDate;
-                    continue;
-                }
-
-                const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
-                const triggerDT = nextMeetupDT
-                    .minus({ days: group.generationLeadDays || 0 })
-                    .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-                const nowInTZ = now.setZone(timezone);
-
-                if (nowInTZ < triggerDT) {
+                // 2. Stop generating if we've passed the 30-day window
+                if (nextMeetupDT > windowEndDT) {
                     fillingWindow = false;
                     break;
                 }
+
+                // 3. Calculate Visibility and RSVP Open Dates
+                const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
+                
+                const visibilityDT = nextMeetupDT
+                    .minus({ days: group.visibilityLeadDays || 7 })
+                    .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+                    
+                const rsvpDT = nextMeetupDT
+                    .minus({ days: group.generationLeadDays || 3 })
+                    .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                 const alreadyExists = await Meetup.findOne({ 
                     group: group._id, 
@@ -201,9 +196,9 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
                 });
 
                 if (!alreadyExists) {
-                    console.log(`[JIT] Creating: ${group.name} | Date: ${nextMeetupDT.toISODate()}`);
+                    console.log(`[Rolling Window] Creating: ${group.name} | Date: ${nextMeetupDT.toISODate()}`);
                     
-                    const newMeetup = await Meetup.create({
+                    await Meetup.create({
                         group: group._id,
                         name: group.name,
                         date: nextMeetupDate,
@@ -213,20 +208,13 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
                         members: group.members,
                         undecided: group.members,
                         capacity: group.defaultCapacity || 0,
-                        isOverride: false
+                        isOverride: false,
+                        // Inject the new tracking dates
+                        visibilityDate: visibilityDT.toJSDate(),
+                        rsvpOpenDate: rsvpDT.toJSDate()
                     });
 
-                    const members = await User.find({ _id: { $in: group.members } });
-                    await notifyUsers(members, {
-                        title: `Upcoming: ${group.name}`,
-                        body: `${nextMeetupDT.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY)} at ${dtEntry.time}`,
-                        data: { 
-                            type: 'meetup_created', 
-                            meetupId: newMeetup._id.toString(),
-                            groupId: group._id.toString()
-                        },
-                        categoryIdentifier: 'MEETUP_RSVP'
-                    });
+                    // NO PUSH NOTIFICATIONS HERE - They belong in a separate daily alert job
 
                     generatedCount++;
                 }
@@ -237,5 +225,5 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
     }
   }
 
-  res.status(200).json({ generated: generatedCount });
+  res.status(200).json({ generated: generatedCount, message: "Rolling window generation complete." });
 });

@@ -51,7 +51,8 @@ const groupSchema = new mongoose.Schema({
   defaultLocation: { type: String, trim: true, default: "" },
   defaultCapacity: { type: Number, default: 0 },
   
-  generationLeadDays: { type: Number, default: 2, min: 0 },
+  visibilityLeadDays: { type: Number, min: 0 }, 
+  generationLeadDays: { type: Number, min: 0 }, 
   generationLeadTime: { type: String, default: "09:00 AM" },
   
   // Used by the JIT job to determine how many meetups to keep in the "pipeline"
@@ -59,7 +60,7 @@ const groupSchema = new mongoose.Schema({
     type: Number, 
     default: 1, 
     min: 1, 
-    max: 14 
+    max: 50 
   },
 
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
