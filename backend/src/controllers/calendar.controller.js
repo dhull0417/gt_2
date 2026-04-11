@@ -23,8 +23,8 @@ export const getCalendarSyncUrl = asyncHandler(async (req, res) => {
 
     // Generate a secure token if the user doesn't have one yet
     if (!user.calendarToken) {
-        // Using the bulletproof crypto method
-        user.calendarToken = crypto.randomBytes(16).toString("hex"); 
+        // Use the same foolproof generator
+        user.calendarToken = Date.now().toString(36) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15); 
         await user.save();
     }
 
