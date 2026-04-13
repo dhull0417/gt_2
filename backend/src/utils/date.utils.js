@@ -1,3 +1,14 @@
+import { DateTime } from "luxon";
+
+/**
+ * Calculates the next meetup date based on a schedule rule.
+ * * @param {number|object|string} dayOrRule - Day index (0-6), date (1-31), or ISO string
+ * @param {string} time - Time string (e.g., "05:00 PM")
+ * @param {string} timezone - Target timezone (e.g., "America/Denver")
+ * @param {string} frequency - 'daily', 'weekly', 'biweekly', 'monthly', 'ordinal', or 'once'
+ * @param {Date} [fromDate=null] - Anchor date to calculate from
+ * @param {object} [ordinalConfig=null] - Configuration for ordinal rules { occurrence, day }
+ */
 export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fromDate = null, ordinalConfig = null) => {
   const [timeStr, period] = time.split(' ');
   let [hours, minutes] = timeStr.split(':').map(Number);
