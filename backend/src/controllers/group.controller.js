@@ -13,6 +13,15 @@ import { DateTime } from "luxon";
 
 // --- Helpers ---
 
+const parseTimeString = (timeStr) => {
+    if (!timeStr) return { hours: 9, minutes: 0 };
+    const [time, modifier] = timeStr.split(' ');
+    let [hours, minutes] = time.split(':').map(Number);
+    if (modifier === 'PM' && hours < 12) hours += 12;
+    if (modifier === 'AM' && hours === 12) hours = 0;
+    return { hours, minutes };
+};
+
 const getDynamicLeadDays = (frequency) => {
   switch (frequency) {
     case 'daily': 
