@@ -125,30 +125,31 @@ export const createGroup = asyncHandler(async (req, res) => {
 
   // Initial Generation with Window Filling
   if (newGroup.schedule && newGroup.schedule.routines) {
-      try {
-          const now = DateTime.now().setZone(timezone); // Use group.timezone for updateGroupSchedule
-          const kickoffDate = newGroup.schedule.startDate // Use group.schedule for updateGroupSchedule
-              ? DateTime.fromJSDate(newGroup.schedule.startDate, { zone: 'utc' })
-                  .setZone(timezone, { keepLocalTime: true })
+    try{
+        const groupToUse = newGroup; // NOTE: Change to `group` in updateGroupSchedule
+          const timezoneToUse = timezone; // NOTE: Change to `group.timezone` in updateGroupSchedule
+          
+          const now = DateTime.now().setZone(timezoneToUse);
+          const kickoffDate = groupToUse.schedule.startDate 
+              ? DateTime.fromJSDate(groupToUse.schedule.startDate, { zone: 'utc' })
+                  .setZone(timezoneToUse, { keepLocalTime: true })
                   .startOf('day')
                   .toJSDate()
               : now.startOf('day').toJSDate();
 
-          // 1. Define the 30-day limit
           const windowEndDT = now.plus({ days: 30 }).endOf('day');
 
-          for (const routine of newGroup.schedule.routines) {
+          for (const routine of groupToUse.schedule.routines) {
               for (const dtEntry of routine.dayTimes) {
                   let currentAnchor = null;
                   let fillingWindow = true;
                   let loopSafety = 0;
 
-                  // 2. Increased safety limit
-                  while (fillingWindow && loopSafety < 50) { 
+                  while (fillingWindow && loopSafety < 100) { 
                       const nextDate = calculateNextMeetupDate(
                           routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
                           dtEntry.time, 
-                          timezone, 
+                          timezoneToUse, 
                           routine.frequency,
                           currentAnchor,
                           routine.frequency === 'ordinal' ? routine.rules?.[0] : null
@@ -160,40 +161,46 @@ export const createGroup = asyncHandler(async (req, res) => {
                           continue;
                       }
 
-                      const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(timezone);
+                      const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(timezoneToUse);
 
-                      // 3. The Window Break
                       if (nextMeetupDT > windowEndDT) {
                           fillingWindow = false;
                           break;
                       }
 
-                      // 4. Calculate Tracking Dates
-                      const { hours, minutes } = parseTimeString(newGroup.generationLeadTime || "09:00 AM");
-                      
-                      const visibilityDT = nextMeetupDT
-                          .minus({ days: newGroup.visibilityLeadDays || 7 })
-                          .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-                          
-                      const rsvpDT = nextMeetupDT
-                          .minus({ days: newGroup.generationLeadDays || 3 })
-                          .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-
-                      await Meetup.create({
-                          group: newGroup._id, 
-                          name: newGroup.name, 
-                          date: nextDate, 
-                          time: dtEntry.time,
-                          timezone: timezone,
-                          location: newGroup.defaultLocation,
-                          members: uniqueMemberIds, 
-                          undecided: uniqueMemberIds,
-                          capacity: newGroup.defaultCapacity,
-                          isOverride: false,
-                          visibilityDate: visibilityDT.toJSDate(),
-                          rsvpOpenDate: rsvpDT.toJSDate()
+                      // Check existence to prevent dupes
+                      const alreadyExists = await Meetup.findOne({ 
+                          group: groupToUse._id, 
+                          date: nextDate,
+                          time: dtEntry.time
                       });
+
+                      if (!alreadyExists) {
+                          const { hours, minutes } = parseTimeString(groupToUse.generationLeadTime || "09:00 AM");
+                          
+                          const visibilityDT = nextMeetupDT
+                              .minus({ days: groupToUse.visibilityLeadDays || 14 })
+                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+                              
+                          const rsvpDT = nextMeetupDT
+                              .minus({ days: groupToUse.generationLeadDays || 14 })
+                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+
+                          await Meetup.create({
+                              group: groupToUse._id, 
+                              name: groupToUse.name, 
+                              date: nextDate, 
+                              time: dtEntry.time,
+                              timezone: timezoneToUse,
+                              location: groupToUse.defaultLocation,
+                              members: uniqueMemberIds, // NOTE: use group.members in updateGroupSchedule
+                              undecided: uniqueMemberIds, // NOTE: use group.members in updateGroupSchedule
+                              capacity: groupToUse.defaultCapacity,
+                              isOverride: false,
+                              visibilityDate: visibilityDT.toJSDate(),
+                              rsvpOpenDate: rsvpDT.toJSDate()
+                          });
+                      }
                       
                       currentAnchor = nextDate;
                       loopSafety++;
@@ -250,10 +257,10 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
 
     if (group.schedule && group.schedule.routines) {
         try {
-          const now = DateTime.now().setZone(timezone); // Use group.timezone for updateGroupSchedule
-          const kickoffDate = newGroup.schedule.startDate // Use group.schedule for updateGroupSchedule
-              ? DateTime.fromJSDate(newGroup.schedule.startDate, { zone: 'utc' })
-                  .setZone(timezone, { keepLocalTime: true })
+          const now = DateTime.now().setZone(group.timezone);
+          const kickoffDate = group.schedule.startDate 
+              ? DateTime.fromJSDate(group.schedule.startDate, { zone: 'utc' })
+                  .setZone(group.timezone, { keepLocalTime: true })
                   .startOf('day')
                   .toJSDate()
               : now.startOf('day').toJSDate();
@@ -261,20 +268,20 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
           // 1. Define the 30-day limit
           const windowEndDT = now.plus({ days: 30 }).endOf('day');
 
-          for (const routine of newGroup.schedule.routines) {
+          for (const routine of group.schedule.routines) {
               for (const dtEntry of routine.dayTimes) {
                   let currentAnchor = null;
                   let fillingWindow = true;
                   let loopSafety = 0;
 
-                  // 2. Increased safety limit
-                  while (fillingWindow && loopSafety < 50) { 
+                  // 2. Increased safety limit to easily handle daily meetups over 30 days
+                  while (fillingWindow && loopSafety < 100) { 
                       const nextDate = calculateNextMeetupDate(
                           routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
                           dtEntry.time, 
-                          timezone, 
+                          group.timezone, 
                           routine.frequency,
-                          currentAnchor,
+                          currentAnchor, // Rely entirely on in-memory anchor
                           routine.frequency === 'ordinal' ? routine.rules?.[0] : null
                       );
 
@@ -284,7 +291,7 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                           continue;
                       }
 
-                      const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(timezone);
+                      const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(group.timezone);
 
                       // 3. The Window Break
                       if (nextMeetupDT > windowEndDT) {
@@ -292,39 +299,49 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                           break;
                       }
 
-                      // 4. Calculate Tracking Dates
-                      const { hours, minutes } = parseTimeString(newGroup.generationLeadTime || "09:00 AM");
-                      
-                      const visibilityDT = nextMeetupDT
-                          .minus({ days: newGroup.visibilityLeadDays || 7 })
-                          .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-                          
-                      const rsvpDT = nextMeetupDT
-                          .minus({ days: newGroup.generationLeadDays || 3 })
-                          .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-
-                      await Meetup.create({
-                          group: newGroup._id, 
-                          name: newGroup.name, 
-                          date: nextDate, 
-                          time: dtEntry.time,
-                          timezone: timezone,
-                          location: newGroup.defaultLocation,
-                          members: uniqueMemberIds, 
-                          undecided: uniqueMemberIds,
-                          capacity: newGroup.defaultCapacity,
-                          isOverride: false,
-                          visibilityDate: visibilityDT.toJSDate(),
-                          rsvpOpenDate: rsvpDT.toJSDate()
+                      // 4. Check existence to prevent dupes (Fixes the leapfrog bug)
+                      const alreadyExists = await Meetup.findOne({ 
+                          group: group._id, 
+                          date: nextDate,
+                          time: dtEntry.time
                       });
+
+                      if (!alreadyExists) {
+                          // 5. Calculate Tracking Dates
+                          const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
+                          
+                          const visibilityDT = nextMeetupDT
+                              .minus({ days: group.visibilityLeadDays || 14 })
+                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+                              
+                          const rsvpDT = nextMeetupDT
+                              .minus({ days: group.generationLeadDays || 14 })
+                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+
+                          await Meetup.create({
+                              group: group._id, 
+                              name: group.name, 
+                              date: nextDate, 
+                              time: dtEntry.time,
+                              timezone: group.timezone,
+                              location: group.defaultLocation,
+                              members: group.members, 
+                              undecided: group.members,
+                              capacity: group.defaultCapacity,
+                              isOverride: false,
+                              visibilityDate: visibilityDT.toJSDate(),
+                              rsvpOpenDate: rsvpDT.toJSDate()
+                          });
+                      }
                       
                       currentAnchor = nextDate;
                       loopSafety++;
                   }
               }
           }
-      } catch (err) { console.error("Initial Gen Error:", err); }
+      } catch (err) { 
+          console.error("Update Gen Error:", err); 
+      }
     }
 
     res.status(200).json({ message: "Schedule updated.", group });

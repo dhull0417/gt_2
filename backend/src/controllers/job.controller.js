@@ -138,70 +138,62 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
     for (const routine of group.schedule.routines) {
         for (const dtEntry of routine.dayTimes) {
             
+            // Inside regenerateMeetups (job.controller.js)
+            
             let currentAnchor = null;
             let fillingWindow = true;
             let safetyCounter = 0;
 
-            while (fillingWindow && safetyCounter < 50) { // Bumped safety counter for the 30-day span
+            // Bumped to 60 to easily handle 30 days of daily meetups
+            while (fillingWindow && safetyCounter < 100) { 
                 safetyCounter++;
 
-                const lastMeetup = await Meetup.findOne({ 
-                    group: group._id, 
-                    isOverride: false,
-                    time: dtEntry.time,
-                    date: currentAnchor ? { $gt: currentAnchor } : { $exists: true }
-                })
-                .sort({ date: -1 })
-                .lean();
-
-                const anchorDate = lastMeetup ? lastMeetup.date : currentAnchor;
-
-                const nextMeetupDate = calculateNextMeetupDate(
+                const nextDate = calculateNextMeetupDate(
                     routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
                     dtEntry.time,
                     timezone,
                     routine.frequency,
-                    anchorDate,
+                    currentAnchor, // Rely entirely on in-memory anchor
                     routine.frequency === 'ordinal' ? routine.rules?.[0] : null
                 );
 
-                const nextMeetupDT = DateTime.fromJSDate(nextMeetupDate).setZone(timezone);
+                const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(timezone);
 
-                if (nextMeetupDate < kickoffDate || nextMeetupDT < now.setZone(timezone)) {
-                    currentAnchor = nextMeetupDate;
+                if (nextDate < kickoffDate) {
+                    currentAnchor = nextDate;
+                    loopSafety++;
                     continue;
-                }
+}
 
-                // 2. Stop generating if we've passed the 30-day window
+                // The Window Break
                 if (nextMeetupDT > windowEndDT) {
                     fillingWindow = false;
                     break;
                 }
 
-                // 3. Calculate Visibility and RSVP Open Dates
-                const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
-                
-                const visibilityDT = nextMeetupDT
-                    .minus({ days: group.visibilityLeadDays || 7 })
-                    .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-                    
-                const rsvpDT = nextMeetupDT
-                    .minus({ days: group.generationLeadDays || 3 })
-                    .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
                 const alreadyExists = await Meetup.findOne({ 
                     group: group._id, 
-                    date: nextMeetupDate,
+                    date: nextDate,
                     time: dtEntry.time
                 });
 
                 if (!alreadyExists) {
                     console.log(`[Rolling Window] Creating: ${group.name} | Date: ${nextMeetupDT.toISODate()}`);
                     
+                    const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
+                    
+                    const visibilityDT = nextMeetupDT
+                        .minus({ days: group.visibilityLeadDays || 14 })
+                        .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+                        
+                    const rsvpDT = nextMeetupDT
+                        .minus({ days: group.generationLeadDays || 14 })
+                        .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+
                     await Meetup.create({
                         group: group._id,
                         name: group.name,
-                        date: nextMeetupDate,
+                        date: nextDate,
                         time: dtEntry.time,
                         timezone: timezone,
                         location: group.defaultLocation || "",
@@ -209,17 +201,14 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
                         undecided: group.members,
                         capacity: group.defaultCapacity || 0,
                         isOverride: false,
-                        // Inject the new tracking dates
                         visibilityDate: visibilityDT.toJSDate(),
                         rsvpOpenDate: rsvpDT.toJSDate()
                     });
 
-                    // NO PUSH NOTIFICATIONS HERE - They belong in a separate daily alert job
-
                     generatedCount++;
                 }
 
-                currentAnchor = nextMeetupDate;
+                currentAnchor = nextDate;
             }
         }
     }
