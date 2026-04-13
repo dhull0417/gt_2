@@ -1,14 +1,5 @@
 import { DateTime } from "luxon";
 
-/**
- * Calculates the next meetup date based on a schedule rule.
- * * @param {number|object|string} dayOrRule - Day index (0-6), date (1-31), or ISO string
- * @param {string} time - Time string (e.g., "05:00 PM")
- * @param {string} timezone - Target timezone (e.g., "America/Denver")
- * @param {string} frequency - 'daily', 'weekly', 'biweekly', 'monthly', 'ordinal', or 'once'
- * @param {Date} [fromDate=null] - Anchor date to calculate from
- * @param {object} [ordinalConfig=null] - Configuration for ordinal rules { occurrence, day }
- */
 export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fromDate = null, ordinalConfig = null) => {
   const [timeStr, period] = time.split(' ');
   let [hours, minutes] = timeStr.split(':').map(Number);
@@ -28,28 +19,34 @@ export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fr
   
   let meetupDate = now.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
-  // --- NEW: DAILY (no day targeting — just advance by 1 day each time) ---
-  if (frequency === 'daily') {
-    // If the time today is still in the future, return today; otherwise tomorrow
-    if (meetupDate <= now) {
-      meetupDate = meetupDate.plus({ days: 1 });
-    }
-    return meetupDate.toJSDate();
-  }
+  // DAILY / WEEKLY / BI-WEEKLY
+  // All three use a day index (0-6) to target a specific weekday.
+  // The only difference is how far we skip when the found day is already past:
+  //   - daily:    skip 1 day  (next occurrence of this weekday is next week, 
+  //                            but we fill every weekday so it's always 7 days away)
+  //   - weekly:   skip 1 week
+  //   - biweekly: skip 2 weeks
+  if (typeof dayOrRule === 'number' && ['daily', 'weekly', 'biweekly'].includes(frequency)) {
+    const targetDay = dayOrRule; // 0=Sun, 6=Sat
+    const luxonTarget = targetDay === 0 ? 7 : targetDay; // Luxon: Mon=1, Sun=7
 
-  // WEEKLY / BI-WEEKLY (day-specific)
-  if (typeof dayOrRule === 'number' && ['weekly', 'biweekly'].includes(frequency)) {
-    const targetDay = dayOrRule;
-    const luxonTarget = targetDay === 0 ? 7 : targetDay;
-
+    // Walk forward until we land on the target weekday
     while (meetupDate.weekday !== luxonTarget) {
       meetupDate = meetupDate.plus({ days: 1 });
     }
 
+    // If that weekday/time is already past relative to the anchor, advance to next occurrence.
+    // For daily, each specific day only recurs weekly (Sun->next Sun = 7 days),
+    // but across all 7 dayTimes entries the group has daily coverage.
     if (meetupDate <= now) {
-      const skipAmount = frequency === 'biweekly' ? { weeks: 2 } : { weeks: 1 };
-      meetupDate = meetupDate.plus(skipAmount);
+      meetupDate = meetupDate.plus({ days: 7 }); // Always 7 days to next same weekday
     }
+
+    // For biweekly, add another week on top
+    if (frequency === 'biweekly') {
+      meetupDate = meetupDate.plus({ weeks: 1 });
+    }
+
     return meetupDate.toJSDate();
   }
 
@@ -63,7 +60,7 @@ export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fr
     return meetupDate.toJSDate();
   }
 
-  // ORDINAL
+  // ORDINAL (e.g. 2nd Wednesday of every month)
   if (frequency === 'ordinal' || (frequency === 'custom' && dayOrRule.type === 'byDay')) {
     const config = ordinalConfig || dayOrRule;
     const targetDay = config.day; 
