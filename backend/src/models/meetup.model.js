@@ -15,6 +15,8 @@ const meetupSchema = new mongoose.Schema({
   out: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   waitlist: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   capacity: { type: Number, default: 0 },
+  visibilityDate: { type: Date },
+  rsvpOpenDate: { type: Date },
 }, { timestamps: true });
 
 const Meetup = mongoose.model("Meetup", meetupSchema);

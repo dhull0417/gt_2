@@ -159,6 +159,9 @@ export const handleRsvp = asyncHandler(async (req, res) => {
     const statusMessage = meetup.status === 'cancelled' ? 'a cancelled' : 'an expired';
     return res.status(400).json({ error: `Cannot RSVP to ${statusMessage} meetup.` });
   }
+  if (meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
+    return res.status(403).json({ error: "RSVPs are not open yet for this meetup." });
+}
 
   const userId = currentUser._id;
   const userIdStr = userId.toString();

@@ -85,6 +85,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const isCancelled = meetup.status === 'cancelled';
     const isPast = new Date(meetup.date) < new Date(); 
     const isExpired = meetup.status === 'expired' || isPast;
+
+    const isRsvpLocked = meetup.rsvpOpenDate 
+    ? new Date(meetup.rsvpOpenDate) > new Date() 
+    : false;
     
     // RECOMMENDATION: This flag controls all "adjustment" UI
     const isReadOnly = isCancelled || isExpired;
@@ -271,30 +275,44 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
                 {/* Hide RSVP Actions if Read Only */}
                 {!isReadOnly && (
-                    <View style={styles.rsvpRow}>
-                        <TouchableOpacity 
-                            onPress={() => handleRsvpAction('in')}
-                            disabled={isRsvping}
-                            style={[
-                                styles.rsvpButton, styles.rsvpIn,
-                                isWaitlisted && { backgroundColor: '#2563EB', borderBottomColor: '#1E40AF' },
-                                (isFull && !isIn) && { backgroundColor: '#F97316', borderBottomColor: '#C2410C' },
-                                isIn && { backgroundColor: '#4FD1C5', borderBottomColor: '#3FABA1' }
-                            ]}
-                        >
-                            <Text style={[styles.rsvpButtonText, (!isIn && !isWaitlisted && !isFull) && { color: '#4FD1C5' }]}>
-                                {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            onPress={() => handleRsvpAction('out')}
-                            disabled={isRsvping}
-                            style={[styles.rsvpButton, styles.rsvpOut, meetup.out?.includes(currentUser._id) && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
-                        >
-                            <Text style={[styles.rsvpButtonText, !meetup.out?.includes(currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
+    <View style={styles.rsvpRow}>
+        {isRsvpLocked ? (
+            <View style={styles.rsvpLockedBanner}>
+                <Feather name="lock" size={16} color="#6B7280" />
+                <Text style={styles.rsvpLockedTitle}>RSVPs Not Open Yet</Text>
+                <Text style={styles.rsvpLockedSubtitle}>
+                    Opens {new Date(meetup.rsvpOpenDate!).toLocaleDateString(undefined, { 
+                        weekday: 'short', month: 'short', day: 'numeric' 
+                    })}
+                </Text>
+            </View>
+        ) : (
+            <>
+                <TouchableOpacity 
+                    onPress={() => handleRsvpAction('in')}
+                    disabled={isRsvping}
+                    style={[
+                        styles.rsvpButton, styles.rsvpIn,
+                        isWaitlisted && { backgroundColor: '#2563EB', borderBottomColor: '#1E40AF' },
+                        (isFull && !isIn) && { backgroundColor: '#F97316', borderBottomColor: '#C2410C' },
+                        isIn && { backgroundColor: '#4FD1C5', borderBottomColor: '#3FABA1' }
+                    ]}
+                >
+                    <Text style={[styles.rsvpButtonText, (!isIn && !isWaitlisted && !isFull) && { color: '#4FD1C5' }]}>
+                        {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+                    </Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                    onPress={() => handleRsvpAction('out')}
+                    disabled={isRsvping}
+                    style={[styles.rsvpButton, styles.rsvpOut, meetup.out?.includes(currentUser._id) && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
+                >
+                    <Text style={[styles.rsvpButtonText, !meetup.out?.includes(currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
+                </TouchableOpacity>
+            </>
+        )}
+    </View>
+)}
 
                 <View style={{ marginBottom: 40 }}>
                     <View style={styles.tabContainer}>
@@ -457,6 +475,31 @@ const styles = StyleSheet.create({
     rsvpIn: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
     rsvpOut: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
     rsvpButtonText: { color: 'white', fontWeight: '900', fontSize: 14, textTransform: 'uppercase' },
+    rsvpLockedBanner: { 
+    flex: 1, 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    backgroundColor: '#F9FAFB', 
+    borderRadius: 16, 
+    paddingVertical: 20,
+    borderWidth: 1, 
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+    gap: 4
+},
+rsvpLockedTitle: { 
+    fontSize: 14, 
+    fontWeight: '900', 
+    color: '#6B7280', 
+    textTransform: 'uppercase', 
+    letterSpacing: 0.5,
+    marginTop: 4
+},
+rsvpLockedSubtitle: { 
+    fontSize: 13, 
+    fontWeight: '600', 
+    color: '#9CA3AF' 
+},
     // Tabs
     tabContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', marginBottom: 16 },
     tabItem: { flex: 1, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent', alignItems: 'center' },
