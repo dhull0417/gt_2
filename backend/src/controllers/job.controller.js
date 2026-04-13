@@ -240,14 +240,12 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
         return res.status(200).json({ message: "No notifications to send.", notifiedCount: 0 });
     }
 
-    // Only notify for the earliest upcoming meetup per group to avoid notification spam
     const notifiedGroups = new Set();
     let notifiedCount = 0;
 
     for (const meetup of meetups) {
         const groupId = meetup.group._id.toString();
 
-        // Always mark as notified to prevent future spam, even if we skip the push
         await Meetup.updateOne(
             { _id: meetup._id },
             { $set: { rsvpNotificationSent: true } }
@@ -259,6 +257,11 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
         }
 
         try {
+            const dateStr = new Date(meetup.date).toLocaleDateString(undefined, { 
+                weekday: 'short', month: 'short', day: 'numeric' 
+            });
+
+            // --- Notify undecided members ---
             const membersToNotify = await User.find({ 
                 _id: { $in: meetup.undecided }
             });
@@ -266,9 +269,7 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
             if (membersToNotify.length > 0) {
                 await notifyUsers(membersToNotify, {
                     title: "RSVPs Are Open! 🎉",
-                    body: `You can now RSVP to "${meetup.name}" on ${new Date(meetup.date).toLocaleDateString(undefined, { 
-                        weekday: 'short', month: 'short', day: 'numeric' 
-                    })}.`,
+                    body: `You can now RSVP to "${meetup.name}" on ${dateStr}.`,
                     data: { 
                         meetupId: meetup._id.toString(), 
                         type: 'rsvp_open',
@@ -276,6 +277,35 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
                     }
                 });
                 console.log(`[RSVP Open] Notified ${membersToNotify.length} members for "${meetup.name}".`);
+            }
+
+            // --- Notify owner and moderators separately ---
+            // Build a deduplicated set of admin IDs (owner + moderators),
+            // excluding anyone already in the undecided list (they got the member notification)
+            const undecidedIds = new Set(meetup.undecided.map(id => id.toString()));
+
+            const adminIds = [
+                meetup.group.owner.toString(),
+                ...(meetup.group.moderators || []).map(id => id.toString())
+            ].filter((id, index, self) => 
+                self.indexOf(id) === index && // deduplicate
+                !undecidedIds.has(id)         // don't double-notify
+            );
+
+            if (adminIds.length > 0) {
+                const adminsToNotify = await User.find({ _id: { $in: adminIds } });
+                if (adminsToNotify.length > 0) {
+                    await notifyUsers(adminsToNotify, {
+                        title: "RSVP Window Open 📋",
+                        body: `The RSVP window for "${meetup.name}" on ${dateStr} is now open. Members can now respond.`,
+                        data: { 
+                            meetupId: meetup._id.toString(), 
+                            type: 'rsvp_open_admin',
+                            groupId
+                        }
+                    });
+                    console.log(`[RSVP Open] Notified ${adminsToNotify.length} admins for "${meetup.name}".`);
+                }
             }
 
             notifiedGroups.add(groupId);

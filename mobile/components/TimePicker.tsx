@@ -3,21 +3,17 @@ import { View, Text, FlatList, StyleSheet, ViewToken } from 'react-native';
 
 interface TimePickerProps {
   onTimeChange: (time: string) => void;
-  initialValue?: string; // Can accept an initial time string
-  hideLabel?: boolean;   // Prop to toggle the internal label
+  initialValue?: string;
+  hideLabel?: boolean;
 }
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);
-const MINUTES = Array.from({ length: 12 }, (_, i) => (i * 5).toString().padStart(2, '0'));
+const MINUTES = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
 const PERIODS = ['AM', 'PM'];
 const ITEM_HEIGHT = 50;
 const VISIBLE_ITEMS = 3;
 const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
 
-/**
- * Custom Wheel TimePicker
- * Uses FlatLists to create a smooth scrolling selection experience.
- */
 const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hideLabel = false }) => {
   const parseInitialTime = () => {
     if (!initialValue) return { initialHour: 5, initialMinute: '00', initialPeriod: 'PM' };
@@ -39,7 +35,6 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hid
   const minuteRef = useRef<FlatList>(null);
   const periodRef = useRef<FlatList>(null);
 
-  // Scroll to initial values on mount
   useEffect(() => {
     const timer = setTimeout(() => {
         hourRef.current?.scrollToIndex({ index: HOURS.indexOf(hour), animated: false });
@@ -49,36 +44,40 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hid
     return () => clearTimeout(timer);
   }, []);
 
-  // Update parent whenever selection changes
   useEffect(() => {
     onTimeChange(`${hour.toString().padStart(2, '0')}:${minute} ${period}`);
   }, [hour, minute, period, onTimeChange]);
 
-  // Type-safe logic for detecting the central item in the "wheel"
-  const handleViewableItemsChanged = (
-    viewableItems: Array<ViewToken>, 
-    setState: React.Dispatch<React.SetStateAction<any>>
-  ) => {
-    const centralItem = viewableItems.find(item => item.isViewable);
-    if (centralItem && typeof centralItem.item !== 'undefined') {
-        setState(centralItem.item);
+  const hourViewabilityConfigCallbackPairs = useRef([
+    {
+      viewabilityConfig: { itemVisiblePercentThreshold: 51 },
+      onViewableItemsChanged: ({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
+        const centralItem = viewableItems.find(item => item.isViewable);
+        if (centralItem?.item !== undefined) setHour(centralItem.item);
+      }
     }
-  };
-  
-  const onViewableHourChanged = useCallback(({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
-    handleViewableItemsChanged(viewableItems, setHour);
-  }, []);
+  ]);
 
-  const onViewableMinuteChanged = useCallback(({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
-    handleViewableItemsChanged(viewableItems, setMinute);
-  }, []);
+  const minuteViewabilityConfigCallbackPairs = useRef([
+    {
+      viewabilityConfig: { itemVisiblePercentThreshold: 51 },
+      onViewableItemsChanged: ({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
+        const centralItem = viewableItems.find(item => item.isViewable);
+        if (centralItem?.item !== undefined) setMinute(centralItem.item);
+      }
+    }
+  ]);
 
-  const onViewablePeriodChanged = useCallback(({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
-    handleViewableItemsChanged(viewableItems, setPeriod);
-  }, []);
+  const periodViewabilityConfigCallbackPairs = useRef([
+    {
+      viewabilityConfig: { itemVisiblePercentThreshold: 51 },
+      onViewableItemsChanged: ({ viewableItems }: { viewableItems: Array<ViewToken> }) => {
+        const centralItem = viewableItems.find(item => item.isViewable);
+        if (centralItem?.item !== undefined) setPeriod(centralItem.item);
+      }
+    }
+  ]);
 
-  const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
-  
   const renderItem = (item: string | number, selectedValue: string | number) => (
     <View style={styles.itemWrapper}>
       <Text style={[styles.itemText, item === selectedValue && styles.selectedItemText]}>
@@ -89,9 +88,7 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hid
 
   return (
     <View style={styles.container}>
-      
       <View style={styles.pickersContainer}>
-        {/* Hour Column */}
         <FlatList
           ref={hourRef}
           data={HOURS}
@@ -102,12 +99,10 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hid
           decelerationRate="fast"
           style={styles.picker}
           contentContainerStyle={styles.listContentContainer}
-          onViewableItemsChanged={onViewableHourChanged}
-          viewabilityConfig={viewabilityConfig}
+          viewabilityConfigCallbackPairs={hourViewabilityConfigCallbackPairs.current}
           getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
         />
 
-        {/* Minute Column */}
         <FlatList
           ref={minuteRef}
           data={MINUTES}
@@ -118,12 +113,10 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hid
           decelerationRate="fast"
           style={styles.picker}
           contentContainerStyle={styles.listContentContainer}
-          onViewableItemsChanged={onViewableMinuteChanged}
-          viewabilityConfig={viewabilityConfig}
+          viewabilityConfigCallbackPairs={minuteViewabilityConfigCallbackPairs.current}
           getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
         />
 
-        {/* Period Column (AM/PM) */}
         <FlatList
           ref={periodRef}
           data={PERIODS}
@@ -134,13 +127,11 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hid
           decelerationRate="fast"
           style={styles.picker}
           contentContainerStyle={styles.listContentContainer}
-          onViewableItemsChanged={onViewablePeriodChanged}
-          viewabilityConfig={viewabilityConfig}
+          viewabilityConfigCallbackPairs={periodViewabilityConfigCallbackPairs.current}
           getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
         />
 
-        {/* Visual Overlay for the selection area */}
-        <View style={styles.highlightView} pointerMeetups="none" />
+        <View style={styles.highlightView} pointerEvents="none" />
       </View>
     </View>
   );

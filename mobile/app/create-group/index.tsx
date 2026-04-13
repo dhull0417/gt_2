@@ -520,16 +520,26 @@ const CreateGroupScreen = () => {
                       <View key={i} style={styles.routineSummaryBox}>
                           <Text style={styles.routineSummaryType}>{r.frequency.toUpperCase()}</Text>
                           {r.dayTimes.map((dt, dti) => {
-                              let label = "";
-                              if (r.frequency === 'ordinal' && r.rules?.[0]) {
-                                  const dayData = daysOfWeek.find(d => d.value === r.rules![0].day);
-                                  label = `${r.rules[0].occurrence} ${dayData?.label || ""}`;
-                              } else {
-                                  const dayData = daysOfWeek.find(d => d.value === dt.day);
-                                  label = dt.date ? `The ${dt.date}${dt.date === 1 ? 'st' : dt.date === 2 ? 'nd' : dt.date === 3 ? 'rd' : 'th'}` : (dayData?.label || "");
-                              }
-                              return <Text key={dti} style={styles.summaryValSmall}>• {label} @ {dt.time}</Text>
-                          })}
+                            if (!dt || !dt.time) return null; // Guard against null entries
+
+                            let label = "";
+                            if (r.frequency === 'ordinal' && r.rules?.[0]) {
+                                const dayData = daysOfWeek.find(d => d.value === r.rules![0].day);
+                                label = `${r.rules[0].occurrence} ${dayData?.label || ""}`;
+                            } else if (r.frequency === 'monthly') {
+                                const sfx = dt.date === 1 ? 'st' : dt.date === 2 ? 'nd' : dt.date === 3 ? 'rd' : 'th';
+                                label = `The ${dt.date}${sfx}`;
+                            } else {
+                                // day 0 = Sunday, make sure we find it correctly
+                                const dayData = daysOfWeek.find(d => d.value === dt.day);
+                                label = dayData?.label || `Day ${dt.day}`;
+                            }
+                            return (
+                                <Text key={dti} style={styles.summaryValSmall}>
+                                    • {label} @ {dt.time}
+                                </Text>
+                            );
+                        })}
                       </View>
                   ))}
 
