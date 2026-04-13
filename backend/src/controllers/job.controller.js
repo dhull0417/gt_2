@@ -161,7 +161,7 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
 
                 if (nextDate < kickoffDate) {
                     currentAnchor = nextDate;
-                    loopSafety++;
+                    safetyCounter++;
                     continue;
 }
 
@@ -215,4 +215,75 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
   }
 
   res.status(200).json({ generated: generatedCount, message: "Rolling window generation complete." });
+});
+
+/**
+ * @desc    Job to send push notifications when a meetup's RSVP window opens.
+ *          Run every minute via cron.
+ * @route   POST /api/jobs/notify-rsvp-open
+ */
+export const notifyRsvpOpen = asyncHandler(async (req, res) => {
+    console.log("Running job: notifyRsvpOpen...");
+    const now = new Date();
+
+    const meetups = await Meetup.find({
+        status: 'scheduled',
+        rsvpOpenDate: { $lte: now },
+        rsvpNotificationSent: { $ne: true },
+        date: { $gte: now }
+    })
+    .sort({ date: 1 })
+    .populate('group');
+
+    if (meetups.length === 0) {
+        console.log("No RSVP open notifications to send.");
+        return res.status(200).json({ message: "No notifications to send.", notifiedCount: 0 });
+    }
+
+    // Only notify for the earliest upcoming meetup per group to avoid notification spam
+    const notifiedGroups = new Set();
+    let notifiedCount = 0;
+
+    for (const meetup of meetups) {
+        const groupId = meetup.group._id.toString();
+
+        // Always mark as notified to prevent future spam, even if we skip the push
+        await Meetup.updateOne(
+            { _id: meetup._id },
+            { $set: { rsvpNotificationSent: true } }
+        );
+
+        if (notifiedGroups.has(groupId)) {
+            console.log(`[RSVP Open] Skipping "${meetup.name}" — already notified for this group.`);
+            continue;
+        }
+
+        try {
+            const membersToNotify = await User.find({ 
+                _id: { $in: meetup.undecided }
+            });
+
+            if (membersToNotify.length > 0) {
+                await notifyUsers(membersToNotify, {
+                    title: "RSVPs Are Open! 🎉",
+                    body: `You can now RSVP to "${meetup.name}" on ${new Date(meetup.date).toLocaleDateString(undefined, { 
+                        weekday: 'short', month: 'short', day: 'numeric' 
+                    })}.`,
+                    data: { 
+                        meetupId: meetup._id.toString(), 
+                        type: 'rsvp_open',
+                        groupId
+                    }
+                });
+                console.log(`[RSVP Open] Notified ${membersToNotify.length} members for "${meetup.name}".`);
+            }
+
+            notifiedGroups.add(groupId);
+            notifiedCount++;
+        } catch (err) {
+            console.error(`[RSVP Open] Failed to notify for meetup ${meetup._id}:`, err);
+        }
+    }
+
+    res.status(200).json({ message: `Notified for ${notifiedCount} meetups.`, notifiedCount });
 });
