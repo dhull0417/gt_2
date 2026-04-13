@@ -18,7 +18,6 @@ export const useCreateGroup = () => {
       groupApi.createGroup(api, variables),
     
     onSuccess: (data) => {
-      Alert.alert("Success", "Group created successfully!");
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
     },
