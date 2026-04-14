@@ -61,24 +61,22 @@ export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fr
   }
 
   // ORDINAL (e.g. 2nd Wednesday of every month)
-  // ORDINAL
-if (frequency === 'ordinal' || (frequency === 'custom' && dayOrRule.type === 'byDay')) {
+  if (frequency === 'ordinal' || (frequency === 'custom' && dayOrRule.type === 'byDay')) {
     const config = ordinalConfig || dayOrRule;
     
-    // Guard against missing config — fall back to first weekday of month
-    if (!config || config.day === undefined) {
-        return new Date();
-    }
+    if (!config || config.day === undefined) return new Date();
     
     const targetDay = config.day; 
     const luxonTarget = targetDay === 0 ? 7 : targetDay;
     const occurrenceMap = { '1st': 1, '2nd': 2, '3rd': 3, '4th': 4, '5th': 5 };
     
-    let monthPointer = now;
-    let safetyCounter = 0; // ← add this
-    while (safetyCounter < 24) { // ← cap at 24 months max
+    let monthPointer = now; // 'now' is already 1 second after the anchor
+    let safetyCounter = 0;
+    
+    while (safetyCounter < 24) {
         safetyCounter++;
         let candidate = monthPointer.startOf('month');
+        
         if (config.occurrence === 'Last') {
             candidate = monthPointer.endOf('month');
             while (candidate.weekday !== luxonTarget) candidate = candidate.minus({ days: 1 });
@@ -90,12 +88,15 @@ if (frequency === 'ordinal' || (frequency === 'custom' && dayOrRule.type === 'by
 
         candidate = candidate.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
+        // Must be in the same month we're checking AND strictly after 'now' (the anchor + 1 second)
         if (candidate.hasSame(monthPointer, 'month') && candidate > now) {
             return candidate.toJSDate();
         }
-        monthPointer = monthPointer.plus({ months: 1 });
+        
+        // Advance to next month
+        monthPointer = monthPointer.plus({ months: 1 }).startOf('month');
     }
-    return new Date(); // fallback if somehow nothing found in 24 months
+    return new Date();
   }
 
   return new Date(); 
