@@ -14,6 +14,7 @@ import { protectRoute } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
+
 router.get("/profile/:username", getUserProfile);
 router.get("/search", protectRoute, searchUsers);
 
