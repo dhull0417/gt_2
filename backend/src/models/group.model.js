@@ -21,15 +21,15 @@ const routineSchema = new mongoose.Schema({
     enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal'],
     required: true
   },
-  // Stores the day/date and time pairs. 
-  // If user selects "Same time for all", this array will have entries with identical times.
-  // If user selects "No", each entry will have its specific time.
   dayTimes: [dayTimeSchema],
-  
-  // Configuration for the 'Ordinal' frequency
+  rules: [{
+    type: { type: String },
+    occurrence: { type: String },
+    day: { type: Number }
+  }],
   ordinalConfig: {
     occurrence: { type: String, enum: ['1st', '2nd', '3rd', '4th', '5th', 'Last'] },
-    day: { type: Number } // 0-6
+    day: { type: Number }
   }
 }, { _id: false });
 
