@@ -61,31 +61,41 @@ export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fr
   }
 
   // ORDINAL (e.g. 2nd Wednesday of every month)
-  if (frequency === 'ordinal' || (frequency === 'custom' && dayOrRule.type === 'byDay')) {
+  // ORDINAL
+if (frequency === 'ordinal' || (frequency === 'custom' && dayOrRule.type === 'byDay')) {
     const config = ordinalConfig || dayOrRule;
+    
+    // Guard against missing config — fall back to first weekday of month
+    if (!config || config.day === undefined) {
+        return new Date();
+    }
+    
     const targetDay = config.day; 
     const luxonTarget = targetDay === 0 ? 7 : targetDay;
     const occurrenceMap = { '1st': 1, '2nd': 2, '3rd': 3, '4th': 4, '5th': 5 };
     
     let monthPointer = now;
-    while (true) {
-      let candidate = monthPointer.startOf('month');
-      if (config.occurrence === 'Last') {
-        candidate = monthPointer.endOf('month');
-        while (candidate.weekday !== luxonTarget) candidate = candidate.minus({ days: 1 });
-      } else {
-        while (candidate.weekday !== luxonTarget) candidate = candidate.plus({ days: 1 });
-        const weeksToAdd = occurrenceMap[config.occurrence] - 1;
-        candidate = candidate.plus({ weeks: weeksToAdd });
-      }
+    let safetyCounter = 0; // ← add this
+    while (safetyCounter < 24) { // ← cap at 24 months max
+        safetyCounter++;
+        let candidate = monthPointer.startOf('month');
+        if (config.occurrence === 'Last') {
+            candidate = monthPointer.endOf('month');
+            while (candidate.weekday !== luxonTarget) candidate = candidate.minus({ days: 1 });
+        } else {
+            while (candidate.weekday !== luxonTarget) candidate = candidate.plus({ days: 1 });
+            const weeksToAdd = occurrenceMap[config.occurrence] - 1;
+            candidate = candidate.plus({ weeks: weeksToAdd });
+        }
 
-      candidate = candidate.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+        candidate = candidate.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
-      if (candidate.hasSame(monthPointer, 'month') && candidate > now) {
-        return candidate.toJSDate();
-      }
-      monthPointer = monthPointer.plus({ months: 1 });
+        if (candidate.hasSame(monthPointer, 'month') && candidate > now) {
+            return candidate.toJSDate();
+        }
+        monthPointer = monthPointer.plus({ months: 1 });
     }
+    return new Date(); // fallback if somehow nothing found in 24 months
   }
 
   return new Date(); 

@@ -311,7 +311,7 @@ const DashboardScreen = () => {
           <>
             <View className="mb-10 mt-2">
               <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
-                You coming?
+                Are you coming?
               </Text>
               {nextUndecidedMeetup ? (
                 <MeetupCard
