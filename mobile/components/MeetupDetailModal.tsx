@@ -103,7 +103,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const goingUsers = (meetup.in || []).map(findUserInMembers).filter((u): u is User => !!u);
     const outUsers = (meetup.out || []).map(findUserInMembers).filter((u): u is User => !!u);
 
-
     const handleRsvpAction = (status: 'in' | 'out') => {
         if (isReadOnly) return;
         rsvp({ meetupId: meetup._id, status }, {

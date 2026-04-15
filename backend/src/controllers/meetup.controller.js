@@ -131,13 +131,12 @@ export const updateMeetup = asyncHandler(async (req, res) => {
         }
     }
 
-    // Populate members before sending back to client to ensure frontend has full user objects
-    await meetup.populate({
-        path: 'members',
-        select: 'firstName lastName _id profilePicture username'
-    });
+    // Re-fetch the meetup after saving to ensure all paths are populated correctly for the response.
+    const populatedMeetup = await Meetup.findById(meetup._id)
+        .populate('group', 'name owner moderators')
+        .populate('members', 'firstName lastName _id profilePicture username');
 
-    res.status(200).json({ message: "Meetup updated successfully.", meetup });
+    res.status(200).json({ message: "Meetup updated successfully.", meetup: populatedMeetup });
 });
 
 /**
@@ -319,18 +318,17 @@ export const handleRsvp = asyncHandler(async (req, res) => {
 
   await meetup.save();
 
-  // Populate members before sending back to client to ensure frontend has full user objects
-  await meetup.populate({
-      path: 'members',
-      select: 'firstName lastName _id profilePicture username'
-  });
+  // Re-fetch the meetup after saving to ensure all paths are populated correctly for the response.
+  const populatedMeetup = await Meetup.findById(meetup._id)
+    .populate('group', 'name owner moderators')
+    .populate('members', 'firstName lastName _id profilePicture username');
 
   // --- DIAGNOSTIC LOG ---
-  console.log('[RSVP Response] Sending meetup with members:', JSON.stringify(meetup.members.slice(0, 2), null, 2));
+  console.log('[RSVP Response] Sending meetup with members:', JSON.stringify(populatedMeetup.members.slice(0, 2), null, 2));
   // --- END DIAGNOSTIC LOG ---
 
   res.status(200).json({ 
-    meetup, 
+    meetup: populatedMeetup, 
     message: responseMessage,
     status: status 
   });
