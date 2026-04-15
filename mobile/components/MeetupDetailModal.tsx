@@ -310,9 +310,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <Text style={[styles.rsvpButtonText, !meetup.out?.includes(currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
                 </TouchableOpacity>
             </>
+                )}
+            </View>
         )}
-    </View>
-)}
 
                 <View style={{ marginBottom: 40 }}>
                     <View style={styles.tabContainer}>

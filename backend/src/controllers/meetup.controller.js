@@ -42,7 +42,8 @@ export const getMeetups = asyncHandler(async (req, res) => {
             { visibilityDate: { $exists: false } } // Fallback for old test data
         ]
     })
-    .populate('group', 'name owner') // Adjust populations as needed
+    .populate('group', 'name owner moderators')
+    .populate('members', 'firstName lastName _id profilePicture username')
     .sort({ date: 1 });
 
     res.status(200).json(meetups);
