@@ -115,9 +115,6 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     // --- Notification Logic ---
     const newDateStr = new Date(meetup.date).toLocaleDateString();
     const dateOrTimeChanged = oldDateStr !== newDateStr || oldTime !== meetup.time;
-    // --- Notification Logic ---
-    const newDateStr = new Date(meetup.date).toLocaleDateString();
-    const dateOrTimeChanged = oldDateStr !== newDateStr || oldTime !== meetup.time;
     const locationChanged = location !== undefined && oldLocation !== meetup.location;
     const capacityChanged = capacity !== undefined && oldCapacity !== meetup.capacity;
     
