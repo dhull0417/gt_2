@@ -188,6 +188,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const renderUserList = (users: User[], isWaitlist = false) => {
         if (users.length === 0) return <Text style={styles.emptyText}>No one in this list.</Text>;
+            console.log("renderUserList received:", JSON.stringify(users[0]), typeof users[0]);
         return users.map((user, index) => {
             // Handle unpopulated members (plain ID string)
             const userId = typeof user === 'string' ? user : user._id;
