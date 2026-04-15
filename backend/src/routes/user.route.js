@@ -12,7 +12,7 @@ import {
 import { getCalendarSyncUrl, getCalendarFeed } from "../controllers/calendar.controller.js"; // <-- Add this import
 import { protectRoute } from "../middleware/auth.middleware.js";
 
-const router = express.Router();
+const router = express.Router();  
 
 router.get("/profile/:username", getUserProfile);
 router.get("/search", protectRoute, searchUsers);

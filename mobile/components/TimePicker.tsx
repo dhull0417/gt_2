@@ -44,9 +44,15 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hid
     return () => clearTimeout(timer);
   }, []);
 
-  useEffect(() => {
+const isMounted = useRef(false);
+
+useEffect(() => {
+    if (!isMounted.current) {
+        isMounted.current = true;
+        return; // Skip the initial mount call
+    }
     onTimeChange(`${hour.toString().padStart(2, '0')}:${minute} ${period}`);
-  }, [hour, minute, period, onTimeChange]);
+}, [hour, minute, period]); // Remove onTimeChange from deps entirely
 
   const hourViewabilityConfigCallbackPairs = useRef([
     {
