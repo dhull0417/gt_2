@@ -98,8 +98,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const isWaitlisted = meetup.waitlist?.includes(currentUser._id) || false;
     const isIn = meetup.in?.includes(currentUser._id) || false;
 
-    const goingUsers = (meetup.members || []).filter(m => meetup.in?.includes(m._id));
-    const outUsers = (meetup.members || []).filter(m => meetup.out?.includes(m._id));
+    const goingUsers = (meetup.members || []).filter(m => meetup.in?.includes(typeof m === 'string' ? m : m._id));
+    const outUsers = (meetup.members || []).filter(m => meetup.out?.includes(typeof m === 'string' ? m : m._id));
 
     const handleRsvpAction = (status: 'in' | 'out') => {
         if (isReadOnly) return;
@@ -186,17 +186,33 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const renderUserList = (users: User[], isWaitlist = false) => {
         if (users.length === 0) return <Text style={styles.emptyText}>No one in this list.</Text>;
-        return users.map((user, index) => (
-            <View key={user._id} style={styles.memberRow}>
-                {isWaitlist && <Text style={styles.waitlistIndex}>{index + 1}</Text>}
-                <Image source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0]}` }} style={styles.avatar} />
-                <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
-                </View>
-            </View>
-        ));
-    };
+        return users.map((user, index) => {
+            // Handle unpopulated members (plain ID string)
+            const userId = typeof user === 'string' ? user : user._id;
+            if (typeof user !== 'string') {
+                console.log("User object:", JSON.stringify(user));
+            }
+            const displayName = typeof user === 'string'
+                ? 'Member'
+                : [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || 'Member';
+            const avatarUri = typeof user === 'string'
+                ? `https://placehold.co/100x100/EEE/31343C?text=M`
+                : (user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0] || 'M'}`);
 
+            return (
+                <View key={userId} style={styles.memberRow}>
+                    {isWaitlist && <Text style={styles.waitlistIndex}>{index + 1}</Text>}
+                    <Image source={{ uri: avatarUri }} style={styles.avatar} />
+                    <View style={styles.memberInfo}>
+                        <Text style={styles.memberName}>{displayName}</Text>
+                    </View>
+                </View>
+            );
+        });
+    };
+        console.log("meetup.members:", JSON.stringify(meetup.members?.slice(0,1)));
+        console.log("meetup.out:", JSON.stringify(meetup.in));
+        console.log("goingUsers:", JSON.stringify(goingUsers));
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -310,9 +326,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <Text style={[styles.rsvpButtonText, !meetup.out?.includes(currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
                 </TouchableOpacity>
             </>
-                )}
-            </View>
-        )}
+            )}
+        </View>
+    )}
 
                 <View style={{ marginBottom: 40 }}>
                     <View style={styles.tabContainer}>

@@ -115,6 +115,9 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     // --- Notification Logic ---
     const newDateStr = new Date(meetup.date).toLocaleDateString();
     const dateOrTimeChanged = oldDateStr !== newDateStr || oldTime !== meetup.time;
+    // --- Notification Logic ---
+    const newDateStr = new Date(meetup.date).toLocaleDateString();
+    const dateOrTimeChanged = oldDateStr !== newDateStr || oldTime !== meetup.time;
     const locationChanged = location !== undefined && oldLocation !== meetup.location;
     const capacityChanged = capacity !== undefined && oldCapacity !== meetup.capacity;
     
@@ -130,6 +133,12 @@ export const updateMeetup = asyncHandler(async (req, res) => {
             });
         }
     }
+
+    // Populate members before sending back to client to ensure frontend has full user objects
+    await meetup.populate({
+        path: 'members',
+        select: 'firstName lastName _id profilePicture username'
+    });
 
     res.status(200).json({ message: "Meetup updated successfully.", meetup });
 });
@@ -312,6 +321,12 @@ export const handleRsvp = asyncHandler(async (req, res) => {
   console.log(`[RSVP] User ${currentUser.username} (${userIdStr}) set status to '${status}' for meetup ${meetupId}`);
 
   await meetup.save();
+
+  // Populate members before sending back to client to ensure frontend has full user objects
+  await meetup.populate({
+      path: 'members',
+      select: 'firstName lastName _id profilePicture username'
+  });
   res.status(200).json({ 
     meetup, 
     message: responseMessage,
