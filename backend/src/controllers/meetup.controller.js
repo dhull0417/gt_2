@@ -324,6 +324,11 @@ export const handleRsvp = asyncHandler(async (req, res) => {
       path: 'members',
       select: 'firstName lastName _id profilePicture username'
   });
+
+  // --- DIAGNOSTIC LOG ---
+  console.log('[RSVP Response] Sending meetup with members:', JSON.stringify(meetup.members.slice(0, 2), null, 2));
+  // --- END DIAGNOSTIC LOG ---
+
   res.status(200).json({ 
     meetup, 
     message: responseMessage,

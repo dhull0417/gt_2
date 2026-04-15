@@ -98,8 +98,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const isWaitlisted = meetup.waitlist?.includes(currentUser._id) || false;
     const isIn = meetup.in?.includes(currentUser._id) || false;
 
-    const goingUsers = (meetup.members || []).filter(m => meetup.in?.includes(typeof m === 'string' ? m : m._id));
-    const outUsers = (meetup.members || []).filter(m => meetup.out?.includes(typeof m === 'string' ? m : m._id));
+    // Refactored for clarity and consistency with waitlistUsers logic
+    const findUserInMembers = (userId: string) => (meetup.members || []).find(m => (typeof m === 'string' ? m : m._id) === userId);
+    const goingUsers = (meetup.in || []).map(findUserInMembers).filter((u): u is User => !!u);
+    const outUsers = (meetup.out || []).map(findUserInMembers).filter((u): u is User => !!u);
+
 
     const handleRsvpAction = (status: 'in' | 'out') => {
         if (isReadOnly) return;
