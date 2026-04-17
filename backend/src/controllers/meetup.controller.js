@@ -42,11 +42,13 @@ export const getMeetups = asyncHandler(async (req, res) => {
             { visibilityDate: { $exists: false } } // Fallback for old test data
         ]
     })
-    .populate('group', 'name owner moderators')
-    .populate('members', 'firstName lastName _id profilePicture username')
-    .populate('in', 'firstName lastName _id profilePicture username')
-    .populate('out', 'firstName lastName _id profilePicture username')
-    .populate('waitlist', 'firstName lastName _id profilePicture username')
+    .populate([
+        { path: 'group', select: 'name owner moderators' },
+        { path: 'members', select: 'firstName lastName _id profilePicture username' },
+        { path: 'in', select: 'firstName lastName _id profilePicture username' },
+        { path: 'out', select: 'firstName lastName _id profilePicture username' },
+        { path: 'waitlist', select: 'firstName lastName _id profilePicture username' }
+    ])
     .sort({ date: 1 });
 
     res.status(200).json(meetups);
@@ -136,11 +138,13 @@ export const updateMeetup = asyncHandler(async (req, res) => {
 
     // Re-fetch the meetup after saving to ensure all paths are populated correctly for the response.
     const populatedMeetup = await Meetup.findById(meetup._id)
-        .populate('group', 'name owner moderators')
-        .populate('members', 'firstName lastName _id profilePicture username')
-        .populate('in', 'firstName lastName _id profilePicture username')
-        .populate('out', 'firstName lastName _id profilePicture username')
-        .populate('waitlist', 'firstName lastName _id profilePicture username');
+        .populate([
+            { path: 'group', select: 'name owner moderators' },
+            { path: 'members', select: 'firstName lastName _id profilePicture username' },
+            { path: 'in', select: 'firstName lastName _id profilePicture username' },
+            { path: 'out', select: 'firstName lastName _id profilePicture username' },
+            { path: 'waitlist', select: 'firstName lastName _id profilePicture username' }
+        ]);
 
     res.status(200).json({ message: "Meetup updated successfully.", meetup: populatedMeetup });
 });
@@ -326,11 +330,13 @@ export const handleRsvp = asyncHandler(async (req, res) => {
 
   // Re-fetch the meetup after saving to ensure all paths are populated correctly for the response.
   const populatedMeetup = await Meetup.findById(meetup._id)
-    .populate('group', 'name owner moderators')
-    .populate('members', 'firstName lastName _id profilePicture username')
-    .populate('in', 'firstName lastName _id profilePicture username')
-    .populate('out', 'firstName lastName _id profilePicture username')
-    .populate('waitlist', 'firstName lastName _id profilePicture username');
+    .populate([
+        { path: 'group', select: 'name owner moderators' },
+        { path: 'members', select: 'firstName lastName _id profilePicture username' },
+        { path: 'in', select: 'firstName lastName _id profilePicture username' },
+        { path: 'out', select: 'firstName lastName _id profilePicture username' },
+        { path: 'waitlist', select: 'firstName lastName _id profilePicture username' }
+    ]);
 
   res.status(200).json({
     meetup: populatedMeetup,
