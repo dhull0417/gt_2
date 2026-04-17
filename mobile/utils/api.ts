@@ -161,10 +161,6 @@ interface UpdateMeetupPayload {
   location?: string;
 }
 
-interface RsvpPayload {
-  meetupId: string;
-  status: 'in' | 'out';
-}
 
 interface CreateGroupResponse {
   group: Group;
@@ -185,6 +181,11 @@ interface CreateOneOffMeetupPayload {
 interface UpdateModeratorsPayload {
   groupId: string;
   moderatorIds: string[];
+}
+
+interface RsvpMeetupPayload {
+  meetupId: string;
+  status: 'in' | 'out';
 }
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
@@ -287,11 +288,11 @@ export const groupApi = {
 
 export const meetupApi = {
   getMeetups: async (api: AxiosInstance): Promise<Meetup[]> => {
-    const response = await api.get<Meetup[]>("/api/meetups");
+    const response = await api.get<Meetup[]>('/api/meetups');
     return response.data;
   },
-  handleRsvp: async (api: AxiosInstance, { meetupId, status }: RsvpPayload): Promise<{ message: string }> => {
-    const response = await api.post(`/api/meetups/${meetupId}/rsvp`, { status });
+  handleRsvp: async (api: AxiosInstance, { meetupId, status }: RsvpMeetupPayload): Promise<{ meetup: Meetup }> => {
+    const response = await api.post<{ meetup: Meetup }>(`/api/meetups/${meetupId}/rsvp`, { status });
     return response.data;
   },
   updateMeetup: async (api: AxiosInstance, { meetupId, ...details }: UpdateMeetupPayload): Promise<{ meetup: Meetup }> => {

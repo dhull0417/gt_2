@@ -27,6 +27,9 @@ interface MeetupDetailModalProps {
   onClose: () => void;
 }
 
+// Helper to safely extract user ID whether the array contains strings or populated objects
+const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
+
 const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModalProps) => {
     const api = useApiClient();
     const router = useRouter();
@@ -63,9 +66,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const { mutate: rsvp, isPending: isRsvping } = useRsvp();
 
-    const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
-
-    const waitlistUsers = (meetup?.waitlist || []).filter((u): u is User => typeof u !== 'string');
+    const waitlistUsers = (meetup?.waitlist || [])
+        .map(u => (meetup?.members || []).find(m => m._id === getUserId(u)))
+        .filter((u): u is User => !!u);
 
     useEffect(() => {
         if (activeTab === 'waitlist' && waitlistUsers.length === 0) {
@@ -97,9 +100,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const isFull = meetup.capacity > 0 && (meetup.in?.length || 0) >= meetup.capacity;
     const isWaitlisted = meetup.waitlist?.some(u => getUserId(u) === currentUser._id) || false;
     const isIn = meetup.in?.some(u => getUserId(u) === currentUser._id) || false;
+    const isOut = meetup.out?.some(u => getUserId(u) === currentUser._id) || false;
 
-    const goingUsers = (meetup.in || []).filter((u): u is User => typeof u !== 'string');
-    const outUsers = (meetup.out || []).filter((u): u is User => typeof u !== 'string');
+    const goingUsers = (meetup.members || []).filter(m => meetup.in?.some(u => getUserId(u) === m._id));
+    const outUsers = (meetup.members || []).filter(m => meetup.out?.some(u => getUserId(u) === m._id));
 
     const handleRsvpAction = (status: 'in' | 'out') => {
         if (isReadOnly) return;
@@ -107,6 +111,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             onSuccess: (data: any) => {
                 queryClient.invalidateQueries({ queryKey: ['meetups'] });
                 if (data.meetup) setMeetup(data.meetup);
+            },
+            onError: (error: any) => {
+                console.error("RSVP Error:", error.response?.data || error.message || error);
+                Alert.alert("RSVP Failed", error.response?.data?.error || "An error occurred while updating your RSVP.");
             }
         });
     };
@@ -184,24 +192,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         ]);
     };
 
-    const renderUserList = (users: User[], isWaitlist = false) => {
-        if (users.length === 0) return <Text style={styles.emptyText}>No one in this list.</Text>;
-        return users.map((user, index) => {
-            const userId = user._id;
-            const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || 'Member';
-            const avatarUri = user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0] || 'M'}`;
-
-            return (
-                <View key={userId} style={styles.memberRow}>
-                    {isWaitlist && <Text style={styles.waitlistIndex}>{index + 1}</Text>}
-                    <Image source={{ uri: avatarUri }} style={styles.avatar} />
-                    <View style={styles.memberInfo}>
-                        <Text style={styles.memberName}>{displayName}</Text>
-                    </View>
-                </View>
-            );
-        });
-    };
 
     return (
         <View style={styles.container}>
@@ -311,9 +301,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 <TouchableOpacity
                     onPress={() => handleRsvpAction('out')}
                     disabled={isRsvping}
-                    style={[styles.rsvpButton, styles.rsvpOut, meetup.out?.some(u => getUserId(u) === currentUser._id) && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
+                    style={[styles.rsvpButton, styles.rsvpOut, isOut && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
                 >
-                    <Text style={[styles.rsvpButtonText, !meetup.out?.some(u => getUserId(u) === currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
+                    <Text style={[styles.rsvpButtonText, !isOut && { color: '#FF7A6E' }]}>I'm Out</Text>
                 </TouchableOpacity>
             </>
             )}
@@ -334,10 +324,48 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             </TouchableOpacity>
                         )}
                     </View>
+
                     <View style={styles.listContainer}>
-                        {activeTab === 'in' && renderUserList(goingUsers)}
-                        {activeTab === 'out' && renderUserList(outUsers)}
-                        {activeTab === 'waitlist' && renderUserList(waitlistUsers, true)}
+                        {activeTab === 'in' && goingUsers.length === 0 && (
+                            <Text style={styles.emptyText}>No one is in yet.</Text>
+                        )}
+                        {activeTab === 'out' && outUsers.length === 0 && (
+                            <Text style={styles.emptyText}>No one is out.</Text>
+                        )}
+                        {activeTab === 'waitlist' && waitlistUsers.length === 0 && (
+                            <Text style={styles.emptyText}>Waitlist is empty.</Text>
+                        )}
+
+                        {activeTab === 'in' && goingUsers.map(user => (
+                            <View key={user._id} style={styles.memberRow}>
+                                {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
+                                <View style={styles.memberInfo}>
+                                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
+                                    <Text style={styles.memberUsername}>@{user.username}</Text>
+                                </View>
+                            </View>
+                        ))}
+
+                        {activeTab === 'out' && outUsers.map(user => (
+                            <View key={user._id} style={styles.memberRow}>
+                                {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
+                                <View style={styles.memberInfo}>
+                                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
+                                    <Text style={styles.memberUsername}>@{user.username}</Text>
+                                </View>
+                            </View>
+                        ))}
+
+                        {activeTab === 'waitlist' && waitlistUsers.map((user, index) => (
+                            <View key={user._id} style={styles.memberRow}>
+                                <Text style={styles.waitlistIndex}>{index + 1}</Text>
+                                {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
+                                <View style={styles.memberInfo}>
+                                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
+                                    <Text style={styles.memberUsername}>@{user.username}</Text>
+                                </View>
+                            </View>
+                        ))}
                     </View>
                 </View>
 

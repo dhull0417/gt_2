@@ -24,35 +24,88 @@ const parseTimeString = (timeStr) => {
 };
 
 /**
- * @desc    Get upcoming meetups for the current user
+ * @desc    Get all meetups for the current user
+ * @route   GET /api/meetups
  */
 export const getMeetups = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
-    const user = await User.findOne({ clerkId });
-
+    const user = await User.findOne({ clerkId }).lean();
+    
     if (!user) return res.status(404).json({ error: "User not found." });
 
-    const now = new Date();
-
-    const meetups = await Meetup.find({
-        group: { $in: user.groups },
-        // --- THE MAGIC FILTER ---
-        $or: [
-            { visibilityDate: { $lte: now } }, // It has passed the visibility threshold
-            { visibilityDate: { $exists: false } } // Fallback for old test data
-        ]
-    })
-    .populate([
-        { path: 'group', select: 'name owner moderators' },
-        { path: 'members', select: 'firstName lastName _id profilePicture username' },
-        { path: 'in', select: 'firstName lastName _id profilePicture username' },
-        { path: 'out', select: 'firstName lastName _id profilePicture username' },
-        { path: 'waitlist', select: 'firstName lastName _id profilePicture username' }
-    ])
-    .sort({ date: 1 });
+    const meetups = await Meetup.find({ members: user._id })
+        .populate('group', 'name owner moderators timezone defaultLocation')
+        .populate('members', 'firstName lastName username profilePicture')
+        .sort({ date: 1 });
 
     res.status(200).json(meetups);
 });
+
+/**
+ * @desc    RSVP to a meetup
+ * @route   POST /api/meetups/:meetupId/rsvp
+ */
+export const rsvpMeetup = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { meetupId } = req.params;
+    const { status } = req.body; 
+
+    const user = await User.findOne({ clerkId }).lean();
+    if (!user) return res.status(404).json({ error: "User not found." });
+
+    const meetup = await Meetup.findById(meetupId);
+    if (!meetup) return res.status(404).json({ error: "Meetup not found." });
+
+    if (!['in', 'out'].includes(status)) {
+        return res.status(400).json({ error: "Invalid RSVP status." });
+    }
+
+    if (meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
+        return res.status(400).json({ error: "RSVPs are not open yet." });
+    }
+
+    // Safely extract the user from all arrays first to prevent duplicates using Mongoose .pull()
+    meetup.in.pull(user._id);
+    meetup.out.pull(user._id);
+    meetup.waitlist.pull(user._id);
+    meetup.undecided.pull(user._id);
+
+    if (status === 'out') {
+        meetup.out.push(user._id);
+        
+        // Auto-promote the first person in the waitlist if capacity allows
+        if (meetup.capacity > 0 && meetup.waitlist.length > 0 && meetup.in.length < meetup.capacity) {
+            const nextUserId = meetup.waitlist.shift();
+            meetup.in.push(nextUserId);
+            
+            const nextUser = await User.findById(nextUserId);
+            if (nextUser) {
+                await notifyUsers([nextUser], {
+                    title: "You're In! 🎉",
+                    body: `A spot opened up for "${meetup.name}" and you've been moved off the waitlist!`,
+                    data: { meetupId: meetup._id.toString(), type: 'meetup_waitlist_promoted' }
+                });
+            }
+        }
+    } else if (status === 'in') {
+        // Push to waitlist if at capacity, otherwise 'in'
+        if (meetup.capacity > 0 && meetup.in.length >= meetup.capacity) {
+            meetup.waitlist.push(user._id);
+        } else {
+            meetup.in.push(user._id);
+        }
+    }
+
+    await meetup.save();
+    
+    // Re-query with populations to return a fresh representation to the frontend hook
+    const updatedMeetup = await Meetup.findById(meetupId)
+        .populate('group', 'name owner moderators timezone defaultLocation')
+        .populate('members', 'firstName lastName username profilePicture');
+
+    res.status(200).json({ message: "RSVP updated successfully.", meetup: updatedMeetup });
+});
+
 
 /**
  * @desc    Edit an existing meetup instance (Owner/Moderator Only)
@@ -149,201 +202,6 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     res.status(200).json({ message: "Meetup updated successfully.", meetup: populatedMeetup });
 });
 
-/**
- * @desc    RSVP to an meetup
- * Refined for Project 6 to handle background interactions and JIT undecided state.
- */
-export const handleRsvp = asyncHandler(async (req, res) => {
-  const { userId: clerkId } = getAuth(req);
-  const { meetupId } = req.params;
-  const { status } = req.body; 
-
-  const currentUser = await User.findOne({ clerkId });
-  if (!currentUser) return res.status(404).json({ error: "User not found." });
-
-  if (!['in', 'out'].includes(status)) {
-    return res.status(400).json({ error: "Invalid RSVP status." });
-  }
-  if (!mongoose.Types.ObjectId.isValid(meetupId)) {
-    return res.status(400).json({ error: "Invalid Meetup ID." });
-  }
-
-  
-  const meetup = await Meetup.findById(meetupId).populate('group');
-  if (!meetup) return res.status(404).json({ error: "Meetup not found." });
-  if (meetup.status === 'cancelled' || meetup.status === 'expired') {
-    const statusMessage = meetup.status === 'cancelled' ? 'a cancelled' : 'an expired';
-    return res.status(400).json({ error: `Cannot RSVP to ${statusMessage} meetup.` });
-  }
-  if (meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
-    return res.status(403).json({ error: "RSVPs are not open yet for this meetup." });
-}
-
-  const userId = currentUser._id;
-  const userIdStr = userId.toString();
-  const groupOwnerId = meetup.group.owner;
-
-  // 1. PROJECT 6: Clean move logic
-  meetup.in = meetup.in.filter(id => id.toString() !== userIdStr);
-  meetup.out = meetup.out.filter(id => id.toString() !== userIdStr);
-  meetup.undecided = meetup.undecided.filter(id => id.toString() !== userIdStr);
-  meetup.waitlist = meetup.waitlist.filter(id => id.toString() !== userIdStr);
-
-  let responseMessage = "RSVP updated successfully.";
-  const isOwner = groupOwnerId.toString() === userIdStr;
-
-  const isPast = new Date(meetup.date) < new Date();
-        if (meetup.status === 'cancelled' || meetup.status === 'expired' || isPast) {
-            return res.status(400).json({ error: "This event is closed for adjustments." });
-        }
-
-  // Prepare recipients (Owner + Moderators - Current User)
-  const recipientIds = new Set();
-  if (groupOwnerId.toString() !== userIdStr) recipientIds.add(groupOwnerId.toString());
-  if (meetup.group.moderators) {
-      meetup.group.moderators.forEach(mod => {
-          const mId = mod.toString();
-          if (mId !== userIdStr) recipientIds.add(mId);
-      });
-  }
-  const notificationRecipients = recipientIds.size > 0 
-      ? await User.find({ _id: { $in: Array.from(recipientIds) } }) 
-      : [];
-
-  if (status === 'in') {
-    const isUnlimited = meetup.capacity === 0;
-    const hasSpace = meetup.in.length < meetup.capacity;
-
-    if (isUnlimited || hasSpace) {
-      meetup.in.push(userId);
-      
-      // Notify Owner & Moderators: User Going
-      if (notificationRecipients.length > 0) {
-          await notifyUsers(notificationRecipients, {
-              title: "New RSVP",
-              body: `${currentUser.firstName} is going to "${meetup.name}".`,
-              data: { meetupId: meetup._id.toString(), type: 'meetup_rsvp' }
-          });
-          const notifs = notificationRecipients.map(r => ({
-              recipient: r._id,
-              sender: currentUser._id,
-              type: 'meetup-rsvp-in',
-              group: meetup.group._id,
-              meetup: meetup._id,
-              read: false
-          }));
-          await Notification.insertMany(notifs);
-      }
-    } else {
-      meetup.waitlist.push(userId);
-      responseMessage = "Meetup is full. You've been added to the waitlist.";
-      
-      // Notify Owner & Moderators: User Waitlisted
-      if (notificationRecipients.length > 0) {
-          await notifyUsers(notificationRecipients, {
-              title: "Waitlist Join",
-              body: `${currentUser.firstName} joined the waitlist for "${meetup.name}".`,
-              data: { meetupId: meetup._id.toString(), type: 'meetup_rsvp' }
-          });
-          const notifs = notificationRecipients.map(r => ({
-              recipient: r._id,
-              sender: currentUser._id,
-              type: 'meetup-waitlist-join',
-              group: meetup.group._id,
-              meetup: meetup._id,
-              read: false
-          }));
-          await Notification.insertMany(notifs);
-      }
-    }
-  } else if (status === 'out') {
-    meetup.out.push(userId);
-    
-    // Notify Owner & Moderators: User Out
-    if (notificationRecipients.length > 0) {
-        await notifyUsers(notificationRecipients, {
-            title: "RSVP Update",
-            body: `${currentUser.firstName} is out for "${meetup.name}".`,
-            data: { meetupId: meetup._id.toString(), type: 'meetup_rsvp' }
-        });
-        const notifs = notificationRecipients.map(r => ({
-            recipient: r._id,
-            sender: currentUser._id,
-            type: 'meetup-rsvp-out',
-            group: meetup.group._id,
-            meetup: meetup._id,
-            read: false
-        }));
-        await Notification.insertMany(notifs);
-    }
-
-    // 2. Waitlist Promotion Logic
-    if (meetup.capacity > 0 && meetup.waitlist.length > 0) {
-      const promotedUserId = meetup.waitlist.shift(); 
-      meetup.in.push(promotedUserId);
-
-      const promotedUser = await User.findById(promotedUserId);
-      if (promotedUser) {
-          await notifyUsers([promotedUser], {
-              title: "You're off the waitlist!",
-              body: `A spot opened up for ${meetup.name}. You are now confirmed!`,
-              data: { meetupId: meetup._id.toString(), type: 'waitlist_promotion' }
-          });
-
-          // Notify promoted user in-app
-          await Notification.create({
-              recipient: promotedUser._id,
-              sender: groupOwnerId,
-              type: 'waitlist-promotion',
-              group: meetup.group._id,
-              meetup: meetup._id,
-              read: false
-          });
-
-          // Notify Owner & Moderators: Waitlist Promotion
-          // Filter out the promoted user if they happen to be a moderator/owner (they got the personal notif above)
-          const promotionAdmins = notificationRecipients.filter(u => u._id.toString() !== promotedUser._id.toString());
-          
-          if (promotionAdmins.length > 0) {
-             await notifyUsers(promotionAdmins, {
-                title: "Waitlist Promotion",
-                body: `${promotedUser.firstName} was moved from waitlist to going for "${meetup.name}".`,
-                data: { meetupId: meetup._id.toString(), type: 'waitlist_promotion' }
-             });
-             const promoNotifs = promotionAdmins.map(admin => ({
-                recipient: admin._id,
-                sender: promotedUser._id,
-                type: 'waitlist-promotion',
-                group: meetup.group._id,
-                meetup: meetup._id,
-                read: false
-            }));
-            await Notification.insertMany(promoNotifs);
-          }
-      }
-    }
-  }
-
-  console.log(`[RSVP] User ${currentUser.username} (${userIdStr}) set status to '${status}' for meetup ${meetupId}`);
-
-  await meetup.save();
-
-  // Re-fetch the meetup after saving to ensure all paths are populated correctly for the response.
-  const populatedMeetup = await Meetup.findById(meetup._id)
-    .populate([
-        { path: 'group', select: 'name owner moderators' },
-        { path: 'members', select: 'firstName lastName _id profilePicture username' },
-        { path: 'in', select: 'firstName lastName _id profilePicture username' },
-        { path: 'out', select: 'firstName lastName _id profilePicture username' },
-        { path: 'waitlist', select: 'firstName lastName _id profilePicture username' }
-    ]);
-
-  res.status(200).json({
-    meetup: populatedMeetup,
-    message: responseMessage,
-    status: status
-  });
-});
 
 /**
  * @desc    Cancel an meetup (Owner/Moderator Only)
