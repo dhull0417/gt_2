@@ -64,13 +64,11 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         return res.status(400).json({ error: "RSVPs are not open yet." });
     }
 
-    const userIdStr = user._id.toString();
-
-    // Extract the user from all arrays first to prevent duplicates 
-    meetup.in = meetup.in.filter(id => id.toString() !== userIdStr);
-    meetup.out = meetup.out.filter(id => id.toString() !== userIdStr);
-    meetup.waitlist = meetup.waitlist.filter(id => id.toString() !== userIdStr);
-    meetup.undecided = meetup.undecided.filter(id => id.toString() !== userIdStr);
+    // Safely extract the user from all arrays first to prevent duplicates using Mongoose .pull()
+    meetup.in.pull(user._id);
+    meetup.out.pull(user._id);
+    meetup.waitlist.pull(user._id);
+    meetup.undecided.pull(user._id);
 
     if (status === 'out') {
         meetup.out.push(user._id);
