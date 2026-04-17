@@ -16,6 +16,8 @@ type GroupedMeetups = {
 };
 
 // --- Helper Functions ---
+const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
+
 const formatDate = (dateString: string, timezone: string) => {
     const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: timezone };
     return new Date(dateString).toLocaleDateString(undefined, options);
@@ -39,9 +41,9 @@ const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
 const RsvpStatusDot = ({ meetup, userId }: { meetup: Meetup; userId: string }) => {
     let dotColor = 'grey'; // Grey (Undecided) default
 
-    if (meetup.in.includes(userId)) {
+    if (meetup.in.some(u => getUserId(u) === userId)) {
         dotColor = '#4FD1C5'; // Green (In)
-    } else if (meetup.out.includes(userId)) {
+    } else if (meetup.out.some(u => getUserId(u) === userId)) {
         dotColor = '#FF7A6E'; // Red (Out)
     }
 
@@ -108,8 +110,8 @@ const MeetupCard = ({
   const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
 
   const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
-  const isWaitlisted = currentUser ? meetup.waitlist.includes(currentUser._id) : false;
-  const isIn = currentUser ? meetup.in.includes(currentUser._id) : false;
+  const isWaitlisted = currentUser ? meetup.waitlist.some(u => getUserId(u) === currentUser._id) : false;
+  const isIn = currentUser ? meetup.in.some(u => getUserId(u) === currentUser._id) : false;
 
   const isReadOnly = isCancelled || isExpired;
 

@@ -63,9 +63,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const { mutate: rsvp, isPending: isRsvping } = useRsvp();
 
-    const waitlistUsers = (meetup?.waitlist || [])
-        .map(id => (meetup?.members || []).find(m => m._id === id))
-        .filter((u): u is User => !!u);
+    const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
+
+    const waitlistUsers = (meetup?.waitlist || []).filter((u): u is User => typeof u !== 'string');
 
     useEffect(() => {
         if (activeTab === 'waitlist' && waitlistUsers.length === 0) {
@@ -95,13 +95,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const canManage = (isOwner || isMod) && !isReadOnly; 
     
     const isFull = meetup.capacity > 0 && (meetup.in?.length || 0) >= meetup.capacity;
-    const isWaitlisted = meetup.waitlist?.includes(currentUser._id) || false;
-    const isIn = meetup.in?.includes(currentUser._id) || false;
+    const isWaitlisted = meetup.waitlist?.some(u => getUserId(u) === currentUser._id) || false;
+    const isIn = meetup.in?.some(u => getUserId(u) === currentUser._id) || false;
 
-    // Refactored for clarity and consistency with waitlistUsers logic
-    const findUserInMembers = (userId: string) => (meetup.members || []).find(m => (typeof m === 'string' ? m : m._id) === userId);
-    const goingUsers = (meetup.in || []).map(findUserInMembers).filter((u): u is User => !!u);
-    const outUsers = (meetup.out || []).map(findUserInMembers).filter((u): u is User => !!u);
+    const goingUsers = (meetup.in || []).filter((u): u is User => typeof u !== 'string');
+    const outUsers = (meetup.out || []).filter((u): u is User => typeof u !== 'string');
 
     const handleRsvpAction = (status: 'in' | 'out') => {
         if (isReadOnly) return;
@@ -188,19 +186,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const renderUserList = (users: User[], isWaitlist = false) => {
         if (users.length === 0) return <Text style={styles.emptyText}>No one in this list.</Text>;
-            console.log("renderUserList received:", JSON.stringify(users[0]), typeof users[0]);
         return users.map((user, index) => {
-            // Handle unpopulated members (plain ID string)
-            const userId = typeof user === 'string' ? user : user._id;
-            if (typeof user !== 'string') {
-                console.log("User object:", JSON.stringify(user));
-            }
-            const displayName = typeof user === 'string'
-                ? 'Member'
-                : [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || 'Member';
-            const avatarUri = typeof user === 'string'
-                ? `https://placehold.co/100x100/EEE/31343C?text=M`
-                : (user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0] || 'M'}`);
+            const userId = user._id;
+            const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username || 'Member';
+            const avatarUri = user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0] || 'M'}`;
 
             return (
                 <View key={userId} style={styles.memberRow}>
@@ -213,9 +202,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             );
         });
     };
-        console.log("meetup.members:", JSON.stringify(meetup.members?.slice(0,1)));
-        console.log("meetup.out:", JSON.stringify(meetup.in));
-        console.log("goingUsers:", JSON.stringify(goingUsers));
+
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -321,12 +308,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                     </Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                     onPress={() => handleRsvpAction('out')}
                     disabled={isRsvping}
-                    style={[styles.rsvpButton, styles.rsvpOut, meetup.out?.includes(currentUser._id) && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
+                    style={[styles.rsvpButton, styles.rsvpOut, meetup.out?.some(u => getUserId(u) === currentUser._id) && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
                 >
-                    <Text style={[styles.rsvpButtonText, !meetup.out?.includes(currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
+                    <Text style={[styles.rsvpButtonText, !meetup.out?.some(u => getUserId(u) === currentUser._id) && { color: '#FF7A6E' }]}>I'm Out</Text>
                 </TouchableOpacity>
             </>
             )}
