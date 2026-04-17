@@ -184,18 +184,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         ]);
     };
 
-    const renderUserList = (users: User[], isWaitlist = false) => {
-        if (users.length === 0) return <Text style={styles.emptyText}>No one in this list.</Text>;
-        return users.map((user, index) => (
-            <View key={user._id} style={styles.memberRow}>
-                {isWaitlist && <Text style={styles.waitlistIndex}>{index + 1}</Text>}
-                <Image source={{ uri: user.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${user.username?.[0]}` }} style={styles.avatar} />
-                <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
-                </View>
-            </View>
-        ));
-    };
 
     return (
         <View style={styles.container}>
@@ -327,11 +315,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Text style={[styles.tabText, activeTab === 'waitlist' && { color: '#2563EB' }]}>Waitlist ({waitlistUsers.length})</Text>
                             </TouchableOpacity>
                         )}
-                    </View>
-                    <View style={styles.listContainer}>
-                        {activeTab === 'in' && renderUserList(goingUsers)}
-                        {activeTab === 'out' && renderUserList(outUsers)}
-                        {activeTab === 'waitlist' && renderUserList(waitlistUsers, true)}
                     </View>
                 </View>
 

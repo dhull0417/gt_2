@@ -1,7 +1,5 @@
 import express from "express";
 import { 
-    getMeetups, 
-    handleRsvp, 
     updateMeetup, 
     deleteMeetup, 
     cancelMeetup 
@@ -10,11 +8,6 @@ import { protectRoute } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-// --- General ---
-router.get("/", protectRoute, getMeetups);
-
-// --- RSVP Logic ---
-router.post("/:meetupId/rsvp", protectRoute, handleRsvp);
 
 // --- Management ---
 router.patch("/:meetupId/cancel", protectRoute, cancelMeetup);
