@@ -291,7 +291,7 @@ export const meetupApi = {
     const response = await api.get<Meetup[]>('/api/meetups');
     return response.data;
   },
-  rsvpMeetup: async (api: AxiosInstance, { meetupId, status }: RsvpMeetupPayload): Promise<{ meetup: Meetup }> => {
+  handleRsvp: async (api: AxiosInstance, { meetupId, status }: RsvpMeetupPayload): Promise<{ meetup: Meetup }> => {
     const response = await api.post<{ meetup: Meetup }>(`/api/meetups/${meetupId}/rsvp`, { status });
     return response.data;
   },

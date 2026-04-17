@@ -111,6 +111,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             onSuccess: (data: any) => {
                 queryClient.invalidateQueries({ queryKey: ['meetups'] });
                 if (data.meetup) setMeetup(data.meetup);
+            },
+            onError: (error: any) => {
+                console.error("RSVP Error:", error.response?.data || error.message || error);
+                Alert.alert("RSVP Failed", error.response?.data?.error || "An error occurred while updating your RSVP.");
             }
         });
     };
