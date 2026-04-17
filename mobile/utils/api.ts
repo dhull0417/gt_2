@@ -183,6 +183,11 @@ interface UpdateModeratorsPayload {
   moderatorIds: string[];
 }
 
+interface RsvpMeetupPayload {
+  meetupId: string;
+  status: 'in' | 'out';
+}
+
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
   const api = axios.create({ 
     baseURL: API_BASE_URL, 
@@ -282,6 +287,14 @@ export const groupApi = {
 };
 
 export const meetupApi = {
+  getMeetups: async (api: AxiosInstance): Promise<Meetup[]> => {
+    const response = await api.get<Meetup[]>('/api/meetups');
+    return response.data;
+  },
+  rsvpMeetup: async (api: AxiosInstance, { meetupId, status }: RsvpMeetupPayload): Promise<{ meetup: Meetup }> => {
+    const response = await api.post<{ meetup: Meetup }>(`/api/meetups/${meetupId}/rsvp`, { status });
+    return response.data;
+  },
   updateMeetup: async (api: AxiosInstance, { meetupId, ...details }: UpdateMeetupPayload): Promise<{ meetup: Meetup }> => {
     const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}`, details);
     return response.data;

@@ -316,6 +316,49 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             </TouchableOpacity>
                         )}
                     </View>
+
+                    <View style={styles.listContainer}>
+                        {activeTab === 'in' && goingUsers.length === 0 && (
+                            <Text style={styles.emptyText}>No one is in yet.</Text>
+                        )}
+                        {activeTab === 'out' && outUsers.length === 0 && (
+                            <Text style={styles.emptyText}>No one is out.</Text>
+                        )}
+                        {activeTab === 'waitlist' && waitlistUsers.length === 0 && (
+                            <Text style={styles.emptyText}>Waitlist is empty.</Text>
+                        )}
+
+                        {activeTab === 'in' && goingUsers.map(user => (
+                            <View key={user._id} style={styles.memberRow}>
+                                {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
+                                <View style={styles.memberInfo}>
+                                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
+                                    <Text style={styles.memberUsername}>@{user.username}</Text>
+                                </View>
+                            </View>
+                        ))}
+
+                        {activeTab === 'out' && outUsers.map(user => (
+                            <View key={user._id} style={styles.memberRow}>
+                                {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
+                                <View style={styles.memberInfo}>
+                                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
+                                    <Text style={styles.memberUsername}>@{user.username}</Text>
+                                </View>
+                            </View>
+                        ))}
+
+                        {activeTab === 'waitlist' && waitlistUsers.map((user, index) => (
+                            <View key={user._id} style={styles.memberRow}>
+                                <Text style={styles.waitlistIndex}>{index + 1}</Text>
+                                {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
+                                <View style={styles.memberInfo}>
+                                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
+                                    <Text style={styles.memberUsername}>@{user.username}</Text>
+                                </View>
+                            </View>
+                        ))}
+                    </View>
                 </View>
 
                 {/* Hide Management section if Read Only */}

@@ -23,6 +23,91 @@ const parseTimeString = (timeStr) => {
     return { hours, minutes };
 };
 
+/**
+ * @desc    Get all meetups for the current user
+ * @route   GET /api/meetups
+ */
+export const getMeetups = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const user = await User.findOne({ clerkId }).lean();
+    
+    if (!user) return res.status(404).json({ error: "User not found." });
+
+    const meetups = await Meetup.find({ members: user._id })
+        .populate('group', 'name owner moderators timezone defaultLocation')
+        .populate('members', 'firstName lastName username profilePicture')
+        .sort({ date: 1 });
+
+    res.status(200).json(meetups);
+});
+
+/**
+ * @desc    RSVP to a meetup
+ * @route   POST /api/meetups/:meetupId/rsvp
+ */
+export const rsvpMeetup = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { meetupId } = req.params;
+    const { status } = req.body; 
+
+    const user = await User.findOne({ clerkId }).lean();
+    if (!user) return res.status(404).json({ error: "User not found." });
+
+    const meetup = await Meetup.findById(meetupId);
+    if (!meetup) return res.status(404).json({ error: "Meetup not found." });
+
+    if (!['in', 'out'].includes(status)) {
+        return res.status(400).json({ error: "Invalid RSVP status." });
+    }
+
+    if (meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
+        return res.status(400).json({ error: "RSVPs are not open yet." });
+    }
+
+    const userIdStr = user._id.toString();
+
+    // Extract the user from all arrays first to prevent duplicates 
+    meetup.in = meetup.in.filter(id => id.toString() !== userIdStr);
+    meetup.out = meetup.out.filter(id => id.toString() !== userIdStr);
+    meetup.waitlist = meetup.waitlist.filter(id => id.toString() !== userIdStr);
+    meetup.undecided = meetup.undecided.filter(id => id.toString() !== userIdStr);
+
+    if (status === 'out') {
+        meetup.out.push(user._id);
+        
+        // Auto-promote the first person in the waitlist if capacity allows
+        if (meetup.capacity > 0 && meetup.waitlist.length > 0 && meetup.in.length < meetup.capacity) {
+            const nextUserId = meetup.waitlist.shift();
+            meetup.in.push(nextUserId);
+            
+            const nextUser = await User.findById(nextUserId);
+            if (nextUser) {
+                await notifyUsers([nextUser], {
+                    title: "You're In! 🎉",
+                    body: `A spot opened up for "${meetup.name}" and you've been moved off the waitlist!`,
+                    data: { meetupId: meetup._id.toString(), type: 'meetup_waitlist_promoted' }
+                });
+            }
+        }
+    } else if (status === 'in') {
+        // Push to waitlist if at capacity, otherwise 'in'
+        if (meetup.capacity > 0 && meetup.in.length >= meetup.capacity) {
+            meetup.waitlist.push(user._id);
+        } else {
+            meetup.in.push(user._id);
+        }
+    }
+
+    await meetup.save();
+    
+    // Re-query with populations to return a fresh representation to the frontend hook
+    const updatedMeetup = await Meetup.findById(meetupId)
+        .populate('group', 'name owner moderators timezone defaultLocation')
+        .populate('members', 'firstName lastName username profilePicture');
+
+    res.status(200).json({ message: "RSVP updated successfully.", meetup: updatedMeetup });
+});
+
 
 /**
  * @desc    Edit an existing meetup instance (Owner/Moderator Only)
