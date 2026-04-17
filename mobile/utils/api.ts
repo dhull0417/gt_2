@@ -97,9 +97,9 @@ export interface Meetup {
   isOverride: boolean;
   members: User[];
   undecided: string[];
-  in: string[];
-  out: string[];
-  waitlist: string[]; 
+  in: (User | string)[];
+  out: (User | string)[];
+  waitlist: (User | string)[];
   visibilityDate?: string; 
   rsvpOpenDate?: string;
 }

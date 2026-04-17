@@ -298,7 +298,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                     </Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                     onPress={() => handleRsvpAction('out')}
                     disabled={isRsvping}
                     style={[styles.rsvpButton, styles.rsvpOut, isOut && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
@@ -306,9 +306,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <Text style={[styles.rsvpButtonText, !isOut && { color: '#FF7A6E' }]}>I'm Out</Text>
                 </TouchableOpacity>
             </>
-        )}
-    </View>
-)}
+            )}
+        </View>
+    )}
 
                 <View style={{ marginBottom: 40 }}>
                     <View style={styles.tabContainer}>
