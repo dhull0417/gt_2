@@ -9,6 +9,7 @@ import { DateTime } from "luxon";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { canManageGroup } from "./group.controller.js";
 import { notifyUsers } from "../utils/push.notifications.js";
+import { sendRsvpOpenNotifications } from "./job.controller.js";
 
 /**
  * HELPER: parseTimeString
@@ -23,6 +24,21 @@ const parseTimeString = (timeStr) => {
     return { hours, minutes };
 };
 
+const getDynamicLeadDays = (frequency) => {
+  switch (frequency) {
+    case 'daily': 
+        return { visibility: 3, generation: 3 };
+    case 'weekly': 
+        return { visibility: 7, generation: 7 };
+    case 'biweekly': 
+        return { visibility: 14, generation: 14 };
+    case 'monthly': 
+        return { visibility: 31, generation: 31 };
+    default: 
+        return { visibility: 14, generation: 14 }; 
+  }
+};
+
 /**
  * @desc    Get all meetups for the current user
  * @route   GET /api/meetups
@@ -33,12 +49,23 @@ export const getMeetups = asyncHandler(async (req, res) => {
     
     if (!user) return res.status(404).json({ error: "User not found." });
 
-    const meetups = await Meetup.find({ members: user._id })
+    const now = new Date();
+
+    const meetups = await Meetup.find({
+        members: user._id,
+        $or: [
+            { visibilityDate: { $lte: now } },
+            { visibilityDate: { $exists: false } }
+        ]
+    })
         .populate('group', 'name owner moderators timezone defaultLocation')
         .populate('members', 'firstName lastName username profilePicture')
         .sort({ date: 1 });
 
     res.status(200).json(meetups);
+
+    // Non-blocking: check if any RSVP windows just opened and notify affected members
+    sendRsvpOpenNotifications().catch(err => console.error('[RSVP Open] Notification check failed:', err));
 });
 
 /**
@@ -288,7 +315,11 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
                 );
 
                 const nextDT = DateTime.fromJSDate(nextDate).setZone(parentGroup.timezone);
-                const triggerDT = nextDT.minus({ days: parentGroup.generationLeadDays || 0 }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+            const triggerDT = nextDT.minus({ 
+                days: parentGroup.generationLeadDays !== undefined 
+                    ? parentGroup.generationLeadDays 
+                    : getDynamicLeadDays(parentGroup.schedule?.frequency).generation 
+            }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                 const exists = await Meetup.findOne({ group: parentGroup._id, date: nextDate });
                 
@@ -303,7 +334,17 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
                         members: parentGroup.members,
                         undecided: parentGroup.members,
                         isOverride: false,
-                        capacity: parentGroup.defaultCapacity 
+                        capacity: parentGroup.defaultCapacity,
+                        visibilityDate: nextDT.minus({ 
+                            days: parentGroup.visibilityLeadDays !== undefined 
+                                ? parentGroup.visibilityLeadDays 
+                                : getDynamicLeadDays(parentGroup.schedule?.frequency).visibility 
+                        }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate(),
+                        rsvpOpenDate: nextDT.minus({ 
+                            days: parentGroup.generationLeadDays !== undefined 
+                                ? parentGroup.generationLeadDays 
+                                : getDynamicLeadDays(parentGroup.schedule?.frequency).generation 
+                        }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate()
                     });
 
                     // Notify users about the newly created recurring meetup

@@ -218,14 +218,11 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Job to send push notifications when a meetup's RSVP window opens.
- *          Run every minute via cron.
- * @route   POST /api/jobs/notify-rsvp-open
+ * Core logic for sending RSVP-open push notifications.
+ * Called both from the HTTP route and as a fire-and-forget from getMeetups.
  */
-export const notifyRsvpOpen = asyncHandler(async (req, res) => {
-    console.log("Running job: notifyRsvpOpen...");
+export const sendRsvpOpenNotifications = async () => {
     const now = new Date();
-    console.log(`[RSVP Open Debug] Current time: ${now.toISOString()}`);
 
     const meetups = await Meetup.find({
         status: 'scheduled',
@@ -236,103 +233,61 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
     .sort({ date: 1 })
     .populate('group', 'owner moderators name');
 
-    console.log(`[RSVP Open Debug] Meetups found matching query: ${meetups.length}`);
-
-    // Log why meetups might be getting filtered out
-    const allPending = await Meetup.find({
-        status: 'scheduled',
-        date: { $gte: now }
-    }).select('name rsvpOpenDate rsvpNotificationSent');
-
-    console.log(`[RSVP Open Debug] All scheduled future meetups:`, 
-        allPending.map(m => ({
-            name: m.name,
-            rsvpOpenDate: m.rsvpOpenDate,
-            rsvpNotificationSent: m.rsvpNotificationSent,
-            rsvpOpenDatePassed: m.rsvpOpenDate ? m.rsvpOpenDate <= now : 'no date set'
-        }))
-    );
-
-    if (meetups.length === 0) {
-        console.log("No RSVP open notifications to send.");
-        return res.status(200).json({ message: "No notifications to send.", notifiedCount: 0 });
-    }
+    if (meetups.length === 0) return;
 
     const notifiedGroups = new Set();
-    let notifiedCount = 0;
 
     for (const meetup of meetups) {
         const groupId = meetup.group._id.toString();
 
-        await Meetup.updateOne(
-            { _id: meetup._id },
-            { $set: { rsvpNotificationSent: true } }
-        );
+        // Mark as sent immediately to prevent duplicates from concurrent calls
+        await Meetup.updateOne({ _id: meetup._id }, { $set: { rsvpNotificationSent: true } });
 
-        if (notifiedGroups.has(groupId)) {
-            console.log(`[RSVP Open] Skipping "${meetup.name}" — already notified for this group.`);
-            continue;
-        }
+        if (notifiedGroups.has(groupId)) continue;
 
         try {
-            const dateStr = new Date(meetup.date).toLocaleDateString(undefined, { 
-                weekday: 'short', month: 'short', day: 'numeric' 
+            const dateStr = new Date(meetup.date).toLocaleDateString(undefined, {
+                weekday: 'short', month: 'short', day: 'numeric'
             });
 
-            const membersToNotify = await User.find({ 
-                _id: { $in: meetup.undecided }
-            });
-
-            console.log(`[RSVP Open Debug] "${meetup.name}" — undecided: ${meetup.undecided.length}, users found: ${membersToNotify.length}, with tokens: ${membersToNotify.filter(u => u.expoPushToken).length}`);
-
+            const membersToNotify = await User.find({ _id: { $in: meetup.undecided } });
             if (membersToNotify.length > 0) {
                 await notifyUsers(membersToNotify, {
-                    title: "RSVPs Are Open! 🎉",
+                    title: "RSVPs Are Open!",
                     body: `You can now RSVP to "${meetup.name}" on ${dateStr}.`,
-                    data: { 
-                        meetupId: meetup._id.toString(), 
-                        type: 'rsvp_open',
-                        groupId
-                    }
+                    data: { meetupId: meetup._id.toString(), type: 'rsvp_open', groupId }
                 });
-                console.log(`[RSVP Open] Notified ${membersToNotify.length} members for "${meetup.name}".`);
             }
 
             const undecidedIds = new Set(meetup.undecided.map(id => id.toString()));
             const adminIds = [
                 meetup.group.owner.toString(),
                 ...(meetup.group.moderators || []).map(id => id.toString())
-            ].filter((id, index, self) => 
-                self.indexOf(id) === index &&
-                !undecidedIds.has(id)
-            );
-
-            console.log(`[RSVP Open Debug] "${meetup.name}" — adminIds not in undecided: ${adminIds}`);
+            ].filter((id, i, self) => self.indexOf(id) === i && !undecidedIds.has(id));
 
             if (adminIds.length > 0) {
                 const adminsToNotify = await User.find({ _id: { $in: adminIds } });
-                console.log(`[RSVP Open Debug] admins found: ${adminsToNotify.length}, with tokens: ${adminsToNotify.filter(u => u.expoPushToken).length}`);
-
                 if (adminsToNotify.length > 0) {
                     await notifyUsers(adminsToNotify, {
-                        title: "RSVP Window Open 📋",
+                        title: "RSVP Window Open",
                         body: `The RSVP window for "${meetup.name}" on ${dateStr} is now open.`,
-                        data: { 
-                            meetupId: meetup._id.toString(), 
-                            type: 'rsvp_open_admin',
-                            groupId
-                        }
+                        data: { meetupId: meetup._id.toString(), type: 'rsvp_open_admin', groupId }
                     });
-                    console.log(`[RSVP Open] Notified ${adminsToNotify.length} admins for "${meetup.name}".`);
                 }
             }
 
             notifiedGroups.add(groupId);
-            notifiedCount++;
         } catch (err) {
             console.error(`[RSVP Open] Failed to notify for meetup ${meetup._id}:`, err);
         }
     }
+};
 
-    res.status(200).json({ message: `Notified for ${notifiedCount} meetups.`, notifiedCount });
+/**
+ * @desc    Job to send push notifications when a meetup's RSVP window opens.
+ * @route   POST /api/jobs/notify-rsvp-open
+ */
+export const notifyRsvpOpen = asyncHandler(async (req, res) => {
+    await sendRsvpOpenNotifications();
+    res.status(200).json({ message: "RSVP open notification check complete." });
 });
