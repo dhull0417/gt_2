@@ -24,6 +24,21 @@ const parseTimeString = (timeStr) => {
     return { hours, minutes };
 };
 
+const getDynamicLeadDays = (frequency) => {
+  switch (frequency) {
+    case 'daily': 
+        return { visibility: 3, generation: 3 };
+    case 'weekly': 
+        return { visibility: 7, generation: 7 };
+    case 'biweekly': 
+        return { visibility: 14, generation: 14 };
+    case 'monthly': 
+        return { visibility: 31, generation: 31 };
+    default: 
+        return { visibility: 14, generation: 14 }; 
+  }
+};
+
 /**
  * @desc    Get all meetups for the current user
  * @route   GET /api/meetups
@@ -300,7 +315,11 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
                 );
 
                 const nextDT = DateTime.fromJSDate(nextDate).setZone(parentGroup.timezone);
-                const triggerDT = nextDT.minus({ days: parentGroup.generationLeadDays || 0 }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+            const triggerDT = nextDT.minus({ 
+                days: parentGroup.generationLeadDays !== undefined 
+                    ? parentGroup.generationLeadDays 
+                    : getDynamicLeadDays(parentGroup.schedule?.frequency).generation 
+            }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                 const exists = await Meetup.findOne({ group: parentGroup._id, date: nextDate });
                 
@@ -315,7 +334,17 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
                         members: parentGroup.members,
                         undecided: parentGroup.members,
                         isOverride: false,
-                        capacity: parentGroup.defaultCapacity 
+                        capacity: parentGroup.defaultCapacity,
+                        visibilityDate: nextDT.minus({ 
+                            days: parentGroup.visibilityLeadDays !== undefined 
+                                ? parentGroup.visibilityLeadDays 
+                                : getDynamicLeadDays(parentGroup.schedule?.frequency).visibility 
+                        }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate(),
+                        rsvpOpenDate: nextDT.minus({ 
+                            days: parentGroup.generationLeadDays !== undefined 
+                                ? parentGroup.generationLeadDays 
+                                : getDynamicLeadDays(parentGroup.schedule?.frequency).generation 
+                        }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate()
                     });
 
                     // Notify users about the newly created recurring meetup
