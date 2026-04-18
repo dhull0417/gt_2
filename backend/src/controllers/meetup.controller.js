@@ -9,6 +9,7 @@ import { DateTime } from "luxon";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { canManageGroup } from "./group.controller.js";
 import { notifyUsers } from "../utils/push.notifications.js";
+import { sendRsvpOpenNotifications } from "./job.controller.js";
 
 /**
  * HELPER: parseTimeString
@@ -33,12 +34,23 @@ export const getMeetups = asyncHandler(async (req, res) => {
     
     if (!user) return res.status(404).json({ error: "User not found." });
 
-    const meetups = await Meetup.find({ members: user._id })
+    const now = new Date();
+
+    const meetups = await Meetup.find({
+        members: user._id,
+        $or: [
+            { visibilityDate: { $lte: now } },
+            { visibilityDate: { $exists: false } }
+        ]
+    })
         .populate('group', 'name owner moderators timezone defaultLocation')
         .populate('members', 'firstName lastName username profilePicture')
         .sort({ date: 1 });
 
     res.status(200).json(meetups);
+
+    // Non-blocking: check if any RSVP windows just opened and notify affected members
+    sendRsvpOpenNotifications().catch(err => console.error('[RSVP Open] Notification check failed:', err));
 });
 
 /**
