@@ -50,29 +50,19 @@ export const getMeetups = asyncHandler(async (req, res) => {
 
     const now = new Date();
 
-    const meetups = await Meetup.find({ members: user._id })
+    const meetups = await Meetup.find({
+        members: user._id,
+        $or: [
+            { date: { $lt: now } },             // past meetups always show
+            { isOverride: true },               // one-offs are immediately visible
+            { visibilityDate: { $lte: now } },  // scheduled meetups within the window
+        ]
+    })
         .populate('group', 'name owner moderators timezone defaultLocation visibilityLeadDays')
         .populate('members', 'firstName lastName username profilePicture')
         .sort({ date: 1 });
 
-    // Compute visibility dynamically so old meetups without a stored visibilityDate
-    // are still correctly filtered by their group's window.
-    const visibleMeetups = meetups.filter(meetup => {
-        const meetupDate = new Date(meetup.date);
-        // Past meetups always show (history)
-        if (meetupDate < now) return true;
-        // One-off meetups are immediately visible when scheduled
-        if (meetup.isOverride) return true;
-        // Use stored visibilityDate when present
-        if (meetup.visibilityDate) return new Date(meetup.visibilityDate) <= now;
-        // Fallback for old data: compute from group's lead days
-        const visibilityDays = meetup.group?.visibilityLeadDays ?? 14;
-        const visibleFrom = new Date(meetupDate);
-        visibleFrom.setDate(visibleFrom.getDate() - visibilityDays);
-        return visibleFrom <= now;
-    });
-
-    res.status(200).json(visibleMeetups);
+    res.status(200).json(meetups);
 
     // Non-blocking: notify members whose RSVP window just opened
     sendRsvpOpenNotifications().catch(err => console.error('[RSVP Open]:', err));
