@@ -221,6 +221,8 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
     }
   }
 
+  await sendRsvpOpenNotifications();
+
   res.status(200).json({ generated: generatedCount, message: "Rolling window generation complete." });
 });
 
