@@ -6,9 +6,6 @@ import { DateTime } from "luxon";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { notifyUsers } from "../utils/push.notifications.js";
 
-/**
- * Helper: parseTimeString
- */
 const parseTimeString = (timeStr) => {
   if (!timeStr) return { hours: 9, minutes: 0 };
   const [time, modifier] = timeStr.split(' ');
@@ -16,6 +13,16 @@ const parseTimeString = (timeStr) => {
   if (modifier === 'PM' && hours < 12) hours += 12;
   if (modifier === 'AM' && hours === 12) hours = 0;
   return { hours, minutes };
+};
+
+const getVisibilityDays = (frequency) => {
+  switch (frequency) {
+    case 'daily':    return 3;
+    case 'weekly':   return 7;
+    case 'biweekly': return 14;
+    case 'monthly':  return 31;
+    default:         return 14;
+  }
 };
 
 /**
@@ -121,7 +128,7 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
 
   let generatedCount = 0;
 
-  for (const group of groups) {
+  try { for (const group of groups) {
     const timezone = group.timezone;
     
     // Treat the stored UTC date as the 'Local' intended date
@@ -179,15 +186,15 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
 
                 if (!alreadyExists) {
                     console.log(`[Rolling Window] Creating: ${group.name} | Date: ${nextMeetupDT.toISODate()}`);
-                    
-                    const { hours, minutes } = parseTimeString(group.rsvpLeadTime || "09:00 AM");
-                    
+
+                    const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
+
                     const visibilityDT = nextMeetupDT
-                        .minus({ days: group.visibilityLeadDays || 14 })
+                        .minus({ days: getVisibilityDays(routine.frequency) })
                         .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-                        
+
                     const rsvpDT = nextMeetupDT
-                        .minus({ days: group.rsvpLeadDays || 14 })
+                        .minus({ days: group.generationLeadDays || 1 })
                         .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                     await Meetup.create({
@@ -212,82 +219,38 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
             }
         }
     }
+  }} catch (err) {
+    console.error('[Regenerate] Main loop error:', err);
+  }
+
+  // Always runs — even if main loop errored
+  try {
+    const notifyNow = new Date();
+    const toNotify = await Meetup.find({
+      status: 'scheduled',
+      date: { $gte: notifyNow },
+      rsvpOpenDate: { $lte: notifyNow },
+      rsvpNotified: false,
+    });
+    console.log(`[RSVP Notify] Found ${toNotify.length} meetup(s) to notify.`);
+
+    for (const meetup of toNotify) {
+      await Meetup.updateOne({ _id: meetup._id }, { $set: { rsvpNotified: true } });
+      const dateStr = new Date(meetup.date).toLocaleDateString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric',
+      });
+      const members = await User.find({ _id: { $in: meetup.members } });
+      if (members.length > 0) {
+        await notifyUsers(members, {
+          title: "RSVPs Are Open!",
+          body: `You can now RSVP to "${meetup.name}" on ${dateStr}.`,
+          data: { meetupId: meetup._id.toString(), type: 'rsvp_open', groupId: meetup.group.toString() },
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[RSVP Notify] Error:', err);
   }
 
   res.status(200).json({ generated: generatedCount, message: "Rolling window generation complete." });
-});
-
-/**
- * Core logic for sending RSVP-open push notifications.
- * Called both from the HTTP route and as a fire-and-forget from getMeetups.
- */
-export const sendRsvpOpenNotifications = async () => {
-    const now = new Date();
-
-    const meetups = await Meetup.find({
-        status: 'scheduled',
-        rsvpOpenDate: { $lte: now },
-        rsvpNotificationSent: { $ne: true },
-        date: { $gte: now }
-    })
-    .sort({ date: 1 })
-    .populate('group', 'owner moderators name');
-
-    if (meetups.length === 0) return;
-
-    const notifiedGroups = new Set();
-
-    for (const meetup of meetups) {
-        const groupId = meetup.group._id.toString();
-
-        // Mark as sent immediately to prevent duplicates from concurrent calls
-        await Meetup.updateOne({ _id: meetup._id }, { $set: { rsvpNotificationSent: true } });
-
-        if (notifiedGroups.has(groupId)) continue;
-
-        try {
-            const dateStr = new Date(meetup.date).toLocaleDateString(undefined, {
-                weekday: 'short', month: 'short', day: 'numeric'
-            });
-
-            const membersToNotify = await User.find({ _id: { $in: meetup.undecided } });
-            if (membersToNotify.length > 0) {
-                await notifyUsers(membersToNotify, {
-                    title: "RSVPs Are Open!",
-                    body: `You can now RSVP to "${meetup.name}" on ${dateStr}.`,
-                    data: { meetupId: meetup._id.toString(), type: 'rsvp_open', groupId }
-                });
-            }
-
-            const undecidedIds = new Set(meetup.undecided.map(id => id.toString()));
-            const adminIds = [
-                meetup.group.owner.toString(),
-                ...(meetup.group.moderators || []).map(id => id.toString())
-            ].filter((id, i, self) => self.indexOf(id) === i && !undecidedIds.has(id));
-
-            if (adminIds.length > 0) {
-                const adminsToNotify = await User.find({ _id: { $in: adminIds } });
-                if (adminsToNotify.length > 0) {
-                    await notifyUsers(adminsToNotify, {
-                        title: "RSVP Window Open",
-                        body: `The RSVP window for "${meetup.name}" on ${dateStr} is now open.`,
-                        data: { meetupId: meetup._id.toString(), type: 'rsvp_open_admin', groupId }
-                    });
-                }
-            }
-
-            notifiedGroups.add(groupId);
-        } catch (err) {
-            console.error(`[RSVP Open] Failed to notify for meetup ${meetup._id}:`, err);
-        }
-    }
-};
-
-/**
- * @desc    Job to send push notifications when a meetup's RSVP window opens.
- * @route   POST /api/jobs/notify-rsvp-open
- */
-export const notifyRsvpOpen = asyncHandler(async (req, res) => {
-    await sendRsvpOpenNotifications();
-    res.status(200).json({ message: "RSVP open notification check complete." });
 });

@@ -51,9 +51,8 @@ const groupSchema = new mongoose.Schema({
   defaultLocation: { type: String, trim: true, default: "" },
   defaultCapacity: { type: Number, default: 0 },
   
-  visibilityLeadDays: { type: Number, min: 0 }, 
-  rsvpLeadDays: { type: Number, min: 0 }, 
-  rsvpLeadTime: { type: String, default: "09:00 AM" },
+  generationLeadDays: { type: Number, min: 0 },
+  generationLeadTime: { type: String, default: "09:00 AM" },
   
   // Used by the JIT job to determine how many meetups to keep in the "pipeline"
   meetupsToDisplay: { 

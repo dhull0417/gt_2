@@ -22,19 +22,13 @@ const parseTimeString = (timeStr) => {
     return { hours, minutes };
 };
 
-const getDynamicLeadDays = (frequency) => {
+const getVisibilityDays = (frequency) => {
   switch (frequency) {
-    case 'daily': 
-        return { visibility: 3, generation: 3 };
-    case 'weekly': 
-        return { visibility: 7, generation: 7 };
-    case 'biweekly': 
-        return { visibility: 14, generation: 14 };
-    case 'monthly': 
-        return { visibility: 31, generation: 31 };
-    default: 
-        // Covers 'ordinal', 'custom', 'once', etc.
-        return { visibility: 14, generation: 14 }; 
+    case 'daily':    return 3;
+    case 'weekly':   return 7;
+    case 'biweekly': return 14;
+    case 'monthly':  return 31;
+    default:         return 14;
   }
 };
 
@@ -54,17 +48,16 @@ export const canManageGroup = (userId, group) => {
  */
 export const createGroup = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
-  const { 
-    name, 
-    schedule, 
-    timezone, 
-    meetupsToDisplay, 
-    members, 
+  const {
+    name,
+    schedule,
+    timezone,
+    meetupsToDisplay,
+    members,
     defaultCapacity,
     defaultLocation,
-    visibilityLeadDays,
-    rsvpLeadDays,
-    rsvpLeadTime
+    generationLeadDays,
+    generationLeadTime
   } = req.body;
   
   if (!name || !timezone) {
@@ -80,30 +73,18 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
   const uniqueMemberIds = [...new Set(initialMemberIds)];
 
-  let finalVisibilityDays = visibilityLeadDays;
-  let finalGenerationDays = rsvpLeadDays;
-
-  if (schedule && schedule.frequency) {
-      const dynamicDefaults = getDynamicLeadDays(schedule.frequency);
-      
-      // Apply defaults only if the user didn't explicitly provide a value
-      if (finalVisibilityDays === undefined) finalVisibilityDays = dynamicDefaults.visibility;
-      if (finalGenerationDays === undefined) finalGenerationDays = dynamicDefaults.generation;
-  }
-
-  const groupData = { 
-      name, 
+  const groupData = {
+      name,
       schedule: schedule || null,
-      timezone, 
-      meetupsToDisplay: meetupsToDisplay || 1, 
-      owner: owner._id, 
+      timezone,
+      meetupsToDisplay: meetupsToDisplay || 1,
+      owner: owner._id,
       members: uniqueMemberIds,
       defaultCapacity: defaultCapacity || 0,
       defaultLocation: defaultLocation || "",
-      visibilityLeadDays: finalVisibilityDays,
-      rsvpLeadDays: rsvpLeadDays !== undefined ? Number(rsvpLeadDays) : 2,
-      rsvpLeadTime: rsvpLeadTime || "09:00 AM",
-      moderators: [] 
+      generationLeadDays: generationLeadDays !== undefined ? Number(generationLeadDays) : 1,
+      generationLeadTime: generationLeadTime || "09:00 AM",
+      moderators: []
   };
   
   const newGroup = await Group.create(groupData);
@@ -185,25 +166,25 @@ export const createGroup = asyncHandler(async (req, res) => {
                       });
 
                       if (!alreadyExists) {
-                          const { hours, minutes } = parseTimeString(groupToUse.rsvpLeadTime || "09:00 AM");
-                          
+                          const { hours, minutes } = parseTimeString(groupToUse.generationLeadTime || "09:00 AM");
+
                           const visibilityDT = nextMeetupDT
-                              .minus({ days: groupToUse.visibilityLeadDays || 14 })
+                              .minus({ days: getVisibilityDays(routine.frequency) })
                               .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-                              
+
                           const rsvpDT = nextMeetupDT
-                              .minus({ days: groupToUse.rsvpLeadDays || 14 })
+                              .minus({ days: groupToUse.generationLeadDays || 1 })
                               .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                           await Meetup.create({
-                              group: groupToUse._id, 
-                              name: groupToUse.name, 
-                              date: nextDate, 
+                              group: groupToUse._id,
+                              name: groupToUse.name,
+                              date: nextDate,
                               time: dtEntry.time,
                               timezone: timezoneToUse,
                               location: groupToUse.defaultLocation,
-                              members: uniqueMemberIds, // NOTE: use group.members in updateGroupSchedule
-                              undecided: uniqueMemberIds, // NOTE: use group.members in updateGroupSchedule
+                              members: uniqueMemberIds,
+                              undecided: uniqueMemberIds,
                               capacity: groupToUse.defaultCapacity,
                               isOverride: false,
                               visibilityDate: visibilityDT.toJSDate(),
@@ -239,14 +220,6 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
 
     if (schedule) {
         group.schedule = schedule;
-        
-        // --- NEW DYNAMIC DEFAULTS LOGIC ---
-        // If the schedule changes, we recalculate the windows automatically
-        if (schedule.frequency) {
-            const dynamicDefaults = getDynamicLeadDays(schedule.frequency);
-            group.visibilityLeadDays = dynamicDefaults.visibility;
-            group.rsvpLeadDays = dynamicDefaults.generation;
-        }
     }
     
     if (timezone) group.timezone = timezone;
@@ -316,25 +289,24 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                       });
 
                       if (!alreadyExists) {
-                          // 5. Calculate Tracking Dates
-                          const { hours, minutes } = parseTimeString(group.rsvpLeadTime || "09:00 AM");
-                          
+                          const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
+
                           const visibilityDT = nextMeetupDT
-                              .minus({ days: group.visibilityLeadDays || 14 })
+                              .minus({ days: getVisibilityDays(routine.frequency) })
                               .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-                              
+
                           const rsvpDT = nextMeetupDT
-                              .minus({ days: group.rsvpLeadDays || 14 })
+                              .minus({ days: group.generationLeadDays || 1 })
                               .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                           await Meetup.create({
-                              group: group._id, 
-                              name: group.name, 
-                              date: nextDate, 
+                              group: group._id,
+                              name: group.name,
+                              date: nextDate,
                               time: dtEntry.time,
                               timezone: group.timezone,
                               location: group.defaultLocation,
-                              members: group.members, 
+                              members: group.members,
                               undecided: group.members,
                               capacity: group.defaultCapacity,
                               isOverride: false,
