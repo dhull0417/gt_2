@@ -128,7 +128,7 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
 
   let generatedCount = 0;
 
-  for (const group of groups) {
+  try { for (const group of groups) {
     const timezone = group.timezone;
     
     // Treat the stored UTC date as the 'Local' intended date
@@ -219,29 +219,37 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
             }
         }
     }
+  }} catch (err) {
+    console.error('[Regenerate] Main loop error:', err);
   }
 
-  // Notify members of any meetup whose RSVP window just opened
-  const toNotify = await Meetup.find({
-    status: 'scheduled',
-    date: { $gte: now.toJSDate() },
-    rsvpOpenDate: { $lte: now.toJSDate() },
-    rsvpNotified: { $ne: true },
-  });
-
-  for (const meetup of toNotify) {
-    await Meetup.updateOne({ _id: meetup._id }, { $set: { rsvpNotified: true } });
-    const dateStr = new Date(meetup.date).toLocaleDateString('en-US', {
-      weekday: 'short', month: 'short', day: 'numeric',
+  // Always runs — even if main loop errored
+  try {
+    const notifyNow = new Date();
+    const toNotify = await Meetup.find({
+      status: 'scheduled',
+      date: { $gte: notifyNow },
+      rsvpOpenDate: { $lte: notifyNow },
+      rsvpNotified: false,
     });
-    const members = await User.find({ _id: { $in: meetup.members } });
-    if (members.length > 0) {
-      await notifyUsers(members, {
-        title: "RSVPs Are Open!",
-        body: `You can now RSVP to "${meetup.name}" on ${dateStr}.`,
-        data: { meetupId: meetup._id.toString(), type: 'rsvp_open', groupId: meetup.group.toString() },
+    console.log(`[RSVP Notify] Found ${toNotify.length} meetup(s) to notify.`);
+
+    for (const meetup of toNotify) {
+      await Meetup.updateOne({ _id: meetup._id }, { $set: { rsvpNotified: true } });
+      const dateStr = new Date(meetup.date).toLocaleDateString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric',
       });
+      const members = await User.find({ _id: { $in: meetup.members } });
+      if (members.length > 0) {
+        await notifyUsers(members, {
+          title: "RSVPs Are Open!",
+          body: `You can now RSVP to "${meetup.name}" on ${dateStr}.`,
+          data: { meetupId: meetup._id.toString(), type: 'rsvp_open', groupId: meetup.group.toString() },
+        });
+      }
     }
+  } catch (err) {
+    console.error('[RSVP Notify] Error:', err);
   }
 
   res.status(200).json({ generated: generatedCount, message: "Rolling window generation complete." });
