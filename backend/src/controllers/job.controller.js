@@ -222,11 +222,10 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
   }
 
   // Notify members of any meetup whose RSVP window just opened
-  const now = DateTime.now().toJSDate();
   const toNotify = await Meetup.find({
     status: 'scheduled',
-    date: { $gte: now },
-    rsvpOpenDate: { $lte: now },
+    date: { $gte: now.toJSDate() },
+    rsvpOpenDate: { $lte: now.toJSDate() },
     rsvpNotified: { $ne: true },
   });
 
