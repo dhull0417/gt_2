@@ -6,9 +6,6 @@ import { DateTime } from "luxon";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { notifyUsers } from "../utils/push.notifications.js";
 
-/**
- * Helper: parseTimeString
- */
 const parseTimeString = (timeStr) => {
   if (!timeStr) return { hours: 9, minutes: 0 };
   const [time, modifier] = timeStr.split(' ');
@@ -16,6 +13,16 @@ const parseTimeString = (timeStr) => {
   if (modifier === 'PM' && hours < 12) hours += 12;
   if (modifier === 'AM' && hours === 12) hours = 0;
   return { hours, minutes };
+};
+
+const getVisibilityDays = (frequency) => {
+  switch (frequency) {
+    case 'daily':    return 3;
+    case 'weekly':   return 7;
+    case 'biweekly': return 14;
+    case 'monthly':  return 31;
+    default:         return 14;
+  }
 };
 
 /**
@@ -179,15 +186,15 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
 
                 if (!alreadyExists) {
                     console.log(`[Rolling Window] Creating: ${group.name} | Date: ${nextMeetupDT.toISODate()}`);
-                    
+
                     const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
-                    
+
                     const visibilityDT = nextMeetupDT
-                        .minus({ days: group.visibilityLeadDays || 14 })
+                        .minus({ days: getVisibilityDays(routine.frequency) })
                         .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-                        
+
                     const rsvpDT = nextMeetupDT
-                        .minus({ days: group.generationLeadDays || 14 })
+                        .minus({ days: group.generationLeadDays || 1 })
                         .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                     await Meetup.create({

@@ -53,9 +53,6 @@ const USA_TIMEZONES = [
     { label: "Hawaii (HT)",       value: "Pacific/Honolulu"    },
 ];
 
-const DEFAULT_LEAD_DAYS: Record<string, number> = {
-    daily: 4, weekly: 8, biweekly: 15, monthly: 31, ordinal: 31, custom: 8,
-};
 
 const FREQ_LABELS: Record<string, string> = {
     daily: "Daily", weekly: "Weekly", biweekly: "Bi-Weekly",
@@ -137,7 +134,7 @@ const defaultSchedule = (): ScheduleData => ({
     startDate: DateTime.now().toISODate()!,
     timezone: "America/Denver",
     frequency: null,
-    leadDays: 4,
+    leadDays: 1,
     leadTime: "09:00 AM",
     showLeadTimePicker: false,
     showStartDatePicker: false,
@@ -387,7 +384,6 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
             ...prev,
             frequency: freq,
             showFreqPicker: false,
-            leadDays: DEFAULT_LEAD_DAYS[freq] ?? 4,
             dailySameTime: null,
             weekdayRows: [],
             monthlyMode: null,
