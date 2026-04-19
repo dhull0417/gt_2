@@ -18,7 +18,7 @@ const meetupSchema = new mongoose.Schema({
   capacity: { type: Number, default: 0 },
   visibilityDate: { type: Date },
   rsvpOpenDate: { type: Date },
-  rsvpNotificationSent: { type: Boolean, default: false },
+  rsvpNotified: { type: Boolean, default: false },
 }, { timestamps: true });
 
 const Meetup = mongoose.model("Meetup", meetupSchema);
