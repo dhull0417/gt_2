@@ -9,7 +9,6 @@ import { DateTime } from "luxon";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { canManageGroup } from "./group.controller.js";
 import { notifyUsers } from "../utils/push.notifications.js";
-import { sendRsvpOpenNotifications } from "./job.controller.js";
 
 /**
  * HELPER: parseTimeString
@@ -58,9 +57,6 @@ export const getMeetups = asyncHandler(async (req, res) => {
         .sort({ date: 1 });
 
     res.status(200).json(meetups);
-
-    // Non-blocking: check if any RSVP windows just opened and notify affected members
-    sendRsvpOpenNotifications().catch(err => console.error('[RSVP Open] Notification check failed:', err));
 });
 
 /**
