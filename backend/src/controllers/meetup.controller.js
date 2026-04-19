@@ -300,7 +300,7 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
     if (wasRecurring && parentGroup.schedule) {
         try {
             const now = DateTime.now().setZone(parentGroup.timezone);
-            const { hours, minutes } = parseTimeString(parentGroup.generationLeadTime);
+            const { hours, minutes } = parseTimeString(parentGroup.rsvpLeadTime);
             
             let currentAnchor = new Date();
             currentAnchor.setHours(0, 0, 0, 0);
@@ -316,8 +316,8 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
 
                 const nextDT = DateTime.fromJSDate(nextDate).setZone(parentGroup.timezone);
             const triggerDT = nextDT.minus({ 
-                days: parentGroup.generationLeadDays !== undefined 
-                    ? parentGroup.generationLeadDays 
+                days: parentGroup.rsvpLeadDays !== undefined 
+                    ? parentGroup.rsvpLeadDays 
                     : getDynamicLeadDays(parentGroup.schedule?.frequency).generation 
             }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
@@ -341,8 +341,8 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
                                 : getDynamicLeadDays(parentGroup.schedule?.frequency).visibility 
                         }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate(),
                         rsvpOpenDate: nextDT.minus({ 
-                            days: parentGroup.generationLeadDays !== undefined 
-                                ? parentGroup.generationLeadDays 
+                            days: parentGroup.rsvpLeadDays !== undefined 
+                                ? parentGroup.rsvpLeadDays 
                                 : getDynamicLeadDays(parentGroup.schedule?.frequency).generation 
                         }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate()
                     });

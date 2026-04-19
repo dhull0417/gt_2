@@ -63,8 +63,8 @@ export const createGroup = asyncHandler(async (req, res) => {
     defaultCapacity,
     defaultLocation,
     visibilityLeadDays,
-    generationLeadDays,
-    generationLeadTime
+    rsvpLeadDays,
+    rsvpLeadTime
   } = req.body;
   
   if (!name || !timezone) {
@@ -81,7 +81,7 @@ export const createGroup = asyncHandler(async (req, res) => {
   const uniqueMemberIds = [...new Set(initialMemberIds)];
 
   let finalVisibilityDays = visibilityLeadDays;
-  let finalGenerationDays = generationLeadDays;
+  let finalGenerationDays = rsvpLeadDays;
 
   if (schedule && schedule.frequency) {
       const dynamicDefaults = getDynamicLeadDays(schedule.frequency);
@@ -101,8 +101,8 @@ export const createGroup = asyncHandler(async (req, res) => {
       defaultCapacity: defaultCapacity || 0,
       defaultLocation: defaultLocation || "",
       visibilityLeadDays: finalVisibilityDays,
-      generationLeadDays: generationLeadDays !== undefined ? Number(generationLeadDays) : 2,
-      generationLeadTime: generationLeadTime || "09:00 AM",
+      rsvpLeadDays: rsvpLeadDays !== undefined ? Number(rsvpLeadDays) : 2,
+      rsvpLeadTime: rsvpLeadTime || "09:00 AM",
       moderators: [] 
   };
   
@@ -185,14 +185,14 @@ export const createGroup = asyncHandler(async (req, res) => {
                       });
 
                       if (!alreadyExists) {
-                          const { hours, minutes } = parseTimeString(groupToUse.generationLeadTime || "09:00 AM");
+                          const { hours, minutes } = parseTimeString(groupToUse.rsvpLeadTime || "09:00 AM");
                           
                           const visibilityDT = nextMeetupDT
                               .minus({ days: groupToUse.visibilityLeadDays || 14 })
                               .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
                               
                           const rsvpDT = nextMeetupDT
-                              .minus({ days: groupToUse.generationLeadDays || 14 })
+                              .minus({ days: groupToUse.rsvpLeadDays || 14 })
                               .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                           await Meetup.create({
@@ -245,7 +245,7 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
         if (schedule.frequency) {
             const dynamicDefaults = getDynamicLeadDays(schedule.frequency);
             group.visibilityLeadDays = dynamicDefaults.visibility;
-            group.generationLeadDays = dynamicDefaults.generation;
+            group.rsvpLeadDays = dynamicDefaults.generation;
         }
     }
     
@@ -317,14 +317,14 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
 
                       if (!alreadyExists) {
                           // 5. Calculate Tracking Dates
-                          const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
+                          const { hours, minutes } = parseTimeString(group.rsvpLeadTime || "09:00 AM");
                           
                           const visibilityDT = nextMeetupDT
                               .minus({ days: group.visibilityLeadDays || 14 })
                               .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
                               
                           const rsvpDT = nextMeetupDT
-                              .minus({ days: group.generationLeadDays || 14 })
+                              .minus({ days: group.rsvpLeadDays || 14 })
                               .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                           await Meetup.create({
@@ -366,8 +366,8 @@ export const updateGroup = asyncHandler(async (req, res) => {
         name, 
         meetupsToDisplay, 
         defaultLocation,
-        generationLeadDays,
-        generationLeadTime,
+        rsvpLeadDays,
+        rsvpLeadTime,
         defaultCapacity 
     } = req.body;
 
@@ -402,8 +402,8 @@ export const updateGroup = asyncHandler(async (req, res) => {
 
 
     if (meetupsToDisplay) group.meetupsToDisplay = parseInt(meetupsToDisplay);
-    if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
-    if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
+    if (rsvpLeadDays !== undefined) group.rsvpLeadDays = Number(rsvpLeadDays);
+    if (rsvpLeadTime !== undefined) group.rsvpLeadTime = rsvpLeadTime;
 
     const updatedGroup = await group.save();
     res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully." });

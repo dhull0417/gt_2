@@ -180,14 +180,14 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
                 if (!alreadyExists) {
                     console.log(`[Rolling Window] Creating: ${group.name} | Date: ${nextMeetupDT.toISODate()}`);
                     
-                    const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
+                    const { hours, minutes } = parseTimeString(group.rsvpLeadTime || "09:00 AM");
                     
                     const visibilityDT = nextMeetupDT
                         .minus({ days: group.visibilityLeadDays || 14 })
                         .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
                         
                     const rsvpDT = nextMeetupDT
-                        .minus({ days: group.generationLeadDays || 14 })
+                        .minus({ days: group.rsvpLeadDays || 14 })
                         .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
                     await Meetup.create({

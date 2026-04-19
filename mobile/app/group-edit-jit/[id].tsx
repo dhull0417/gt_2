@@ -51,7 +51,7 @@ const FadeInView = ({ children, delay = 0, duration = 400, style }: FadeInViewPr
 /**
  * App (EditJitScreen)
  * Strictly replicates Step 12 of the Group Creation wizard logic and aesthetic.
- * Focuses on updating generationLeadDays and generationLeadTime.
+ * Focuses on updating rsvpLeadDays and rsvpLeadTime.
  */
 const App = () => {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -69,8 +69,8 @@ const App = () => {
     // --- Pre-populate from existing group data ---
     useEffect(() => {
         if (group) {
-            setLeadDays(group.generationLeadDays ?? 2);
-            setNotificationTime(group.generationLeadTime || "09:00 AM");
+            setLeadDays(group.rsvpLeadDays ?? 2);
+            setNotificationTime(group.rsvpLeadTime || "09:00 AM");
         }
     }, [group]);
 
@@ -82,8 +82,8 @@ const App = () => {
             // Update JIT fields via the group update endpoint
             await groupApi.updateGroup(api, { 
                 groupId: id, 
-                generationLeadDays: leadDays,
-                generationLeadTime: notificationTime 
+                rsvpLeadDays: leadDays,
+                rsvpLeadTime: notificationTime 
             });
 
             // Refresh queries to ensure changes are visible in settings and group details
