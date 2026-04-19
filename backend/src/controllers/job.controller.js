@@ -236,54 +236,26 @@ export const sendRsvpOpenNotifications = async () => {
         rsvpOpenDate: { $lte: now },
         rsvpNotificationSent: { $ne: true },
         date: { $gte: now }
-    })
-    .sort({ date: 1 })
-    .populate('group', 'owner moderators name');
+    }).sort({ date: 1 });
 
     if (meetups.length === 0) return;
 
-    const notifiedGroups = new Set();
-
     for (const meetup of meetups) {
-        const groupId = meetup.group._id.toString();
-
-        // Mark as sent immediately to prevent duplicates from concurrent calls
         await Meetup.updateOne({ _id: meetup._id }, { $set: { rsvpNotificationSent: true } });
 
-        if (notifiedGroups.has(groupId)) continue;
-
         try {
-            const dateStr = new Date(meetup.date).toLocaleDateString(undefined, {
+            const dateStr = new Date(meetup.date).toLocaleDateString('en-US', {
                 weekday: 'short', month: 'short', day: 'numeric'
             });
 
-            const membersToNotify = await User.find({ _id: { $in: meetup.undecided } });
-            if (membersToNotify.length > 0) {
-                await notifyUsers(membersToNotify, {
+            const members = await User.find({ _id: { $in: meetup.members } });
+            if (members.length > 0) {
+                await notifyUsers(members, {
                     title: "RSVPs Are Open!",
                     body: `You can now RSVP to "${meetup.name}" on ${dateStr}.`,
-                    data: { meetupId: meetup._id.toString(), type: 'rsvp_open', groupId }
+                    data: { meetupId: meetup._id.toString(), type: 'rsvp_open', groupId: meetup.group.toString() }
                 });
             }
-
-            const undecidedIds = new Set(meetup.undecided.map(id => id.toString()));
-            const adminIds = [
-                meetup.group.owner.toString(),
-                ...(meetup.group.moderators || []).map(id => id.toString())
-            ].filter((id, i, self) => self.indexOf(id) === i && !undecidedIds.has(id));
-
-            if (adminIds.length > 0) {
-                const adminsToNotify = await User.find({ _id: { $in: adminIds } });
-                if (adminsToNotify.length > 0) {
-                    await notifyUsers(adminsToNotify, {
-                        title: "RSVP Window Open",
-                        body: `The RSVP window for "${meetup.name}" on ${dateStr} is now open.`,
-                        data: { meetupId: meetup._id.toString(), type: 'rsvp_open_admin', groupId }
-                    });
-                }
-            }
-
-            notifiedGroups.add(groupId);
         } catch (err) {
             console.error(`[RSVP Open] Failed to notify for meetup ${meetup._id}:`, err);
         }
