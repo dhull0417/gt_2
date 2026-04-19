@@ -338,8 +338,8 @@ export const updateGroup = asyncHandler(async (req, res) => {
         name, 
         meetupsToDisplay, 
         defaultLocation,
-        generationLeadDays,
-        generationLeadTime,
+        rsvpLeadDays,
+        rsvpLeadTime,
         defaultCapacity 
     } = req.body;
 
@@ -374,8 +374,8 @@ export const updateGroup = asyncHandler(async (req, res) => {
 
 
     if (meetupsToDisplay) group.meetupsToDisplay = parseInt(meetupsToDisplay);
-    if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
-    if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
+    if (rsvpLeadDays !== undefined) group.rsvpLeadDays = Number(rsvpLeadDays);
+    if (rsvpLeadTime !== undefined) group.rsvpLeadTime = rsvpLeadTime;
 
     const updatedGroup = await group.save();
     res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully." });

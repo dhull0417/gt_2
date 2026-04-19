@@ -1075,8 +1075,8 @@ const buildSchedulePayload = (d: ScheduleData) => {
         schedule: { frequency: topFreq, startDate: d.startDate, routines },
         timezone: d.timezone,
         defaultLocation: d.location,
-        generationLeadDays: d.leadDays,
-        generationLeadTime: d.leadTime,
+        rsvpLeadDays: d.leadDays,
+        rsvpLeadTime: d.leadTime,
     };
 };
 
@@ -1181,8 +1181,8 @@ const CreateGroupScreen = () => {
             name: groupName,
             members: members.map(m => m._id),
             meetupsToDisplay: 1,
-            generationLeadDays: schedule?.leadDays ?? 4,
-            generationLeadTime: schedule?.leadTime ?? "09:00 AM",
+            rsvpLeadDays: schedule?.leadDays ?? 4,
+            rsvpLeadTime: schedule?.leadTime ?? "09:00 AM",
             timezone: schedule?.timezone ?? "America/Denver",
             defaultLocation: schedule?.location ?? "",
             ...schedulePayload,

@@ -40,7 +40,6 @@ const getVisibilityDays = (frequency) => {
 export const getMeetups = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const user = await User.findOne({ clerkId }).lean();
-    
     if (!user) return res.status(404).json({ error: "User not found." });
 
     const now = new Date();
@@ -48,11 +47,12 @@ export const getMeetups = asyncHandler(async (req, res) => {
     const meetups = await Meetup.find({
         members: user._id,
         $or: [
-            { visibilityDate: { $lte: now } },
-            { visibilityDate: { $exists: false } }
+            { date: { $lt: now } },             // past meetups always show
+            { isOverride: true },               // one-offs are immediately visible
+            { visibilityDate: { $lte: now } },  // scheduled meetups within the window
         ]
     })
-        .populate('group', 'name owner moderators timezone defaultLocation')
+        .populate('group', 'name owner moderators timezone defaultLocation visibilityLeadDays')
         .populate('members', 'firstName lastName username profilePicture')
         .sort({ date: 1 });
 
@@ -291,7 +291,7 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
     if (wasRecurring && parentGroup.schedule) {
         try {
             const now = DateTime.now().setZone(parentGroup.timezone);
-            const { hours, minutes } = parseTimeString(parentGroup.generationLeadTime);
+            const { hours, minutes } = parseTimeString(parentGroup.rsvpLeadTime);
             
             let currentAnchor = new Date();
             currentAnchor.setHours(0, 0, 0, 0);

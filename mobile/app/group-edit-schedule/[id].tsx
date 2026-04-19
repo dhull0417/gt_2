@@ -131,8 +131,8 @@ const EditScheduleScreen = () => {
             }
             setCurrentTZ(group.timezone || "America/Denver");
             setLocation(group.defaultLocation || "");
-            setLeadDays(group.generationLeadDays ?? 2);
-            setNotificationTime(group.generationLeadTime || "09:00 AM");
+            setLeadDays(group.rsvpLeadDays ?? 2);
+            setNotificationTime(group.rsvpLeadTime || "09:00 AM");
             
             if (sched?.startDate) {
                 const dt = DateTime.fromISO(sched.startDate);
@@ -161,8 +161,8 @@ const EditScheduleScreen = () => {
             },
             timezone: currentTZ,
             defaultLocation: location,
-            generationLeadDays: leadDays,
-            generationLeadTime: notificationTime
+            rsvpLeadDays: leadDays,
+            rsvpLeadTime: notificationTime
         };
 
         try {

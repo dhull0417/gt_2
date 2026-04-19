@@ -70,8 +70,8 @@ export interface Group {
   owner: string;
   timezone: string;
   defaultLocation: string;
-  generationLeadDays: number;
-  generationLeadTime: string;
+  rsvpLeadDays: number;
+  rsvpLeadTime: string;
   lastMessage?: LastMessage | null;
   moderators?: (User | string)[];
 }
@@ -123,8 +123,8 @@ interface CreateGroupPayload {
   members?: string[];
   defaultCapacity?: number;
   defaultLocation?: string;
-  generationLeadDays: number;
-  generationLeadTime: string;
+  rsvpLeadDays: number;
+  rsvpLeadTime: string;
 }
 
 interface UpdateGroupPayload extends Partial<Omit<CreateGroupPayload, 'groupId'>> {
