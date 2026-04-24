@@ -79,10 +79,7 @@ const App = () => {
         setIsUpdating(true);
         
         try {
-            const payload = { groupId: id, generationLeadDays: leadDays, generationLeadTime: notificationTime };
-            console.log('[EditJIT] Sending payload:', JSON.stringify(payload));
-            const result = await groupApi.updateGroup(api, payload);
-            console.log('[EditJIT] Response:', JSON.stringify(result));
+            await groupApi.updateGroup(api, { groupId: id, generationLeadDays: leadDays, generationLeadTime: notificationTime });
 
             // Refresh queries to ensure changes are visible in settings and group details
             await Promise.all([

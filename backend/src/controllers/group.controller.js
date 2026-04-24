@@ -343,9 +343,6 @@ export const updateGroup = asyncHandler(async (req, res) => {
         defaultCapacity
     } = req.body;
 
-    console.log('[updateGroup] req.body:', JSON.stringify(req.body));
-    console.log('[updateGroup] groupId:', groupId, '| generationLeadDays:', generationLeadDays, '| generationLeadTime:', generationLeadTime);
-
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
@@ -379,10 +376,14 @@ export const updateGroup = asyncHandler(async (req, res) => {
     if (meetupsToDisplay) group.meetupsToDisplay = parseInt(meetupsToDisplay);
     if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
     if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
+    if (defaultCapacity !== undefined) {
+        group.defaultCapacity = Number(defaultCapacity);
+        await Meetup.updateMany({ group: groupId, isOverride: false }, { $set: { capacity: Number(defaultCapacity) } });
+    }
+    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
 
-    console.log('[updateGroup] pre-save generationLeadDays:', group.generationLeadDays, '| generationLeadTime:', group.generationLeadTime);
     const updatedGroup = await group.save();
-    res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully.", _debug: { receivedLeadDays: generationLeadDays, savedLeadDays: updatedGroup.generationLeadDays } });
+    res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully." });
 });
 
 export const updateModerators = asyncHandler(async (req, res) => {
