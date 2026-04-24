@@ -382,7 +382,7 @@ export const updateGroup = asyncHandler(async (req, res) => {
 
     console.log('[updateGroup] pre-save generationLeadDays:', group.generationLeadDays, '| generationLeadTime:', group.generationLeadTime);
     const updatedGroup = await group.save();
-    res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully." });
+    res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully.", _debug: { receivedLeadDays: generationLeadDays, savedLeadDays: updatedGroup.generationLeadDays } });
 });
 
 export const updateModerators = asyncHandler(async (req, res) => {
