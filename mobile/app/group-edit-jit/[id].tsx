@@ -69,8 +69,8 @@ const App = () => {
     // --- Pre-populate from existing group data ---
     useEffect(() => {
         if (group) {
-            setLeadDays(group.rsvpLeadDays ?? 2);
-            setNotificationTime(group.rsvpLeadTime || "09:00 AM");
+            setLeadDays(group.generationLeadDays ?? 2);
+            setNotificationTime(group.generationLeadTime || "09:00 AM");
         }
     }, [group]);
 
@@ -82,8 +82,8 @@ const App = () => {
             // Update JIT fields via the group update endpoint
             await groupApi.updateGroup(api, { 
                 groupId: id, 
-                rsvpLeadDays: leadDays,
-                rsvpLeadTime: notificationTime 
+                generationLeadDays: leadDays,
+                generationLeadTime: notificationTime
             });
 
             // Refresh queries to ensure changes are visible in settings and group details
