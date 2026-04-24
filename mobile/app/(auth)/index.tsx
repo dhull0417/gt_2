@@ -19,7 +19,7 @@ export default function Index() {
       <View style={styles.container}>
           <View style={styles.logoContainer}>
             <Image 
-              source={require("../../assets/images/gt-logo.jpg")}
+              source={require("../../assets/images/adaptive-icon.png")}
               style={styles.logoImage}
               resizeMode="contain"
             />
