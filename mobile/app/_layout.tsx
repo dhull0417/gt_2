@@ -47,17 +47,21 @@ const AuthLayout = () => {
   
   useUserSync();
 
-  const { data: currentUser, isSuccess } = useQuery<User, Error>({
-    queryKey: ['currentUser'], 
+  const { data: currentUser, isSuccess, isError: isCurrentUserError } = useQuery<User, Error>({
+    queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
     enabled: isSignedIn,
   });
+
+  // isCurrentUserError means Clerk session exists but no MongoDB user yet (new sign-up).
+  // Treat it the same as success so routing can redirect them to profile-setup.
+  const currentUserSettled = isSuccess || isCurrentUserError;
 
   const { expoPushToken } = usePushNotifications(isSignedIn, isSuccess);
 
   // === ROUTING LOGIC ===
   useEffect(() => {
-    if (!isLoaded || (isSignedIn && !isSuccess)) return;
+    if (!isLoaded || (isSignedIn && !currentUserSettled)) return;
 
     const inTabsGroup = segments[0] === '(tabs)';
     const inAuthGroup = segments[0] === '(auth)';
@@ -87,10 +91,10 @@ const AuthLayout = () => {
     } else if (!isSignedIn && !inAuthGroup) {
       router.replace('/(auth)');
     }
-  }, [isLoaded, isSignedIn, currentUser, isSuccess, segments, router]);
+  }, [isLoaded, isSignedIn, currentUser, currentUserSettled, segments, router]);
 
   useEffect(() => {
-    if (isLoaded && ((isSignedIn && isSuccess) || !isSignedIn)) {
+    if (isLoaded && ((isSignedIn && currentUserSettled) || !isSignedIn)) {
       SplashScreen.hideAsync();
     }
   }, [isLoaded, isSignedIn, isSuccess]);

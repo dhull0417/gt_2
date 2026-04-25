@@ -1,11 +1,12 @@
 import { useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/clerk-expo";
 import { useApiClient, userApi } from "../utils/api";
 
 export const useUserSync = () => {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, isLoaded } = useAuth();
   const api = useApiClient();
+  const queryClient = useQueryClient();
 
   const syncUserMutation = useMutation({
     mutationFn: () => userApi.syncUser(api),
@@ -15,17 +16,19 @@ export const useUserSync = () => {
       } else {
         console.log("User sync check complete:", response.data);
       }
+      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
     onError: (error) => console.error("User sync failed:", error),
   });
 
   useEffect(() => {
-    // This effect will attempt to sync the user as soon as they are signed in.
-    if (isSignedIn) {
+    // Wait for Clerk to fully resolve the new session before syncing.
+    // Without isLoaded, getToken() can return null during the auth transition,
+    // causing the server to receive an unauthenticated request.
+    if (isLoaded && isSignedIn) {
       syncUserMutation.mutate();
     }
-  }, [isSignedIn]);
+  }, [isLoaded, isSignedIn]);
 
-  // Return the entire mutation object so the caller can check its status (isSuccess, isPending, etc.)
   return syncUserMutation;
 };

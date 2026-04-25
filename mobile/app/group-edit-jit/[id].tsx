@@ -87,10 +87,10 @@ const App = () => {
                 queryClient.invalidateQueries({ queryKey: ['groups'] })
             ]);
 
-            Alert.alert("Success", "JIT notification settings updated.");
+            Alert.alert("Success", "RSVP Lead Time notification settings updated.");
             router.back();
         } catch (error: any) {
-            const msg = error.response?.data?.error || "Failed to update JIT settings.";
+            const msg = error.response?.data?.error || "Failed to update RSVP Lead Time settings.";
             Alert.alert("Error", msg);
         } finally {
             setIsUpdating(false);
@@ -120,7 +120,7 @@ const App = () => {
 
                 <View style={styles.stepContainerPadded}>
                     <FadeInView delay={100}>
-                        <Text style={styles.headerTitle}>JIT Setup</Text>
+                        <Text style={styles.headerTitle}>RSVP Lead Time Setup</Text>
                     </FadeInView>
                     
                     <View style={{ flex: 1 }}>

@@ -19,7 +19,7 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { User, useApiClient, userApi, groupApi } from '@/utils/api';
+import { User, Schedule, useApiClient, userApi, groupApi } from '@/utils/api';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 
@@ -83,6 +83,19 @@ const GroupSettings = () => {
     return isUserOwner || isUserMod;
   }, [isUserOwner, isUserMod]);
 
+  const scheduleTypeLabel = useMemo((): string => {
+    const schedule: Schedule | undefined = group?.schedule;
+    if (!schedule) return 'No schedule set';
+    const routines = schedule.routines ?? [];
+    if (routines.length > 1) return 'Multiple Rules';
+    const freq = routines.length === 1 ? routines[0].frequency : schedule.frequency;
+    const labels: Record<string, string> = {
+      daily: 'Daily', weekly: 'Weekly', biweekly: 'Biweekly',
+      monthly: 'Monthly', ordinal: 'Ordinal', once: 'One-time', custom: 'Custom',
+    };
+    return labels[freq] ?? 'No schedule set';
+  }, [group?.schedule]);
+
   // --- ACCESS CONTROL GUARD ---
   useEffect(() => {
     if (!isLoadingGroup && !isLoadingUser && group && currentUser) {
@@ -97,9 +110,9 @@ const GroupSettings = () => {
   }, [group, currentUser, isLoadingGroup, isLoadingUser, canAccessSettings]);
 
   const settingsOptions = [
-    { id: 'name', label: 'Edit Name', icon: 'type', color: '#3B82F6', bg: '#EFF6FF' },
+    { id: 'name', label: 'Edit Group Name', icon: 'type', color: '#3B82F6', bg: '#EFF6FF' },
     { id: 'schedule', label: 'Edit Schedule & Times', icon: 'calendar', color: '#6366F1', bg: '#EEF2FF' },
-    { id: 'jit', label: 'Edit JIT', icon: 'bell', color: '#F59E0B', bg: '#FFFBEB' },
+    { id: 'jit', label: 'Edit RSVP Lead Time', icon: 'bell', color: '#F59E0B', bg: '#FFFBEB' },
     { id: 'capacity', label: 'Edit Attendee Limit', icon: 'users', color: '#A855F7', bg: '#F5F3FF' },
     { id: 'location', label: 'Edit Location', icon: 'map-pin', color: '#10B981', bg: '#ECFDF5' },
     { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: '#ECFEFF' },
@@ -372,6 +385,21 @@ const GroupSettings = () => {
                   <Text style={[styles.optionLabel, option.destructive && styles.destructiveLabel]}>
                     {option.label}
                   </Text>
+                  {option.id === 'name' && (
+                    <Text style={styles.optionSubLabel} numberOfLines={1}>
+                      {group?.name || '—'}
+                    </Text>
+                  )}
+                  {option.id === 'schedule' && (
+                    <Text style={styles.optionSubLabel}>
+                      {scheduleTypeLabel}
+                    </Text>
+                  )}
+                  {option.id === 'jit' && (
+                    <Text style={styles.optionSubLabel}>
+                      {(group?.generationLeadDays ?? 0)} day{(group?.generationLeadDays ?? 0) !== 1 ? 's' : ''} before at {group?.generationLeadTime || '—'}
+                    </Text>
+                  )}
                   {option.id === 'location' && (
                     <Text style={styles.optionSubLabel} numberOfLines={1}>
                        {group?.defaultLocation || 'No default location set'}
