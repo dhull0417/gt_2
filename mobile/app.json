@@ -2,7 +2,7 @@
   "expo": {
     "name": "GroupThat",
     "slug": "groupthat",
-    "version": "1.1.8",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "groupthat",
@@ -43,7 +43,7 @@
         "VIBRATE",
         "RECEIVE_BOOT_COMPLETED"
       ],
-      "runtimeVersion": "1.1.8",
+      "runtimeVersion": "1.2.0",
       "googleServicesFile": "./google-services.json"
     },
     "web": {
