@@ -27,14 +27,6 @@ const CALENDAR_OPTIONS = [
     useWebBrowser: true,
     getUrl: (icsUrl: string) => `https://calendar.google.com/calendar/u/0/r/settings/addbyurl?hl=en&url=${encodeURIComponent(icsUrl)}`,
   },
-  {
-    id: 'outlook',
-    label: 'Outlook',
-    icon: 'mail' as const,
-    color: '#0078D4',
-    useWebBrowser: false,
-    getUrl: (icsUrl: string) => `https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(icsUrl)}`,
-  },
 ];
 
 const HomeScreen = () => {
