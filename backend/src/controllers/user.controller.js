@@ -124,7 +124,7 @@ export const syncUser = asyncHandler(async (req, res) => {
   const userData = {
     clerkId: userId,
     email: clerkUser.emailAddresses[0]?.emailAddress,
-    username: clerkUser.username || null,
+    ...(clerkUser.username ? { username: clerkUser.username } : {}),
     firstName: clerkUser.firstName || "",
     lastName: clerkUser.lastName || "",
     profilePicture: clerkUser.imageUrl || "",

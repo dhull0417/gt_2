@@ -2,19 +2,27 @@ import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvo
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUpdateProfile } from '@/hooks/useUpdateProfile';
+import { useUserSync } from '@/hooks/useUserSync';
 
 const ProfileSetupScreen = () => {
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
-    const [username, setUsername] = useState(''); // State for the username
-    const { mutate: updateProfile, isPending } = useUpdateProfile();
+    const [username, setUsername] = useState('');
+    const { mutate: syncUser, isPending: isSyncing } = useUserSync();
+    const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
+
+    const isPending = isSyncing || isUpdating;
 
     const handleSaveProfile = () => {
         if (!firstName.trim() || !lastName.trim() || !username.trim()) {
             Alert.alert('Missing Information', 'Please fill out all fields.');
             return;
         }
-        updateProfile({ firstName, lastName, username });
+        // Ensure the MongoDB user exists before updating profile.
+        // onSettled fires whether sync succeeded or failed, so we always attempt the update.
+        syncUser(undefined, {
+            onSettled: () => updateProfile({ firstName, lastName, username }),
+        });
     };
 
     return (

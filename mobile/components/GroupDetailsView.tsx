@@ -209,7 +209,7 @@ export const GroupDetailsView = ({
                 <View style={styles.infoRow}>
                     <Feather name="bell" size={18} color="#4A90E2" />
                     <Text style={styles.infoText}>
-                        RSVP {groupDetails.rsvpLeadDays} day{groupDetails.rsvpLeadDays > 1 ? 's' : ''} before @ {groupDetails.rsvpLeadTime}
+                        RSVP {groupDetails.generationLeadDays} day{groupDetails.generationLeadDays > 1 ? 's' : ''} before @ {groupDetails.generationLeadTime}
                     </Text>
                 </View>
             </View>

@@ -334,13 +334,13 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
 export const updateGroup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
-    const { 
-        name, 
-        meetupsToDisplay, 
+    const {
+        name,
+        meetupsToDisplay,
         defaultLocation,
-        rsvpLeadDays,
-        rsvpLeadTime,
-        defaultCapacity 
+        generationLeadDays,
+        generationLeadTime,
+        defaultCapacity
     } = req.body;
 
     const group = await Group.findById(groupId);
@@ -374,8 +374,13 @@ export const updateGroup = asyncHandler(async (req, res) => {
 
 
     if (meetupsToDisplay) group.meetupsToDisplay = parseInt(meetupsToDisplay);
-    if (rsvpLeadDays !== undefined) group.rsvpLeadDays = Number(rsvpLeadDays);
-    if (rsvpLeadTime !== undefined) group.rsvpLeadTime = rsvpLeadTime;
+    if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
+    if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
+    if (defaultCapacity !== undefined) {
+        group.defaultCapacity = Number(defaultCapacity);
+        await Meetup.updateMany({ group: groupId, isOverride: false }, { $set: { capacity: Number(defaultCapacity) } });
+    }
+    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
 
     const updatedGroup = await group.save();
     res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully." });

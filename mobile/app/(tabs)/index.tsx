@@ -1,5 +1,5 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, StyleSheet } from 'react-native';
-import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, StyleSheet, Animated, LayoutChangeEvent } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
@@ -223,6 +223,48 @@ const MeetupCard = ({
   );
 };
 
+const RemovableCard = ({
+  isRemoving,
+  onRemoved,
+  children,
+}: {
+  isRemoving: boolean;
+  onRemoved: () => void;
+  children: React.ReactNode;
+}) => {
+  const opacity = useRef(new Animated.Value(1)).current;
+  const heightAnim = useRef(new Animated.Value(0)).current;
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
+
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    if (measuredHeight === null) {
+      const h = e.nativeEvent.layout.height;
+      setMeasuredHeight(h);
+      heightAnim.setValue(h);
+    }
+  }, [measuredHeight]);
+
+  useEffect(() => {
+    if (!isRemoving || measuredHeight === null) return;
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 0, duration: 280, useNativeDriver: false }),
+      Animated.timing(heightAnim, { toValue: 0, duration: 520, delay: 80, easing: t => t * t * (3 - 2 * t), useNativeDriver: false }),
+    ]).start(() => onRemoved());
+  }, [isRemoving, measuredHeight]);
+
+  return (
+    <Animated.View
+      onLayout={onLayout}
+      style={measuredHeight !== null
+        ? { height: heightAnim, overflow: 'hidden', opacity }
+        : { opacity }
+      }
+    >
+      {children}
+    </Animated.View>
+  );
+};
+
 // --- Main Dashboard Screen ---
 
 const DashboardScreen = () => {
@@ -235,24 +277,26 @@ const DashboardScreen = () => {
   const { data: meetups, isLoading, isError, refetch } = useGetMeetups();
   const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
   const { mutate: rsvp, isPending: isRsvping } = useRsvp();
+  const [undecidedLimit, setUndecidedLimit] = useState<number | null>(1);
+  const [hiddenMeetupIds, setHiddenMeetupIds] = useState<Set<string>>(new Set());
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
-  // --- UPDATED LOGIC FOR "YOU COMING?" ---
-  const nextUndecidedMeetup = useMemo(() => {
-    if (!meetups || !currentUser) return null;
-    
-    // RECOMMENDATION: We filter for 'scheduled' AND ensure it hasn't passed yet.
-    // This removes 'cancelled', 'expired', and events that happened earlier today.
-    return meetups.find(meetup => {
-        const isPast = new Date(meetup.date) < new Date();
-        return (
-            meetup.status === 'scheduled' && 
-            !isPast && 
-            meetup.undecided.includes(currentUser._id)
-        );
+  const allUndecidedMeetups = useMemo(() => {
+    if (!meetups || !currentUser) return [];
+    return meetups.filter(meetup => {
+      const isPast = new Date(meetup.date) < new Date();
+      const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
+      return meetup.status === 'scheduled' && !isPast && !isRsvpLocked && meetup.undecided.includes(currentUser._id);
     });
   }, [meetups, currentUser]);
+
+  const visibleUndecidedMeetups = useMemo(() => {
+    const filtered = allUndecidedMeetups.filter(m => !hiddenMeetupIds.has(m._id));
+    if (undecidedLimit === null) return filtered;
+    return filtered.slice(0, undecidedLimit);
+  }, [allUndecidedMeetups, undecidedLimit, hiddenMeetupIds]);
 
   const groupedMeetups = useMemo(() => {
     const groups: GroupedMeetups = {
@@ -288,9 +332,7 @@ const DashboardScreen = () => {
   const handleDashboardRsvp = (meetupId: string, status: 'in' | 'out') => {
     if (!currentUser) return;
     rsvp({ meetupId, status }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['meetups'] });
-      }
+      onSuccess: () => setRemovingId(meetupId),
     });
   };
 
@@ -313,17 +355,61 @@ const DashboardScreen = () => {
           <>
             <View className="mb-10 mt-2">
               <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
-                Are you coming?
+                {currentUser?.firstName ? `${currentUser.firstName}, are you in?` : 'Are you in?'}
               </Text>
-              {nextUndecidedMeetup ? (
-                <MeetupCard
-                  meetup={nextUndecidedMeetup}
-                  onPress={() => handleOpenModal(nextUndecidedMeetup)}
-                  showRsvpButtons={true}
-                  onRsvp={(status) => handleDashboardRsvp(nextUndecidedMeetup._id, status)}
-                  isRsvping={isRsvping}
-                  currentUser={currentUser}
-                />
+
+              {allUndecidedMeetups.length > 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, marginBottom: 12, gap: 16 }}>
+                  <Text style={{ color: '#9CA3AF', fontSize: 17, marginLeft: 2 }}>
+                  View:
+                  </Text>
+                  {([1, 3, null] as (number | null)[]).map((opt) => {
+                    const label = opt === null ? 'All' : String(opt);
+                    const isActive = undecidedLimit === opt;
+                    return (
+                      <TouchableOpacity
+                        key={label}
+                        onPress={() => setUndecidedLimit(opt)}
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 6,
+                          borderRadius: 20,
+                          backgroundColor: isActive ? '#4A90E2' : 'white',
+                          borderWidth: 3,
+                          borderColor: isActive ? '#4A90E2' : '#E5E7EB',
+                        }}
+                      >
+                        <Text style={{ color: isActive ? 'white' : '#6B7280', fontWeight: '600', fontSize: 13, }}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  
+                </View>
+              )}
+
+              {visibleUndecidedMeetups.length > 0 ? (
+                visibleUndecidedMeetups.map(meetup => (
+                  <RemovableCard
+                    key={meetup._id}
+                    isRemoving={removingId === meetup._id}
+                    onRemoved={() => {
+                      setHiddenMeetupIds(prev => new Set([...prev, meetup._id]));
+                      setRemovingId(null);
+                      queryClient.invalidateQueries({ queryKey: ['meetups'] });
+                    }}
+                  >
+                    <MeetupCard
+                      meetup={meetup}
+                      onPress={() => handleOpenModal(meetup)}
+                      showRsvpButtons={true}
+                      onRsvp={(status) => handleDashboardRsvp(meetup._id, status)}
+                      isRsvping={isRsvping}
+                      currentUser={currentUser}
+                    />
+                  </RemovableCard>
+                ))
               ) : (
                 <View className="bg-white p-8 my-2 rounded-[2rem] items-center border border-dashed border-gray-300">
                   <Text className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">
@@ -335,7 +421,7 @@ const DashboardScreen = () => {
 
             <View className="pb-10">
               <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
-                Upcoming
+                Upcoming Meetups
               </Text>
 
               {meetups?.length === 0 && (

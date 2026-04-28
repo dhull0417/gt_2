@@ -10,8 +10,8 @@ interface CreateGroupVariables {
     meetupsToDisplay: number;
     defaultCapacity?: number;
     defaultLocation?: string;
-    rsvpLeadDays: number;
-    rsvpLeadTime: string;
+    generationLeadDays: number;
+    generationLeadTime: string;
     schedule?: any;
 }
 

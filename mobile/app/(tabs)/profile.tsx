@@ -2,7 +2,7 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Ale
 import React, { useCallback, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/clerk-expo';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -251,7 +251,7 @@ const HomeScreen = () => {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                    onPress={() => signOut()}
+                    onPress={() => { queryClient.clear(); signOut(); }}
                     className="py-4 bg-red-600 rounded-lg items-center shadow"
                 >
                     <Text className="text-white text-lg font-bold">Sign Out</Text>

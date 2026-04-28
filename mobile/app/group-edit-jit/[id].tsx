@@ -69,8 +69,8 @@ const App = () => {
     // --- Pre-populate from existing group data ---
     useEffect(() => {
         if (group) {
-            setLeadDays(group.rsvpLeadDays ?? 2);
-            setNotificationTime(group.rsvpLeadTime || "09:00 AM");
+            setLeadDays(group.generationLeadDays ?? 2);
+            setNotificationTime(group.generationLeadTime || "09:00 AM");
         }
     }, [group]);
 
@@ -79,12 +79,7 @@ const App = () => {
         setIsUpdating(true);
         
         try {
-            // Update JIT fields via the group update endpoint
-            await groupApi.updateGroup(api, { 
-                groupId: id, 
-                rsvpLeadDays: leadDays,
-                rsvpLeadTime: notificationTime 
-            });
+            await groupApi.updateGroup(api, { groupId: id, generationLeadDays: leadDays, generationLeadTime: notificationTime });
 
             // Refresh queries to ensure changes are visible in settings and group details
             await Promise.all([
@@ -92,10 +87,10 @@ const App = () => {
                 queryClient.invalidateQueries({ queryKey: ['groups'] })
             ]);
 
-            Alert.alert("Success", "JIT notification settings updated.");
+            Alert.alert("Success", "RSVP Lead Time notification settings updated.");
             router.back();
         } catch (error: any) {
-            const msg = error.response?.data?.error || "Failed to update JIT settings.";
+            const msg = error.response?.data?.error || "Failed to update RSVP Lead Time settings.";
             Alert.alert("Error", msg);
         } finally {
             setIsUpdating(false);
@@ -125,7 +120,7 @@ const App = () => {
 
                 <View style={styles.stepContainerPadded}>
                     <FadeInView delay={100}>
-                        <Text style={styles.headerTitle}>JIT Setup</Text>
+                        <Text style={styles.headerTitle}>RSVP Lead Time Setup</Text>
                     </FadeInView>
                     
                     <View style={{ flex: 1 }}>
