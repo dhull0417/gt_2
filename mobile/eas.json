@@ -23,6 +23,11 @@
       "android": {
         "buildType": "app-bundle"
       }
+    },
+    "simulator": {
+      "ios": {
+        "simulator": true
+      }
     }
   },
   "submit": {
