@@ -229,6 +229,10 @@ export const userApi = {
     const response = await api.get<{ url: string }>("/api/users/calendar-url");
     return response.data;
   },
+  deleteAccount: async (api: AxiosInstance): Promise<{ message: string }> => {
+    const response = await api.delete<{ message: string }>("/api/users/account");
+    return response.data;
+  },
 };
 
 export const groupApi = {

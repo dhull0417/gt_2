@@ -7,7 +7,8 @@ import {
   updateProfile,
   searchUsers,
   updatePushToken,
-  toggleGroupMute
+  toggleGroupMute,
+  deleteAccount,
 } from "../controllers/user.controller.js";
 import { getCalendarSyncUrl, getCalendarFeed } from "../controllers/calendar.controller.js"; // <-- Add this import
 import { protectRoute } from "../middleware/auth.middleware.js";
@@ -22,6 +23,7 @@ router.get("/me", protectRoute, getCurrentUser);
 router.put("/profile", protectRoute, updateProfile);
 router.post("/push-token", protectRoute, updatePushToken);
 router.patch("/mute-group", protectRoute, toggleGroupMute);
+router.delete("/account", protectRoute, deleteAccount);
 
 // --- NEW CALENDAR ROUTES ---
 // Protected: The mobile app fetches the user's specific URL

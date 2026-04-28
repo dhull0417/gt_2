@@ -33,6 +33,7 @@ const HomeScreen = () => {
   const { signOut } = useAuth();
   const api = useApiClient();
   const router = useRouter();
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [calendarModalVisible, setCalendarModalVisible] = useState(false);
   const [calendarUrl, setCalendarUrl] = useState<string | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(false);
@@ -94,6 +95,44 @@ const HomeScreen = () => {
     } catch (error: any) {
       Alert.alert('Error Checking', error.message);
     }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? This cannot be undone.\n\nAll your data, messages, and any groups you own will be deleted or transferred.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Final Confirmation',
+              'This will permanently delete your account from GroupThat. There is no way to recover it.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Yes, Delete My Account',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setDeleteLoading(true);
+                    try {
+                      await userApi.deleteAccount(api);
+                      await signOut();
+                    } catch {
+                      Alert.alert('Error', 'Something went wrong while deleting your account. Please try again.');
+                    } finally {
+                      setDeleteLoading(false);
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
   };
 
   const handleOpenCalendarSync = async () => {
@@ -216,6 +255,16 @@ const HomeScreen = () => {
                     className="py-4 bg-red-600 rounded-lg items-center shadow"
                 >
                     <Text className="text-white text-lg font-bold">Sign Out</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    onPress={handleDeleteAccount}
+                    disabled={deleteLoading}
+                    className="py-4 items-center"
+                >
+                    {deleteLoading
+                      ? <ActivityIndicator size="small" color="#EF4444" />
+                      : <Text className="text-red-500 text-base font-medium">Delete Account</Text>}
                 </TouchableOpacity>
             </View>
           </>

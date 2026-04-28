@@ -20,3 +20,13 @@ export const syncStreamUser = async (user) => {
     console.error("❌ Stream user sync failed:", err);
   }
 };
+
+export const deleteStreamUser = async (userId) => {
+  if (!userId) return;
+  try {
+    await serverClient.deleteUser(userId, { hard_delete: true });
+    console.log("✅ Deleted Stream user:", userId);
+  } catch (err) {
+    console.error("❌ Stream user deletion failed:", err);
+  }
+};
