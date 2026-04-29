@@ -33,6 +33,7 @@ const HomeScreen = () => {
   const { signOut } = useAuth();
   const api = useApiClient();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [calendarModalVisible, setCalendarModalVisible] = useState(false);
   const [calendarUrl, setCalendarUrl] = useState<string | null>(null);
