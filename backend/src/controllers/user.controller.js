@@ -121,12 +121,17 @@ export const syncUser = asyncHandler(async (req, res) => {
 
   const clerkUser = await clerkClient.users.getUser(userId);
 
+  // The mobile client sends firstName/lastName from its local Clerk session,
+  // which is populated immediately from Apple/Google's token. The backend
+  // Clerk API can lag slightly on first sign-in, so we prefer the client value.
+  const { firstName: bodyFirstName, lastName: bodyLastName } = req.body;
+
   const userData = {
     clerkId: userId,
     email: clerkUser.emailAddresses[0]?.emailAddress,
     ...(clerkUser.username ? { username: clerkUser.username } : {}),
-    firstName: clerkUser.firstName || "",
-    lastName: clerkUser.lastName || "",
+    firstName: bodyFirstName || clerkUser.firstName || "",
+    lastName: bodyLastName || clerkUser.lastName || "",
     profilePicture: clerkUser.imageUrl || "",
   };
 
@@ -213,11 +218,13 @@ export const deleteAccount = asyncHandler(async (req, res) => {
   // --- Step 5: Delete from Stream Chat (non-fatal if it fails) ---
   await deleteStreamUser(userId.toString());
 
-  // --- Step 6: Delete from MongoDB ---
-  await User.findByIdAndDelete(userId);
-
-  // --- Step 7: Delete from Clerk ---
+  // --- Step 6: Delete from Clerk ---
+  // Must happen before MongoDB so that if Clerk deletion fails,
+  // the user record is still intact and the deletion can be retried.
   await clerkClient.users.deleteUser(clerkId);
+
+  // --- Step 7: Delete from MongoDB ---
+  await User.findByIdAndDelete(userId);
 
   res.status(200).json({ message: "Account deleted successfully." });
 });

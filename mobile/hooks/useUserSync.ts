@@ -1,15 +1,21 @@
 import { useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@clerk/clerk-expo";
+import { useAuth, useUser } from "@clerk/clerk-expo";
 import { useApiClient, userApi } from "../utils/api";
 
 export const useUserSync = () => {
   const { isSignedIn, isLoaded } = useAuth();
+  const { user: clerkUser } = useUser();
   const api = useApiClient();
   const queryClient = useQueryClient();
 
   const syncUserMutation = useMutation({
-    mutationFn: () => userApi.syncUser(api),
+    // Pass name from the Clerk client so the backend doesn't need to re-fetch
+    // from Clerk's API, which can lag behind the client on first sign-in.
+    mutationFn: () => userApi.syncUser(api, {
+      firstName: clerkUser?.firstName ?? '',
+      lastName: clerkUser?.lastName ?? '',
+    }),
     onSuccess: (response: any) => {
       if (response.data?.user) {
         console.log("User sync successful for:", response.data.user._id);

@@ -211,7 +211,8 @@ export const useApiClient = (): AxiosInstance => {
 };
 
 export const userApi = {
-  syncUser: (api: AxiosInstance) => api.post("/api/users/sync"),
+  syncUser: (api: AxiosInstance, data?: { firstName?: string; lastName?: string }) =>
+    api.post("/api/users/sync", data ?? {}),
   getCurrentUser: async (api: AxiosInstance): Promise<User> => {
     const response = await api.get<{ user: User }>("/api/users/me");
     return response.data.user;

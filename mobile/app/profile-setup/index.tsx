@@ -1,10 +1,12 @@
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useUser } from '@clerk/clerk-expo';
 import { useUpdateProfile } from '@/hooks/useUpdateProfile';
 import { useUserSync } from '@/hooks/useUserSync';
 
 const ProfileSetupScreen = () => {
+    const { user: clerkUser } = useUser();
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [username, setUsername] = useState('');
@@ -13,15 +15,32 @@ const ProfileSetupScreen = () => {
 
     const isPending = isSyncing || isUpdating;
 
+    const isAppleUser = clerkUser?.externalAccounts?.some(
+        (account) => account.provider === 'oauth_apple' || account.provider === 'apple'
+    );
+
+    // Show name fields if Apple didn't provide a name (edge case: returning user
+    // whose account was deleted — Apple only sends the name on first authorization).
+    const appleHasName = isAppleUser && !!(clerkUser?.firstName || clerkUser?.lastName);
+    const showNameFields = !isAppleUser || !appleHasName;
+
     const handleSaveProfile = () => {
-        if (!firstName.trim() || !lastName.trim() || !username.trim()) {
+        if (showNameFields && (!firstName.trim() || !lastName.trim())) {
             Alert.alert('Missing Information', 'Please fill out all fields.');
             return;
         }
+        if (!username.trim()) {
+            Alert.alert('Missing Information', 'Please enter a username.');
+            return;
+        }
+        const profileData = appleHasName
+            ? { username, firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' }
+            : { firstName, lastName, username };
+
         // Ensure the MongoDB user exists before updating profile.
         // onSettled fires whether sync succeeded or failed, so we always attempt the update.
         syncUser(undefined, {
-            onSettled: () => updateProfile({ firstName, lastName, username }),
+            onSettled: () => updateProfile(profileData),
         });
     };
 
@@ -32,20 +51,25 @@ const ProfileSetupScreen = () => {
                     <Text className="text-3xl font-bold text-gray-800 text-center">Welcome!</Text>
                     <Text className="text-lg text-gray-600 text-center mt-2 mb-8">Let's set up your profile.</Text>
 
-                    <TextInput
-                        placeholder="First Name"
-                        value={firstName}
-                        onChangeText={setFirstName}
-                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                        placeholderTextColor="#999"
-                    />
-                    <TextInput
-                        placeholder="Last Name"
-                        value={lastName}
-                        onChangeText={setLastName}
-                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                        placeholderTextColor="#999"
-                    />
+                    {showNameFields && (
+                        <>
+                            <TextInput
+                                placeholder="First Name"
+                                value={firstName}
+                                onChangeText={setFirstName}
+                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
+                                placeholderTextColor="#999"
+                            />
+                            <TextInput
+                                placeholder="Last Name"
+                                value={lastName}
+                                onChangeText={setLastName}
+                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
+                                placeholderTextColor="#999"
+                            />
+                        </>
+                    )}
+
                     <TextInput
                         placeholder="Username"
                         value={username}
