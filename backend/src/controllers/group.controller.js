@@ -3,8 +3,10 @@ import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import Meetup from "../models/meetup.model.js";
 import Notification from "../models/notification.model.js";
+import InviteToken from "../models/inviteToken.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
+import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { ENV } from "../config/env.js";
 import { syncStreamUser } from "../utils/stream.js";
@@ -638,4 +640,77 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     await User.updateMany({ _id: { $in: group.members } }, { $pull: { groups: groupId } });
     await Group.findByIdAndDelete(groupId);
     res.status(200).json({ message: "Deleted." });
+});
+
+export const generateInviteLink = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+
+    const [user, group] = await Promise.all([
+        User.findOne({ clerkId }),
+        Group.findById(groupId),
+    ]);
+    if (!user || !group) return res.status(404).json({ error: "Resource not found." });
+    if (!group.members.some(m => m.toString() === user._id.toString())) {
+        return res.status(403).json({ error: "You must be a group member to generate an invite link." });
+    }
+
+    // Reuse an existing unexpired token so the same link stays stable
+    let invite = await InviteToken.findOne({ groupId, expiresAt: { $gt: new Date() } });
+    if (!invite) {
+        const token = crypto.randomBytes(16).toString('hex');
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        invite = await InviteToken.create({ token, groupId, createdBy: user._id, expiresAt });
+    }
+
+    res.status(200).json({ link: `https://dhull0417.github.io/groupthat-testing/join.html?token=${invite.token}` });
+});
+
+export const redeemInviteToken = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { token } = req.params;
+
+    const invite = await InviteToken.findOne({ token, expiresAt: { $gt: new Date() } });
+    if (!invite) return res.status(404).json({ error: "This invite link is invalid or has expired." });
+
+    const [user, group] = await Promise.all([
+        User.findOne({ clerkId }),
+        Group.findById(invite.groupId),
+    ]);
+    if (!user || !group) return res.status(404).json({ error: "Resource not found." });
+
+    if (group.members.some(m => m.toString() === user._id.toString())) {
+        return res.status(200).json({ groupId: group._id, groupName: group.name, alreadyMember: true });
+    }
+
+    await group.updateOne({ $addToSet: { members: user._id } });
+    await user.updateOne({ $addToSet: { groups: group._id } });
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    await Meetup.updateMany(
+        { group: group._id, date: { $gte: today } },
+        { $addToSet: { members: user._id, undecided: user._id } }
+    );
+
+    const owner = await User.findById(group.owner);
+    if (owner && owner._id.toString() !== user._id.toString()) {
+        try {
+            await notifyUsers([owner], {
+                title: "New Member",
+                body: `${user.firstName} joined "${group.name}" via invite link.`,
+                data: { groupId: group._id.toString(), type: 'group-added' }
+            });
+            await Notification.create({
+                recipient: owner._id,
+                sender: user._id,
+                type: 'group-added',
+                group: group._id,
+                read: false
+            });
+        } catch (err) { console.error(err); }
+    }
+
+    await syncStreamUser(user);
+    res.status(200).json({ groupId: group._id, groupName: group.name, alreadyMember: false });
 });

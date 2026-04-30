@@ -1,18 +1,20 @@
 import express from "express";
 import {
-  createGroup, 
-  getGroups, 
-  getGroupDetails, 
-  addMember, 
-  deleteGroup, 
+  createGroup,
+  getGroups,
+  getGroupDetails,
+  addMember,
+  deleteGroup,
   updateGroup,
-  leaveGroup, 
-  removeMember, 
-  createOneOffMeetup, 
-  inviteUser, 
+  leaveGroup,
+  removeMember,
+  createOneOffMeetup,
+  inviteUser,
   updateGroupSchedule,
   updateModerators,
-  toggleModerator
+  toggleModerator,
+  generateInviteLink,
+  redeemInviteToken,
 } from "../controllers/group.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
@@ -36,9 +38,12 @@ router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
 router.post("/:groupId/meetups", protectRoute, createOneOffMeetup);
 
 // --- Membership & Invites ---
+// join/:token must be registered before /:groupId to avoid route collision
+router.post("/join/:token", protectRoute, redeemInviteToken);
 router.post("/:groupId/add-member", protectRoute, addMember);
 router.post("/:groupId/leave", protectRoute, leaveGroup);
 router.post("/:groupId/remove-member", protectRoute, removeMember);
 router.post("/:groupId/invite", protectRoute, inviteUser);
+router.post("/:groupId/invite-link", protectRoute, generateInviteLink);
 
 export default router;

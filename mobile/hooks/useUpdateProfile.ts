@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, userApi } from "../utils/api";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
+import * as SecureStore from 'expo-secure-store';
+import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 
 // Include username in the variables
 interface UpdateProfileVariables {
@@ -21,9 +23,15 @@ export const useUpdateProfile = () => {
       userApi.updateProfile(api, variables),
     
     onSuccess: async () => {
-      Alert.alert("Success", "Your profile has been updated.");
       await queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-      router.replace('/(tabs)');
+      const pendingToken = await SecureStore.getItemAsync(PENDING_INVITE_KEY);
+      if (pendingToken) {
+        await SecureStore.deleteItemAsync(PENDING_INVITE_KEY);
+        router.replace({ pathname: '/join/[token]', params: { token: pendingToken } });
+      } else {
+        Alert.alert("Success", "Your profile has been updated.");
+        router.replace('/(tabs)');
+      }
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Failed to update profile.";

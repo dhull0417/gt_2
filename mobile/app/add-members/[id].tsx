@@ -14,20 +14,28 @@ import {
 import { useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useContactMatching, ContactEntry } from '@/hooks/useContactMatching';
-import { User } from '@/utils/api';
+import { User, useApiClient, groupApi } from '@/utils/api';
 
 const AddMembersScreen = () => {
     const { id: groupId } = useLocalSearchParams<{ id: string }>();
 
     const [searchQuery, setSearchQuery] = useState("");
+    const api = useApiClient();
     const { data: searchResults, isLoading: isSearchingUsers } = useSearchUsers(searchQuery);
     const { data: groupDetails } = useGetGroupDetails(groupId);
     const { mutate: inviteUser, isPending: isInviting } = useInviteUser();
     const { contacts, isLoading: isLoadingContacts, permissionDenied } = useContactMatching();
+    const { data: inviteLinkData } = useQuery({
+        queryKey: ['inviteLink', groupId],
+        queryFn: () => groupApi.generateInviteLink(api, groupId!),
+        enabled: !!groupId,
+        staleTime: 1000 * 60 * 5,
+    });
 
     const isSearching = searchQuery.length > 0;
 
@@ -48,11 +56,13 @@ const AddMembersScreen = () => {
         });
     };
 
+    const inviteLink = inviteLinkData?.link ?? 'https://dhull0417.github.io/groupthat-testing/';
+
     const handleSmsInvite = async (contact: ContactEntry) => {
         if (!groupDetails) return;
         try {
             await Share.share({
-                message: `Hey ${contact.name.split(' ')[0]}! Join my group "${groupDetails.name}" on GroupThat! Download the app: https://dhull0417.github.io/groupthat-testing/`,
+                message: `Hey ${contact.name.split(' ')[0]}! Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join: ${inviteLink}`,
             });
         } catch (error) {
             console.error("Share error:", error);
@@ -63,7 +73,7 @@ const AddMembersScreen = () => {
         if (!groupDetails) return;
         try {
             await Share.share({
-                message: `Join my group "${groupDetails.name}" on GroupThat! Download the app to get started: https://dhull0417.github.io/groupthat-testing/`,
+                message: `Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join: ${inviteLink}`,
             });
         } catch (error) {
             console.error("Share error:", error);

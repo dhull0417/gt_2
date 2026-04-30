@@ -293,7 +293,15 @@ export const groupApi = {
   updateModerators: async (api: AxiosInstance, { groupId, moderatorIds }: UpdateModeratorsPayload): Promise<{ message: string }> => {
     const response = await api.patch(`/api/groups/${groupId}/moderators`, { moderatorIds });
     return response.data;
-  }
+  },
+  generateInviteLink: async (api: AxiosInstance, groupId: string): Promise<{ link: string }> => {
+    const response = await api.post<{ link: string }>(`/api/groups/${groupId}/invite-link`);
+    return response.data;
+  },
+  redeemInviteToken: async (api: AxiosInstance, token: string): Promise<{ groupId: string; groupName: string; alreadyMember: boolean }> => {
+    const response = await api.post(`/api/groups/join/${token}`);
+    return response.data;
+  },
 };
 
 export const meetupApi = {
