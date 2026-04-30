@@ -19,25 +19,21 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-export const useSearchUsers = (username: string) => {
+export const useSearchUsers = (query: string) => {
   const api = useApiClient();
-  
-  // 2. Wait 500ms after typing stops before updating this variable
-  const debouncedUsername = useDebounce(username, 500);
+
+  const debouncedQuery = useDebounce(query, 500);
 
   return useQuery({
-    // Use the *debounced* name for the key (so it caches the final word, not every letter)
-    queryKey: ['userSearch', debouncedUsername],
-    
+    queryKey: ['userSearch', debouncedQuery],
+
     queryFn: () => {
-        if (!debouncedUsername || debouncedUsername.trim() === "") return [];
-        return userApi.searchUsers(api, debouncedUsername);
+        if (!debouncedQuery || debouncedQuery.trim() === "") return [];
+        return userApi.searchUsers(api, debouncedQuery);
     },
-    
-    // Only run if the debounced string has content
-    // (I removed the > 2 length check because the 500ms delay prmeetups spam anyway, allowing users to search for short names like "Al")
-    enabled: !!debouncedUsername && debouncedUsername.length > 0,
-    
-    staleTime: 1000 * 60, // Cache results for 1 minute (Your existing setting)
+
+    enabled: !!debouncedQuery && debouncedQuery.length > 0,
+
+    staleTime: 1000 * 60,
   });
 };

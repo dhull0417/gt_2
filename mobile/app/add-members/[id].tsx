@@ -61,7 +61,7 @@ const AddMembersScreen = () => {
                 <Feather name="search" size={20} color="#9CA3AF" />
                 <TextInput 
                     style={styles.searchInput} 
-                    placeholder="Search by username..." 
+                    placeholder="Search by name or username..."
                     value={searchQuery} 
                     onChangeText={setSearchQuery} 
                     autoCapitalize="none"

@@ -70,11 +70,12 @@ export const updatePushToken = asyncHandler(async (req, res) => {
 
 export const searchUsers = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
-  const { username } = req.query;
-  if (!username) return res.status(400).json({ error: "Username query is required." });
+  const { query } = req.query;
+  if (!query) return res.status(400).json({ error: "Search query is required." });
 
+  const regex = { $regex: query, $options: "i" };
   const users = await User.find({
-    username: { $regex: `^${username}`, $options: "i" },
+    $or: [{ firstName: regex }, { lastName: regex }, { username: regex }],
     clerkId: { $ne: clerkId },
   })
     .select("firstName lastName username profilePicture")

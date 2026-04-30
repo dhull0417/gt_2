@@ -218,8 +218,8 @@ export const userApi = {
     return response.data.user;
   },
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
-  searchUsers: async (api: AxiosInstance, username: string): Promise<User[]> => {
-    const response = await api.get<User[]>(`/api/users/search?username=${username}`);
+  searchUsers: async (api: AxiosInstance, query: string): Promise<User[]> => {
+    const response = await api.get<User[]>(`/api/users/search?query=${encodeURIComponent(query)}`);
     return response.data;
   },
   toggleGroupMute: async (api: AxiosInstance, groupId: string, muteType: 'indefinite' | 'untilNext' | 'none'): Promise<{ muted: boolean }> => {
