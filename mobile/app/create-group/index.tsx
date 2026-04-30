@@ -22,6 +22,7 @@ import { Feather } from "@expo/vector-icons";
 import { DateTime } from "luxon";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
 import { useSearchUsers } from "../../hooks/useSearchUsers";
+import { useContactMatching, ContactEntry } from "../../hooks/useContactMatching";
 import TimePicker from "../../components/TimePicker";
 import { Frequency, DayTime } from "../../utils/api";
 
@@ -280,7 +281,10 @@ const MembersScreen = ({ groupName, onNext, onBack }: {
 }) => {
     const [selected, setSelected] = useState<UserStub[]>([]);
     const [query, setQuery] = useState("");
-    const { data: results, isLoading } = useSearchUsers(query);
+    const { data: results, isLoading: isSearching } = useSearchUsers(query);
+    const { contacts, isLoading: isLoadingContacts } = useContactMatching();
+
+    const isSearchActive = query.length > 0;
 
     const toggle = (u: UserStub) => {
         setSelected(prev => prev.some(m => m._id === u._id) ? prev.filter(m => m._id !== u._id) : [...prev, u]);
@@ -289,7 +293,51 @@ const MembersScreen = ({ groupName, onNext, onBack }: {
     };
 
     const handleShare = async () => {
-        try { await Share.share({ message: `Join my group "${groupName}" on the app!` }); } catch {}
+        try { await Share.share({ message: `Join my group "${groupName}" on GroupThat! Download the app: https://dhull0417.github.io/groupthat-testing/` }); } catch {}
+    };
+
+    const handleSmsContact = async (contact: ContactEntry) => {
+        try {
+            await Share.share({
+                message: `Hey ${contact.name.split(' ')[0]}! I'm inviting you to join "${groupName}" on GroupThat. Download the app: https://dhull0417.github.io/groupthat-testing/`,
+            });
+        } catch {}
+    };
+
+    const renderContact = ({ item }: { item: ContactEntry }) => {
+        const appUser = item.appUser;
+        const isSelected = !!appUser && selected.some(m => m._id === appUser._id);
+        return (
+            <View style={s.resultRow}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={s.resultText}>{item.name}</Text>
+                    {appUser?.username ? (
+                        <Text style={[s.resultSubText, { color: '#6B7280' }]}>@{appUser.username}</Text>
+                    ) : null}
+                    <Text style={[s.resultSubText, appUser ? s.statusOnApp : s.statusNotOnApp]}>
+                        {appUser ? 'On GroupThat' : 'Invite to GroupThat'}
+                    </Text>
+                </View>
+                {appUser ? (
+                    <TouchableOpacity
+                        style={isSelected ? s.contactBtnSelected : s.contactBtnAdd}
+                        onPress={() => toggle(appUser)}
+                    >
+                        <Text style={isSelected ? s.contactBtnSelectedText : s.contactBtnAddText}>
+                            {isSelected ? 'Added' : 'Add'}
+                        </Text>
+                    </TouchableOpacity>
+                ) : (
+                    <TouchableOpacity
+                        style={s.contactBtnSms}
+                        onPress={() => handleSmsContact(item)}
+                    >
+                        <Feather name="send" size={13} color="#6B7280" />
+                        <Text style={s.contactBtnSmsText}>SMS</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
+        );
     };
 
     return (
@@ -303,25 +351,30 @@ const MembersScreen = ({ groupName, onNext, onBack }: {
             </View>
             <View style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: 4 }}>
                 <Text style={s.screenTitle}>Invite members</Text>
-                <Text style={s.screenSub}>Search by username or share a link</Text>
+                <Text style={s.screenSub}>Search or pick from your contacts</Text>
             </View>
             <View style={[s.searchRow, { marginHorizontal: 24 }]}>
                 <Feather name="search" size={18} color="#9CA3AF" />
                 <TextInput
                     style={s.searchInput}
-                    placeholder="Search username..."
+                    placeholder="Search by name or username..."
                     placeholderTextColor="#C4C9D4"
                     value={query}
                     onChangeText={setQuery}
                     autoCapitalize="none"
                 />
+                {query.length > 0 && (
+                    <TouchableOpacity onPress={() => setQuery('')}>
+                        <Feather name="x" size={16} color="#9CA3AF" />
+                    </TouchableOpacity>
+                )}
             </View>
 
             {selected.length > 0 && (
                 <View style={s.selectedChipsWrap}>
                     {selected.map(u => (
                         <TouchableOpacity key={u._id} style={s.chip} onPress={() => toggle(u)}>
-                            <Text style={s.chipText}>@{u.username}</Text>
+                            <Text style={s.chipText}>{u.firstName ? `${u.firstName}` : `@${u.username}`}</Text>
                             <Feather name="x" size={11} color="#3730A3" style={{ marginLeft: 4 }} />
                         </TouchableOpacity>
                     ))}
@@ -329,22 +382,43 @@ const MembersScreen = ({ groupName, onNext, onBack }: {
             )}
 
             <View style={{ flex: 1, paddingHorizontal: 24 }}>
-                {isLoading ? (
-                    <ActivityIndicator color="#4A90E2" style={{ marginTop: 20 }} />
+                {isSearchActive ? (
+                    isSearching ? (
+                        <ActivityIndicator color="#4A90E2" style={{ marginTop: 20 }} />
+                    ) : (
+                        <FlatList
+                            data={results || []}
+                            keyExtractor={i => i._id}
+                            keyboardShouldPersistTaps="handled"
+                            renderItem={({ item }) => (
+                                <TouchableOpacity style={s.resultRow} onPress={() => toggle(item)}>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={s.resultText}>{item.firstName} {item.lastName}</Text>
+                                        <Text style={[s.resultSubText, { color: '#6B7280' }]}>@{item.username}</Text>
+                                    </View>
+                                    {selected.some(m => m._id === item._id) && (
+                                        <Feather name="check-circle" size={20} color="#4A90E2" />
+                                    )}
+                                </TouchableOpacity>
+                            )}
+                        />
+                    )
                 ) : (
-                    <FlatList
-                        data={results || []}
-                        keyExtractor={i => i._id}
-                        keyboardShouldPersistTaps="handled"
-                        renderItem={({ item }) => (
-                            <TouchableOpacity style={s.resultRow} onPress={() => toggle(item)}>
-                                <Text style={s.resultText}>@{item.username}</Text>
-                                {selected.some(m => m._id === item._id) && (
-                                    <Feather name="check-circle" size={20} color="#4A90E2" />
-                                )}
-                            </TouchableOpacity>
-                        )}
-                    />
+                    isLoadingContacts ? (
+                        <ActivityIndicator color="#4A90E2" style={{ marginTop: 20 }} />
+                    ) : (
+                        <FlatList
+                            data={contacts}
+                            keyExtractor={i => i.id}
+                            keyboardShouldPersistTaps="handled"
+                            renderItem={renderContact}
+                            ListEmptyComponent={
+                                <Text style={{ textAlign: 'center', marginTop: 24, color: '#9CA3AF', fontSize: 14 }}>
+                                    No contacts found.
+                                </Text>
+                            }
+                        />
+                    )
                 )}
             </View>
 
@@ -1224,7 +1298,16 @@ const s = StyleSheet.create({
     chip: { flexDirection: "row", alignItems: "center", backgroundColor: "#EEF2FF", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: "#C7D2FE" },
     chipText: { fontSize: 13, fontWeight: "600", color: "#3730A3" },
     resultRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-    resultText: { fontSize: 15, color: "#374151" },
+    resultText: { fontSize: 15, fontWeight: "600", color: "#374151" },
+    resultSubText: { fontSize: 12, marginTop: 1 },
+    statusOnApp: { color: "#22C55E" },
+    statusNotOnApp: { color: "#9CA3AF" },
+    contactBtnAdd: { backgroundColor: "#EEF2FF", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+    contactBtnAddText: { color: "#4A90E2", fontWeight: "700", fontSize: 13 },
+    contactBtnSelected: { backgroundColor: "#DCFCE7", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+    contactBtnSelectedText: { color: "#16A34A", fontWeight: "700", fontSize: 13 },
+    contactBtnSms: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#F3F4F6", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+    contactBtnSmsText: { color: "#6B7280", fontWeight: "600", fontSize: 13 },
     shareBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderStyle: "dashed", borderColor: "#93C5FD", backgroundColor: "#EFF6FF" },
     shareBtnText: { marginLeft: 8, color: "#4A90E2", fontWeight: "700", fontSize: 14 },
     primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
