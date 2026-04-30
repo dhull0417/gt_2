@@ -40,20 +40,6 @@ export default function Index() {
               )}
             </TouchableOpacity>
 
-            {/* Apple Button */}
-            <TouchableOpacity 
-              style={[styles.button, styles.shadow]}
-              onPress={() => handleSocialAuth("oauth_apple")}
-              disabled={isLoading}
-            >
-              {isLoading ? <ActivityIndicator size="small" color="#000" /> : (
-                <View style={styles.buttonContent}>
-                  <Image source={require("../../assets/images/apple-logo.png")} style={styles.iconImage} resizeMode="contain" />
-                  <Text style={styles.buttonText}>Continue with Apple</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
             {/* Phone Button */}
             <TouchableOpacity 
               style={[styles.button, styles.shadow]}

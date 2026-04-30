@@ -57,7 +57,7 @@ const AuthLayout = () => {
   // Treat it the same as success so routing can redirect them to profile-setup.
   const currentUserSettled = isSuccess || isCurrentUserError;
 
-  const { expoPushToken } = usePushNotifications(isSignedIn, isSuccess);
+  usePushNotifications(isSignedIn, isSuccess);
 
   // === ROUTING LOGIC ===
   useEffect(() => {
@@ -82,7 +82,7 @@ const AuthLayout = () => {
     ].includes(segments[0]);
 
     if (isSignedIn) {
-      const profileIncomplete = !currentUser?.username?.trim();
+      const profileIncomplete = !currentUser?.firstName?.trim() || !currentUser?.lastName?.trim() || !currentUser?.username?.trim();
       if (profileIncomplete && segments[0] !== 'profile-setup') {
         router.replace('/profile-setup');
       } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
