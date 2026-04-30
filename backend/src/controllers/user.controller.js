@@ -68,6 +68,26 @@ export const updatePushToken = asyncHandler(async (req, res) => {
   res.status(200).json({ message: "Push token updated successfully." });
 });
 
+export const matchContacts = asyncHandler(async (req, res) => {
+  const { userId: clerkId } = getAuth(req);
+  const { emails = [], phoneNumbers = [] } = req.body;
+
+  if (emails.length === 0 && phoneNumbers.length === 0) {
+    return res.status(200).json([]);
+  }
+
+  const conditions = [];
+  if (emails.length > 0) conditions.push({ email: { $in: emails } });
+  if (phoneNumbers.length > 0) conditions.push({ phoneNumber: { $in: phoneNumbers } });
+
+  const users = await User.find({
+    $or: conditions,
+    clerkId: { $ne: clerkId },
+  }).select("firstName lastName username profilePicture email phoneNumber");
+
+  res.status(200).json(users);
+});
+
 export const searchUsers = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
   const { query } = req.query;

@@ -45,6 +45,7 @@ export interface User {
   _id: string;
   clerkId: string;
   email: string;
+  phoneNumber?: string;
   phone: string;
   username: string;
   firstName?: string;
@@ -220,6 +221,10 @@ export const userApi = {
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
   searchUsers: async (api: AxiosInstance, query: string): Promise<User[]> => {
     const response = await api.get<User[]>(`/api/users/search?query=${encodeURIComponent(query)}`);
+    return response.data;
+  },
+  matchContacts: async (api: AxiosInstance, emails: string[], phoneNumbers: string[]): Promise<User[]> => {
+    const response = await api.post<User[]>('/api/users/match-contacts', { emails, phoneNumbers });
     return response.data;
   },
   toggleGroupMute: async (api: AxiosInstance, groupId: string, muteType: 'indefinite' | 'untilNext' | 'none'): Promise<{ muted: boolean }> => {

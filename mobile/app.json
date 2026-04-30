@@ -41,7 +41,8 @@
         "POST_NOTIFICATIONS",
         "INTERNET",
         "VIBRATE",
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "READ_CONTACTS"
       ],
       "runtimeVersion": "1.2.1",
       "googleServicesFile": "./google-services.json"

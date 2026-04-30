@@ -6,6 +6,7 @@ import {
   syncUser,
   updateProfile,
   searchUsers,
+  matchContacts,
   updatePushToken,
   toggleGroupMute,
   deleteAccount,
@@ -17,6 +18,7 @@ const router = express.Router();
 
 router.get("/profile/:username", getUserProfile);
 router.get("/search", protectRoute, searchUsers);
+router.post("/match-contacts", protectRoute, matchContacts);
 
 router.post("/sync", protectRoute, syncUser);
 router.get("/me", protectRoute, getCurrentUser);
