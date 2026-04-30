@@ -1262,7 +1262,14 @@ const CreateGroupScreen = () => {
             ...schedulePayload,
         };
         mutate(payload, {
-            onSuccess: () => router.replace("/(tabs)/groups"),
+            onSuccess: (data: any) => {
+                const groupId = data?.group?._id;
+                if (groupId) {
+                    router.replace({ pathname: '/add-members/[id]', params: { id: groupId } });
+                } else {
+                    router.replace("/(tabs)/groups");
+                }
+            },
             onError: (err: any) => Alert.alert("Error", err?.response?.data?.error || "Failed to create group."),
         });
     };
