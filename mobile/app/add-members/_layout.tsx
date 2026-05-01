@@ -12,7 +12,7 @@ const AddMembersLayout = () => {
                 name="[id]" 
                 options={{ 
                     headerTitle: 'Invite Members',
-                    presentation: 'modal',
+                    presentation: 'card',
                     animation: 'slide_from_right',
                     headerLeft: () => (
                         <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>

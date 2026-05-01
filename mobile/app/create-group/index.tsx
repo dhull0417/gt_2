@@ -1265,7 +1265,7 @@ const CreateGroupScreen = () => {
             onSuccess: (data: any) => {
                 const groupId = data?.group?._id;
                 if (groupId) {
-                    router.replace({ pathname: '/add-members/[id]', params: { id: groupId } });
+                    router.replace(`/add-members/${groupId}`);
                 } else {
                     router.replace("/(tabs)/groups");
                 }
