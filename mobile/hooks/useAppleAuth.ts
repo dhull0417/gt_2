@@ -24,6 +24,13 @@ export const useAppleAuth = () => {
                 return;
             }
 
+            console.log("Apple credential received:", {
+                hasToken: !!credential.identityToken,
+                hasEmail: !!credential.email,
+                hasFullName: !!credential.fullName?.givenName,
+                user: credential.user,
+            });
+
             const signInResult = await signIn!.create({
                 strategy: "oauth_token_apple",
                 token: credential.identityToken,
