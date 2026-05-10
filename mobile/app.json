@@ -16,6 +16,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.dallinhull.groupthat",
       "appleTeamId": "9P29PK6A6D",
+      "usesAppleSignIn": true,
+      "associatedDomains": [
+        "applinks:relaxing-flounder-31.clerk.accounts.dev",
+        "webcredentials:relaxing-flounder-31.clerk.accounts.dev"
+      ],
       "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "GroupThat needs camera access to let you take a profile picture.",
@@ -54,6 +59,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
       "expo-notifications",
       [
         "expo-splash-screen",

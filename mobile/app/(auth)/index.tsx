@@ -1,12 +1,16 @@
 import { useSocialAuth } from "@/hooks/useSocialAuth";
+import { useAppleAuth } from "@/hooks/useAppleAuth";
 import { Text, Image, View, TouchableOpacity, ActivityIndicator, StyleSheet, Linking } from "react-native";
-import { useRouter } from "expo-router"; // 1. Import useRouter
+import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from '@expo/vector-icons';
+import * as AppleAuthentication from "expo-apple-authentication";
 
 export default function Index() {
   const { handleSocialAuth, isLoading } = useSocialAuth();
-  const router = useRouter(); // 2. Get the router instance
+  const { handleAppleAuth, isLoading: appleIsLoading } = useAppleAuth();
+  const isAnyLoading = isLoading || appleIsLoading;
+  const router = useRouter();
 
   const handleOpenPrivacyPolicy = () => {
     Linking.openURL("https://dhull0417.github.io/groupthat-testing/").catch((err) => 
@@ -25,12 +29,27 @@ export default function Index() {
             />
           </View>
 
-          {/* Google Button */}
           <View style={styles.buttonGroup}>
-            <TouchableOpacity 
+            {/* Apple Button */}
+            {appleIsLoading ? (
+              <View style={[styles.appleButton, styles.shadow]}>
+                <ActivityIndicator size="small" color="#fff" />
+              </View>
+            ) : (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={9999}
+                style={[styles.appleButton, styles.shadow]}
+                onPress={handleAppleAuth}
+              />
+            )}
+
+            {/* Google Button */}
+            <TouchableOpacity
               style={[styles.button, styles.shadow]}
               onPress={() => handleSocialAuth("oauth_google")}
-              disabled={isLoading}
+              disabled={isAnyLoading}
             >
               {isLoading ? <ActivityIndicator size="small" color="#000" /> : (
                 <View style={styles.buttonContent}>
@@ -41,13 +60,12 @@ export default function Index() {
             </TouchableOpacity>
 
             {/* Phone Button */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.button, styles.shadow]}
               onPress={() => router.push('/(auth)/phone-login')}
-              disabled={isLoading}
+              disabled={isAnyLoading}
             >
               <View style={styles.buttonContent}>
-                {/* Using Feather icon to match the size/weight of other logos */}
                 <Feather name="phone" size={28} color="#000" style={{ marginRight: 12 }} />
                 <Text style={styles.buttonText}>Continue with Phone</Text>
               </View>
@@ -101,6 +119,14 @@ const styles = StyleSheet.create({
   },
   buttonGroup: {
     gap: 8,
+  },
+  appleButton: {
+    width: '100%',
+    height: 48,
+    backgroundColor: '#000000',
+    borderRadius: 9999,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   button: {
     flexDirection: 'row',
