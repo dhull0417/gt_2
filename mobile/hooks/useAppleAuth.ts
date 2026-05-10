@@ -24,12 +24,23 @@ export const useAppleAuth = () => {
                 return;
             }
 
-            console.log("Apple credential received:", {
-                hasToken: !!credential.identityToken,
+            const tokenPayload = JSON.parse(atob(credential.identityToken.split('.')[1]));
+            const debugInfo = {
+                tokenClaims: {
+                    iss: tokenPayload.iss,
+                    aud: tokenPayload.aud,
+                    sub: tokenPayload.sub,
+                    exp: new Date(tokenPayload.exp * 1000).toISOString(),
+                },
                 hasEmail: !!credential.email,
                 hasFullName: !!credential.fullName?.givenName,
-                user: credential.user,
-            });
+            };
+            console.log("Apple debug info:", debugInfo);
+            fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/debug/log`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(debugInfo),
+            }).catch(() => {});
 
             const signInResult = await signIn!.create({
                 strategy: "oauth_token_apple",

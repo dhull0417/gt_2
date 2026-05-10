@@ -34,6 +34,11 @@ app.use("/api/notifications", notificationRoutes);
 // Project 4: Mount the webhook route
 app.use("/api/webhooks", webhookRoutes);
 
+app.post("/api/debug/log", (req, res) => {
+  console.log("[DEBUG]", JSON.stringify(req.body, null, 2));
+  res.status(200).json({ received: true });
+});
+
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({ error: err.message || "Internal server error" });
