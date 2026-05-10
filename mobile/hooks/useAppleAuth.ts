@@ -67,6 +67,11 @@ export const useAppleAuth = () => {
         } catch (err: any) {
             if (err.code === "ERR_REQUEST_CANCELED") return;
             console.log("Apple sign in error:", JSON.stringify(err, null, 2));
+            fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/debug/log`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ clerkError: err }),
+            }).catch(() => {});
             Alert.alert("Error", "Failed to sign in with Apple. Please try again.");
         } finally {
             setIsLoading(false);
