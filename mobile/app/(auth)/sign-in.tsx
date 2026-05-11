@@ -1,32 +1,30 @@
 import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import React, { useState } from 'react';
-import { useSignIn } from '@clerk/clerk-expo';
+import { useSignIn } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 const SignInScreen = () => {
   const router = useRouter();
-  const { signIn, setActive, isLoaded } = useSignIn();
+  const { signIn } = useSignIn();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isPasswordVisible, setPasswordVisible] = useState(false);
 
   const onSignInPress = async () => {
-    if (!isLoaded) return;
     setIsLoading(true);
     try {
-      const signInAttempt = await signIn.create({
-        identifier: email,
-        password,
-      });
-
-      if (signInAttempt.status === 'complete') {
-        await setActive({ session: signInAttempt.createdSessionId });
-        // The root layout will now handle the redirect automatically
+      const { error } = await signIn.create({ identifier: email, password });
+      if (error) {
+        Alert.alert('Error', (error as any).errors?.[0]?.longMessage || error.longMessage || error.message || 'An error occurred during sign in.');
+        return;
+      }
+      if (signIn.status === 'complete') {
+        await signIn.finalize();
       } else {
-        console.error(JSON.stringify(signInAttempt, null, 2));
+        console.error(JSON.stringify(signIn, null, 2));
       }
     } catch (err: any) {
       Alert.alert('Error', err.errors?.[0]?.longMessage || 'An error occurred during sign in.');

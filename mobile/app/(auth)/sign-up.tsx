@@ -1,13 +1,13 @@
 import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import React, { useState } from 'react';
-import { useSignUp } from '@clerk/clerk-expo';
+import { useSignUp } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 const SignUpScreen = () => {
   const router = useRouter();
-  const { isLoaded, signUp, setActive } = useSignUp();
+  const { signUp } = useSignUp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -16,21 +16,21 @@ const SignUpScreen = () => {
   const [isConfirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
 
   const onSignUpPress = async () => {
-    if (!isLoaded) return;
     if (password !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match. Please try again.');
       return;
     }
     setIsLoading(true);
     try {
-      const signUpAttempt = await signUp.create({ emailAddress: email, password });
-      
-      if (signUpAttempt.status === 'complete') {
-        // Set the session as active, which will update the global auth state
-        await setActive({ session: signUpAttempt.createdSessionId });
-        // The root layout will now handle the redirect automatically.
+      const { error } = await signUp.create({ emailAddress: email, password });
+      if (error) {
+        Alert.alert('Error', (error as any).errors?.[0]?.longMessage || error.longMessage || error.message || 'An error occurred during sign up.');
+        return;
+      }
+      if (signUp.status === 'complete') {
+        await signUp.finalize();
       } else {
-        console.error(JSON.stringify(signUpAttempt, null, 2));
+        console.error(JSON.stringify(signUp, null, 2));
       }
     } catch (err: any) {
       Alert.alert('Error', err.errors?.[0]?.longMessage || 'An error occurred during sign up.');

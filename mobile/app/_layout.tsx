@@ -1,6 +1,6 @@
 // mobile/app/_layout.tsx
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
+import { ClerkProvider, useAuth } from '@clerk/expo';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useUserSync } from '@/hooks/useUserSync';

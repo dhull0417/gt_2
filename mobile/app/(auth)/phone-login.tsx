@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
-import { useSignIn, useSignUp } from '@clerk/clerk-expo';
+import { useSignIn, useSignUp } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 export default function PhoneLogin() {
-  const { signIn, setActive: setSignInActive, isLoaded: isSignInLoaded } = useSignIn();
-  const { signUp, setActive: setSignUpActive, isLoaded: isSignUpLoaded } = useSignUp();
+  const { signIn } = useSignIn();
+  const { signUp } = useSignUp();
   const router = useRouter();
 
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -17,50 +17,40 @@ export default function PhoneLogin() {
 
   // 1. Handle "Send Code"
   const onSendCodePress = async () => {
-    if (!isSignInLoaded || !isSignUpLoaded) return;
     setIsLoading(true);
-
     try {
-      // A. Try to start the Sign In process
-      const { supportedFirstFactors } = await signIn.create({
-        identifier: phoneNumber,
-      });
+      const { error } = await signIn.create({ identifier: phoneNumber });
 
-      // If we get here, the user exists! 
-      // Look for the phone code strategy. Cast as any to avoid TS issues.
-      const phoneFactor = supportedFirstFactors?.find((factor: any) => 
-        factor.strategy === 'phone_code'
-      ) as any;
+      if (!error) {
+        const phoneFactor = signIn.supportedFirstFactors?.find(
+          (f: any) => f.strategy === 'phone_code'
+        ) as any;
 
-      if (phoneFactor) {
-        // Send the code for Login
-        await signIn.prepareFirstFactor({
-          strategy: 'phone_code',
-          phoneNumberId: phoneFactor.phoneNumberId,
-        });
-        setIsSigningUp(false);
+        if (phoneFactor) {
+          await signIn.phoneCode.sendCode();
+          setIsSigningUp(false);
+          setPendingVerification(true);
+        } else {
+          Alert.alert("Error", "This account does not support phone login.");
+        }
+      } else if ((error as any).errors?.[0]?.code === 'form_identifier_not_found') {
+        const { error: signUpError } = await signUp.create({ phoneNumber });
+        if (signUpError) {
+          Alert.alert("Error", (signUpError as any).errors?.[0]?.longMessage || signUpError.longMessage || signUpError.message || "Failed to create account.");
+          return;
+        }
+        const { error: sendError } = await signUp.verifications.sendPhoneCode();
+        if (sendError) {
+          Alert.alert("Error", (sendError as any).errors?.[0]?.longMessage || sendError.longMessage || sendError.message || "Failed to send code.");
+          return;
+        }
+        setIsSigningUp(true);
         setPendingVerification(true);
       } else {
-        Alert.alert("Error", "This account does not support phone login.");
+        Alert.alert("Error", (error as any).errors?.[0]?.longMessage || error.longMessage || error.message || "Something went wrong.");
       }
-
     } catch (err: any) {
-      // B. If error is "user not found", start Sign Up process
-      // Error code: form_identifier_not_found means user doesn't exist yet
-      if (err.errors?.[0]?.code === "form_identifier_not_found") {
-        try {
-          await signUp.create({ phoneNumber });
-          await signUp.prepareVerification({ strategy: "phone_code" });
-          
-          setIsSigningUp(true);
-          setPendingVerification(true);
-        } catch (signUpErr: any) {
-            Alert.alert("Error", signUpErr.errors?.[0]?.message || "Failed to create account.");
-        }
-      } else {
-        // Real error (e.g., invalid phone format)
-        Alert.alert("Error", err.errors?.[0]?.message || "Something went wrong.");
-      }
+      Alert.alert("Error", err.errors?.[0]?.message || "Something went wrong.");
     } finally {
       setIsLoading(false);
     }
@@ -68,46 +58,32 @@ export default function PhoneLogin() {
 
   // 2. Handle "Verify Code"
   const onVerifyPress = async () => {
-    if (!isSignInLoaded || !isSignUpLoaded) return;
     setIsLoading(true);
-
     try {
       if (isSigningUp) {
-        console.log("Verifying Sign Up...");
-        const completeSignUp = await signUp.attemptVerification({ 
-          strategy: 'phone_code',
-          code 
-        });
-
-        // 👇 LOGGING THE RESULT HERE
-        console.log("Sign Up Result Status:", completeSignUp.status);
-        if (completeSignUp.status !== 'complete') {
-            console.log("Incomplete Details:", JSON.stringify(completeSignUp, null, 2));
+        const { error } = await signUp.verifications.verifyPhoneCode({ code });
+        if (error) {
+          Alert.alert("Error", error.longMessage || error.message || "Invalid code.");
+          return;
         }
-
-        if (completeSignUp.status === 'complete') {
-          await setSignUpActive({ session: completeSignUp.createdSessionId });
+        if (signUp.status === 'complete') {
+          await signUp.finalize();
         } else {
-          Alert.alert("Error", `Verification failed. Status: ${completeSignUp.status}`);
+          Alert.alert("Error", `Verification failed. Status: ${signUp.status}`);
         }
       } else {
-        console.log("Verifying Sign In...");
-        const completeSignIn = await signIn.attemptFirstFactor({
-          strategy: 'phone_code',
-          code,
-        });
-
-        // 👇 LOGGING THE RESULT HERE
-        console.log("Sign In Result Status:", completeSignIn.status);
-        
-        if (completeSignIn.status === 'complete') {
-          await setSignInActive({ session: completeSignIn.createdSessionId });
+        const { error } = await signIn.phoneCode.verifyCode({ code });
+        if (error) {
+          Alert.alert("Error", error.longMessage || error.message || "Invalid code.");
+          return;
+        }
+        if (signIn.status === 'complete') {
+          await signIn.finalize();
         } else {
-          Alert.alert("Error", `Verification failed. Status: ${completeSignIn.status}`);
+          Alert.alert("Error", `Verification failed. Status: ${signIn.status}`);
         }
       }
     } catch (err: any) {
-      console.error("Verification Catch Error:", JSON.stringify(err, null, 2));
       Alert.alert("Error", err.errors?.[0]?.message || "Invalid code.");
     } finally {
       setIsLoading(false);

@@ -1,25 +1,29 @@
 import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import React, { useState } from 'react';
-import { useSignIn } from '@clerk/clerk-expo';
+import { useSignIn } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 const ForgotPasswordScreen = () => {
   const router = useRouter();
-  const { signIn, isLoaded } = useSignIn();
+  const { signIn } = useSignIn();
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const onRequestReset = async () => {
-    if (!isLoaded) return;
     setIsLoading(true);
     try {
-      await signIn.create({
-        strategy: 'reset_password_email_code',
-        identifier: email,
-      });
-      // Navigate to the next step
+      const { error: createError } = await signIn.create({ identifier: email });
+      if (createError) {
+        Alert.alert('Error', (createError as any).errors?.[0]?.longMessage || createError.longMessage || createError.message || 'An error occurred.');
+        return;
+      }
+      const { error: sendError } = await signIn.resetPasswordEmailCode.sendCode();
+      if (sendError) {
+        Alert.alert('Error', (sendError as any).errors?.[0]?.longMessage || sendError.longMessage || sendError.message || 'An error occurred.');
+        return;
+      }
       router.push('/(auth)/reset-password');
     } catch (err: any) {
       Alert.alert('Error', err.errors?.[0]?.longMessage || 'An error occurred.');

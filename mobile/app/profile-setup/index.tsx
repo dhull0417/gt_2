@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUpdateProfile } from '@/hooks/useUpdateProfile';
 import { useUserSync } from '@/hooks/useUserSync';
-import { useUser } from '@clerk/clerk-expo';
+import { useUser } from '@clerk/expo';
 
 const ProfileSetupScreen = () => {
     const { user: clerkUser } = useUser();

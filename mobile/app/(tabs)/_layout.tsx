@@ -3,7 +3,7 @@ import React from 'react';
 import { Tabs, Redirect, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/expo';
 
 const TabsLayout = () => {
   const insets = useSafeAreaInsets();

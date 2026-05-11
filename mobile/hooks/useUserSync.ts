@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth, useUser } from "@clerk/clerk-expo";
+import { useAuth, useUser } from "@clerk/expo";
 import { useApiClient, userApi } from "../utils/api";
 
 export const useUserSync = () => {

@@ -1,13 +1,13 @@
 import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import React, { useState } from 'react';
-import { useSignIn } from '@clerk/clerk-expo';
+import { useSignIn } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 const ResetPasswordScreen = () => {
   const router = useRouter();
-  const { signIn, setActive, isLoaded } = useSignIn();
+  const { signIn } = useSignIn();
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -16,24 +16,26 @@ const ResetPasswordScreen = () => {
   const [isConfirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
 
   const onReset = async () => {
-    if (!isLoaded) return;
     if (password !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match.');
       return;
     }
     setIsLoading(true);
     try {
-      const result = await signIn.attemptFirstFactor({
-        strategy: 'reset_password_email_code',
-        code,
-        password,
-      });
-
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        // The root layout will automatically redirect to the main app
+      const { error: verifyError } = await signIn.resetPasswordEmailCode.verifyCode({ code });
+      if (verifyError) {
+        Alert.alert('Error', (verifyError as any).errors?.[0]?.longMessage || verifyError.longMessage || verifyError.message || 'An error occurred.');
+        return;
+      }
+      const { error: submitError } = await signIn.resetPasswordEmailCode.submitPassword({ password });
+      if (submitError) {
+        Alert.alert('Error', (submitError as any).errors?.[0]?.longMessage || submitError.longMessage || submitError.message || 'An error occurred.');
+        return;
+      }
+      if (signIn.status === 'complete') {
+        await signIn.finalize();
       } else {
-        console.error(result);
+        console.error(JSON.stringify(signIn, null, 2));
       }
     } catch (err: any) {
       Alert.alert('Error', err.errors?.[0]?.longMessage || 'An error occurred.');
