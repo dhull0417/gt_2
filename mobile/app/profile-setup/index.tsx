@@ -3,10 +3,12 @@ import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUpdateProfile } from '@/hooks/useUpdateProfile';
 import { useUserSync } from '@/hooks/useUserSync';
+import { useUser } from '@clerk/clerk-expo';
 
 const ProfileSetupScreen = () => {
-    const [firstName, setFirstName] = useState('');
-    const [lastName, setLastName] = useState('');
+    const { user: clerkUser } = useUser();
+    const [firstName, setFirstName] = useState(clerkUser?.firstName ?? '');
+    const [lastName, setLastName] = useState(clerkUser?.lastName ?? '');
     const [username, setUsername] = useState('');
     const { mutate: syncUser, isPending: isSyncing } = useUserSync();
     const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
