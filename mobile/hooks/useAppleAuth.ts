@@ -13,7 +13,7 @@ export const useAppleAuth = () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data),
             });
-        } catch {}
+        } catch (_e) {}
     };
 
     const handleAppleAuth = async () => {
