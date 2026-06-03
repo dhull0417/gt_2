@@ -8,7 +8,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "jest"
   },
   "dependencies": {
     "@clerk/expo": "^3.2.10",
@@ -65,8 +66,12 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^30.0.0",
     "@types/luxon": "^3.7.1",
     "@types/react": "~19.1.10",
+    "jest": "~29.7.0",
+    "jest-expo": "~54.0.17",
     "prettier-plugin-tailwindcss": "^0.5.14",
     "tailwindcss": "3.3.2",
     "typescript": "~5.9.2"
@@ -74,5 +79,11 @@
   "private": true,
   "overrides": {
     "expo-auth-session": "~7.0.10"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/./$1"
+    }
   }
 }

@@ -117,6 +117,8 @@ const GroupSettings = () => {
     { id: 'location', label: 'Edit Location', icon: 'map-pin', color: '#10B981', bg: '#ECFDF5' },
     { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: '#ECFEFF' },
     { id: 'members', label: 'Remove Members', icon: 'user-minus', color: '#F97316', bg: '#FFF7ED' },
+    // TEMPORARY: Report Generator — remove this line with app/group-settings/report/[id].tsx
+    { id: 'report', label: 'Report Generator', icon: 'bar-chart-2', color: '#0EA5E9', bg: '#F0F9FF' },
     { id: 'terminate', label: isUserOwner ? 'Delete Group' : 'Leave Group', icon: isUserOwner ? 'trash-2' : 'log-out', color: '#EF4444', bg: '#FEF2F2', destructive: true },
   ];
 
@@ -151,6 +153,10 @@ const GroupSettings = () => {
         break;
       case 'jit':
         router.push({ pathname: '/group-edit-jit/[id]', params: { id: id } });
+        break;
+      // TEMPORARY: remove with app/group-settings/report/[id].tsx
+      case 'report':
+        router.push({ pathname: '/group-settings/report/[id]' as any, params: { id: id } });
         break;
       case 'terminate':
         if (isUserOwner) handleConfirmDelete();

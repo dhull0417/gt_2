@@ -5,7 +5,9 @@
       "WebFetch(domain:clerk.com)",
       "WebSearch",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:swiftpackageindex.com)"
+      "WebFetch(domain:swiftpackageindex.com)",
+      "Bash(cd /c/Users/dalli/OneDrive/Desktop/GT_2/mobile && find . -type f -name \"*.json\" -o -name \"*.ts\" -o -name \"*.tsx\" | head -50)",
+      "Read(//c/c/Users/dalli/OneDrive/Desktop/GT_2/**)"
     ]
   }
 }
