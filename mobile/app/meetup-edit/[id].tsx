@@ -72,7 +72,7 @@ const MeetupEditScreen = () => {
                  <View style={{ marginBottom: 24 }}>
                     <Text style={styles.title}>Set New Date</Text>
                     <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateButton}>
-                        <Text style={styles.dateButtonText}>{date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}</Text>
+                        <Text style={styles.dateButtonText}>{date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: meetupToEdit?.timezone })}</Text>
                     </TouchableOpacity>
                 </View>
                 

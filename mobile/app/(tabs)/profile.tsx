@@ -219,10 +219,11 @@ const HomeScreen = () => {
               </TouchableOpacity>
             </View>
 
-            <View className="px-4 mt-8 space-y-4">
+            <View className="px-4 mt-8">
                 <TouchableOpacity
                     onPress={() => router.push('/account')}
                     className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
+                    style={{ marginBottom: 16 }}
                 >
                     <Text className="text-[#4A90E2] text-lg font-bold">Update Account Info</Text>
                 </TouchableOpacity>
@@ -231,6 +232,7 @@ const HomeScreen = () => {
                 <TouchableOpacity
                     onPress={handleShareApp}
                     className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
+                    style={{ marginBottom: 16 }}
                 >
                     <View className="flex-row items-center">
                         <Feather name="share-2" size={20} color="#4A90E2" className="mr-2" />
@@ -242,6 +244,7 @@ const HomeScreen = () => {
                     onPress={handleOpenCalendarSync}
                     disabled={calendarLoading}
                     className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
+                    style={{ marginBottom: 16 }}
                 >
                     <View className="flex-row items-center">
                         {calendarLoading
@@ -254,6 +257,7 @@ const HomeScreen = () => {
                 <TouchableOpacity
                     onPress={() => { queryClient.clear(); signOut(); }}
                     className="py-4 bg-red-600 rounded-lg items-center shadow"
+                    style={{ marginBottom: 16 }}
                 >
                     <Text className="text-white text-lg font-bold">Sign Out</Text>
                 </TouchableOpacity>

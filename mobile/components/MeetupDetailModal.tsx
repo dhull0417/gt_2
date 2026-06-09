@@ -250,7 +250,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         <View style={styles.detailItem}>
                             <Text style={styles.detailLabel}>Date & Time</Text>
                             <Text style={[styles.detailValue, isExpired && { color: '#6B7280' }]}>
-                                {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} • {meetup.time}
+                                {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })} • {meetup.time}
                             </Text>
                         </View>
                         <View style={styles.detailSeparator} />
@@ -277,8 +277,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 <Feather name="lock" size={16} color="#6B7280" />
                 <Text style={styles.rsvpLockedTitle}>RSVPs Not Open Yet</Text>
                 <Text style={styles.rsvpLockedSubtitle}>
-                    Opens {new Date(meetup.rsvpOpenDate!).toLocaleDateString(undefined, { 
-                        weekday: 'short', month: 'short', day: 'numeric' 
+                    Opens {new Date(meetup.rsvpOpenDate!).toLocaleDateString(undefined, {
+                        weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone
                     })}
                 </Text>
             </View>

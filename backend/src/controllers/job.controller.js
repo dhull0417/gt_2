@@ -237,7 +237,7 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
     for (const meetup of toNotify) {
       await Meetup.updateOne({ _id: meetup._id }, { $set: { rsvpNotified: true } });
       const dateStr = new Date(meetup.date).toLocaleDateString('en-US', {
-        weekday: 'short', month: 'short', day: 'numeric',
+        weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone,
       });
       const members = await User.find({ _id: { $in: meetup.members } });
       if (members.length > 0) {

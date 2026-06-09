@@ -154,14 +154,14 @@ export const updateMeetup = asyncHandler(async (req, res) => {
         return res.status(403).json({ error: "Permission denied." });
     }
 
+    // --- The source of truth for timezone is ALWAYS the parent group ---
+    const groupTimezone = meetup.group.timezone;
+
     // Store old values for notification check
-    const oldDateStr = new Date(meetup.date).toLocaleDateString();
+    const oldDateStr = new Date(meetup.date).toLocaleDateString('en-US', { timeZone: groupTimezone });
     const oldTime = meetup.time;
     const oldLocation = meetup.location;
     const oldCapacity = meetup.capacity;
-
-    // --- The source of truth for timezone is ALWAYS the parent group ---
-    const groupTimezone = meetup.group.timezone;
 
     // --- Partial Update & Validation ---
     const newDate = date || meetup.date;
@@ -189,7 +189,7 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     await meetup.save();
 
     // --- Notification Logic ---
-    const newDateStr = new Date(meetup.date).toLocaleDateString();
+    const newDateStr = new Date(meetup.date).toLocaleDateString('en-US', { timeZone: groupTimezone });
     const dateOrTimeChanged = oldDateStr !== newDateStr || oldTime !== meetup.time;
     const locationChanged = location !== undefined && oldLocation !== meetup.location;
     const capacityChanged = capacity !== undefined && oldCapacity !== meetup.capacity;
@@ -254,7 +254,7 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
     if (membersToNotify.length > 0) {
         await notifyUsers(membersToNotify, {
             title: "Meetup Cancelled",
-            body: `The meetup "${meetup.name}" on ${new Date(meetup.date).toLocaleDateString()} has been cancelled.`,
+            body: `The meetup "${meetup.name}" on ${new Date(meetup.date).toLocaleDateString('en-US', { timeZone: meetup.timezone })} has been cancelled.`,
             data: { meetupId: meetup._id.toString(), type: 'meetup_cancellation' }
         });
     }
@@ -338,7 +338,7 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
                     if (membersToNotify.length > 0) {
                         await notifyUsers(membersToNotify, {
                             title: "New Meetup Scheduled",
-                            body: `A new meetup for "${parentGroup.name}" has been scheduled for ${new Date(nextDate).toLocaleDateString()}.`,
+                            body: `A new meetup for "${parentGroup.name}" has been scheduled for ${new Date(nextDate).toLocaleDateString('en-US', { timeZone: parentGroup.timezone })}.`,
                             data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: parentGroup._id.toString() }
                         });
                     }

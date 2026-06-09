@@ -7,21 +7,21 @@ import { Feather } from '@expo/vector-icons';
 const AccountSettingsScreen = () => {
     return (
         <SafeAreaView className="flex-1 bg-gray-100">
-            <View className="mt-6 mx-4 space-y-2">
+            <View className="mt-6 mx-4">
                 <Link href="/account/update-name" asChild>
-                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm">
+                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm" style={{ marginBottom: 16 }}>
                         <Text className="text-base text-gray-800">Update Name</Text>
                         <Feather name="chevron-right" size={20} color="#6B7280" />
                     </TouchableOpacity>
                 </Link>
                 <Link href="/account/update-username" asChild>
-                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm">
+                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm" style={{ marginBottom: 16 }}>
                         <Text className="text-base text-gray-800">Update Username</Text>
                         <Feather name="chevron-right" size={20} color="#6B7280" />
                     </TouchableOpacity>
                 </Link>
                 <Link href="/account/update-email" asChild>
-                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm">
+                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm" style={{ marginBottom: 16 }}>
                         <Text className="text-base text-gray-800">Update Email</Text>
                         <Feather name="chevron-right" size={20} color="#6B7280" />
                     </TouchableOpacity>

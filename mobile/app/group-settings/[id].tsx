@@ -497,7 +497,7 @@ const GroupSettings = () => {
         animationType="slide"
         onRequestClose={() => setIsEditingMods(false)}
       >
-        <SafeAreaView style={styles.fullModalContainer}>
+        <SafeAreaView style={styles.fullModalContainer} edges={['top', 'left', 'right', 'bottom']}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setIsEditingMods(false)} style={styles.headerIconButton}>
               <Feather name="x" size={24} color="#374151" />
@@ -561,7 +561,7 @@ const GroupSettings = () => {
         animationType="slide"
         onRequestClose={() => setIsEditingMembers(false)}
       >
-        <SafeAreaView style={styles.fullModalContainer}>
+        <SafeAreaView style={styles.fullModalContainer} edges={['top', 'left', 'right', 'bottom']}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setIsEditingMembers(false)} style={styles.headerIconButton}>
               <Feather name="chevron-down" size={28} color="#374151" />
