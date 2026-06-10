@@ -103,6 +103,20 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
                     body: `A spot opened up for "${meetup.name}" and you've been moved off the waitlist!`,
                     data: { meetupId: meetup._id.toString(), type: 'meetup_waitlist_promoted' }
                 });
+
+                const promotedName = nextUser.firstName && nextUser.lastName
+                    ? `${nextUser.firstName} ${nextUser.lastName}`
+                    : nextUser.username;
+                const membersToNotify = await User.find({
+                    _id: { $in: meetup.members, $nin: [user._id, nextUser._id] }
+                });
+                if (membersToNotify.length > 0) {
+                    await notifyUsers(membersToNotify, {
+                        title: meetup.name,
+                        body: `${promotedName} is going to ${meetup.name}!`,
+                        data: { meetupId: meetup._id.toString(), type: 'meetup-rsvp' }
+                    });
+                }
             }
         }
     } else if (status === 'in') {
@@ -115,7 +129,31 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     }
 
     await meetup.save();
-    
+
+    // Notify all other group members that this user has RSVP'd
+    const otherMembers = await User.find({ _id: { $in: meetup.members, $ne: user._id } });
+    if (otherMembers.length > 0) {
+        const displayName = user.firstName && user.lastName
+            ? `${user.firstName} ${user.lastName}`
+            : user.username;
+        const ordinal = (n) => {
+            const s = ['th', 'st', 'nd', 'rd'];
+            const v = n % 100;
+            return n + (s[(v - 20) % 10] || s[v] || s[0]);
+        };
+        const waitlistPos = meetup.waitlist.findIndex(id => id.toString() === user._id.toString());
+        const notifBody = status === 'out'
+            ? `${displayName} can't make it to ${meetup.name}.`
+            : waitlistPos >= 0
+                ? `${displayName} is ${ordinal(waitlistPos + 1)} in the waitlist for ${meetup.name}.`
+                : `${displayName} is going to ${meetup.name}!`;
+        await notifyUsers(otherMembers, {
+            title: meetup.name,
+            body: notifBody,
+            data: { meetupId: meetup._id.toString(), type: 'meetup-rsvp' }
+        });
+    }
+
     // Re-query with populations to return a fresh representation to the frontend hook
     const updatedMeetup = await Meetup.findById(meetupId)
         .populate('group', 'name owner moderators timezone defaultLocation')
