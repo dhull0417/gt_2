@@ -14,16 +14,24 @@ const ProfileSetupScreen = () => {
     const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
 
     const isPending = isSyncing || isUpdating;
+    const isAppleUser = clerkUser?.externalAccounts?.some(a => a.provider === 'oauth_apple') ?? false;
 
     const handleSaveProfile = () => {
-        if (!firstName.trim() || !lastName.trim() || !username.trim()) {
+        if (!isAppleUser && (!firstName.trim() || !lastName.trim())) {
             Alert.alert('Missing Information', 'Please fill out all fields.');
             return;
         }
+        if (!username.trim()) {
+            Alert.alert('Missing Information', 'Please enter a username.');
+            return;
+        }
+        const nameData = isAppleUser
+            ? { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' }
+            : { firstName, lastName };
         // Ensure the MongoDB user exists before updating profile.
         // onSettled fires whether sync succeeded or failed, so we always attempt the update.
         syncUser(undefined, {
-            onSettled: () => updateProfile({ firstName, lastName, username }),
+            onSettled: () => updateProfile({ ...nameData, username }),
         });
     };
 
@@ -34,28 +42,41 @@ const ProfileSetupScreen = () => {
                     <Text className="text-3xl font-bold text-gray-800 text-center">Welcome!</Text>
                     <Text className="text-lg text-gray-600 text-center mt-2 mb-8">Let's set up your profile.</Text>
 
-                    <TextInput
-                        placeholder="First Name"
-                        value={firstName}
-                        onChangeText={setFirstName}
-                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                        placeholderTextColor="#999"
-                    />
-                    <TextInput
-                        placeholder="Last Name"
-                        value={lastName}
-                        onChangeText={setLastName}
-                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                        placeholderTextColor="#999"
-                    />
+                    {!isAppleUser && (
+                        <>
+                            <TextInput
+                                placeholder="First Name"
+                                value={firstName}
+                                onChangeText={setFirstName}
+                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
+                                placeholderTextColor="#999"
+                            />
+                            <TextInput
+                                placeholder="Last Name"
+                                value={lastName}
+                                onChangeText={setLastName}
+                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
+                                placeholderTextColor="#999"
+                            />
+                        </>
+                    )}
+
                     <TextInput
                         placeholder="Username"
                         value={username}
                         onChangeText={setUsername}
                         autoCapitalize="none"
-                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-6"
+                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
                         placeholderTextColor="#999"
                     />
+
+                    {isAppleUser && (
+                        <Text className="text-sm text-gray-500 text-center mb-6">
+                            If you would like to modify your name, visit the Profile Tab {`>`} Update Account Info.
+                        </Text>
+                    )}
+
+                    {!isAppleUser && <View className="mb-6" />}
 
                     <TouchableOpacity
                         onPress={handleSaveProfile}

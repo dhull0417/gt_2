@@ -18,7 +18,11 @@ export const useAppleAuth = () => {
         } catch (err: any) {
             if (err.code === "ERR_REQUEST_CANCELED") return;
             console.log("Apple sign in error:", JSON.stringify(err, null, 2));
-            Alert.alert("Error", "Failed to sign in with Apple. Please try again.");
+            const message = err?.errors?.[0]?.longMessage
+                ?? err?.errors?.[0]?.message
+                ?? err?.message
+                ?? JSON.stringify(err);
+            Alert.alert("Apple Sign In Failed", message);
         } finally {
             setIsLoading(false);
         }
