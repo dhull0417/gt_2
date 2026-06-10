@@ -1,6 +1,6 @@
 // mobile/app/_layout.tsx
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { ClerkProvider, useAuth } from '@clerk/expo';
+import { ClerkProvider, useAuth, useUser } from '@clerk/expo';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useUserSync } from '@/hooks/useUserSync';
@@ -43,6 +43,7 @@ export default function RootLayout() {
 
 const AuthLayout = () => {
   const { isLoaded, isSignedIn } = useAuth();
+  const { user: clerkUser } = useUser();
   const segments = useSegments();
   const router = useRouter();
   const api = useApiClient();
@@ -96,7 +97,8 @@ const AuthLayout = () => {
     ].includes(segments[0]);
 
     if (isSignedIn) {
-      const profileIncomplete = !currentUser?.firstName?.trim() || !currentUser?.lastName?.trim() || !currentUser?.username?.trim();
+      const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
+      const profileIncomplete = (!isAppleUser && (!currentUser?.firstName?.trim() || !currentUser?.lastName?.trim())) || !currentUser?.username?.trim();
       if (profileIncomplete && segments[0] !== 'profile-setup') {
         router.replace('/profile-setup');
       } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
@@ -105,7 +107,7 @@ const AuthLayout = () => {
     } else if (!isSignedIn && !inAuthGroup) {
       router.replace('/(auth)');
     }
-  }, [isLoaded, isSignedIn, currentUser, currentUserSettled, segments, router]);
+  }, [isLoaded, isSignedIn, currentUser, currentUserSettled, segments, router, clerkUser]);
 
   useEffect(() => {
     if (isLoaded && ((isSignedIn && currentUserSettled) || !isSignedIn)) {

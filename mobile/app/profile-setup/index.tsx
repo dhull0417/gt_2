@@ -14,7 +14,7 @@ const ProfileSetupScreen = () => {
     const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
 
     const isPending = isSyncing || isUpdating;
-    const isAppleUser = clerkUser?.externalAccounts?.some(a => a.provider === 'oauth_apple') ?? false;
+    const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
 
     const handleSaveProfile = () => {
         if (!isAppleUser && (!firstName.trim() || !lastName.trim())) {
@@ -25,13 +25,14 @@ const ProfileSetupScreen = () => {
             Alert.alert('Missing Information', 'Please enter a username.');
             return;
         }
-        const nameData = isAppleUser
-            ? { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' }
-            : { firstName, lastName };
+        // For Apple users, omit firstName/lastName entirely — syncUser's backend Clerk API
+        // call will populate them from Apple's token, and we don't want to overwrite with
+        // potentially empty client-side values.
+        const profileData = isAppleUser ? { username } : { firstName, lastName, username };
         // Ensure the MongoDB user exists before updating profile.
         // onSettled fires whether sync succeeded or failed, so we always attempt the update.
         syncUser(undefined, {
-            onSettled: () => updateProfile({ ...nameData, username }),
+            onSettled: () => updateProfile(profileData),
         });
     };
 
