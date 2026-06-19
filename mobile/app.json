@@ -77,6 +77,12 @@
             "packagingOptions": {
               "exclude": ["META-INF/versions/9/OSGI-INF/MANIFEST.MF"]
             }
+          },
+          "ios": {
+            "extraPods": [
+              { "name": "GoogleUtilities", "modular_headers": true },
+              { "name": "RecaptchaInterop", "modular_headers": true }
+            ]
           }
         }
       ]
