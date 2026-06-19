@@ -54,7 +54,6 @@ export interface User {
   groups?: string[];
   mutedGroups: string[];
   mutedUntilNextMeetup: string[];
-  streamToken: string;
 }
 
 export interface LastMessage {
@@ -346,9 +345,3 @@ export const notificationApi = {
   },
 };
 
-export const chatApi = {
-  getClientToken: async (api: AxiosInstance): Promise<string> => {
-    const response = await api.post<{ token: string }>("/api/chat/token");
-    return response.data.token;
-  },
-};

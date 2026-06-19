@@ -1,35 +1,37 @@
-import { 
-  View, 
-  Text, 
-  ScrollView, 
-  ActivityIndicator, 
-  TextInput, 
-  Keyboard, 
-  Alert, 
-  StyleSheet, 
-  KeyboardAvoidingView, 
+import {
+  View,
+  Text,
+  ScrollView,
+  ActivityIndicator,
+  TextInput,
+  Keyboard,
+  Alert,
+  StyleSheet,
+  KeyboardAvoidingView,
   Platform,
-  TouchableOpacity 
+  TouchableOpacity,
+  FlatList,
+  Modal,
+  Pressable,
 } from 'react-native';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router'; 
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
-import { useDeleteGroup } from '@/hooks/useDeleteGroup';
-import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { useRemoveMember } from '@/hooks/useRemoveMember';
 import { Group, GroupDetails, User, useApiClient, userApi, groupApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
-import { ChatProvider, useChatClient } from '@/components/ChatProvider';
-import type { Channel as StreamChannel } from 'stream-chat';
-import { Chat, Channel, MessageList, MessageSimple, OverlayProvider, type MessageSimpleProps } from 'stream-chat-expo';
-import CustomMessage from '@/components/CustomMessage';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { GroupDetailsView } from '@/components/GroupDetailsView';
+import { useMessages } from '@/hooks/useMessages';
+import { useTypingIndicator } from '@/hooks/useTypingIndicator';
+import { ChatMessageBubble } from '@/components/ChatMessageBubble';
+import { ChatMessageInput } from '@/components/ChatMessageInput';
+import type { ChatMessage } from '@/types/chat';
 
 const styles = StyleSheet.create({
   loadingContainer: {
@@ -92,136 +94,303 @@ const styles = StyleSheet.create({
   }
 });
 
-/**
- * This is a "smart" wrapper component created directly within this file
- * to solve both the TypeScript error and the "disappearing messages" issue
- * without modifying the original CustomMessage.tsx file.
- *
- * It inspects each message:
- * 1. If it's a standard text message, it uses your CustomMessage component.
- * 2. For everything else (system messages, deleted messages, attachments), it
- *    falls back to the library's default MessageSimple component, ensuring
- *    nothing disappears from the chat feed.
- */
-const SmartCustomMessage = (props: MessageSimpleProps) => {
-  const { message } = props;
-  const isSimpleTextMessage = message?.type === 'regular' && message.text && !message.deleted_at;
-
-  if (isSimpleTextMessage) {
-    return <CustomMessage {...props} />;
-  }
-  return <MessageSimple {...props} />;
-};
+const REACTIONS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
 
 const GroupChat = ({
   group,
-  keyboardVerticalOffset,
+  currentUser,
+  keyboardOffset,
 }: {
   group: GroupDetails;
-  keyboardVerticalOffset: number;
+  currentUser: User;
+  keyboardOffset: number;
 }) => {
-  const { client, isConnected } = useChatClient();
-  const [channel, setChannel] = useState<StreamChannel | null>(null);
-  const [text, setText] = useState('');
-  const [isSending, setIsSending] = useState(false);
+  const api = useApiClient();
+  const flatListRef = useRef<FlatList<ChatMessage>>(null);
+
+  const senderId = currentUser.clerkId;
+  const senderName = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.email;
+
+  const { messages, loading, sendMessage, addReaction, deleteMessage, editMessage } =
+    useMessages(group._id);
+  const { typingNames, handleTyping } = useTypingIndicator(group._id, senderId, senderName);
+
+  const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [editText, setEditText] = useState('');
+  const [reactionDetailMessage, setReactionDetailMessage] = useState<ChatMessage | null>(null);
+
+  const userNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const msg of messages) {
+      if (!map.has(msg.sender_id)) map.set(msg.sender_id, msg.sender_name);
+    }
+    map.set(senderId, senderName);
+    return map;
+  }, [messages, senderId, senderName]);
 
   useEffect(() => {
-    if (!client || !group || !isConnected) return;
+    if (messages.length > 0) flatListRef.current?.scrollToEnd({ animated: true });
+  }, [messages.length]);
 
-    const initChannel = async () => {
-      try {
-        const channelId = group._id;
-        const newChannel = client.channel('messaging', channelId, {
-          members: group.members.map(m => m._id),
-          name: group.name,
-        } as any);
+  useEffect(() => {
+    const event = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const sub = Keyboard.addListener(event, () => flatListRef.current?.scrollToEnd({ animated: true }));
+    return () => sub.remove();
+  }, []);
 
-        await newChannel.watch();
-        setChannel(newChannel);
-      } catch (err) {
-        console.error("[Chat] Channel init error:", err);
-      }
-    };
+  const isOwnSelected = selectedMessage?.sender_id === senderId;
+  const isDeletedSelected = !!selectedMessage?.deleted_at;
 
-    initChannel();
-
-    return () => {
-      if (channel) {
-        channel.stopWatching();
-      }
-    };
-  }, [client, group._id, group.name, isConnected]);
-
-  const handleRawSend = async () => {
-    if (!channel || !text.trim()) return;
-    setIsSending(true);
+  const handleSend = async (text: string) => {
+    const currentReply = replyingTo;
+    setReplyingTo(null);
     try {
-        await channel.sendMessage({ text: text });
-        setText('');
-    } catch (error: any) {
-        Alert.alert("Error", `Failed to send message: ${error.message}`);
-    } finally {
-        setIsSending(false);
+      await sendMessage(
+        text,
+        senderId,
+        senderName,
+        currentReply
+          ? { id: currentReply.id, content: currentReply.content, senderName: currentReply.sender_name }
+          : undefined
+      );
+      api.patch(`/api/groups/${group._id}/last-message`, { text, senderName }).catch(() => {});
+    } catch {
+      Alert.alert('Error', 'Failed to send message.');
     }
   };
 
-  if (!client || !isConnected || !channel) {
+  const handleReact = async (emoji: string) => {
+    if (!selectedMessage) return;
+    const target = selectedMessage;
+    setSelectedMessage(null);
+    try {
+      const result = await addReaction(target.id, emoji, senderId);
+      void result;
+    } catch (err: any) {
+      Alert.alert('Reaction failed', err?.message ?? JSON.stringify(err));
+    }
+  };
+
+  const handleReplyOpen = () => {
+    if (!selectedMessage) return;
+    setReplyingTo(selectedMessage);
+    setSelectedMessage(null);
+  };
+
+  const handleEditOpen = () => {
+    if (!selectedMessage) return;
+    setEditText(selectedMessage.content);
+    setEditingMessage(selectedMessage);
+    setSelectedMessage(null);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingMessage) return;
+    const trimmed = editText.trim();
+    if (!trimmed || trimmed === editingMessage.content) { setEditingMessage(null); return; }
+    const target = editingMessage;
+    setEditingMessage(null);
+    try {
+      await editMessage(target.id, trimmed);
+    } catch (err: any) {
+      Alert.alert('Edit failed', err?.message ?? 'Failed to edit message.');
+    }
+  };
+
+  const handleDeleteConfirm = () => {
+    if (!selectedMessage) return;
+    const target = selectedMessage;
+    setSelectedMessage(null);
+    Alert.alert('Delete Message', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try { await deleteMessage(target.id); }
+        catch (err: any) { Alert.alert('Error', err?.message ?? 'Failed to delete.'); }
+      }},
+    ]);
+  };
+
+  const typingLabel = typingNames.length === 0 ? null
+    : typingNames.length === 1 ? `${typingNames[0]} is typing…`
+    : typingNames.length === 2 ? `${typingNames[0]} and ${typingNames[1]} are typing…`
+    : 'Several people are typing…';
+
+  if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={chatStyles.center}>
         <ActivityIndicator size="large" color="#4A90E2" />
-        <Text style={{ marginTop: 16, color: '#6B7280' }}>Connecting to chat...</Text>
       </View>
     );
   }
 
   return (
-    <OverlayProvider>
-      <Chat client={client}>
-        <Channel
-          channel={channel}
-          keyboardVerticalOffset={keyboardVerticalOffset}
-          MessageSimple={SmartCustomMessage}>
-          <View style={styles.chatContainer}>
-            <MessageList />
-            {/* The pb-6 was adding extra space when the keyboard was open. */}
-            {/* The Channel component handles safe areas, so this manual padding was redundant and caused the gap. */}
-            {/* The p-3 class provides sufficient padding for the input area. */}
-            <View className="flex-row items-center p-3 border-t border-gray-200 bg-white">
-                <View className="flex-1 flex-row items-center bg-gray-100 rounded-2xl px-4 py-2 mr-3 border border-gray-300">
-                    <TextInput 
-                        value={text}
-                        onChangeText={setText}
-                        placeholder="Type a message..."
-                        placeholderTextColor="#9CA3AF"
-                        multiline
-                        className="flex-1 text-base text-gray-900 max-h-24 pt-0 pb-0"
-                        style={{ paddingTop: Platform.OS === 'ios' ? 6 : 0 }} 
-                    />
-                </View>
-                <TouchableOpacity 
-                    onPress={handleRawSend} 
-                    disabled={isSending || !text.trim()}
-                    className={`p-3 rounded-xl ${!text.trim() ? 'bg-gray-200' : 'bg-[#4A90E2]'}`}
-                >
-                    {isSending ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                        <Feather name="send" size={20} color={!text.trim() ? "#9CA3AF" : "white"} />
-                    )}
-                </TouchableOpacity>
+    <View style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={keyboardOffset}
+      >
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <ChatMessageBubble
+              message={item}
+              isOwn={item.sender_id === senderId}
+              currentUserId={senderId}
+              onLongPress={() => setSelectedMessage(item)}
+              onReactionLongPress={() => setReactionDetailMessage(item)}
+            />
+          )}
+          contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}
+          ListEmptyComponent={
+            <View style={chatStyles.center}>
+              <Text style={{ color: '#9CA3AF', fontSize: 15 }}>No messages yet. Say hello!</Text>
             </View>
+          }
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        />
+
+        <View style={{ minHeight: 20, paddingHorizontal: 16, justifyContent: 'center' }}>
+          {typingLabel ? <Text style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>{typingLabel}</Text> : null}
+        </View>
+
+        {replyingTo && (
+          <View style={chatStyles.replyPreview}>
+            <View style={chatStyles.replyPreviewBody}>
+              <Text style={chatStyles.replyPreviewLabel}>↩ {replyingTo.sender_name}</Text>
+              <Text style={chatStyles.replyPreviewText} numberOfLines={1}>{replyingTo.content}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ padding: 4 }}>
+              <Text style={{ fontSize: 16, color: '#9CA3AF' }}>✕</Text>
+            </TouchableOpacity>
           </View>
-        </Channel>
-      </Chat>
-    </OverlayProvider>
+        )}
+
+        <ChatMessageInput onSend={handleSend} onTyping={handleTyping} />
+      </KeyboardAvoidingView>
+
+      {/* Action sheet */}
+      <Modal visible={!!selectedMessage} transparent animationType="fade" onRequestClose={() => setSelectedMessage(null)}>
+        <Pressable style={chatStyles.overlay} onPress={() => setSelectedMessage(null)}>
+          <View style={chatStyles.actionPanel}>
+            {!isDeletedSelected && (
+              <View style={chatStyles.emojiRow}>
+                {REACTIONS.map((emoji) => (
+                  <TouchableOpacity key={emoji} style={chatStyles.emojiBtn} onPress={() => handleReact(emoji)} activeOpacity={0.7}>
+                    <Text style={{ fontSize: 28 }}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {!isDeletedSelected && (
+              <>
+                <View style={chatStyles.divider} />
+                <TouchableOpacity style={chatStyles.actionRow} onPress={handleReplyOpen}>
+                  <Text style={chatStyles.actionLabel}>Reply</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {isOwnSelected && (
+              <>
+                <View style={chatStyles.divider} />
+                {!isDeletedSelected && (
+                  <TouchableOpacity style={chatStyles.actionRow} onPress={handleEditOpen}>
+                    <Text style={chatStyles.actionLabel}>Edit</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={chatStyles.actionRow} onPress={handleDeleteConfirm}>
+                  <Text style={[chatStyles.actionLabel, { color: '#ff3b30' }]}>Delete</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Reaction detail */}
+      <Modal visible={!!reactionDetailMessage} transparent animationType="fade" onRequestClose={() => setReactionDetailMessage(null)}>
+        <Pressable style={chatStyles.overlay} onPress={() => setReactionDetailMessage(null)}>
+          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 16 }}>Reactions</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {Object.entries(reactionDetailMessage?.reactions ?? {})
+                .filter(([, users]) => users.length > 0)
+                .map(([emoji, users]) => (
+                  <View key={emoji} style={{ marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <Text style={{ fontSize: 22 }}>{emoji}</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#555' }}>{users.length}</Text>
+                    </View>
+                    {users.map((uid) => (
+                      <Text key={uid} style={{ fontSize: 15, color: '#111', paddingVertical: 3, paddingLeft: 4 }}>
+                        {userNameMap.get(uid) ?? 'Unknown'}
+                      </Text>
+                    ))}
+                  </View>
+                ))}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Edit modal */}
+      <Modal visible={!!editingMessage} transparent animationType="fade" onRequestClose={() => setEditingMessage(null)}>
+        <Pressable style={chatStyles.overlay} onPress={() => setEditingMessage(null)}>
+          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: '#111', marginBottom: 12 }}>Edit Message</Text>
+            <TextInput
+              style={chatStyles.editInput}
+              value={editText}
+              onChangeText={setEditText}
+              multiline
+              autoFocus
+              maxLength={2000}
+              selectionColor="#4A90E2"
+            />
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
+              <TouchableOpacity style={chatStyles.cancelBtn} onPress={() => setEditingMessage(null)}>
+                <Text style={{ fontSize: 15, color: '#555' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={chatStyles.saveBtn} onPress={handleEditSave}>
+                <Text style={{ fontSize: 15, color: '#fff', fontWeight: '600' }}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
   );
 };
+
+const chatStyles = StyleSheet.create({
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  actionPanel: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', width: '100%', maxWidth: 360, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
+  emojiRow: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 8, paddingVertical: 12 },
+  emojiBtn: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#e5e5e5' },
+  actionRow: { paddingVertical: 16, paddingHorizontal: 20 },
+  actionLabel: { fontSize: 16, color: '#111' },
+  detailPanel: { backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 360, maxHeight: '70%', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
+  replyPreview: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0f0f0', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E7EB', paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
+  replyPreviewBody: { flex: 1, borderLeftWidth: 3, borderLeftColor: '#4A90E2', paddingLeft: 8 },
+  replyPreviewLabel: { fontSize: 12, fontWeight: '600', color: '#4A90E2', marginBottom: 1 },
+  replyPreviewText: { fontSize: 13, color: '#555' },
+  editInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 15, color: '#111', minHeight: 80, maxHeight: 200, textAlignVertical: 'top', marginBottom: 16 },
+  cancelBtn: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 8, backgroundColor: '#f0f0f0' },
+  saveBtn: { paddingHorizontal: 20, paddingVertical: 9, borderRadius: 8, backgroundColor: '#4A90E2' },
+});
 
 const GroupScreen = () => {
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [isGroupDetailVisible, setIsGroupDetailVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'Chat' | 'Details'>('Chat');
-  
+  const [chatHeaderHeight, setChatHeaderHeight] = useState(0);
+
   const insets = useSafeAreaInsets();
   const api = useApiClient();
   const router = useRouter();
@@ -231,9 +400,9 @@ const GroupScreen = () => {
 
   const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups } = useGetGroups();
   const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(selectedGroup?._id || null);
-  
-  const { data: currentUser, refetch: refetchUser, isLoading: isLoadingUser } = useQuery<User, Error>({ 
-    queryKey: ['currentUser'], 
+
+  const { data: currentUser, refetch: refetchUser, isLoading: isLoadingUser } = useQuery<User, Error>({
+    queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
   });
 
@@ -245,10 +414,6 @@ const GroupScreen = () => {
   }, [selectedGroup?._id]);
 
   useEffect(() => {
-    // This effect is triggered when the 'reset' param is passed from the tab layout,
-    // which happens when the user taps the 'Groups' tab icon while already in the tab.
-    // It ensures that any open group detail/chat view is closed, returning the
-    // user to the main list of groups, fulfilling the "pop to root" behavior.
     if (reset) {
       handleCloseGroupDetail();
     }
@@ -273,7 +438,7 @@ const GroupScreen = () => {
 
   const isCurrentlyMuted = useMemo(() => {
     if (!selectedGroup || !currentUser) return false;
-    return currentUser.mutedGroups?.includes(selectedGroup._id) || 
+    return currentUser.mutedGroups?.includes(selectedGroup._id) ||
            currentUser.mutedUntilNextMeetup?.includes(selectedGroup._id);
   }, [selectedGroup?._id, currentUser]);
 
@@ -302,9 +467,9 @@ const GroupScreen = () => {
       );
     }
   };
-  
+
   const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const { data: searchResults } = useSearchUsers(searchQuery);
   const { mutate: inviteUser } = useInviteUser();
@@ -312,8 +477,8 @@ const GroupScreen = () => {
   const hasUnreadNotifications = notifications?.some(n => !n.read);
 
   useFocusEffect(
-    useCallback(() => { 
-      refetchGroups(); 
+    useCallback(() => {
+      refetchGroups();
       refetchUser();
     }, [refetchGroups, refetchUser])
   );
@@ -323,7 +488,7 @@ const GroupScreen = () => {
       const targetGroup = groups.find(g => g._id === openChatId);
       if (targetGroup) {
         handleOpenGroupDetail(targetGroup);
-        router.setParams({ openChatId: undefined }); // Clears the param so it can fire again
+        router.setParams({ openChatId: undefined });
       }
     }
   }, [openChatId, groups]);
@@ -356,7 +521,7 @@ const GroupScreen = () => {
   const handleOpenGroupDetail = (group: Group) => {
     setSelectedGroup(group);
     setIsGroupDetailVisible(true);
-    setActiveTab('Chat'); 
+    setActiveTab('Chat');
   };
 
   const handleCloseGroupDetail = () => {
@@ -430,10 +595,10 @@ const GroupScreen = () => {
 
       {isGroupDetailVisible && selectedGroup && (
         <View className="absolute top-0 bottom-0 left-0 right-0 bg-white" style={{paddingTop:insets.top}}>
-          <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
+          <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200" onLayout={(e) => setChatHeaderHeight(e.nativeEvent.layout.height)}>
             <View className="flex-row items-center flex-1 truncate">
-              <TouchableOpacity 
-                onPress={() => activeTab === 'Details' ? setActiveTab('Chat') : handleCloseGroupDetail()} 
+              <TouchableOpacity
+                onPress={() => activeTab === 'Details' ? setActiveTab('Chat') : handleCloseGroupDetail()}
                 className="mr-3 p-1"
               >
                 <Feather name="arrow-left" size={24} color="#FF7A6E"/>
@@ -442,11 +607,11 @@ const GroupScreen = () => {
                 {groupDetails?.name || selectedGroup.name}
               </Text>
             </View>
-            
+
             <View className="flex-row items-center">
               {activeTab === 'Chat' ? (
                 <>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={handleMutePress}
                     style={isCurrentlyMuted ? styles.unmuteButton : styles.muteButton}
                   >
@@ -455,7 +620,7 @@ const GroupScreen = () => {
                     </Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => setActiveTab('Details')}
                     style={styles.detailsButton}
                   >
@@ -464,7 +629,7 @@ const GroupScreen = () => {
                 </>
               ) : (
                 canManageGroup && (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={handleSettingsPress}
                     style={styles.settingsButton}
                     activeOpacity={0.7}
@@ -476,48 +641,42 @@ const GroupScreen = () => {
             </View>
           </View>
 
-          {!(stableUserRef.current || currentUser) ? (
-              <ActivityIndicator size="large" color="#4A90E2" style={{ marginTop: 50 }} />
-          ) : (
-            <ChatProvider user={stableUserRef.current || currentUser!}>
-               {activeTab === 'Chat' ? (
-                <View style={styles.chatContainer}>
-                  {(isLoadingDetails || !groupDetails) ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color="#4A90E2" />
-                    </View>
-                  ) : (
-                      <GroupChat
-                        group={groupDetails}
-                        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 80}
-                      />
-                  )}
+          {activeTab === 'Chat' ? (
+            <View style={{ flex: 1 }}>
+              {(isLoadingDetails || !groupDetails || !currentUser) ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#4A90E2" />
                 </View>
               ) : (
-                <ScrollView className="flex-1 bg-gray-50" keyboardShouldPersistTaps="handled">
-                  <View className="p-6">
-                    {(isLoadingDetails || !groupDetails) ? (
-                        <ActivityIndicator size="large" color="#4A90E2" className="my-8" />
-                    ) : isErrorDetails ? (
-                        <Text className="text-center text-red-500 mt-4">Failed to load group details.</Text>
-                    ) : (
-                      <GroupDetailsView 
-                        groupDetails={groupDetails}
-                        currentUser={currentUser!}
-                        isRemovingMember={isRemovingMember}
-                        onRemoveMember={handleRemoveMember}
-                        searchQuery={searchQuery}
-                        onSearchChange={setSearchQuery}
-                        searchResults={searchResults}
-                        onInvite={handleInvite}
-                        onLeaveSuccess={handleCloseGroupDetail}
-                        // Removed onAddOneOffMeetup as it is now handled internally by GroupDetailsView
-                      />
-                    )}
-                  </View>
-                </ScrollView>
+                <GroupChat
+                  group={groupDetails}
+                  currentUser={stableUserRef.current || currentUser}
+                  keyboardOffset={insets.top + chatHeaderHeight}
+                />
               )}
-            </ChatProvider>
+            </View>
+          ) : (
+            <ScrollView className="flex-1 bg-gray-50" keyboardShouldPersistTaps="handled">
+              <View className="p-6">
+                {(isLoadingDetails || !groupDetails) ? (
+                    <ActivityIndicator size="large" color="#4A90E2" className="my-8" />
+                ) : isErrorDetails ? (
+                    <Text className="text-center text-red-500 mt-4">Failed to load group details.</Text>
+                ) : (
+                  <GroupDetailsView
+                    groupDetails={groupDetails}
+                    currentUser={currentUser!}
+                    isRemovingMember={isRemovingMember}
+                    onRemoveMember={handleRemoveMember}
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    searchResults={searchResults}
+                    onInvite={handleInvite}
+                    onLeaveSuccess={handleCloseGroupDetail}
+                  />
+                )}
+              </View>
+            </ScrollView>
           )}
         </View>
       )}

@@ -4,8 +4,6 @@ import Group from "../models/group.model.js";
 import Meetup from "../models/meetup.model.js";
 import Notification from "../models/notification.model.js";
 import { getAuth, clerkClient } from "@clerk/express";
-import { syncStreamUser, deleteStreamUser } from "../utils/stream.js";
-import { ENV } from '../config/env.js';
 
 /**
  * @desc    Toggle mute status for a specific group's chat
@@ -125,9 +123,6 @@ export const updateProfile = asyncHandler(async (req, res) => {
   const user = await User.findOneAndUpdate({ clerkId: userId }, req.body, { new: true });
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  // ✅ Sync Stream user
-  await syncStreamUser(user);
-
   res.status(200).json({ user });
 });
 
@@ -135,8 +130,6 @@ export const syncUser = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   let user = await User.findOne({ clerkId: userId });
   if (user) {
-    // ✅ keep Stream data in sync even for existing user
-    await syncStreamUser(user);
     return res.status(200).json({ user, message: "User already exists" });
   }
 
@@ -158,9 +151,6 @@ export const syncUser = asyncHandler(async (req, res) => {
 
   user = await User.create(userData);
 
-  // ✅ Sync Stream after creating
-  await syncStreamUser(user);
-
   res.status(201).json({ user, message: "User created successfully" });
 });
 
@@ -169,16 +159,7 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
   const user = await User.findOne({ clerkId }).lean();
   if (!user) return res.status(404).json({ error: "User not found in database." });
 
-  // GENERATE STREAM TOKEN ON‑THE‑FLY
-  const streamToken = ENV.SERVER_CLIENT.createToken(user._id.toString());
-
-  // SEND IT WITH THE USER
-  res.status(200).json({
-    user: {
-      ...user,
-      streamToken,   // ← THIS IS THE KEY
-    }
-  });
+  res.status(200).json({ user });
 });
 
 export const deleteAccount = asyncHandler(async (req, res) => {
@@ -236,10 +217,7 @@ export const deleteAccount = asyncHandler(async (req, res) => {
   // --- Step 4: Delete all notifications involving the user ---
   await Notification.deleteMany({ $or: [{ recipient: userId }, { sender: userId }] });
 
-  // --- Step 5: Delete from Stream Chat (non-fatal if it fails) ---
-  await deleteStreamUser(userId.toString());
-
-  // --- Step 6: Delete from Clerk ---
+  // --- Step 5: Delete from Clerk ---
   // Must happen before MongoDB so that if Clerk deletion fails,
   // the user record is still intact and the deletion can be retried.
   await clerkClient.users.deleteUser(clerkId);

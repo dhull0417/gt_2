@@ -6,7 +6,6 @@ import userRoutes from "./routes/user.route.js";
 import groupRoutes from "./routes/group.route.js";
 import meetupRoutes from "./routes/meetup.route.js";
 import jobRoutes from "./routes/job.route.js";
-import chatRoutes from "./routes/chat.route.js";
 import notificationRoutes from "./routes/notification.route.js"; 
 // Project 4: Import webhook routes
 import webhookRoutes from "./routes/webhook.route.js";
@@ -29,7 +28,6 @@ app.use("/api/users", userRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/meetups", meetupRoutes);
 app.use("/api/jobs", jobRoutes); 
-app.use("/api/chat", chatRoutes); 
 app.use("/api/notifications", notificationRoutes); 
 // Project 4: Mount the webhook route
 app.use("/api/webhooks", webhookRoutes);

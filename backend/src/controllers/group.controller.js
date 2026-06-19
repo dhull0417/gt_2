@@ -8,8 +8,6 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
-import { ENV } from "../config/env.js";
-import { syncStreamUser } from "../utils/stream.js";
 import { notifyUsers } from "../utils/push.notifications.js";
 import { DateTime } from "luxon";
 
@@ -202,7 +200,6 @@ export const createGroup = asyncHandler(async (req, res) => {
       } catch (err) { console.error("Initial Gen Error:", err); }
   }
 
-  await Promise.all(uniqueMemberIds.map(id => syncStreamUser({ _id: id })));
   res.status(201).json({ group: newGroup, message: "Created successfully." });
 });
 
@@ -443,27 +440,7 @@ export const getGroups = asyncHandler(async (req, res) => {
     if (!user) return res.status(404).json({ error: "User not found." });
 
     const groups = await Group.find({ members: user._id }).lean();
-    if (!groups.length) return res.status(200).json([]);
-
-    const channelIds = groups.map(group => group._id.toString());
-    const channels = await ENV.SERVER_CLIENT.queryChannels({ id: { $in: channelIds } }, [{ last_message_at: -1 }], { state: true, messages: { limit: 1 } });
-
-    const lastMessageMap = new Map();
-    channels.forEach(channel => {
-        if (channel.state.messages.length > 0) {
-            const lastMsg = channel.state.messages[channel.state.messages.length - 1];
-            lastMessageMap.set(channel.cid.split(':')[1], { 
-                text: lastMsg.text, 
-                user: { name: lastMsg.user.name || lastMsg.user.id } 
-            });
-        }
-    });
-
-    const hydratedGroups = groups.map(group => ({ 
-        ...group, 
-        lastMessage: lastMessageMap.get(group._id.toString()) || null 
-    }));
-    res.status(200).json(hydratedGroups);
+    res.status(200).json(groups);
 });
 
 export const getGroupDetails = asyncHandler(async (req, res) => {
@@ -522,7 +499,6 @@ export const addMember = asyncHandler(async (req, res) => {
     });
   } catch (err) { console.error(err); }
   
-  await syncStreamUser(userToAdd);
   res.status(200).json({ message: "User added." });
 });
 
@@ -711,6 +687,5 @@ export const redeemInviteToken = asyncHandler(async (req, res) => {
         } catch (err) { console.error(err); }
     }
 
-    await syncStreamUser(user);
     res.status(200).json({ groupId: group._id, groupName: group.name, alreadyMember: false });
 });
