@@ -5,7 +5,6 @@ import Group from "../models/group.model.js";
 import Meetup from "../models/meetup.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
-import { ENV } from "../config/env.js"; // <-- ADD THIS LINE
 
 // Get all notifications for the logged-in user
 export const getNotifications = asyncHandler(async (req, res) => {
@@ -73,31 +72,6 @@ export const acceptInvite = asyncHandler(async (req, res) => {
         { group: group._id, date: { $gte: new Date() } },
         { $addToSet: { members: user._id, undecided: user._id } }
     );
-
-    // Add the user to the Stream chat channel
-    const channelId = group._id.toString();
-    const userIdToAdd = user._id.toString();
-
-    // 1. Upsert the user to Stream to ensure they exist
-    const name = (user.firstName && user.lastName) 
-      ? `${user.firstName} ${user.lastName}`
-      : user.username || user.email; // Fallback to username, then email
-
-    await ENV.SERVER_CLIENT.upsertUser({
-        id: userIdToAdd,
-        name: name,
-        username: user.username,
-        image: user.profilePicture,
-        clerkId: user.clerkId,
-    });
-
-    // 2. Get the channel
-    const channel = ENV.SERVER_CLIENT.channel('messaging', channelId);
-    
-    // 3. Add the user to the channel's members
-    //    If this fails, the entire function will now throw an error
-    await channel.addMembers([userIdToAdd]);
-    console.log(`User ${userIdToAdd} successfully added to Stream channel ${channelId}`);
 
     // Update the original invitation
     notification.status = 'accepted';

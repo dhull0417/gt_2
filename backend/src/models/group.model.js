@@ -65,6 +65,10 @@ const groupSchema = new mongoose.Schema({
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   moderators: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  lastMessage: {
+    text: { type: String },
+    user: { name: { type: String } },
+  },
 }, { timestamps: true });
 
 const Group = mongoose.model("Group", groupSchema);

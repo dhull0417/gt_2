@@ -227,7 +227,12 @@ const TimeButton = ({ time, onPress, active }: { time: string; onPress: () => vo
 const StepDots = ({ total, current }: { total: number; current: number }) => (
     <View style={s.dots}>
         {Array.from({ length: total }).map((_, i) => (
-            <View key={i} style={[s.dot, i === current && s.dotActive]} />
+            <React.Fragment key={i}>
+                <View style={[s.dot, i <= current && s.dotActive]} />
+                {i < total - 1 && (
+                    <View style={[s.dotLine, i < current && s.dotLineFilled]} />
+                )}
+            </React.Fragment>
         ))}
     </View>
 );
@@ -1262,13 +1267,8 @@ const CreateGroupScreen = () => {
             ...schedulePayload,
         };
         mutate(payload, {
-            onSuccess: (data: any) => {
-                const groupId = data?.group?._id;
-                if (groupId) {
-                    router.replace(`/add-members/${groupId}`);
-                } else {
-                    router.replace("/(tabs)/groups");
-                }
+            onSuccess: () => {
+                router.replace("/(tabs)/groups");
             },
             onError: (err: any) => Alert.alert("Error", err?.response?.data?.error || "Failed to create group."),
         });
@@ -1293,9 +1293,11 @@ const s = StyleSheet.create({
     screenTitle: { fontSize: 26, fontWeight: "900", color: "#111827", marginBottom: 4 },
     screenSub: { fontSize: 14, color: "#9CA3AF", marginBottom: 20 },
     iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-    dots: { flexDirection: "row", gap: 6 },
-    dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#E5E7EB" },
-    dotActive: { backgroundColor: "#4A90E2", width: 18 },
+    dots: { flexDirection: "row", alignItems: "center", width: "50%", alignSelf: "center" },
+    dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: "#E5E7EB", backgroundColor: "#fff" },
+    dotActive: { backgroundColor: "#4A90E2", borderColor: "#4A90E2" },
+    dotLine: { flex: 1, height: 2, backgroundColor: "#E5E7EB" },
+    dotLineFilled: { backgroundColor: "#4A90E2" },
     bigInput: { fontSize: 22, fontWeight: "700", color: "#111827", borderBottomWidth: 2, borderBottomColor: "#4A90E2", paddingVertical: 12, marginTop: 8 },
     inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
     inlineInput: { flex: 1, fontSize: 15, color: "#374151" },

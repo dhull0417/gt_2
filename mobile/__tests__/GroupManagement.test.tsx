@@ -54,17 +54,17 @@ jest.mock('@/hooks/useSearchUsers', () => ({ useSearchUsers: () => ({ data: [] }
 jest.mock('@/hooks/useInviteUser', () => ({ useInviteUser: () => ({ mutate: jest.fn() }) }));
 jest.mock('@/hooks/useRemoveMember', () => ({ useRemoveMember: () => ({ mutate: jest.fn(), isPending: false }) }));
 
-// 6. Mock Stream Chat components
-jest.mock('stream-chat-expo', () => ({
-  Chat: ({ children }: any) => children,
-  Channel: ({ children }: any) => children,
-  MessageList: () => 'MessageList',
-  OverlayProvider: ({ children }: any) => children,
+// 6. Mock Supabase chat hooks
+jest.mock('@/hooks/useMessages', () => ({
+  useMessages: () => ({ messages: [], loading: false, error: null, sendMessage: jest.fn(), addReaction: jest.fn(), deleteMessage: jest.fn(), editMessage: jest.fn() }),
 }));
 
-jest.mock('@/components/ChatProvider', () => ({
-  ChatProvider: ({ children }: any) => children,
-  useChatClient: () => ({ client: {}, isConnected: true }),
+jest.mock('@/hooks/useTypingIndicator', () => ({
+  useTypingIndicator: () => ({ typingNames: [], handleTyping: jest.fn() }),
+}));
+
+jest.mock('@react-navigation/elements', () => ({
+  useHeaderHeight: () => 0,
 }));
 
 jest.mock('react-native-safe-area-context', () => ({

@@ -17,6 +17,10 @@ import {
   redeemInviteToken,
 } from "../controllers/group.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
+import { getAuth } from "@clerk/express";
+import Group from "../models/group.model.js";
+import User from "../models/user.model.js";
+import { notifyUsers } from "../utils/push.notifications.js";
 
 const router = express.Router();
 
@@ -45,5 +49,44 @@ router.post("/:groupId/leave", protectRoute, leaveGroup);
 router.post("/:groupId/remove-member", protectRoute, removeMember);
 router.post("/:groupId/invite", protectRoute, inviteUser);
 router.post("/:groupId/invite-link", protectRoute, generateInviteLink);
+
+// PATCH /api/groups/:id/last-message
+// Updates the lastMessage preview and fans out push notifications to group members.
+router.patch("/:id/last-message", protectRoute, async (req, res) => {
+  try {
+    const { text, senderName } = req.body;
+    if (!text || !senderName) return res.status(400).json({ message: 'text and senderName required' });
+
+    const { userId: senderClerkId } = getAuth(req);
+
+    const group = await Group.findByIdAndUpdate(
+      req.params.id,
+      { lastMessage: { text, user: { name: senderName } } },
+      { new: true }
+    );
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    // Fire-and-forget — don't hold up the response for notification delivery
+    User.find({
+      _id: { $in: group.members },
+      clerkId: { $ne: senderClerkId },
+      expoPushToken: { $exists: true, $ne: null },
+      mutedGroups: { $ne: group._id },
+      mutedUntilNextMeetup: { $ne: group._id },
+    }).then(recipients => {
+      if (recipients.length > 0) {
+        notifyUsers(recipients, {
+          title: group.name,
+          body: `${senderName}: ${text}`,
+          data: { type: 'chat', groupId: group._id.toString() },
+        });
+      }
+    }).catch(err => console.error('Chat notification error:', err));
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
 
 export default router;
