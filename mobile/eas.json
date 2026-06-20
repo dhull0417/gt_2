@@ -24,6 +24,14 @@
         "buildType": "app-bundle"
       }
     },
+    "emulator": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "channel": "production"
+    },
     "simulator": {
       "ios": {
         "simulator": true

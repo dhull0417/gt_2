@@ -156,8 +156,8 @@ const GroupChat = ({
           : undefined
       );
       api.patch(`/api/groups/${group._id}/last-message`, { text, senderName }).catch(() => {});
-    } catch {
-      Alert.alert('Error', 'Failed to send message.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? JSON.stringify(err));
     }
   };
 
