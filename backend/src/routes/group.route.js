@@ -89,4 +89,40 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
   }
 });
 
+// POST /api/groups/:id/chat-reaction
+// Notifies the message owner when someone reacts to their message.
+router.post("/:id/chat-reaction", protectRoute, async (req, res) => {
+  try {
+    const { emoji, senderName } = req.body;
+    if (!emoji || !senderName) {
+      return res.status(400).json({ message: 'emoji and senderName required' });
+    }
+
+    const { userId: senderClerkId } = getAuth(req);
+
+    const group = await Group.findById(req.params.id).select('name _id members');
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    const recipients = await User.find({
+      _id: { $in: group.members },
+      clerkId: { $ne: senderClerkId },
+      expoPushToken: { $exists: true, $ne: null },
+      mutedGroups: { $ne: group._id },
+      mutedUntilNextMeetup: { $ne: group._id },
+    });
+
+    if (recipients.length > 0) {
+      notifyUsers(recipients, {
+        title: group.name,
+        body: `${senderName} reacted ${emoji} to a message`,
+        data: { type: 'chat', groupId: group._id.toString() },
+      }).catch(err => console.error('Reaction notification error:', err));
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 export default router;

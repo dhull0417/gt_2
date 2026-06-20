@@ -167,7 +167,12 @@ const GroupChat = ({
     setSelectedMessage(null);
     try {
       const result = await addReaction(target.id, emoji, senderId);
-      void result;
+      if (result.action !== 'removed') {
+        api.post(`/api/groups/${group._id}/chat-reaction`, {
+          emoji: result.emoji,
+          senderName,
+        }).catch(() => {});
+      }
     } catch (err: any) {
       Alert.alert('Reaction failed', err?.message ?? JSON.stringify(err));
     }
