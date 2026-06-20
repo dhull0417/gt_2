@@ -31,6 +31,10 @@ const userSchema = new mongoose.Schema(
         lastName: {
             type: String,
         },
+        zipCode: {
+            type: String,
+            default: '',
+        },
         profilePicture: {
             type: String,
             default: "",

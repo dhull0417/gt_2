@@ -54,6 +54,7 @@ export interface User {
   groups?: string[];
   mutedGroups: string[];
   mutedUntilNextMeetup: string[];
+  zipCode?: string;
 }
 
 export interface LastMessage {
@@ -86,6 +87,7 @@ export interface Meetup {
   group: {
     _id: string;
     owner: string;
+    name: string;
   };
   name: string;
   date: string;

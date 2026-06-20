@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, StyleSheet, Animated, LayoutChangeEvent } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Animated, LayoutChangeEvent, TextInput } from 'react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +13,14 @@ import { DateTime } from 'luxon';
 type GroupedMeetups = {
   'Upcoming': Meetup[];
   'Past Week': Meetup[];
+};
+
+const GROUP_BORDER_COLORS = ['#8B5CF6', '#F59E0B', '#EC4899', '#F97316', '#6366F1', '#84CC16'];
+
+const hashGroupColor = (groupId: string): string => {
+  let hash = 0;
+  for (let i = 0; i < groupId.length; i++) hash = (hash + groupId.charCodeAt(i)) % GROUP_BORDER_COLORS.length;
+  return GROUP_BORDER_COLORS[hash];
 };
 
 // --- Helper Functions ---
@@ -95,7 +103,8 @@ const MeetupCard = ({
   showRsvpButtons,
   onRsvp,
   isRsvping,
-  currentUser
+  currentUser,
+  groupBorderColor,
 }: {
   meetup: Meetup;
   onPress: () => void;
@@ -103,6 +112,7 @@ const MeetupCard = ({
   onRsvp: (status: 'in' | 'out') => void;
   isRsvping: boolean;
   currentUser: User | undefined;
+  groupBorderColor?: string;
 }) => {
   const isCancelled = meetup.status === 'cancelled';
   const isPast = new Date(meetup.date) < new Date();
@@ -121,7 +131,20 @@ const MeetupCard = ({
         isCancelled ? 'bg-red-50/30 border-red-100 opacity-80' : 
         isExpired ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-200'
       }`}
-      style={isExpired && !isCancelled ? { opacity: 0.75 } : {}}
+      style={{
+        ...(isExpired && !isCancelled ? { opacity: 0.75 } : {}),
+        ...(!isReadOnly && groupBorderColor ? {
+          borderLeftWidth: 6,
+          borderLeftColor: groupBorderColor,
+          borderTopColor: groupBorderColor,
+          borderRightColor: groupBorderColor,
+          borderBottomColor: groupBorderColor,
+          shadowColor: groupBorderColor,
+          shadowOffset: { width: -5, height: 0 },
+          shadowOpacity: 0.5,
+          shadowRadius: 3,
+        } : {}),
+      }}
     >
       <TouchableOpacity onPress={onPress}>
         {!isReadOnly && currentUser && <RsvpStatusDot meetup={meetup} userId={currentUser._id} />}
@@ -277,9 +300,13 @@ const DashboardScreen = () => {
   const { data: meetups, isLoading, isError, refetch } = useGetMeetups();
   const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
   const { mutate: rsvp, isPending: isRsvping } = useRsvp();
-  const [undecidedLimit, setUndecidedLimit] = useState<number | null>(1);
   const [hiddenMeetupIds, setHiddenMeetupIds] = useState<Set<string>>(new Set());
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string>>(new Set());
+  const [zipCodeInput, setZipCodeInput] = useState('');
+  const [zipCardDismissed, setZipCardDismissed] = useState(false);
+  const [isSavingZip, setIsSavingZip] = useState(false);
+  const [zipCodeError, setZipCodeError] = useState('');
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
@@ -293,10 +320,32 @@ const DashboardScreen = () => {
   }, [meetups, currentUser]);
 
   const visibleUndecidedMeetups = useMemo(() => {
-    const filtered = allUndecidedMeetups.filter(m => !hiddenMeetupIds.has(m._id));
-    if (undecidedLimit === null) return filtered;
-    return filtered.slice(0, undecidedLimit);
-  }, [allUndecidedMeetups, undecidedLimit, hiddenMeetupIds]);
+    return allUndecidedMeetups
+      .filter(m => !hiddenMeetupIds.has(m._id))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(0, 1);
+  }, [allUndecidedMeetups, hiddenMeetupIds]);
+
+  const uniqueGroups = useMemo(() => {
+    if (!meetups) return [];
+    const seen = new Set<string>();
+    const groups: { _id: string; name: string }[] = [];
+    meetups.forEach(m => {
+      if (!seen.has(m.group._id)) {
+        seen.add(m.group._id);
+        groups.push({ _id: m.group._id, name: m.group.name });
+      }
+    });
+    return groups;
+  }, [meetups]);
+
+  const toggleGroup = useCallback((groupId: string) => {
+    setHiddenGroupIds(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
+      return next;
+    });
+  }, []);
 
   const groupedMeetups = useMemo(() => {
     const groups: GroupedMeetups = {
@@ -306,6 +355,7 @@ const DashboardScreen = () => {
     if (!meetups) return groups;
 
     meetups.forEach(meetup => {
+      if (hiddenGroupIds.has(meetup.group._id)) return;
       const isPast = new Date(meetup.date) < new Date();
       if (meetup.status === 'expired' || isPast) {
         groups['Past Week'].push(meetup);
@@ -317,7 +367,7 @@ const DashboardScreen = () => {
     groups['Past Week'].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return groups;
-  }, [meetups]);
+  }, [meetups, hiddenGroupIds]);
 
   const handleOpenModal = (meetup: Meetup) => {
     setSelectedMeetup(meetup);
@@ -334,6 +384,29 @@ const DashboardScreen = () => {
     rsvp({ meetupId, status }, {
       onSuccess: () => setRemovingId(meetupId),
     });
+  };
+
+  const handleSaveZipCode = async () => {
+    const trimmed = zipCodeInput.trim();
+    if (!trimmed) {
+      setZipCodeError('Please enter a zip code.');
+      return;
+    }
+    setZipCodeError('');
+    setIsSavingZip(true);
+    try {
+      const { data } = await userApi.updateProfile(api, { zipCode: trimmed });
+      if (data?.user) {
+        queryClient.setQueryData(['currentUser'], data.user);
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+      }
+      setZipCardDismissed(true);
+    } catch {
+      setZipCodeError('Failed to save. Please try again.');
+    } finally {
+      setIsSavingZip(false);
+    }
   };
 
   return (
@@ -358,36 +431,6 @@ const DashboardScreen = () => {
                 {currentUser?.firstName ? `${currentUser.firstName}, are you in?` : 'Are you in?'}
               </Text>
 
-              {allUndecidedMeetups.length > 0 && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, marginBottom: 12, gap: 16 }}>
-                  <Text style={{ color: '#9CA3AF', fontSize: 17, marginLeft: 2 }}>
-                  View:
-                  </Text>
-                  {([1, 3, null] as (number | null)[]).map((opt) => {
-                    const label = opt === null ? 'All' : String(opt);
-                    const isActive = undecidedLimit === opt;
-                    return (
-                      <TouchableOpacity
-                        key={label}
-                        onPress={() => setUndecidedLimit(opt)}
-                        style={{
-                          paddingHorizontal: 14,
-                          paddingVertical: 6,
-                          borderRadius: 20,
-                          backgroundColor: isActive ? '#4A90E2' : 'white',
-                          borderWidth: 3,
-                          borderColor: isActive ? '#4A90E2' : '#E5E7EB',
-                        }}
-                      >
-                        <Text style={{ color: isActive ? 'white' : '#6B7280', fontWeight: '600', fontSize: 13, }}>
-                          {label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                  
-                </View>
-              )}
 
               {visibleUndecidedMeetups.length > 0 ? (
                 visibleUndecidedMeetups.map(meetup => (
@@ -407,6 +450,7 @@ const DashboardScreen = () => {
                       onRsvp={(status) => handleDashboardRsvp(meetup._id, status)}
                       isRsvping={isRsvping}
                       currentUser={currentUser}
+                      groupBorderColor={hashGroupColor(meetup.group._id)}
                     />
                   </RemovableCard>
                 ))
@@ -436,9 +480,36 @@ const DashboardScreen = () => {
                 if (groupMeetups.length === 0) return null;
                 return (
                   <View key={groupTitle}>
-                    <Text style={{ fontSize: 12, fontWeight: '900', color: '#FF7A6E', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
-                      {groupTitle}
-                    </Text>
+                    {groupTitle === 'Upcoming' && uniqueGroups.length > 1 ? (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8, marginBottom: 12 }} contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}>
+                        {uniqueGroups.map(group => {
+                          const isHidden = hiddenGroupIds.has(group._id);
+                          const color = hashGroupColor(group._id);
+                          return (
+                            <TouchableOpacity
+                              key={group._id}
+                              onPress={() => toggleGroup(group._id)}
+                              style={{
+                                flexDirection: 'row', alignItems: 'center', gap: 6,
+                                paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                                backgroundColor: isHidden ? '#F3F4F6' : 'white',
+                                borderWidth: 1.5,
+                                borderColor: isHidden ? '#E5E7EB' : color,
+                              }}
+                            >
+                              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isHidden ? '#D1D5DB' : color }} />
+                              <Text style={{ fontSize: 13, fontWeight: '600', color: isHidden ? '#9CA3AF' : '#374151' }}>
+                                {group.name}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    ) : (
+                      <Text style={{ fontSize: 12, fontWeight: '900', color: '#FF7A6E', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+                        {groupTitle}
+                      </Text>
+                    )}
                     {groupMeetups.map((meetup: Meetup) => (
                         <MeetupCard
                             key={meetup._id}
@@ -448,6 +519,7 @@ const DashboardScreen = () => {
                             onRsvp={() => {}}
                             isRsvping={false}
                             currentUser={currentUser}
+                            groupBorderColor={hashGroupColor(meetup.group._id)}
                         />
                     ))}
                   </View>
@@ -467,6 +539,57 @@ const DashboardScreen = () => {
         <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top', 'bottom']}>
             <MeetupDetailModal meetup={selectedMeetup} onClose={handleCloseModal} />
         </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={!!currentUser && !currentUser.zipCode && !zipCardDismissed}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setZipCardDismissed(true)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 28 }}>
+          <View style={{ backgroundColor: 'white', borderRadius: 24, padding: 28 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 6 }}>
+              One quick thing
+            </Text>
+            <Text style={{ fontSize: 15, color: '#6B7280', marginBottom: 20, lineHeight: 22 }}>
+              Add your zip code so we can improve your experience.
+            </Text>
+            <TextInput
+              value={zipCodeInput}
+              onChangeText={text => { setZipCodeInput(text); setZipCodeError(''); }}
+              placeholder="Zip Code"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="numeric"
+              maxLength={10}
+              style={{
+                backgroundColor: '#F9FAFB', borderWidth: 1,
+                borderColor: zipCodeError ? '#EF4444' : '#E5E7EB',
+                borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13,
+                fontSize: 16, color: '#111827', marginBottom: zipCodeError ? 6 : 16,
+              }}
+            />
+            {!!zipCodeError && (
+              <Text style={{ color: '#EF4444', fontSize: 13, marginBottom: 12 }}>{zipCodeError}</Text>
+            )}
+            <TouchableOpacity
+              onPress={handleSaveZipCode}
+              disabled={isSavingZip}
+              style={{ backgroundColor: '#4A90E2', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 }}
+            >
+              {isSavingZip
+                ? <ActivityIndicator color="white" />
+                : <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>Save</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setZipCardDismissed(true)}
+              style={{ alignItems: 'center', paddingVertical: 8 }}
+            >
+              <Text style={{ color: '#9CA3AF', fontSize: 14 }}>Skip for now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );

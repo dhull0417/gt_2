@@ -10,6 +10,7 @@ const ProfileSetupScreen = () => {
     const [firstName, setFirstName] = useState(clerkUser?.firstName ?? '');
     const [lastName, setLastName] = useState(clerkUser?.lastName ?? '');
     const [username, setUsername] = useState('');
+    const [zipCode, setZipCode] = useState('');
     const { mutate: syncUser, isPending: isSyncing } = useUserSync();
     const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
 
@@ -28,7 +29,9 @@ const ProfileSetupScreen = () => {
         // For Apple users, omit firstName/lastName entirely — syncUser's backend Clerk API
         // call will populate them from Apple's token, and we don't want to overwrite with
         // potentially empty client-side values.
-        const profileData = isAppleUser ? { username } : { firstName, lastName, username };
+        const profileData = isAppleUser
+            ? { username, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) }
+            : { firstName, lastName, username, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) };
         // Ensure the MongoDB user exists before updating profile.
         // onSettled fires whether sync succeeded or failed, so we always attempt the update.
         syncUser(undefined, {
@@ -67,6 +70,16 @@ const ProfileSetupScreen = () => {
                         value={username}
                         onChangeText={setUsername}
                         autoCapitalize="none"
+                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
+                        placeholderTextColor="#999"
+                    />
+
+                    <TextInput
+                        placeholder="Zip Code"
+                        value={zipCode}
+                        onChangeText={setZipCode}
+                        keyboardType="numeric"
+                        maxLength={10}
                         className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
                         placeholderTextColor="#999"
                     />
