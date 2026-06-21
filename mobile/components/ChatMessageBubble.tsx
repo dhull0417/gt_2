@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Image } from 'expo-image';
 import type { ChatMessage } from '@/types/chat';
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
 export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, onReactionLongPress }: Props) {
   const isDeleted = !!message.deleted_at;
   const isEdited = !!message.edited_at && !isDeleted;
+  const hasImage = !!message.image_url && !isDeleted;
+  const hasText = !!message.content && !isDeleted;
 
   const time = new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const reactions = (!isDeleted && message.reactions) ? message.reactions : {};
@@ -21,7 +24,7 @@ export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, 
     <View style={[styles.row, isOwn && styles.rowOwn]}>
       <View style={styles.column}>
         <TouchableOpacity
-          style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther]}
+          style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther, hasImage && !hasText && styles.bubbleImageOnly]}
           onLongPress={isDeleted ? undefined : onLongPress}
           delayLongPress={350}
           activeOpacity={isDeleted ? 1 : 0.85}
@@ -39,15 +42,24 @@ export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, 
             </View>
           )}
 
-          {isDeleted ? (
-            <Text style={styles.deletedText}>This message was deleted</Text>
-          ) : (
-            <Text style={[styles.content, isOwn && styles.contentOwn]}>{message.content}</Text>
+          {hasImage && (
+            <Image
+              source={{ uri: message.image_url! }}
+              style={[styles.messageImage, hasText && styles.messageImageWithText]}
+              contentFit="cover"
+              transition={150}
+            />
           )}
 
-          <View style={styles.timeRow}>
+          {isDeleted ? (
+            <Text style={styles.deletedText}>This message was deleted</Text>
+          ) : hasText ? (
+            <Text style={[styles.content, isOwn && styles.contentOwn]}>{message.content}</Text>
+          ) : null}
+
+          <View style={[styles.timeRow, hasImage && !hasText && styles.timeRowImageOnly]}>
             {isEdited && <Text style={[styles.editedLabel, isOwn && styles.editedLabelOwn]}>edited · </Text>}
-            <Text style={[styles.time, isOwn && styles.timeOwn]}>{time}</Text>
+            <Text style={[styles.time, isOwn && styles.timeOwn, hasImage && !hasText && styles.timeOnImage]}>{time}</Text>
           </View>
         </TouchableOpacity>
 
@@ -78,7 +90,10 @@ const styles = StyleSheet.create({
   bubble: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
   bubbleOwn: { backgroundColor: '#4A90E2', borderBottomRightRadius: 4 },
   bubbleOther: { backgroundColor: '#E5E7EB', borderBottomLeftRadius: 4 },
+  bubbleImageOnly: { paddingHorizontal: 4, paddingVertical: 4 },
   senderName: { fontSize: 12, fontWeight: '600', color: '#555', marginBottom: 2 },
+  messageImage: { width: 220, height: 165, borderRadius: 10 },
+  messageImageWithText: { marginBottom: 6 },
   content: { fontSize: 15, color: '#111827' },
   contentOwn: { color: '#fff' },
   deletedText: { fontSize: 14, color: '#aaa', fontStyle: 'italic' },
@@ -89,10 +104,12 @@ const styles = StyleSheet.create({
   quoteContent: { fontSize: 12, color: 'rgba(255,255,255,0.75)' },
   quoteContentOwn: { color: 'rgba(255,255,255,0.75)' },
   timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4 },
+  timeRowImageOnly: { marginTop: 2 },
   editedLabel: { fontSize: 11, color: '#888' },
   editedLabelOwn: { color: 'rgba(255,255,255,0.6)' },
   time: { fontSize: 11, color: '#888' },
   timeOwn: { color: 'rgba(255,255,255,0.7)' },
+  timeOnImage: { color: 'rgba(255,255,255,0.85)' },
   reactions: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 4 },
   reactionsOwn: { justifyContent: 'flex-end' },
   badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0f0f0', borderRadius: 12, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: '#e0e0e0' },

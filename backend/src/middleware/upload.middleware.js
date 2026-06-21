@@ -5,7 +5,7 @@ import multer from "multer";
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
-    if (file.mimeType.startsWith("image/")) {
+    if (file.mimetype.startsWith("image/")) {
         cb(null,true); //now callback error so allow to progress
     } else {
         cb(new Error( "Only image files are allowed"), false); // callback error raised and progression halted

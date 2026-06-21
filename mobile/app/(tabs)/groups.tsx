@@ -143,7 +143,7 @@ const GroupChat = ({
   const isOwnSelected = selectedMessage?.sender_id === senderId;
   const isDeletedSelected = !!selectedMessage?.deleted_at;
 
-  const handleSend = async (text: string) => {
+  const handleSend = async (text: string, imageUrl?: string) => {
     const currentReply = replyingTo;
     setReplyingTo(null);
     try {
@@ -153,9 +153,11 @@ const GroupChat = ({
         senderName,
         currentReply
           ? { id: currentReply.id, content: currentReply.content, senderName: currentReply.sender_name }
-          : undefined
+          : undefined,
+        imageUrl
       );
-      api.patch(`/api/groups/${group._id}/last-message`, { text, senderName }).catch(() => {});
+      const notifyText = text || '📷 Photo';
+      api.patch(`/api/groups/${group._id}/last-message`, { text: notifyText, senderName }).catch(() => {});
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? JSON.stringify(err));
     }

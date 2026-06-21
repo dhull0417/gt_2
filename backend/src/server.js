@@ -9,6 +9,7 @@ import jobRoutes from "./routes/job.route.js";
 import notificationRoutes from "./routes/notification.route.js"; 
 // Project 4: Import webhook routes
 import webhookRoutes from "./routes/webhook.route.js";
+import uploadRoutes from "./routes/upload.route.js";
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
@@ -31,6 +32,7 @@ app.use("/api/jobs", jobRoutes);
 app.use("/api/notifications", notificationRoutes); 
 // Project 4: Mount the webhook route
 app.use("/api/webhooks", webhookRoutes);
+app.use("/api/upload", uploadRoutes);
 
 app.post("/api/debug/log", (req, res) => {
   console.log("[DEBUG]", JSON.stringify(req.body, null, 2));
