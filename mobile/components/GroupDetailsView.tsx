@@ -16,7 +16,7 @@ import AddMeetupWizard from './AddMeetupWizard';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 interface GroupDetailsViewProps {
-    groupDetails: GroupDetails; 
+    groupDetails: GroupDetails;
     currentUser: User;
     isRemovingMember: boolean;
     onRemoveMember: (memberIdToRemove: string) => void;
@@ -25,6 +25,7 @@ interface GroupDetailsViewProps {
     onLeaveSuccess: () => void;
     searchResults: User[] | undefined;
     onInvite: (id: string) => void;
+    onMemberPress?: (member: User) => void;
 }
 
 const daysOfWeekFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -60,7 +61,8 @@ export const GroupDetailsView = ({
     onSearchChange,
     searchResults,
     onInvite,
-    onLeaveSuccess
+    onLeaveSuccess,
+    onMemberPress,
 }: GroupDetailsViewProps) => {
     
     // --- Wizard Visibility State ---
@@ -166,10 +168,12 @@ export const GroupDetailsView = ({
         });
     };
 
+    const isDM = !!groupDetails.isDM;
+
     return (
         <View style={styles.container}>
-            {/* 1. Core Details Card */}
-            <View style={styles.card}>
+            {/* 1. Core Details Card — hidden for DMs */}
+            {!isDM && <View style={styles.card}>
                 <View style={styles.cardHeader}><Text style={styles.cardTitle}>Details</Text></View>
                 
                 {/* Detailed Schedule Section */}
@@ -212,10 +216,10 @@ export const GroupDetailsView = ({
                         RSVP {groupDetails.generationLeadDays} day{groupDetails.generationLeadDays > 1 ? 's' : ''} before @ {groupDetails.generationLeadTime}
                     </Text>
                 </View>
-            </View>
+            </View>}
 
-            {/* 2. Quick Actions */}
-            <View style={styles.managerActionsRow}>
+            {/* 2. Quick Actions — hidden for DMs */}
+            {!isDM && <View style={styles.managerActionsRow}>
                 {canManage && (
                     <TouchableOpacity onPress={() => setWizardVisible(true)} style={styles.actionPill}>
                         <Feather name="plus" size={16} color="#4A90E2" />
@@ -228,22 +232,24 @@ export const GroupDetailsView = ({
                     <Feather name="user-plus" size={16} color="#4A90E2" />
                     <Text style={styles.actionPillText}>Invite Friends</Text>
                 </TouchableOpacity>
-            </View>
+            </View>}
 
             {/* 3. Member List */}
             <View style={{ marginBottom: 24 }}>
                 <Text style={styles.sectionTitle}>Members ({groupDetails.members.length})</Text>
                 {groupDetails.members.map(member => {
                     const isMemberOwner = member._id === groupDetails.owner;
-                    const isMemberMod = groupDetails.moderators?.some((m: User | string) => 
+                    const isMemberMod = groupDetails.moderators?.some((m: User | string) =>
                         typeof m === 'string' ? m === member._id : m._id === member._id
                     ) ?? false;
+                    const isSelf = member._id === currentUser._id;
+                    const canTap = !isDM && !isSelf && !!onMemberPress;
 
-                    return (
-                        <View key={member._id} style={styles.memberCard}>
-                            <Image 
-                                source={{ uri: member.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${member.username?.[0]}` }} 
-                                style={styles.avatar} 
+                    const cardContent = (
+                        <>
+                            <Image
+                                source={{ uri: member.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${member.username?.[0]}` }}
+                                style={styles.avatar}
                             />
                             <View style={{ flex: 1 }}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -253,11 +259,21 @@ export const GroupDetailsView = ({
                                 </View>
                                 <Text style={styles.memberHandle}>@{member.username}</Text>
                             </View>
-                            {canManage && member._id !== groupDetails.owner && (
+                            {canManage && !isDM && member._id !== groupDetails.owner && (
                                 <TouchableOpacity onPress={() => onRemoveMember(member._id)} disabled={isRemovingMember}>
                                     <Feather name="x-circle" size={20} color="#EF4444" />
                                 </TouchableOpacity>
                             )}
+                        </>
+                    );
+
+                    return canTap ? (
+                        <TouchableOpacity key={member._id} style={styles.memberCard} onPress={() => onMemberPress!(member)} activeOpacity={0.7}>
+                            {cardContent}
+                        </TouchableOpacity>
+                    ) : (
+                        <View key={member._id} style={styles.memberCard}>
+                            {cardContent}
                         </View>
                     );
                 })}

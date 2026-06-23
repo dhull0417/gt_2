@@ -27,6 +27,54 @@ const router = express.Router();
 // --- Group Management ---
 router.get("/", protectRoute, getGroups);
 router.post("/create", protectRoute, createGroup);
+
+// POST /api/groups/dm — find or create a 1-on-1 DM group (must be before /:groupId wildcards)
+router.post("/dm", protectRoute, async (req, res) => {
+  try {
+    const { userId: senderClerkId } = getAuth(req);
+    const { targetUserId } = req.body;
+    if (!targetUserId) return res.status(400).json({ message: "targetUserId required" });
+
+    const sender = await User.findOne({ clerkId: senderClerkId });
+    const target = await User.findById(targetUserId);
+    if (!sender || !target) return res.status(404).json({ message: "User not found" });
+    if (sender._id.equals(target._id)) return res.status(400).json({ message: "Cannot DM yourself" });
+
+    const existing = await Group.findOne({
+      isDM: true,
+      members: { $all: [sender._id, target._id], $size: 2 },
+    });
+    if (existing) return res.json({ group: existing, isNew: false });
+
+    const senderName = [sender.firstName, sender.lastName].filter(Boolean).join(" ") || sender.username;
+    const targetName = [target.firstName, target.lastName].filter(Boolean).join(" ") || target.username;
+
+    const dmGroup = await Group.create({
+      name: `${senderName} & ${targetName}`,
+      isDM: true,
+      dmParticipants: [
+        { userId: senderClerkId, name: senderName },
+        { userId: target.clerkId, name: targetName },
+      ],
+      owner: sender._id,
+      members: [sender._id, target._id],
+      timezone: "America/New_York",
+      generationLeadDays: 1,
+      generationLeadTime: "09:00 AM",
+    });
+
+    await User.updateMany(
+      { _id: { $in: [sender._id, target._id] } },
+      { $addToSet: { groups: dmGroup._id } }
+    );
+
+    res.status(201).json({ group: dmGroup, isNew: true });
+  } catch (err) {
+    console.error("DM creation error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 router.get("/:groupId", protectRoute, getGroupDetails);
 router.put("/:groupId", protectRoute, updateGroup);
 router.delete("/:groupId", protectRoute, deleteGroup);

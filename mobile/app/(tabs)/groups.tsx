@@ -13,6 +13,7 @@ import {
   FlatList,
   Modal,
   Pressable,
+  Image,
 } from 'react-native';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -477,6 +478,36 @@ const GroupScreen = () => {
 
   const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
 
+  const [dmTargetMember, setDmTargetMember] = useState<User | null>(null);
+  const [isCreatingDM, setIsCreatingDM] = useState(false);
+
+  const getDMDisplayName = (group: Group) => {
+    if (!group.dmParticipants || !currentUser) return group.name;
+    const other = group.dmParticipants.find(p => p.userId !== currentUser.clerkId);
+    return other?.name ?? group.name;
+  };
+
+  const handleMemberPress = (member: User) => {
+    setDmTargetMember(member);
+  };
+
+  const handleSendDM = async () => {
+    if (!dmTargetMember) return;
+    setIsCreatingDM(true);
+    try {
+      const { group } = await groupApi.createOrGetDM(api, dmTargetMember._id);
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      setDmTargetMember(null);
+      setActiveTab('Chat');
+      setSelectedGroup(group);
+      setIsGroupDetailVisible(true);
+    } catch {
+      Alert.alert('Error', 'Could not open DM. Please try again.');
+    } finally {
+      setIsCreatingDM(false);
+    }
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const { data: searchResults } = useSearchUsers(searchQuery);
   const { mutate: inviteUser } = useInviteUser();
@@ -562,7 +593,9 @@ const GroupScreen = () => {
         >
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center flex-1">
-              <Text className="text-lg font-bold text-gray-800" numberOfLines={1}>{group.name}</Text>
+              <Text className="text-lg font-bold text-gray-800" numberOfLines={1}>
+                {group.isDM ? getDMDisplayName(group) : group.name}
+              </Text>
               {isMuted && (
                 <View className="ml-2">
                   <Feather name="bell-off" size={14} color="#9CA3AF" />
@@ -600,6 +633,43 @@ const GroupScreen = () => {
         {renderGroupList()}
       </ScrollView>
 
+      {/* DM bottom sheet */}
+      <Modal
+        visible={!!dmTargetMember}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDmTargetMember(null)}
+      >
+        <Pressable style={dmStyles.backdrop} onPress={() => setDmTargetMember(null)}>
+          <Pressable style={dmStyles.sheet} onPress={() => {}}>
+            <View style={dmStyles.dragHandle} />
+            {dmTargetMember && (
+              <>
+                <Image
+                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${dmTargetMember.username?.[0]}` }}
+                  style={dmStyles.avatar}
+                />
+                <Text style={dmStyles.name}>
+                  {[dmTargetMember.firstName, dmTargetMember.lastName].filter(Boolean).join(' ') || dmTargetMember.username}
+                </Text>
+                <Text style={dmStyles.username}>@{dmTargetMember.username}</Text>
+                <TouchableOpacity
+                  style={dmStyles.dmBtn}
+                  onPress={handleSendDM}
+                  disabled={isCreatingDM}
+                  activeOpacity={0.8}
+                >
+                  {isCreatingDM
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={dmStyles.dmBtnText}>Send DM</Text>
+                  }
+                </TouchableOpacity>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {isGroupDetailVisible && selectedGroup && (
         <View className="absolute top-0 bottom-0 left-0 right-0 bg-white" style={{paddingTop:insets.top}}>
           <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200" onLayout={(e) => setChatHeaderHeight(e.nativeEvent.layout.height)}>
@@ -611,7 +681,9 @@ const GroupScreen = () => {
                 <Feather name="arrow-left" size={24} color="#FF7A6E"/>
               </TouchableOpacity>
               <Text className="text-xl font-bold text-gray-900 flex-1" numberOfLines={1}>
-                {groupDetails?.name || selectedGroup.name}
+                {groupDetails?.isDM
+                  ? getDMDisplayName(groupDetails)
+                  : (groupDetails?.name || selectedGroup.name)}
               </Text>
             </View>
 
@@ -680,6 +752,7 @@ const GroupScreen = () => {
                     searchResults={searchResults}
                     onInvite={handleInvite}
                     onLeaveSuccess={handleCloseGroupDetail}
+                    onMemberPress={groupDetails.isDM ? undefined : handleMemberPress}
                   />
                 )}
               </View>
@@ -690,5 +763,16 @@ const GroupScreen = () => {
     </SafeAreaView>
   );
 };
+
+const dmStyles = StyleSheet.create({
+  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12, alignItems: 'center' },
+  dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginBottom: 24 },
+  avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 14, backgroundColor: '#F3F4F6' },
+  name: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 4 },
+  username: { fontSize: 14, color: '#9CA3AF', fontWeight: '600', marginBottom: 28 },
+  dmBtn: { backgroundColor: '#4A90E2', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
+  dmBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+});
 
 export default GroupScreen;

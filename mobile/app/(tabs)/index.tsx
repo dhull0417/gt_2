@@ -15,7 +15,7 @@ type GroupedMeetups = {
   'Past Week': Meetup[];
 };
 
-const GROUP_BORDER_COLORS = ['#8B5CF6', '#F59E0B', '#EC4899', '#F97316', '#6366F1', '#84CC16'];
+const GROUP_BORDER_COLORS = ['#C4B5FD', '#FDE68A', '#F9A8D4', '#FDBA74', '#A5B4FC', '#86EFAC'];
 
 const hashGroupColor = (groupId: string): string => {
   let hash = 0;
@@ -307,6 +307,7 @@ const DashboardScreen = () => {
   const [zipCardDismissed, setZipCardDismissed] = useState(false);
   const [isSavingZip, setIsSavingZip] = useState(false);
   const [zipCodeError, setZipCodeError] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
@@ -346,6 +347,14 @@ const DashboardScreen = () => {
       return next;
     });
   }, []);
+
+  const toggleAll = useCallback(() => {
+    setHiddenGroupIds(prev =>
+      prev.size === 0
+        ? new Set(uniqueGroups.map(g => g._id))
+        : new Set()
+    );
+  }, [uniqueGroups]);
 
   const groupedMeetups = useMemo(() => {
     const groups: GroupedMeetups = {
@@ -464,9 +473,67 @@ const DashboardScreen = () => {
             </View>
 
             <View className="pb-10">
-              <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
-                Upcoming Meetups
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, marginBottom: 8 }}>
+                <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', letterSpacing: -1 }}>
+                  Upcoming Meetups
+                </Text>
+                {uniqueGroups.length > 1 && (
+                  <TouchableOpacity
+                    onPress={() => setFilterOpen(prev => !prev)}
+                    style={{ backgroundColor: 'white', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 10, position: 'relative' }}
+                  >
+                    <Feather name="sliders" size={18} color="#1D4ED8" />
+                    {hiddenGroupIds.size > 0 && (
+                      <View style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF7A6E' }} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {filterOpen && uniqueGroups.length > 1 && (
+                <View style={{ paddingHorizontal: 8, paddingBottom: 4 }}>
+                  <TouchableOpacity
+                    onPress={toggleAll}
+                    activeOpacity={0.7}
+                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10, borderBottomWidth: 0.5, borderBottomColor: '#E5E7EB', marginBottom: 2 }}
+                  >
+                    <Text style={{ flex: 1, fontSize: 15, color: '#111827', fontWeight: '700' }}>All</Text>
+                    <View style={{
+                      width: 20, height: 20, borderRadius: 5,
+                      borderWidth: 1.5,
+                      borderColor: hiddenGroupIds.size === 0 ? '#4A90E2' : '#D1D5DB',
+                      backgroundColor: hiddenGroupIds.size === 0 ? '#4A90E2' : 'transparent',
+                      justifyContent: 'center', alignItems: 'center',
+                    }}>
+                      {hiddenGroupIds.size === 0 && <Feather name="check" size={12} color="#fff" />}
+                    </View>
+                  </TouchableOpacity>
+                  {uniqueGroups.map(group => {
+                    const isVisible = !hiddenGroupIds.has(group._id);
+                    const color = hashGroupColor(group._id);
+                    return (
+                      <TouchableOpacity
+                        key={group._id}
+                        onPress={() => toggleGroup(group._id)}
+                        activeOpacity={0.7}
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10 }}
+                      >
+                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
+                        <Text style={{ flex: 1, fontSize: 15, color: '#374151', fontWeight: '500' }}>{group.name}</Text>
+                        <View style={{
+                          width: 20, height: 20, borderRadius: 5,
+                          borderWidth: 1.5,
+                          borderColor: isVisible ? '#4A90E2' : '#D1D5DB',
+                          backgroundColor: isVisible ? '#4A90E2' : 'transparent',
+                          justifyContent: 'center', alignItems: 'center',
+                        }}>
+                          {isVisible && <Feather name="check" size={12} color="#fff" />}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
 
               {meetups?.length === 0 && (
                 <View className="bg-white p-5 my-2 rounded-2xl items-center border border-gray-100">
@@ -480,32 +547,7 @@ const DashboardScreen = () => {
                 if (groupMeetups.length === 0) return null;
                 return (
                   <View key={groupTitle}>
-                    {groupTitle === 'Upcoming' && uniqueGroups.length > 1 ? (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8, marginBottom: 12 }} contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}>
-                        {uniqueGroups.map(group => {
-                          const isHidden = hiddenGroupIds.has(group._id);
-                          const color = hashGroupColor(group._id);
-                          return (
-                            <TouchableOpacity
-                              key={group._id}
-                              onPress={() => toggleGroup(group._id)}
-                              style={{
-                                flexDirection: 'row', alignItems: 'center', gap: 6,
-                                paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
-                                backgroundColor: isHidden ? '#F3F4F6' : 'white',
-                                borderWidth: 1.5,
-                                borderColor: isHidden ? '#E5E7EB' : color,
-                              }}
-                            >
-                              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isHidden ? '#D1D5DB' : color }} />
-                              <Text style={{ fontSize: 13, fontWeight: '600', color: isHidden ? '#9CA3AF' : '#374151' }}>
-                                {group.name}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
-                    ) : (
+                    {groupTitle !== 'Upcoming' && (
                       <Text style={{ fontSize: 12, fontWeight: '900', color: '#FF7A6E', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
                         {groupTitle}
                       </Text>

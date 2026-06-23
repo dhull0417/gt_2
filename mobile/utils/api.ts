@@ -75,6 +75,8 @@ export interface Group {
   generationLeadTime: string;
   lastMessage?: LastMessage | null;
   moderators?: (User | string)[];
+  isDM?: boolean;
+  dmParticipants?: { userId: string; name: string }[];
 }
 
 export interface GroupDetails extends Group {
@@ -301,6 +303,10 @@ export const groupApi = {
   },
   redeemInviteToken: async (api: AxiosInstance, token: string): Promise<{ groupId: string; groupName: string; alreadyMember: boolean }> => {
     const response = await api.post(`/api/groups/join/${token}`);
+    return response.data;
+  },
+  createOrGetDM: async (api: AxiosInstance, targetUserId: string): Promise<{ group: Group; isNew: boolean }> => {
+    const response = await api.post<{ group: Group; isNew: boolean }>('/api/groups/dm', { targetUserId });
     return response.data;
   },
 };

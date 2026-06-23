@@ -69,6 +69,12 @@ const groupSchema = new mongoose.Schema({
     text: { type: String },
     user: { name: { type: String } },
   },
+  isDM: { type: Boolean, default: false },
+  dmParticipants: [{
+    userId: { type: String },
+    name: { type: String },
+    _id: false,
+  }],
 }, { timestamps: true });
 
 const Group = mongoose.model("Group", groupSchema);
