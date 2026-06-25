@@ -39,6 +39,160 @@ app.post("/api/debug/log", (req, res) => {
   res.status(200).json({ received: true });
 });
 
+// ── Public web routes ─────────────────────────────────────────────────────────
+
+const APP_STORE_URL = 'https://apps.apple.com/app/groupthat/id6756112941';
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.dallinhull.groupthat';
+
+// iOS Universal Links verification file
+app.get('/.well-known/apple-app-site-association', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json({
+    applinks: {
+      details: [{
+        appIDs: ['9P29PK6A6D.com.dallinhull.groupthat'],
+        components: [
+          { '/': '/join/*' },
+          { '/': '/download' },
+        ],
+      }],
+    },
+  });
+});
+
+// Android App Links verification file
+// Replace the sha256_cert_fingerprints value with your production signing cert fingerprint.
+// Find it in: Google Play Console > Setup > App signing > App signing key certificate > SHA-256
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json([{
+    relation: ['delegate_permission/common.handle_all_urls'],
+    target: {
+      namespace: 'android_app',
+      package_name: 'com.dallinhull.groupthat',
+      sha256_cert_fingerprints: [
+        'REPLACE_WITH_YOUR_SHA256_FINGERPRINT',
+      ],
+    },
+  }]);
+});
+
+// Group invite landing page — shown when the app is NOT installed.
+// When the app IS installed, iOS/Android intercepts the URL before this page loads.
+app.get('/join/:token', (req, res) => {
+  const { token } = req.params;
+  const deepLink = `groupthat://join/${token}`;
+
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join a group on GroupThat</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F9FAFB; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
+    .card { background: white; border-radius: 24px; padding: 48px 32px; text-align: center; max-width: 360px; width: 100%; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .logo { width: 80px; height: 80px; background: #4A90E2; border-radius: 20px; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center; }
+    .logo svg { width: 44px; height: 44px; fill: white; }
+    h1 { font-size: 22px; font-weight: 700; color: #111827; margin-bottom: 8px; }
+    p { font-size: 15px; color: #6B7280; line-height: 1.5; margin-bottom: 32px; }
+    .spinner { width: 36px; height: 36px; border: 3px solid #E5E7EB; border-top-color: #4A90E2; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn { display: block; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 600; text-decoration: none; margin-bottom: 12px; }
+    .btn-ios { background: #000; color: white; }
+    .btn-android { background: #01875F; color: white; }
+    .btn-both { background: #4A90E2; color: white; }
+    #download { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+    </div>
+
+    <div id="opening">
+      <div class="spinner"></div>
+      <h1>Opening GroupThat...</h1>
+      <p>You've been invited to join a group.</p>
+    </div>
+
+    <div id="download">
+      <h1>Get GroupThat</h1>
+      <p>Download the app to join this group. After installing, tap your original link again to be added automatically.</p>
+      <a class="btn btn-ios" id="ios-btn" href="${APP_STORE_URL}">Download on the App Store</a>
+      <a class="btn btn-android" id="android-btn" href="${PLAY_STORE_URL}">Get it on Google Play</a>
+    </div>
+  </div>
+
+  <script>
+    const ua = navigator.userAgent;
+    const isIOS = /iPhone|iPad|iPod/.test(ua);
+    const isAndroid = /Android/.test(ua);
+    const deepLink = ${JSON.stringify(deepLink)};
+
+    // Write the deep link to clipboard so the app can pick it up on first launch
+    // (deferred deep link fallback for users who don't tap the link again after install)
+    try { navigator.clipboard.writeText(deepLink).catch(() => {}); } catch(e) {}
+
+    // Attempt to open the app via custom URL scheme.
+    // If the app is installed but Universal Links aren't set up yet, this catches it.
+    window.location.href = deepLink;
+
+    setTimeout(() => {
+      document.getElementById('opening').style.display = 'none';
+      document.getElementById('download').style.display = 'block';
+      if (isIOS) {
+        document.getElementById('android-btn').style.display = 'none';
+        window.location.href = '${APP_STORE_URL}';
+      } else if (isAndroid) {
+        document.getElementById('ios-btn').style.display = 'none';
+        window.location.href = '${PLAY_STORE_URL}';
+      }
+    }, 1500);
+  </script>
+</body>
+</html>`);
+});
+
+// General app download page — shared by users to invite friends to the app
+app.get('/download', (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GroupThat — Organize your group, not your calendar</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F9FAFB; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
+    .card { background: white; border-radius: 24px; padding: 48px 32px; text-align: center; max-width: 360px; width: 100%; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .logo { width: 80px; height: 80px; background: #4A90E2; border-radius: 20px; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center; }
+    .logo svg { width: 44px; height: 44px; fill: white; }
+    h1 { font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 8px; }
+    .tagline { font-size: 15px; color: #6B7280; line-height: 1.5; margin-bottom: 32px; }
+    .btn { display: block; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 600; text-decoration: none; margin-bottom: 12px; }
+    .btn-ios { background: #000; color: white; }
+    .btn-android { background: #01875F; color: white; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+    </div>
+    <h1>GroupThat</h1>
+    <p class="tagline">The easiest way to coordinate meetups with your group — no group chats, no endless polls.</p>
+    <a class="btn btn-ios" href="${APP_STORE_URL}">Download on the App Store</a>
+    <a class="btn btn-android" href="${PLAY_STORE_URL}">Get it on Google Play</a>
+  </div>
+</body>
+</html>`);
+});
+
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({ error: err.message || "Internal server error" });

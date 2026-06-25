@@ -19,7 +19,8 @@
       "usesAppleSignIn": true,
       "associatedDomains": [
         "applinks:relaxing-flounder-31.clerk.accounts.dev",
-        "webcredentials:relaxing-flounder-31.clerk.accounts.dev"
+        "webcredentials:relaxing-flounder-31.clerk.accounts.dev",
+        "applinks:gt-2-peach.vercel.app"
       ],
       "infoPlist": {
         "NSCameraUsageDescription": "GroupThat needs camera access to let you take a profile picture.",
@@ -49,7 +50,32 @@
         "READ_CONTACTS"
       ],
       "runtimeVersion": "1.2.6",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "gt-2-peach.vercel.app",
+              "pathPrefix": "/join"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "https",
+              "host": "gt-2-peach.vercel.app",
+              "pathPrefix": "/download"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",

@@ -659,7 +659,7 @@ export const generateInviteLink = asyncHandler(async (req, res) => {
         invite = await InviteToken.create({ token, groupId, createdBy: user._id, expiresAt });
     }
 
-    res.status(200).json({ link: `https://dhull0417.github.io/groupthat-testing/join.html?token=${invite.token}` });
+    res.status(200).json({ link: `https://gt-2-peach.vercel.app/join/${invite.token}` });
 });
 
 export const redeemInviteToken = asyncHandler(async (req, res) => {
