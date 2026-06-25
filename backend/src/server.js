@@ -71,7 +71,7 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
       namespace: 'android_app',
       package_name: 'com.dallinhull.groupthat',
       sha256_cert_fingerprints: [
-        'REPLACE_WITH_YOUR_SHA256_FINGERPRINT',
+        '2A:DC:47:BB:9C:A3:00:CD:22:CF:18:B6:32:93:47:7A:34:F0:A6:39:8B:90:16:D3:F4:0C:5A:3A:81:7B:94:1C',
       ],
     },
   }]);
