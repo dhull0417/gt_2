@@ -1,13 +1,13 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Animated, LayoutChangeEvent, TextInput } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Animated, LayoutChangeEvent, TextInput, Alert } from 'react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { useRsvp } from '@/hooks/useRsvp';
-import { Meetup, User, useApiClient, userApi } from '@/utils/api';
+import { Meetup, User, useApiClient, userApi, meetupApi } from '@/utils/api';
 import { useFocusEffect, useRouter, Link } from 'expo-router';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 
 type GroupedMeetups = {
@@ -109,11 +109,14 @@ const MeetupCard = ({
   meetup: Meetup;
   onPress: () => void;
   showRsvpButtons: boolean;
-  onRsvp: (status: 'in' | 'out') => void;
+  onRsvp: (status: 'in' | 'out', guestCount?: number, mute?: boolean) => void;
   isRsvping: boolean;
   currentUser: User | undefined;
   groupBorderColor?: string;
 }) => {
+  const [guestExpanded, setGuestExpanded] = useState(false);
+  const [localGuestCount, setLocalGuestCount] = useState(0);
+
   const isCancelled = meetup.status === 'cancelled';
   const isPast = new Date(meetup.date) < new Date();
   const isExpired = meetup.status === 'expired' || isPast;
@@ -215,30 +218,115 @@ const MeetupCard = ({
               </View>
             </View>
           ) : (
-            <View className="flex-row gap-4">
-              <TouchableOpacity
-                onPress={() => onRsvp('in')}
-                disabled={isRsvping}
-                className={`flex-1 py-3 rounded-xl items-center justify-center shadow-sm ${
-                    isWaitlisted ? 'bg-blue-600' :
-                    (isFull && !isIn) ? 'bg-orange-500' : 
-                    '' 
-                }`}
-                style={{ backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#4FD1C5' }}
-              >
-                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-                    {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => onRsvp('out')}
-                disabled={isRsvping}
-                className="flex-1 py-3 rounded-xl items-center justify-center shadow-sm"
-                style={{ backgroundColor: '#FF7A6E' }}
-              >
-                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
-              </TouchableOpacity>
-            </View>
+            <>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                {/* Split I'm In button: left 80% = RSVP in, right 20% = open guest counter */}
+                <View style={{
+                  flex: 1, flexDirection: 'row', borderRadius: 12,
+                  overflow: 'hidden', height: 48,
+                  backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#4FD1C5',
+                }}>
+                  <TouchableOpacity
+                    onPress={() => { setGuestExpanded(false); onRsvp('in', 0); }}
+                    disabled={isRsvping}
+                    style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
+                      {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.35)' }} />
+                  <TouchableOpacity
+                    onPress={() => { setLocalGuestCount(0); setGuestExpanded(v => !v); }}
+                    disabled={isRsvping}
+                    style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {guestExpanded
+                      ? <Feather name="x" size={18} color="white" />
+                      : <MaterialIcons name="group-add" size={20} color="white" />
+                    }
+                  </TouchableOpacity>
+                </View>
+                {/* Split I'm Out button: left 70% = RSVP out, right 30% = RSVP out + mute group */}
+                <View style={{
+                  flex: 1, flexDirection: 'row', borderRadius: 12,
+                  overflow: 'hidden', height: 48,
+                  backgroundColor: '#FF7A6E',
+                }}>
+                  <TouchableOpacity
+                    onPress={() => { setGuestExpanded(false); onRsvp('out'); }}
+                    disabled={isRsvping}
+                    style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
+                  </TouchableOpacity>
+                  <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.35)' }} />
+                  <TouchableOpacity
+                    onPress={() => { setGuestExpanded(false); onRsvp('out', 0, true); }}
+                    disabled={isRsvping}
+                    style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Feather name="bell-off" size={18} color="white" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Inline guest counter — expands below buttons when + is tapped */}
+              {guestExpanded && (
+                <View style={{ alignItems: 'center', marginTop: 10 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Add Guests?</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+                  <TouchableOpacity
+                    onPress={() => setLocalGuestCount(c => Math.max(0, c - 1))}
+                    disabled={localGuestCount === 0}
+                    style={{
+                      width: 36, height: 36, borderRadius: 18,
+                      backgroundColor: localGuestCount === 0 ? '#F9FAFB' : '#EEF6FF',
+                      borderWidth: 1.5,
+                      borderColor: localGuestCount === 0 ? '#E5E7EB' : '#93C5FD',
+                      alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name="minus" size={16} color={localGuestCount === 0 ? '#D1D5DB' : '#4A90E2'} />
+                  </TouchableOpacity>
+
+                  <Text style={{ fontSize: 24, fontWeight: '900', color: '#111827', minWidth: 28, textAlign: 'center' }}>
+                    {localGuestCount}
+                  </Text>
+
+                  <TouchableOpacity
+                    onPress={() => setLocalGuestCount(c => c + 1)}
+                    style={{
+                      width: 36, height: 36, borderRadius: 18,
+                      backgroundColor: '#EEF6FF',
+                      borderWidth: 1.5, borderColor: '#93C5FD',
+                      alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name="plus" size={16} color="#4A90E2" />
+                  </TouchableOpacity>
+
+                  {/* Confirm */}
+                  <TouchableOpacity
+                    onPress={() => { setGuestExpanded(false); onRsvp('in', localGuestCount); }}
+                    disabled={isRsvping}
+                    style={{
+                      width: 36, height: 36, borderRadius: 18,
+                      backgroundColor: '#4FD1C5',
+                      borderWidth: 1.5, borderColor: '#3FABA1',
+                      alignItems: 'center', justifyContent: 'center',
+                      marginLeft: 6,
+                    }}
+                  >
+                    {isRsvping
+                      ? <ActivityIndicator size="small" color="white" />
+                      : <Feather name="check" size={18} color="white" />
+                    }
+                  </TouchableOpacity>
+                </View>
+                </View>
+              )}
+            </>
           )}
         </View>
       )}
@@ -257,28 +345,29 @@ const RemovableCard = ({
 }) => {
   const opacity = useRef(new Animated.Value(1)).current;
   const heightAnim = useRef(new Animated.Value(0)).current;
-  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
+  const currentHeight = useRef<number>(0);
+  const [isAnimating, setIsAnimating] = useState(false);
 
+  // Always track the latest rendered height so the animation starts from the right value
   const onLayout = useCallback((e: LayoutChangeEvent) => {
-    if (measuredHeight === null) {
-      const h = e.nativeEvent.layout.height;
-      setMeasuredHeight(h);
-      heightAnim.setValue(h);
-    }
-  }, [measuredHeight]);
+    currentHeight.current = e.nativeEvent.layout.height;
+  }, []);
 
   useEffect(() => {
-    if (!isRemoving || measuredHeight === null) return;
+    if (!isRemoving) return;
+    // Snapshot the current height, lock it, then animate to 0
+    heightAnim.setValue(currentHeight.current);
+    setIsAnimating(true);
     Animated.parallel([
       Animated.timing(opacity, { toValue: 0, duration: 280, useNativeDriver: false }),
       Animated.timing(heightAnim, { toValue: 0, duration: 520, delay: 80, easing: t => t * t * (3 - 2 * t), useNativeDriver: false }),
     ]).start(() => onRemoved());
-  }, [isRemoving, measuredHeight]);
+  }, [isRemoving]);
 
   return (
     <Animated.View
       onLayout={onLayout}
-      style={measuredHeight !== null
+      style={isAnimating
         ? { height: heightAnim, overflow: 'hidden', opacity }
         : { opacity }
       }
@@ -308,6 +397,17 @@ const DashboardScreen = () => {
   const [isSavingZip, setIsSavingZip] = useState(false);
   const [zipCodeError, setZipCodeError] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    Animated.sequence([
+      Animated.timing(toastOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.delay(2500),
+      Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start(() => setToastMessage(null));
+  };
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
@@ -388,10 +488,22 @@ const DashboardScreen = () => {
     setSelectedMeetup(null);
   };
 
-  const handleDashboardRsvp = (meetupId: string, status: 'in' | 'out') => {
+  const handleDashboardRsvp = (meetup: Meetup, status: 'in' | 'out', guestCount = 0, mute = false) => {
     if (!currentUser) return;
-    rsvp({ meetupId, status }, {
-      onSuccess: () => setRemovingId(meetupId),
+    rsvp({ meetupId: meetup._id, status }, {
+      onSuccess: () => {
+        if (status === 'in' && guestCount > 0) {
+          meetupApi.setGuestCount(api, meetup._id, guestCount)
+            .then(() => queryClient.invalidateQueries({ queryKey: ['meetups'] }))
+            .catch(() => Alert.alert('Note', 'RSVP saved, but guests could not be added. Try from the meetup details.'));
+        }
+        if (mute) {
+          userApi.toggleGroupMute(api, meetup.group._id, 'untilNext')
+            .then(() => showToast(`${meetup.group.name} chat has been muted until the next Meetup`))
+            .catch(() => {});
+        }
+        setRemovingId(meetup._id);
+      },
     });
   };
 
@@ -456,7 +568,7 @@ const DashboardScreen = () => {
                       meetup={meetup}
                       onPress={() => handleOpenModal(meetup)}
                       showRsvpButtons={true}
-                      onRsvp={(status) => handleDashboardRsvp(meetup._id, status)}
+                      onRsvp={(status, guestCount, mute) => handleDashboardRsvp(meetup, status, guestCount, mute)}
                       isRsvping={isRsvping}
                       currentUser={currentUser}
                       groupBorderColor={hashGroupColor(meetup.group._id)}
@@ -633,6 +745,33 @@ const DashboardScreen = () => {
           </View>
         </View>
       </Modal>
+      {toastMessage && (
+        <Animated.View style={{
+          position: 'absolute',
+          top: 0, bottom: 0, left: 0, right: 0,
+          justifyContent: 'center',
+          alignItems: 'center',
+          opacity: toastOpacity,
+          pointerEvents: 'none',
+        }}>
+          <View style={{
+            backgroundColor: '#1F2937',
+            borderRadius: 14,
+            paddingVertical: 16,
+            paddingHorizontal: 24,
+            marginHorizontal: 32,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.22,
+            shadowRadius: 10,
+            elevation: 8,
+          }}>
+            <Text style={{ color: 'white', fontWeight: '600', fontSize: 15, textAlign: 'center' }}>
+              {toastMessage}
+            </Text>
+          </View>
+        </Animated.View>
+      )}
     </SafeAreaView>
   );
 };
