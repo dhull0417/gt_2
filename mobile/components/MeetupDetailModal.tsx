@@ -13,7 +13,7 @@ import {
     KeyboardAvoidingView,
     Platform
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
 import { Meetup, User, useApiClient, userApi, meetupApi } from '@/utils/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
@@ -68,6 +68,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const [localGuestCount, setLocalGuestCount] = useState(0);
     const [isSettingGuests, setIsSettingGuests] = useState(false);
+    const [guestExpanded, setGuestExpanded] = useState(false);
 
     useEffect(() => {
         if (!isSettingGuests && meetup && currentUser) {
@@ -147,8 +148,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         }
     };
 
-    const handleIncGuest = () => performSetGuests(localGuestCount + 1);
-    const handleDecGuest = () => { if (localGuestCount > 0) performSetGuests(localGuestCount - 1); };
+
 
     const handleRsvpAction = (status: 'in' | 'out') => {
         if (isReadOnly) return;
@@ -171,6 +171,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             return;
         }
         performRsvp(status);
+    };
+
+    const handleRsvpOutAndMute = () => {
+        setGuestExpanded(false);
+        handleRsvpAction('out');
+        userApi.toggleGroupMute(api, meetup.group._id, 'untilNext').catch(() => {});
     };
 
     const handleGoToChat = () => {
@@ -295,8 +301,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             {meetup.name}
                         </Text>
                         <TouchableOpacity onPress={handleGoToChat} style={styles.chatButton} activeOpacity={0.7}>
-                            <Text style={styles.chatButtonText}>Chat</Text>
-                            <Feather name="arrow-right" size={14} color="#4FD1C5" style={{ marginLeft: 4 }} />
+                            <Feather name="message-circle" size={22} color="#4A90E2" />
                         </TouchableOpacity>
                     </View>
                     
@@ -339,51 +344,116 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         ) : (
                             <>
                                 <View style={{ flexDirection: 'row', gap: 12 }}>
-                                    <TouchableOpacity
-                                        onPress={() => handleRsvpAction('in')}
-                                        disabled={isRsvping}
-                                        style={[
-                                            styles.rsvpButton, styles.rsvpIn,
-                                            isWaitlisted && { backgroundColor: '#2563EB', borderBottomColor: '#1E40AF' },
-                                            (isFull && !isIn) && { backgroundColor: '#F97316', borderBottomColor: '#C2410C' },
-                                            isIn && { backgroundColor: '#4FD1C5', borderBottomColor: '#3FABA1' }
-                                        ]}
-                                    >
-                                        <Text style={[styles.rsvpButtonText, (!isIn && !isWaitlisted && !isFull) && { color: '#4FD1C5' }]}>
-                                            {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
-                                        </Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        onPress={() => handleRsvpAction('out')}
-                                        disabled={isRsvping}
-                                        style={[styles.rsvpButton, styles.rsvpOut, isOut && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
-                                    >
-                                        <Text style={[styles.rsvpButtonText, !isOut && { color: '#FF7A6E' }]}>I'm Out</Text>
-                                    </TouchableOpacity>
+                                    {/* Split I'm In button */}
+                                    <View style={{
+                                        flex: 1, flexDirection: 'row', borderRadius: 12,
+                                        overflow: 'hidden', height: 48,
+                                        backgroundColor: isIn ? '#4FD1C5' : isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#F9FAFB',
+                                        borderWidth: (isIn || isWaitlisted || (isFull && !isIn)) ? 0 : 1.5,
+                                        borderColor: '#4FD1C5',
+                                    }}>
+                                        <TouchableOpacity
+                                            onPress={() => { setGuestExpanded(false); handleRsvpAction('in'); }}
+                                            disabled={isRsvping}
+                                            style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
+                                        >
+                                            <Text style={{ color: (isIn || isWaitlisted || (isFull && !isIn)) ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 16 }}>
+                                                {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+                                            </Text>
+                                        </TouchableOpacity>
+                                        <View style={{ width: 1, backgroundColor: (isIn || isWaitlisted || (isFull && !isIn)) ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />
+                                        <TouchableOpacity
+                                            onPress={() => setGuestExpanded(v => !v)}
+                                            disabled={isRsvping}
+                                            style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
+                                        >
+                                            {guestExpanded
+                                                ? <Feather name="x" size={18} color={(isIn || isWaitlisted || (isFull && !isIn)) ? 'white' : '#4FD1C5'} />
+                                                : <MaterialIcons name="group-add" size={20} color={(isIn || isWaitlisted || (isFull && !isIn)) ? 'white' : '#4FD1C5'} />
+                                            }
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    {/* Split I'm Out button */}
+                                    <View style={{
+                                        flex: 1, flexDirection: 'row', borderRadius: 12,
+                                        overflow: 'hidden', height: 48,
+                                        backgroundColor: isOut ? '#FF7A6E' : '#F9FAFB',
+                                        borderWidth: isOut ? 0 : 1.5,
+                                        borderColor: '#FF7A6E',
+                                    }}>
+                                        <TouchableOpacity
+                                            onPress={() => { setGuestExpanded(false); handleRsvpAction('out'); }}
+                                            disabled={isRsvping}
+                                            style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
+                                        >
+                                            <Text style={{ color: isOut ? 'white' : '#FF7A6E', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
+                                        </TouchableOpacity>
+                                        <View style={{ width: 1, backgroundColor: isOut ? 'rgba(255,255,255,0.35)' : '#FFE4E1' }} />
+                                        <TouchableOpacity
+                                            onPress={handleRsvpOutAndMute}
+                                            disabled={isRsvping}
+                                            style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
+                                        >
+                                            <Feather name="bell-off" size={18} color={isOut ? 'white' : '#FF7A6E'} />
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
-                                {isIn && (
-                                    <View style={styles.guestSection}>
-                                        <Text style={styles.guestSectionLabel}>Add Guest(s)?</Text>
-                                        <View style={styles.guestCounter}>
+
+                                {/* Inline guest counter */}
+                                {guestExpanded && (
+                                    <View style={{ alignItems: 'center', marginTop: 10 }}>
+                                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Add Guests?</Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
                                             <TouchableOpacity
-                                                style={[styles.guestBtn, (localGuestCount === 0 || isSettingGuests) && styles.guestBtnDisabled]}
-                                                onPress={handleDecGuest}
-                                                disabled={localGuestCount === 0 || isSettingGuests}
+                                                onPress={() => setLocalGuestCount(c => Math.max(0, c - 1))}
+                                                disabled={localGuestCount === 0}
+                                                style={{
+                                                    width: 36, height: 36, borderRadius: 18,
+                                                    backgroundColor: localGuestCount === 0 ? '#F9FAFB' : '#EEF6FF',
+                                                    borderWidth: 1.5,
+                                                    borderColor: localGuestCount === 0 ? '#E5E7EB' : '#93C5FD',
+                                                    alignItems: 'center', justifyContent: 'center',
+                                                }}
                                             >
-                                                <Feather name="minus" size={18} color={localGuestCount === 0 || isSettingGuests ? '#D1D5DB' : '#4A90E2'} />
+                                                <Feather name="minus" size={16} color={localGuestCount === 0 ? '#D1D5DB' : '#4A90E2'} />
                                             </TouchableOpacity>
-                                            <View style={styles.guestCountBox}>
-                                                {isSettingGuests
-                                                    ? <ActivityIndicator size="small" color="#4A90E2" />
-                                                    : <Text style={styles.guestCountText}>{localGuestCount}</Text>
-                                                }
-                                            </View>
+
+                                            <Text style={{ fontSize: 24, fontWeight: '900', color: '#111827', minWidth: 28, textAlign: 'center' }}>
+                                                {localGuestCount}
+                                            </Text>
+
                                             <TouchableOpacity
-                                                style={[styles.guestBtn, isSettingGuests && styles.guestBtnDisabled]}
-                                                onPress={handleIncGuest}
-                                                disabled={isSettingGuests}
+                                                onPress={() => setLocalGuestCount(c => c + 1)}
+                                                style={{
+                                                    width: 36, height: 36, borderRadius: 18,
+                                                    backgroundColor: '#EEF6FF',
+                                                    borderWidth: 1.5, borderColor: '#93C5FD',
+                                                    alignItems: 'center', justifyContent: 'center',
+                                                }}
                                             >
-                                                <Feather name="plus" size={18} color={isSettingGuests ? '#D1D5DB' : '#4A90E2'} />
+                                                <Feather name="plus" size={16} color="#4A90E2" />
+                                            </TouchableOpacity>
+
+                                            <TouchableOpacity
+                                                onPress={() => {
+                                                    setGuestExpanded(false);
+                                                    performSetGuests(localGuestCount);
+                                                    if (!isIn) performRsvp('in');
+                                                }}
+                                                disabled={isRsvping || isSettingGuests}
+                                                style={{
+                                                    width: 36, height: 36, borderRadius: 18,
+                                                    backgroundColor: '#4FD1C5',
+                                                    borderWidth: 1.5, borderColor: '#3FABA1',
+                                                    alignItems: 'center', justifyContent: 'center',
+                                                    marginLeft: 6,
+                                                }}
+                                            >
+                                                {(isRsvping || isSettingGuests)
+                                                    ? <ActivityIndicator size="small" color="white" />
+                                                    : <Feather name="check" size={18} color="white" />
+                                                }
                                             </TouchableOpacity>
                                         </View>
                                     </View>
@@ -579,22 +649,16 @@ const styles = StyleSheet.create({
     titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
     meetupTitle: { fontSize: 28, fontWeight: '900', color: '#111827', letterSpacing: -1, lineHeight: 32, flex: 1 },
     // Chat Button Styling
-    chatButton: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        backgroundColor: '#EEF2FF', 
-        paddingHorizontal: 12, 
-        paddingVertical: 6, 
-        borderRadius: 8, 
-        borderWidth: 1, 
+    chatButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#EEF2FF',
+        padding: 8,
+        borderRadius: 8,
+        borderWidth: 1,
         borderColor: '#C7D2FE',
         marginLeft: 12,
         marginTop: 2
-    },
-    chatButtonText: { 
-        color: '#4A90E2', 
-        fontWeight: 'bold', 
-        fontSize: 14 
     },
     strikeThrough: { textDecorationLine: 'line-through', color: '#D1D5DB' },
     detailsCard: { backgroundColor: '#F9FAFB', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#F3F4F6' },
@@ -603,18 +667,7 @@ const styles = StyleSheet.create({
     detailLabel: { fontSize: 11, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 0 },
     detailValue: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
     detailSeparator: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 12 },
-    rsvpButton: { flex: 1, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 4 },
-    guestSection: { marginTop: 20, alignItems: 'center' },
-    guestSectionLabel: { fontSize: 12, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
-    guestCounter: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-    guestBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#EEF6FF', borderWidth: 1.5, borderColor: '#93C5FD', alignItems: 'center', justifyContent: 'center' },
-    guestBtnDisabled: { backgroundColor: '#F9FAFB', borderColor: '#E5E7EB' },
-    guestCountBox: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-    guestCountText: { fontSize: 26, fontWeight: '900', color: '#111827' },
     guestAvatarPlaceholder: { backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-    rsvpIn: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
-    rsvpOut: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
-    rsvpButtonText: { color: 'white', fontWeight: '900', fontSize: 14, textTransform: 'uppercase' },
     rsvpLockedBanner: { 
     flex: 1, 
     alignItems: 'center', 
