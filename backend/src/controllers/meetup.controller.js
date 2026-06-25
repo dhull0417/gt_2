@@ -53,7 +53,7 @@ export const getMeetups = asyncHandler(async (req, res) => {
         ]
     })
         .populate('group', 'name owner moderators timezone defaultLocation visibilityLeadDays')
-        .populate('members', 'firstName lastName username profilePicture')
+        .populate('members', 'firstName lastName username profilePicture clerkId')
         .sort({ date: 1 });
 
     res.status(200).json(meetups);
@@ -157,7 +157,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     // Re-query with populations to return a fresh representation to the frontend hook
     const updatedMeetup = await Meetup.findById(meetupId)
         .populate('group', 'name owner moderators timezone defaultLocation')
-        .populate('members', 'firstName lastName username profilePicture');
+        .populate('members', 'firstName lastName username profilePicture clerkId');
 
     res.status(200).json({ message: "RSVP updated successfully.", meetup: updatedMeetup });
 });

@@ -66,6 +66,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const { mutate: rsvp, isPending: isRsvping } = useRsvp();
 
+    const [localGuestCount, setLocalGuestCount] = useState(0);
+    const [isSettingGuests, setIsSettingGuests] = useState(false);
+
+    useEffect(() => {
+        if (!isSettingGuests && meetup && currentUser) {
+            const entry = meetup.guests?.find(g => g.userId === currentUser.clerkId);
+            setLocalGuestCount(entry?.count ?? 0);
+        }
+    }, [meetup, currentUser, isSettingGuests]);
+
     const waitlistUsers = (meetup?.waitlist || [])
         .map(u => (meetup?.members || []).find(m => m._id === getUserId(u)))
         .filter((u): u is User => !!u);
@@ -104,19 +114,63 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const goingUsers = (meetup.members || []).filter(m => meetup.in?.some(u => getUserId(u) === m._id));
     const outUsers = (meetup.members || []).filter(m => meetup.out?.some(u => getUserId(u) === m._id));
+    const totalGuestsForInTab = goingUsers.reduce((sum, user) => {
+        const entry = (meetup.guests || []).find(g => g.userId === (user as any).clerkId);
+        return sum + (entry?.count ?? 0);
+    }, 0);
 
-    const handleRsvpAction = (status: 'in' | 'out') => {
-        if (isReadOnly) return;
+    const performRsvp = (status: 'in' | 'out') => {
         rsvp({ meetupId: meetup._id, status }, {
             onSuccess: (data: any) => {
                 queryClient.invalidateQueries({ queryKey: ['meetups'] });
                 if (data.meetup) setMeetup(data.meetup);
             },
             onError: (error: any) => {
-                console.error("RSVP Error:", error.response?.data || error.message || error);
                 Alert.alert("RSVP Failed", error.response?.data?.error || "An error occurred while updating your RSVP.");
             }
         });
+    };
+
+    const performSetGuests = async (count: number) => {
+        setLocalGuestCount(count);
+        setIsSettingGuests(true);
+        try {
+            const result = await meetupApi.setGuestCount(api, meetup._id, count);
+            queryClient.invalidateQueries({ queryKey: ['meetups'] });
+            if (result.meetup) setMeetup(result.meetup);
+        } catch {
+            const prev = meetup.guests?.find(g => g.userId === currentUser.clerkId)?.count ?? 0;
+            setLocalGuestCount(prev);
+            Alert.alert('Error', 'Could not update your guests. Please try again.');
+        } finally {
+            setIsSettingGuests(false);
+        }
+    };
+
+    const handleIncGuest = () => performSetGuests(localGuestCount + 1);
+    const handleDecGuest = () => { if (localGuestCount > 0) performSetGuests(localGuestCount - 1); };
+
+    const handleRsvpAction = (status: 'in' | 'out') => {
+        if (isReadOnly) return;
+        if (status === 'out' && localGuestCount > 0) {
+            Alert.alert(
+                'Remove Guests?',
+                'Remove your guests from this Meetup too?',
+                [
+                    { text: 'Keep Guests', onPress: () => performRsvp('out') },
+                    {
+                        text: 'Remove Guests',
+                        style: 'destructive',
+                        onPress: async () => {
+                            await performSetGuests(0);
+                            performRsvp('out');
+                        },
+                    },
+                ]
+            );
+            return;
+        }
+        performRsvp(status);
     };
 
     const handleGoToChat = () => {
@@ -271,49 +325,78 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
                 {/* Hide RSVP Actions if Read Only */}
                 {!isReadOnly && (
-    <View style={styles.rsvpRow}>
-        {isRsvpLocked ? (
-            <View style={styles.rsvpLockedBanner}>
-                <Feather name="lock" size={16} color="#6B7280" />
-                <Text style={styles.rsvpLockedTitle}>RSVPs Not Open Yet</Text>
-                <Text style={styles.rsvpLockedSubtitle}>
-                    Opens {new Date(meetup.rsvpOpenDate!).toLocaleDateString(undefined, {
-                        weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone
-                    })}
-                </Text>
-            </View>
-        ) : (
-            <>
-                <TouchableOpacity 
-                    onPress={() => handleRsvpAction('in')}
-                    disabled={isRsvping}
-                    style={[
-                        styles.rsvpButton, styles.rsvpIn,
-                        isWaitlisted && { backgroundColor: '#2563EB', borderBottomColor: '#1E40AF' },
-                        (isFull && !isIn) && { backgroundColor: '#F97316', borderBottomColor: '#C2410C' },
-                        isIn && { backgroundColor: '#4FD1C5', borderBottomColor: '#3FABA1' }
-                    ]}
-                >
-                    <Text style={[styles.rsvpButtonText, (!isIn && !isWaitlisted && !isFull) && { color: '#4FD1C5' }]}>
-                        {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    onPress={() => handleRsvpAction('out')}
-                    disabled={isRsvping}
-                    style={[styles.rsvpButton, styles.rsvpOut, isOut && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
-                >
-                    <Text style={[styles.rsvpButtonText, !isOut && { color: '#FF7A6E' }]}>I'm Out</Text>
-                </TouchableOpacity>
-            </>
-            )}
-        </View>
-    )}
+                    <View style={{ marginTop: 24, marginBottom: 60 }}>
+                        {isRsvpLocked ? (
+                            <View style={styles.rsvpLockedBanner}>
+                                <Feather name="lock" size={16} color="#6B7280" />
+                                <Text style={styles.rsvpLockedTitle}>RSVPs Not Open Yet</Text>
+                                <Text style={styles.rsvpLockedSubtitle}>
+                                    Opens {new Date(meetup.rsvpOpenDate!).toLocaleDateString(undefined, {
+                                        weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone
+                                    })}
+                                </Text>
+                            </View>
+                        ) : (
+                            <>
+                                <View style={{ flexDirection: 'row', gap: 12 }}>
+                                    <TouchableOpacity
+                                        onPress={() => handleRsvpAction('in')}
+                                        disabled={isRsvping}
+                                        style={[
+                                            styles.rsvpButton, styles.rsvpIn,
+                                            isWaitlisted && { backgroundColor: '#2563EB', borderBottomColor: '#1E40AF' },
+                                            (isFull && !isIn) && { backgroundColor: '#F97316', borderBottomColor: '#C2410C' },
+                                            isIn && { backgroundColor: '#4FD1C5', borderBottomColor: '#3FABA1' }
+                                        ]}
+                                    >
+                                        <Text style={[styles.rsvpButtonText, (!isIn && !isWaitlisted && !isFull) && { color: '#4FD1C5' }]}>
+                                            {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        onPress={() => handleRsvpAction('out')}
+                                        disabled={isRsvping}
+                                        style={[styles.rsvpButton, styles.rsvpOut, isOut && { backgroundColor: '#FF7A6E', borderBottomColor: '#B91C1C' }]}
+                                    >
+                                        <Text style={[styles.rsvpButtonText, !isOut && { color: '#FF7A6E' }]}>I'm Out</Text>
+                                    </TouchableOpacity>
+                                </View>
+                                {isIn && (
+                                    <View style={styles.guestSection}>
+                                        <Text style={styles.guestSectionLabel}>Add Guest(s)?</Text>
+                                        <View style={styles.guestCounter}>
+                                            <TouchableOpacity
+                                                style={[styles.guestBtn, (localGuestCount === 0 || isSettingGuests) && styles.guestBtnDisabled]}
+                                                onPress={handleDecGuest}
+                                                disabled={localGuestCount === 0 || isSettingGuests}
+                                            >
+                                                <Feather name="minus" size={18} color={localGuestCount === 0 || isSettingGuests ? '#D1D5DB' : '#4A90E2'} />
+                                            </TouchableOpacity>
+                                            <View style={styles.guestCountBox}>
+                                                {isSettingGuests
+                                                    ? <ActivityIndicator size="small" color="#4A90E2" />
+                                                    : <Text style={styles.guestCountText}>{localGuestCount}</Text>
+                                                }
+                                            </View>
+                                            <TouchableOpacity
+                                                style={[styles.guestBtn, isSettingGuests && styles.guestBtnDisabled]}
+                                                onPress={handleIncGuest}
+                                                disabled={isSettingGuests}
+                                            >
+                                                <Feather name="plus" size={18} color={isSettingGuests ? '#D1D5DB' : '#4A90E2'} />
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                )}
+                            </>
+                        )}
+                    </View>
+                )}
 
                 <View style={{ marginBottom: 40 }}>
                     <View style={styles.tabContainer}>
                         <TouchableOpacity onPress={() => setActiveTab('in')} style={[styles.tabItem, activeTab === 'in' && { borderBottomColor: '#4FD1C5' }]}>
-                            <Text style={[styles.tabText, activeTab === 'in' && { color: '#4FD1C5' }]}>In ({goingUsers.length})</Text>
+                            <Text style={[styles.tabText, activeTab === 'in' && { color: '#4FD1C5' }]}>In ({goingUsers.length + totalGuestsForInTab})</Text>
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => setActiveTab('out')} style={[styles.tabItem, activeTab === 'out' && { borderBottomColor: '#FF7A6E' }]}>
                             <Text style={[styles.tabText, activeTab === 'out' && { color: '#FF7A6E' }]}>Out ({outUsers.length})</Text>
@@ -326,7 +409,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </View>
 
                     <View style={styles.listContainer}>
-                        {activeTab === 'in' && goingUsers.length === 0 && (
+                        {activeTab === 'in' && goingUsers.length === 0 && totalGuestsForInTab === 0 && (
                             <Text style={styles.emptyText}>No one is in yet.</Text>
                         )}
                         {activeTab === 'out' && outUsers.length === 0 && (
@@ -336,15 +419,31 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             <Text style={styles.emptyText}>Waitlist is empty.</Text>
                         )}
 
-                        {activeTab === 'in' && goingUsers.map(user => (
-                            <View key={user._id} style={styles.memberRow}>
-                                {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
-                                <View style={styles.memberInfo}>
-                                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
-                                    <Text style={styles.memberUsername}>@{user.username}</Text>
-                                </View>
-                            </View>
-                        ))}
+                        {activeTab === 'in' && goingUsers.map(user => {
+                            const guestEntry = meetup.guests?.find(g => g.userId === (user as any).clerkId);
+                            const userGuestCount = guestEntry?.count ?? 0;
+                            return (
+                                <React.Fragment key={user._id}>
+                                    <View style={styles.memberRow}>
+                                        {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
+                                        <View style={styles.memberInfo}>
+                                            <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
+                                            <Text style={styles.memberUsername}>@{user.username}</Text>
+                                        </View>
+                                    </View>
+                                    {Array.from({ length: userGuestCount }).map((_, i) => (
+                                        <View key={`${user._id}-g-${i}`} style={styles.memberRow}>
+                                            <View style={[styles.avatar, styles.guestAvatarPlaceholder]}>
+                                                <Feather name="user" size={18} color="#9CA3AF" />
+                                            </View>
+                                            <View style={styles.memberInfo}>
+                                                <Text style={styles.memberName}>{user.firstName} {user.lastName}'s Guest</Text>
+                                            </View>
+                                        </View>
+                                    ))}
+                                </React.Fragment>
+                            );
+                        })}
 
                         {activeTab === 'out' && outUsers.map(user => (
                             <View key={user._id} style={styles.memberRow}>
@@ -504,8 +603,15 @@ const styles = StyleSheet.create({
     detailLabel: { fontSize: 11, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 0 },
     detailValue: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
     detailSeparator: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 12 },
-    rsvpRow: { flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 60},
     rsvpButton: { flex: 1, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 4 },
+    guestSection: { marginTop: 20, alignItems: 'center' },
+    guestSectionLabel: { fontSize: 12, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
+    guestCounter: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+    guestBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#EEF6FF', borderWidth: 1.5, borderColor: '#93C5FD', alignItems: 'center', justifyContent: 'center' },
+    guestBtnDisabled: { backgroundColor: '#F9FAFB', borderColor: '#E5E7EB' },
+    guestCountBox: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+    guestCountText: { fontSize: 26, fontWeight: '900', color: '#111827' },
+    guestAvatarPlaceholder: { backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
     rsvpIn: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
     rsvpOut: { backgroundColor: '#F3F4F6', borderBottomColor: '#D1D5DB' },
     rsvpButtonText: { color: 'white', fontWeight: '900', fontSize: 14, textTransform: 'uppercase' },

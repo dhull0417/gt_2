@@ -19,6 +19,11 @@ const meetupSchema = new mongoose.Schema({
   visibilityDate: { type: Date },
   rsvpOpenDate: { type: Date },
   rsvpNotified: { type: Boolean, default: false },
+  guests: [{
+    userId: { type: String },  // clerkId of the member who brought guests
+    count: { type: Number, default: 0, min: 0 },
+    _id: false,
+  }],
 }, { timestamps: true });
 
 const Meetup = mongoose.model("Meetup", meetupSchema);

@@ -107,6 +107,7 @@ useEffect(() => {
           contentContainerStyle={styles.listContentContainer}
           viewabilityConfigCallbackPairs={hourViewabilityConfigCallbackPairs.current}
           getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
+          nestedScrollEnabled
         />
 
         <FlatList
@@ -121,6 +122,7 @@ useEffect(() => {
           contentContainerStyle={styles.listContentContainer}
           viewabilityConfigCallbackPairs={minuteViewabilityConfigCallbackPairs.current}
           getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
+          nestedScrollEnabled
         />
 
         <FlatList
@@ -135,6 +137,7 @@ useEffect(() => {
           contentContainerStyle={styles.listContentContainer}
           viewabilityConfigCallbackPairs={periodViewabilityConfigCallbackPairs.current}
           getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
+          nestedScrollEnabled
         />
 
         <View style={styles.highlightView} pointerEvents="none" />

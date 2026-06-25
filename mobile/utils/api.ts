@@ -104,8 +104,9 @@ export interface Meetup {
   in: (User | string)[];
   out: (User | string)[];
   waitlist: (User | string)[];
-  visibilityDate?: string; 
+  visibilityDate?: string;
   rsvpOpenDate?: string;
+  guests?: { userId: string; count: number }[];
 }
 
 export interface Notification {
@@ -331,7 +332,11 @@ export const meetupApi = {
   cancelMeetup: async (api: AxiosInstance, meetupId: string): Promise<{ message: string }> => {
     const response = await api.patch(`/api/meetups/${meetupId}/cancel`);
     return response.data;
-  }
+  },
+  setGuestCount: async (api: AxiosInstance, meetupId: string, count: number): Promise<{ meetup: Meetup }> => {
+    const response = await api.patch<{ meetup: Meetup }>(`/api/meetups/${meetupId}/guests`, { count });
+    return response.data;
+  },
 };
 
 export const notificationApi = {

@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, Schedule, useApiClient, userApi, groupApi } from '@/utils/api';
@@ -33,6 +33,7 @@ const GroupSettings = () => {
   const router = useRouter();
   const api = useApiClient();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
 
   const { data: group, isLoading: isLoadingGroup } = useGetGroupDetails(id);
   const { data: currentUser, isLoading: isLoadingUser } = useQuery<User, Error>({ 
@@ -493,11 +494,11 @@ const GroupSettings = () => {
       {/* Edit Moderators Modal */}
       <Modal
         visible={isEditingMods}
-        transparent={false} // Set to false to allow SafeAreaView to correctly apply top inset
+        transparent={false}
         animationType="slide"
         onRequestClose={() => setIsEditingMods(false)}
       >
-        <SafeAreaView style={styles.fullModalContainer} edges={['top', 'left', 'right', 'bottom']}>
+        <View style={[styles.fullModalContainer, { paddingTop: insets.top }]}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setIsEditingMods(false)} style={styles.headerIconButton}>
               <Feather name="x" size={24} color="#374151" />
@@ -522,10 +523,10 @@ const GroupSettings = () => {
               const groupOwnerId = ((group?.owner as any)?._id || group?.owner || "").toString();
               const isOwner = mId === groupOwnerId;
               const isSelected = selectedModIds.includes(mId);
-              
+
               return (
-                <TouchableOpacity 
-                  style={[styles.selectMemberRow, isSelected && !isOwner && styles.selectMemberRowActive]} 
+                <TouchableOpacity
+                  style={[styles.selectMemberRow, isSelected && !isOwner && styles.selectMemberRowActive]}
                   onPress={() => !isOwner && setSelectedModIds(p => p.includes(mId) ? p.filter(id => id !== mId) : [...p, mId])}
                   disabled={isOwner || !isUserOwner}
                   activeOpacity={0.8}
@@ -537,7 +538,7 @@ const GroupSettings = () => {
                       <Text style={[styles.memberRole, isSelected && !isOwner && styles.textWhite70]}>{isOwner ? 'Owner' : isSelected ? 'Moderator' : 'Member'}</Text>
                     </View>
                   </View>
-                  
+
                   {isOwner ? (
                     <View style={styles.ownerBadgeShield}>
                       <Feather name="shield" size={16} color="#4A90E2" />
@@ -551,17 +552,17 @@ const GroupSettings = () => {
               );
             }}
           />
-        </SafeAreaView>
+        </View>
       </Modal>
 
       {/* Remove Members Modal */}
       <Modal
         visible={isEditingMembers}
-        transparent={false} // Set to false to allow SafeAreaView to correctly apply top inset
+        transparent={false}
         animationType="slide"
         onRequestClose={() => setIsEditingMembers(false)}
       >
-        <SafeAreaView style={styles.fullModalContainer} edges={['top', 'left', 'right', 'bottom']}>
+        <View style={[styles.fullModalContainer, { paddingTop: insets.top }]}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setIsEditingMembers(false)} style={styles.headerIconButton}>
               <Feather name="chevron-down" size={28} color="#374151" />
@@ -598,7 +599,7 @@ const GroupSettings = () => {
               );
             }}
           />
-        </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
