@@ -1,5 +1,36 @@
 import { DateTime } from "luxon";
 
+const parseLeadTime = (timeStr) => {
+  if (!timeStr) return { hours: 9, minutes: 0 };
+  const [time, modifier] = timeStr.split(' ');
+  let [hours, minutes] = time.split(':').map(Number);
+  if (modifier === 'PM' && hours < 12) hours += 12;
+  if (modifier === 'AM' && hours === 12) hours = 0;
+  return { hours, minutes };
+};
+
+// Returns the UTC datetime when the next ungenerated meetup for a given
+// routine/dtEntry should be created, based on the last anchor date processed.
+export const computeNextGenerationAt = (group, lastAnchorDate, routine, dtEntry) => {
+  const { hours: leadH, minutes: leadM } = parseLeadTime(group.generationLeadTime || "09:00 AM");
+  const anchor = lastAnchorDate || new Date();
+
+  const nextOccurrence = calculateNextMeetupDate(
+    routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
+    dtEntry.time,
+    group.timezone,
+    routine.frequency,
+    anchor,
+    routine.frequency === 'ordinal' ? routine.rules?.[0] : null
+  );
+
+  return DateTime.fromJSDate(nextOccurrence)
+    .setZone(group.timezone)
+    .minus({ days: group.generationLeadDays || 1 })
+    .set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 })
+    .toJSDate();
+};
+
 export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fromDate = null, ordinalConfig = null) => {
   const [timeStr, period] = time.split(' ');
   let [hours, minutes] = timeStr.split(':').map(Number);

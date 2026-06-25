@@ -7,7 +7,7 @@ import InviteToken from "../models/inviteToken.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
-import { calculateNextMeetupDate } from "../utils/date.utils.js";
+import { calculateNextMeetupDate, computeNextGenerationAt } from "../utils/date.utils.js";
 import { notifyUsers } from "../utils/push.notifications.js";
 import { DateTime } from "luxon";
 
@@ -116,11 +116,11 @@ export const createGroup = asyncHandler(async (req, res) => {
   // Initial Generation with Window Filling
   if (newGroup.schedule && newGroup.schedule.routines) {
     try{
-        const groupToUse = newGroup; // NOTE: Change to `group` in updateGroupSchedule
-          const timezoneToUse = timezone; // NOTE: Change to `group.timezone` in updateGroupSchedule
-          
+        const groupToUse = newGroup;
+          const timezoneToUse = timezone;
+
           const now = DateTime.now().setZone(timezoneToUse);
-          const kickoffDate = groupToUse.schedule.startDate 
+          const kickoffDate = groupToUse.schedule.startDate
               ? DateTime.fromJSDate(groupToUse.schedule.startDate, { zone: 'utc' })
                   .setZone(timezoneToUse, { keepLocalTime: true })
                   .startOf('day')
@@ -128,6 +128,7 @@ export const createGroup = asyncHandler(async (req, res) => {
               : now.startOf('day').toJSDate();
 
           const windowEndDT = now.plus({ days: 30 }).endOf('day');
+          let earliestNextTrigger = null;
 
           for (const routine of groupToUse.schedule.routines) {
               for (const dtEntry of routine.dayTimes) {
@@ -135,11 +136,11 @@ export const createGroup = asyncHandler(async (req, res) => {
                   let fillingWindow = true;
                   let loopSafety = 0;
 
-                  while (fillingWindow && loopSafety < 100) { 
+                  while (fillingWindow && loopSafety < 100) {
                       const nextDate = calculateNextMeetupDate(
-                          routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
-                          dtEntry.time, 
-                          timezoneToUse, 
+                          routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
+                          dtEntry.time,
+                          timezoneToUse,
                           routine.frequency,
                           currentAnchor,
                           routine.frequency === 'ordinal' ? routine.rules?.[0] : null
@@ -158,9 +159,8 @@ export const createGroup = asyncHandler(async (req, res) => {
                           break;
                       }
 
-                      // Check existence to prevent dupes
-                      const alreadyExists = await Meetup.findOne({ 
-                          group: groupToUse._id, 
+                      const alreadyExists = await Meetup.findOne({
+                          group: groupToUse._id,
                           date: nextDate,
                           time: dtEntry.time
                       });
@@ -187,15 +187,26 @@ export const createGroup = asyncHandler(async (req, res) => {
                               undecided: uniqueMemberIds,
                               capacity: groupToUse.defaultCapacity,
                               isOverride: false,
+                              startsAt: nextDate,
                               visibilityDate: visibilityDT.toJSDate(),
                               rsvpOpenDate: rsvpDT.toJSDate()
                           });
                       }
-                      
+
                       currentAnchor = nextDate;
                       loopSafety++;
                   }
+
+                  const trigger = computeNextGenerationAt(groupToUse, currentAnchor, routine, dtEntry);
+                  if (!earliestNextTrigger || trigger < earliestNextTrigger) {
+                      earliestNextTrigger = trigger;
+                  }
               }
+          }
+
+          if (earliestNextTrigger) {
+              newGroup.nextGenerationAt = earliestNextTrigger;
+              await newGroup.save();
           }
       } catch (err) { console.error("Initial Gen Error:", err); }
   }
@@ -239,15 +250,15 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     if (group.schedule && group.schedule.routines) {
         try {
           const now = DateTime.now().setZone(group.timezone);
-          const kickoffDate = group.schedule.startDate 
+          const kickoffDate = group.schedule.startDate
               ? DateTime.fromJSDate(group.schedule.startDate, { zone: 'utc' })
                   .setZone(group.timezone, { keepLocalTime: true })
                   .startOf('day')
                   .toJSDate()
               : now.startOf('day').toJSDate();
 
-          // 1. Define the 30-day limit
           const windowEndDT = now.plus({ days: 30 }).endOf('day');
+          let earliestNextTrigger = null;
 
           for (const routine of group.schedule.routines) {
               for (const dtEntry of routine.dayTimes) {
@@ -255,14 +266,13 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                   let fillingWindow = true;
                   let loopSafety = 0;
 
-                  // 2. Increased safety limit to easily handle daily meetups over 30 days
-                  while (fillingWindow && loopSafety < 100) { 
+                  while (fillingWindow && loopSafety < 100) {
                       const nextDate = calculateNextMeetupDate(
-                          routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day, 
-                          dtEntry.time, 
-                          group.timezone, 
+                          routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
+                          dtEntry.time,
+                          group.timezone,
                           routine.frequency,
-                          currentAnchor, // Rely entirely on in-memory anchor
+                          currentAnchor,
                           routine.frequency === 'ordinal' ? routine.rules?.[0] : null
                       );
 
@@ -274,15 +284,13 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
 
                       const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(group.timezone);
 
-                      // 3. The Window Break
                       if (nextMeetupDT > windowEndDT) {
                           fillingWindow = false;
                           break;
                       }
 
-                      // 4. Check existence to prevent dupes (Fixes the leapfrog bug)
-                      const alreadyExists = await Meetup.findOne({ 
-                          group: group._id, 
+                      const alreadyExists = await Meetup.findOne({
+                          group: group._id,
                           date: nextDate,
                           time: dtEntry.time
                       });
@@ -309,18 +317,29 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                               undecided: group.members,
                               capacity: group.defaultCapacity,
                               isOverride: false,
+                              startsAt: nextDate,
                               visibilityDate: visibilityDT.toJSDate(),
                               rsvpOpenDate: rsvpDT.toJSDate()
                           });
                       }
-                      
+
                       currentAnchor = nextDate;
                       loopSafety++;
                   }
+
+                  const trigger = computeNextGenerationAt(group, currentAnchor, routine, dtEntry);
+                  if (!earliestNextTrigger || trigger < earliestNextTrigger) {
+                      earliestNextTrigger = trigger;
+                  }
               }
           }
-      } catch (err) { 
-          console.error("Update Gen Error:", err); 
+
+          if (earliestNextTrigger) {
+              group.nextGenerationAt = earliestNextTrigger;
+              await group.save();
+          }
+      } catch (err) {
+          console.error("Update Gen Error:", err);
       }
     }
 
@@ -574,6 +593,7 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
         undecided: group.members,
         capacity: capacity !== undefined ? capacity : group.defaultCapacity,
         isOverride: true,
+        startsAt: meetupDate,
     });
 
     // --- NOTIFICATION LOGIC ---

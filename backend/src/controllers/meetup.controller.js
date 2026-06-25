@@ -221,7 +221,16 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     meetup.time = newTime;
     meetup.timezone = groupTimezone; // Always enforce the group's timezone
     if (capacity !== undefined) meetup.capacity = capacity;
-    if (location !== undefined) meetup.location = location; 
+    if (location !== undefined) meetup.location = location;
+
+    // Recompute startsAt whenever date or time changes
+    if (date || time) {
+        const { hours: sH, minutes: sM } = parseTimeString(meetup.time);
+        meetup.startsAt = DateTime.fromJSDate(new Date(meetup.date))
+            .setZone(groupTimezone)
+            .set({ hour: sH, minute: sM, second: 0, millisecond: 0 })
+            .toJSDate();
+    }
     
     meetup.isOverride = true;
     await meetup.save();
