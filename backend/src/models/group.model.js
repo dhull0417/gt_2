@@ -35,6 +35,7 @@ const routineSchema = new mongoose.Schema({
 
 const groupSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
+  image: { type: String, default: "" },
   
   /**
    * schedule is now optional. 

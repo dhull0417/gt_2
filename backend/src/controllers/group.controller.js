@@ -50,6 +50,7 @@ export const createGroup = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
   const {
     name,
+    image,
     schedule,
     timezone,
     meetupsToDisplay,
@@ -75,6 +76,7 @@ export const createGroup = asyncHandler(async (req, res) => {
 
   const groupData = {
       name,
+      image: image || "",
       schedule: schedule || null,
       timezone,
       meetupsToDisplay: meetupsToDisplay || 1,
@@ -354,6 +356,7 @@ export const updateGroup = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const {
         name,
+        image,
         meetupsToDisplay,
         defaultLocation,
         generationLeadDays,
@@ -391,6 +394,7 @@ export const updateGroup = asyncHandler(async (req, res) => {
     }
 
 
+    if (image !== undefined) group.image = image;
     if (meetupsToDisplay) group.meetupsToDisplay = parseInt(meetupsToDisplay);
     if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
     if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;

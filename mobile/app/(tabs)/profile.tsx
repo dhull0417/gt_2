@@ -9,6 +9,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import * as Updates from 'expo-updates';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
+import { pickAndUploadImage } from '@/utils/uploadImage';
 
 const CALENDAR_OPTIONS = [
   {
@@ -30,11 +31,12 @@ const CALENDAR_OPTIONS = [
 ];
 
 const HomeScreen = () => {
-  const { signOut } = useAuth();
+  const { signOut, getToken } = useAuth();
   const api = useApiClient();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [calendarModalVisible, setCalendarModalVisible] = useState(false);
   const [calendarUrl, setCalendarUrl] = useState<string | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(false);
@@ -48,6 +50,27 @@ const HomeScreen = () => {
   });
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
+
+  const handleChangePhoto = async () => {
+    try {
+      const token = await getToken({ template: 'supabase' });
+      if (!token || !currentUser) return;
+      setPhotoUploading(true);
+      const url = await pickAndUploadImage(
+        'profile-pictures',
+        `${currentUser._id}/avatar.jpg`,
+        token
+      );
+      if (url) {
+        await userApi.updateProfile(api, { profilePicture: url });
+        queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+      }
+    } catch {
+      Alert.alert('Error', 'Could not update your profile picture. Please try again.');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
 
   const handleShareUsername = async () => {
       if (currentUser?.username) {
@@ -200,10 +223,21 @@ const HomeScreen = () => {
         ) : (
           <>
             <View className="items-center p-6 bg-white border-b border-gray-200">
-              <Image
-                  source={{ uri: currentUser.profilePicture || 'https://placehold.co/200x200/EEE/31343C?text=?' }}
-                  className="w-24 h-24 rounded-full border-4 border-gray-200"
-              />
+              <TouchableOpacity onPress={handleChangePhoto} disabled={photoUploading} className="relative">
+                {photoUploading ? (
+                  <View className="w-24 h-24 rounded-full border-4 border-gray-200 bg-gray-100 items-center justify-center">
+                    <ActivityIndicator color="#4A90E2" />
+                  </View>
+                ) : (
+                  <Image
+                    source={{ uri: currentUser.profilePicture || 'https://placehold.co/200x200/EEE/31343C?text=?' }}
+                    className="w-24 h-24 rounded-full border-4 border-gray-200"
+                  />
+                )}
+                <View className="absolute bottom-0 right-0 bg-[#4A90E2] rounded-full p-1.5">
+                  <Feather name="camera" size={12} color="white" />
+                </View>
+              </TouchableOpacity>
               <Text className="text-2xl font-bold text-gray-800 mt-4">
                   {currentUser.firstName} {currentUser.lastName}
               </Text>

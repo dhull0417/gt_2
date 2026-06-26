@@ -15,10 +15,13 @@ import {
     ActivityIndicator,
     LayoutAnimation,
     UIManager,
+    Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
+import { pickAndUploadImage } from "@/utils/uploadImage";
 import { DateTime } from "luxon";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
 import { useSearchUsers } from "../../hooks/useSearchUsers";
@@ -239,8 +242,32 @@ const StepDots = ({ total, current }: { total: number; current: number }) => (
 
 // ─── SCREEN 1: Name ───────────────────────────────────────────────────────────
 
-const NameScreen = ({ onNext, onClose }: { onNext: (name: string) => void; onClose: () => void }) => {
+const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: string) => void; onClose: () => void }) => {
     const [name, setName] = useState("");
+    const [localUri, setLocalUri] = useState<string | null>(null);
+    const [imageUrl, setImageUrl] = useState("");
+    const [uploading, setUploading] = useState(false);
+    const { getToken } = useAuth();
+
+    const handlePickImage = async () => {
+        try {
+            const token = await getToken({ template: "supabase" });
+            if (!token) return;
+            setUploading(true);
+            const url = await pickAndUploadImage("group-images", `group-${Date.now()}/cover.jpg`, token);
+            if (url) {
+                setLocalUri(url);
+                setImageUrl(url);
+            }
+        } catch {
+            Alert.alert("Error", "Could not upload image. Please try again.");
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const canContinue = name.trim().length > 0 && !uploading;
+
     return (
         <View style={s.screen}>
             <View style={s.screenHeader}>
@@ -261,15 +288,33 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string) => void; onClo
                     onChangeText={setName}
                     autoFocus
                     returnKeyType="done"
-                    onSubmitEditing={() => name.trim() && onNext(name.trim())}
+                    onSubmitEditing={() => canContinue && onNext(name.trim(), imageUrl)}
                 />
+                <TouchableOpacity onPress={handlePickImage} disabled={uploading} style={s.imagePicker}>
+                    {uploading ? (
+                        <ActivityIndicator color="#4A90E2" />
+                    ) : localUri ? (
+                        <>
+                            <Image source={{ uri: localUri }} style={s.imagePreview} />
+                            <View style={s.imageEditBadge}>
+                                <Feather name="camera" size={12} color="#fff" />
+                            </View>
+                        </>
+                    ) : (
+                        <>
+                            <Feather name="image" size={24} color="#9CA3AF" />
+                            <Text style={s.imagePickerText}>Add group photo</Text>
+                            <Text style={s.imagePickerSub}>Optional</Text>
+                        </>
+                    )}
+                </TouchableOpacity>
             </View>
             <View style={s.screenFooter}>
                 <View style={{ flex: 1 }} />
                 <TouchableOpacity
-                    style={[s.primaryBtn, !name.trim() && s.primaryBtnDisabled]}
-                    onPress={() => name.trim() && onNext(name.trim())}
-                    disabled={!name.trim()}
+                    style={[s.primaryBtn, !canContinue && s.primaryBtnDisabled]}
+                    onPress={() => canContinue && onNext(name.trim(), imageUrl)}
+                    disabled={!canContinue}
                 >
                     <Text style={s.primaryBtnText}>Continue</Text>
                     <Feather name="arrow-right" size={18} color="#fff" style={{ marginLeft: 6 }} />
@@ -1247,6 +1292,7 @@ const CreateGroupScreen = () => {
     const { mutate, isPending } = useCreateGroup();
     const [step, setStep] = useState<Step>("name");
     const [groupName, setGroupName] = useState("");
+    const [groupImage, setGroupImage] = useState("");
     const [members, setMembers] = useState<UserStub[]>([]);
     const [schedule, setSchedule] = useState<ScheduleData | null>(null);
 
@@ -1258,6 +1304,7 @@ const CreateGroupScreen = () => {
         console.log("Built payload:", JSON.stringify(schedulePayload, null, 2)); // ← and this
         const payload: any = {
             name: groupName,
+            image: groupImage,
             members: members.map(m => m._id),
             meetupsToDisplay: 1,
             generationLeadDays: schedule?.leadDays ?? 4,
@@ -1274,7 +1321,7 @@ const CreateGroupScreen = () => {
         });
     };
 
-    if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={n => { setGroupName(n); setStep("members"); }} onClose={handleClose} /></SafeAreaView>;
+    if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("members"); }} onClose={handleClose} /></SafeAreaView>;
     if (step === "members") return <SafeAreaView style={s.safe}><MembersScreen groupName={groupName} onNext={m => { setMembers(m); setStep("schedule"); }} onBack={() => setStep("name")} /></SafeAreaView>;
     if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen onNext={data => { setSchedule(data); setStep("review"); }} onBack={() => setStep("members")} onSkip={() => { setSchedule(null); setStep("review"); }} /></SafeAreaView>;
     return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} members={members} schedule={schedule} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
@@ -1381,6 +1428,11 @@ const s = StyleSheet.create({
     reviewCardMuted: { fontSize: 14, color: "#6B7280", marginBottom: 2 },
     reviewRoutineChip: { backgroundColor: "#EEF6FF", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: "flex-start", marginBottom: 4 },
     reviewRoutineChipText: { fontSize: 13, fontWeight: "700", color: "#1D4ED8" },
+    imagePicker: { alignItems: "center", justifyContent: "center", marginTop: 24, width: 100, height: 100, borderRadius: 50, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "#E5E7EB", borderStyle: "dashed", alignSelf: "center" },
+    imagePreview: { width: 100, height: 100, borderRadius: 50 },
+    imageEditBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#4A90E2", borderRadius: 10, padding: 4 },
+    imagePickerText: { fontSize: 11, fontWeight: "600", color: "#6B7280", marginTop: 4, textAlign: "center" },
+    imagePickerSub: { fontSize: 10, color: "#9CA3AF", textAlign: "center" },
 });
 
 const cal = StyleSheet.create({

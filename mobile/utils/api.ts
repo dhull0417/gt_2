@@ -122,7 +122,8 @@ export interface Notification {
 
 interface CreateGroupPayload {
   name: string;
-  schedule?: Schedule | null; // Optional to support "Set schedule now? No"
+  image?: string;
+  schedule?: Schedule | null;
   timezone?: string;
   meetupsToDisplay: number;
   members?: string[];

@@ -15,6 +15,7 @@ import {
   FlatList
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useAuth } from '@clerk/expo';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
@@ -22,6 +23,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, Schedule, useApiClient, userApi, groupApi } from '@/utils/api';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
+import { pickAndUploadImage } from '@/utils/uploadImage';
 
 /**
  * Group Settings Screen
@@ -35,6 +37,7 @@ const GroupSettings = () => {
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
 
+  const { getToken } = useAuth();
   const { data: group, isLoading: isLoadingGroup } = useGetGroupDetails(id);
   const { data: currentUser, isLoading: isLoadingUser } = useQuery<User, Error>({ 
     queryKey: ['currentUser'], 
@@ -46,6 +49,8 @@ const GroupSettings = () => {
   const { mutate: leaveGroup } = useLeaveGroup();
 
   // --- State for Edit Modals ---
+  const [isChangingImage, setIsChangingImage] = useState(false);
+
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
   const [isSavingName, setIsSavingName] = useState(false);
@@ -111,6 +116,7 @@ const GroupSettings = () => {
   }, [group, currentUser, isLoadingGroup, isLoadingUser, canAccessSettings]);
 
   const settingsOptions = [
+    { id: 'image', label: 'Edit Group Photo', icon: 'camera', color: '#4A90E2', bg: '#EFF6FF' },
     { id: 'name', label: 'Edit Group Name', icon: 'type', color: '#3B82F6', bg: '#EFF6FF' },
     { id: 'schedule', label: 'Edit Schedule & Times', icon: 'calendar', color: '#6366F1', bg: '#EEF2FF' },
     { id: 'jit', label: 'Edit RSVP Lead Time', icon: 'bell', color: '#F59E0B', bg: '#FFFBEB' },
@@ -127,6 +133,9 @@ const GroupSettings = () => {
     if (!id) return;
 
     switch (optionId) {
+      case 'image':
+        handleChangeGroupImage();
+        break;
       case 'name':
         setTempName(group?.name || "");
         setIsEditingName(true);
@@ -166,6 +175,25 @@ const GroupSettings = () => {
       default:
         console.log(`Option ${optionId} logic requested.`);
         break;
+    }
+  };
+
+  const handleChangeGroupImage = async () => {
+    if (!id) return;
+    try {
+      const token = await getToken({ template: 'supabase' });
+      if (!token) return;
+      setIsChangingImage(true);
+      const url = await pickAndUploadImage('group-images', `${id}/cover.jpg`, token);
+      if (url) {
+        await groupApi.updateGroup(api, { groupId: id, image: url });
+        await queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+        await queryClient.invalidateQueries({ queryKey: ['groups'] });
+      }
+    } catch {
+      Alert.alert('Error', 'Could not update group photo. Please try again.');
+    } finally {
+      setIsChangingImage(false);
     }
   };
 
@@ -386,12 +414,19 @@ const GroupSettings = () => {
             >
               <View style={styles.optionLeft}>
                 <View style={[styles.iconContainer, { backgroundColor: option.bg }]}>
-                  <Feather name={option.icon as any} size={20} color={option.color} />
+                  {option.id === 'image' && isChangingImage
+                    ? <ActivityIndicator size="small" color={option.color} />
+                    : <Feather name={option.icon as any} size={20} color={option.color} />}
                 </View>
                 <View>
                   <Text style={[styles.optionLabel, option.destructive && styles.destructiveLabel]}>
                     {option.label}
                   </Text>
+                  {option.id === 'image' && (
+                    <Text style={styles.optionSubLabel}>
+                      {group?.image ? 'Tap to change' : 'No photo set'}
+                    </Text>
+                  )}
                   {option.id === 'name' && (
                     <Text style={styles.optionSubLabel} numberOfLines={1}>
                       {group?.name || '—'}
