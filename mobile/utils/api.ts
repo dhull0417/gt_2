@@ -67,6 +67,7 @@ export interface LastMessage {
 export interface Group {
   _id: string;
   name: string;
+  image?: string;
   schedule: Schedule;
   owner: string;
   timezone: string;

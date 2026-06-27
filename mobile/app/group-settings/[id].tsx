@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
   StyleSheet,
   Alert,
   ActivityIndicator,
   Modal,
+  Pressable,
   TextInput,
   KeyboardAvoidingView,
   Platform,
@@ -23,7 +24,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, Schedule, useApiClient, userApi, groupApi } from '@/utils/api';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
-import { pickAndUploadImage } from '@/utils/uploadImage';
+import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
+import { GroupAvatar } from '@/components/GroupAvatar';
 
 /**
  * Group Settings Screen
@@ -49,7 +51,9 @@ const GroupSettings = () => {
   const { mutate: leaveGroup } = useLeaveGroup();
 
   // --- State for Edit Modals ---
-  const [isChangingImage, setIsChangingImage] = useState(false);
+  const [isImageModalVisible, setIsImageModalVisible] = useState(false);
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const [isConfirmingImage, setIsConfirmingImage] = useState(false);
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
@@ -134,7 +138,7 @@ const GroupSettings = () => {
 
     switch (optionId) {
       case 'image':
-        handleChangeGroupImage();
+        handleOpenImageModal();
         break;
       case 'name':
         setTempName(group?.name || "");
@@ -178,22 +182,48 @@ const GroupSettings = () => {
     }
   };
 
-  const handleChangeGroupImage = async () => {
-    if (!id) return;
+  const handleOpenImageModal = () => {
+    setPreviewUri(null);
+    setIsImageModalVisible(true);
+  };
+
+  const handlePickNewImage = async () => {
+    const uri = await pickImageUri();
+    if (uri) setPreviewUri(uri);
+  };
+
+  const handleConfirmImage = async () => {
+    if (!id || !previewUri) return;
     try {
+      setIsConfirmingImage(true);
       const token = await getToken({ template: 'supabase' });
-      if (!token) return;
-      setIsChangingImage(true);
-      const url = await pickAndUploadImage('group-images', `${id}/cover.jpg`, token);
-      if (url) {
-        await groupApi.updateGroup(api, { groupId: id, image: url });
-        await queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
-        await queryClient.invalidateQueries({ queryKey: ['groups'] });
+      if (!token) throw new Error('No auth token');
+
+      const oldImageUrl = group?.image;
+      const newFilePath = `${id}/cover.jpg`;
+      const newUrl = await uploadImageFromUri(previewUri, 'group-images', newFilePath, token);
+
+      await groupApi.updateGroup(api, { groupId: id, image: newUrl });
+
+      // Only delete the old file if it lives at a different storage path.
+      // If the paths are the same, upsert already overwrote it — deleting would remove the new file.
+      if (oldImageUrl) {
+        const marker = `/storage/v1/object/public/group-images/`;
+        const oldPath = oldImageUrl.slice(oldImageUrl.indexOf(marker) + marker.length).split('?')[0];
+        if (oldPath !== newFilePath) {
+          deleteStorageImage(oldImageUrl, 'group-images', token).catch(() => {});
+        }
       }
+
+      queryClient.setQueryData(['groupDetails', id], (old: any) =>
+        old ? { ...old, image: newUrl } : old
+      );
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      setIsImageModalVisible(false);
     } catch {
       Alert.alert('Error', 'Could not update group photo. Please try again.');
     } finally {
-      setIsChangingImage(false);
+      setIsConfirmingImage(false);
     }
   };
 
@@ -413,11 +443,15 @@ const GroupSettings = () => {
               onPress={() => handleOptionPress(option.id)}
             >
               <View style={styles.optionLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: option.bg }]}>
-                  {option.id === 'image' && isChangingImage
-                    ? <ActivityIndicator size="small" color={option.color} />
-                    : <Feather name={option.icon as any} size={20} color={option.color} />}
-                </View>
+                {option.id === 'image' ? (
+                  <View style={{ marginRight: 16 }}>
+                    <GroupAvatar name={group?.name ?? ''} imageUrl={group?.image} size={40} />
+                  </View>
+                ) : (
+                  <View style={[styles.iconContainer, { backgroundColor: option.bg }]}>
+                    <Feather name={option.icon as any} size={20} color={option.color} />
+                  </View>
+                )}
                 <View>
                   <Text style={[styles.optionLabel, option.destructive && styles.destructiveLabel]}>
                     {option.label}
@@ -475,6 +509,44 @@ const GroupSettings = () => {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Edit Group Photo Modal */}
+      <Modal
+        visible={isImageModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsImageModalVisible(false)}
+      >
+        <Pressable style={styles.bottomSheetOverlay} onPress={() => setIsImageModalVisible(false)}>
+          <Pressable onPress={() => {}} style={styles.imageModalSheet}>
+            <View style={styles.imageModalHandle} />
+            <Text style={styles.modalTitle}>Group Photo</Text>
+
+            <TouchableOpacity onPress={handlePickNewImage} disabled={isConfirmingImage} style={styles.imageModalAvatarWrap}>
+              <GroupAvatar
+                name={group?.name ?? ''}
+                imageUrl={previewUri ?? group?.image}
+                size={120}
+              />
+              <View style={styles.imageModalCameraBadge}>
+                <Feather name="camera" size={16} color="#fff" />
+              </View>
+            </TouchableOpacity>
+
+            {previewUri && (
+              <TouchableOpacity
+                style={styles.confirmBtn}
+                onPress={handleConfirmImage}
+                disabled={isConfirmingImage}
+              >
+                {isConfirmingImage
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.confirmBtnText}>Confirm</Text>}
+              </TouchableOpacity>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Edit Name Modal */}
       <Modal visible={isEditingName} transparent animationType="fade" onRequestClose={() => setIsEditingName(false)}>
@@ -657,6 +729,7 @@ const styles = StyleSheet.create({
   footer: { padding: 32, alignItems: 'center' },
   footerText: { fontSize: 12, color: '#9CA3AF', textAlign: 'center', fontWeight: '500', lineHeight: 18 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  bottomSheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalContent: { width: '100%', backgroundColor: 'white', borderRadius: 24, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
   modalTitle: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 4, textAlign: 'center' },
   modalSubtitle: { fontSize: 14, color: '#6B7280', marginBottom: 16, textAlign: 'center', fontWeight: '500' },
@@ -683,7 +756,13 @@ const styles = StyleSheet.create({
   textWhite: { color: 'white' },
   textWhite70: { color: 'rgba(255,255,255,0.7)' },
   checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
-  checkboxActive: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: 'white' }
+  checkboxActive: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: 'white' },
+  imageModalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingTop: 12, paddingBottom: 48, alignItems: 'center' },
+  imageModalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginBottom: 20 },
+  imageModalAvatarWrap: { position: 'relative', marginTop: 8 },
+  imageModalCameraBadge: { position: 'absolute', bottom: 2, right: 2, backgroundColor: '#4A90E2', borderRadius: 16, padding: 6, borderWidth: 2, borderColor: '#fff' },
+  confirmBtn: { marginTop: 28, alignSelf: 'stretch', backgroundColor: '#4A90E2', borderRadius: 14, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
+  confirmBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
 
 export default GroupSettings;

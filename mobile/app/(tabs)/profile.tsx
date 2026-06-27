@@ -63,7 +63,9 @@ const HomeScreen = () => {
       );
       if (url) {
         await userApi.updateProfile(api, { profilePicture: url });
-        queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+        queryClient.setQueryData(['currentUser'], (old: any) =>
+          old ? { ...old, profilePicture: url } : old
+        );
       }
     } catch {
       Alert.alert('Error', 'Could not update your profile picture. Please try again.');
@@ -228,11 +230,17 @@ const HomeScreen = () => {
                   <View className="w-24 h-24 rounded-full border-4 border-gray-200 bg-gray-100 items-center justify-center">
                     <ActivityIndicator color="#4A90E2" />
                   </View>
-                ) : (
+                ) : currentUser.profilePicture ? (
                   <Image
-                    source={{ uri: currentUser.profilePicture || 'https://placehold.co/200x200/EEE/31343C?text=?' }}
+                    source={{ uri: currentUser.profilePicture }}
                     className="w-24 h-24 rounded-full border-4 border-gray-200"
                   />
+                ) : (
+                  <View className="w-24 h-24 rounded-full border-4 border-gray-200 bg-indigo-100 items-center justify-center">
+                    <Text className="text-3xl font-bold text-indigo-600">
+                      {(currentUser.firstName?.[0] ?? currentUser.username?.[0] ?? '?').toUpperCase()}
+                    </Text>
+                  </View>
                 )}
                 <View className="absolute bottom-0 right-0 bg-[#4A90E2] rounded-full p-1.5">
                   <Feather name="camera" size={12} color="white" />

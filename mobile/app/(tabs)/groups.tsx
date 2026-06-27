@@ -28,6 +28,7 @@ import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { GroupDetailsView } from '@/components/GroupDetailsView';
+import { GroupAvatar } from '@/components/GroupAvatar';
 import { useMessages } from '@/hooks/useMessages';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { ChatMessageBubble } from '@/components/ChatMessageBubble';
@@ -44,47 +45,25 @@ const styles = StyleSheet.create({
   chatContainer: {
     flex: 1,
   },
-  detailsButton: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#4A90E2',
-    marginRight: 8,
   },
-  detailsButtonText: {
-    color: '#4A90E2',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  muteButton: {
+  iconButtonMuted: {
     backgroundColor: '#FEF2F2',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
     borderColor: '#FECACA',
-    marginRight: 8,
   },
-  muteButtonText: {
-    color: '#EF4444',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  unmuteButton: {
+  iconButtonActive: {
     backgroundColor: '#F0FDF4',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
     borderColor: '#BBF7D0',
-    marginRight: 8,
   },
-  unmuteButtonText: {
-    color: '#10B981',
-    fontWeight: 'bold',
-    fontSize: 14,
+  iconButtonDetails: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
   },
   settingsButton: {
     padding: 6,
@@ -585,31 +564,33 @@ const GroupScreen = () => {
 
     return groups.map((group) => {
       const isMuted = currentUser?.mutedGroups?.includes(group._id) || currentUser?.mutedUntilNextMeetup?.includes(group._id);
+      const displayName = group.isDM ? getDMDisplayName(group) : group.name;
       return (
         <TouchableOpacity
           key={group._id}
-          className="bg-white p-5 my-2 rounded-2xl shadow-sm border border-gray-100"
+          className="bg-white px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100"
           onPress={() => handleOpenGroupDetail(group)}
         >
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center flex-1">
-              <Text className="text-lg font-bold text-gray-800" numberOfLines={1}>
-                {group.isDM ? getDMDisplayName(group) : group.name}
-              </Text>
-              {isMuted && (
-                <View className="ml-2">
-                  <Feather name="bell-off" size={14} color="#9CA3AF" />
-                </View>
+          <View className="flex-row items-center">
+            <View style={{ marginRight: 12 }}>
+              <GroupAvatar name={displayName} imageUrl={group.image} size={44} />
+            </View>
+            <View className="flex-1">
+              <View className="flex-row items-center">
+                <Text className="text-lg font-bold text-gray-800 flex-1" numberOfLines={1}>
+                  {displayName}
+                </Text>
+                {isMuted && <Feather name="bell-off" size={14} color="#9CA3AF" style={{ marginLeft: 6 }} />}
+              </View>
+              {group.lastMessage ? (
+                <Text className="text-sm text-gray-500 mt-0.5" numberOfLines={1}>
+                  <Text style={{ color: '#4A90E2', fontWeight: '600' }}>{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
+                </Text>
+              ) : (
+                <Text className="text-sm text-gray-400 italic mt-0.5">No messages yet</Text>
               )}
             </View>
           </View>
-          {group.lastMessage ? (
-            <Text className="text-sm text-gray-500 mt-1" numberOfLines={1}>
-              <Text style={{ color: '#4A90E2', fontWeight: '600' }}>{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
-            </Text>
-          ) : (
-            <Text className="text-sm text-gray-400 italic mt-1">No messages yet</Text>
-          )}
         </TouchableOpacity>
       );
     });
@@ -673,37 +654,49 @@ const GroupScreen = () => {
       {isGroupDetailVisible && selectedGroup && (
         <View className="absolute top-0 bottom-0 left-0 right-0 bg-white" style={{paddingTop:insets.top}}>
           <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200" onLayout={(e) => setChatHeaderHeight(e.nativeEvent.layout.height)}>
-            <View className="flex-row items-center flex-1 truncate">
+            <View className="flex-row items-center flex-1">
               <TouchableOpacity
                 onPress={() => activeTab === 'Details' ? setActiveTab('Chat') : handleCloseGroupDetail()}
-                className="mr-3 p-1"
+                className="mr-2 p-1"
               >
-                <Feather name="arrow-left" size={24} color="#FF7A6E"/>
+                <Feather name="chevron-left" size={26} color="#FF7A6E"/>
               </TouchableOpacity>
-              <Text className="text-xl font-bold text-gray-900 flex-1" numberOfLines={1}>
-                {groupDetails?.isDM
-                  ? getDMDisplayName(groupDetails)
-                  : (groupDetails?.name || selectedGroup.name)}
-              </Text>
+              {(() => {
+                const headerName = groupDetails?.isDM
+                  ? getDMDisplayName(groupDetails as any)
+                  : (groupDetails?.name || selectedGroup.name);
+                return (
+                  <>
+                    <View style={{ marginRight: 10 }}>
+                      <GroupAvatar name={headerName} imageUrl={groupDetails?.image || selectedGroup.image} size={36} />
+                    </View>
+                    <Text className="text-lg font-bold text-gray-900 flex-1" numberOfLines={1}>
+                      {headerName}
+                    </Text>
+                  </>
+                );
+              })()}
             </View>
 
-            <View className="flex-row items-center">
+            <View className="flex-row items-center" style={{ gap: 8 }}>
               {activeTab === 'Chat' ? (
                 <>
                   <TouchableOpacity
                     onPress={handleMutePress}
-                    style={isCurrentlyMuted ? styles.unmuteButton : styles.muteButton}
+                    style={[styles.iconButton, isCurrentlyMuted ? styles.iconButtonActive : styles.iconButtonMuted]}
                   >
-                    <Text style={isCurrentlyMuted ? styles.unmuteButtonText : styles.muteButtonText}>
-                      {isCurrentlyMuted ? "Unmute" : "Mute"}
-                    </Text>
+                    <Feather
+                      name={isCurrentlyMuted ? "bell" : "bell-off"}
+                      size={18}
+                      color={isCurrentlyMuted ? "#10B981" : "#EF4444"}
+                    />
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     onPress={() => setActiveTab('Details')}
-                    style={styles.detailsButton}
+                    style={[styles.iconButton, styles.iconButtonDetails]}
                   >
-                    <Text style={styles.detailsButtonText}>Details</Text>
+                    <Feather name="menu" size={18} color="#4A90E2" />
                   </TouchableOpacity>
                 </>
               ) : (
