@@ -89,8 +89,8 @@ const HomeScreen = () => {
   const handleShareApp = async () => {
     try {
       const result = await Share.share({
-        message: 'Join me on GroupThat! The easiest way to coordinate meetups with your group. Download here: https://gt-2-peach.vercel.app/download',
-        url: 'https://gt-2-peach.vercel.app/download',
+        message: 'Join me on GroupThat! The easiest way to coordinate meetups with your group. Download here: https://invite.groupthatapp.com/download',
+        url: 'https://invite.groupthatapp.com/download',
       });
 
       if (result.action === Share.sharedAction) {

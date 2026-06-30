@@ -122,8 +122,7 @@ const NotificationsScreen = () => {
     const { data: currentUser } = useQuery<User>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
 
     useFocusEffect(useCallback(() => {
-        refetch();
-        markAsRead();
+        markAsRead(undefined, { onSettled: () => refetch() });
     }, [refetch, markAsRead]));
 
     const handleAccept = async (id: string) => {

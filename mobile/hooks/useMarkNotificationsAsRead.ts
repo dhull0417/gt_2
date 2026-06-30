@@ -6,7 +6,7 @@ export const useMarkNotificationsAsRead = () => {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: () => api.post('/api/notifications/mark-as-read'),
+        mutationFn: () => api.post('/api/notifications/mark-read'),
         onSuccess: () => {
             // Optimistically update the query data to mark all as read
             queryClient.setQueryData(['notifications'], (oldData: any[] | undefined) => 
