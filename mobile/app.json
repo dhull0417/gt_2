@@ -20,12 +20,15 @@
       "associatedDomains": [
         "applinks:relaxing-flounder-31.clerk.accounts.dev",
         "webcredentials:relaxing-flounder-31.clerk.accounts.dev",
-        "applinks:gt-2-peach.vercel.app"
+        "applinks:gt-2-peach.vercel.app",
+        "applinks:invite.groupthatapp.com"
       ],
       "infoPlist": {
         "NSCameraUsageDescription": "GroupThat needs camera access to let you take a profile picture.",
         "NSPhotoLibraryUsageDescription": "GroupThat needs access to your photos to let you choose a profile picture.",
         "NSContactsUsageDescription": "GroupThat needs access to your contacts to let you invite friends to your groups.",
+        "NSCalendarsUsageDescription": "GroupThat needs access to your calendar to add meetup events.",
+        "NSCalendarsFullAccessUsageDescription": "GroupThat needs access to your calendar to add meetup events.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "runtimeVersion": {
@@ -47,7 +50,9 @@
         "INTERNET",
         "VIBRATE",
         "RECEIVE_BOOT_COMPLETED",
-        "READ_CONTACTS"
+        "READ_CONTACTS",
+        "READ_CALENDAR",
+        "WRITE_CALENDAR"
       ],
       "runtimeVersion": "1.2.6",
       "googleServicesFile": "./google-services.json",
@@ -59,6 +64,18 @@
             {
               "scheme": "https",
               "host": "gt-2-peach.vercel.app",
+              "pathPrefix": "/join"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "invite.groupthatapp.com",
               "pathPrefix": "/join"
             }
           ],

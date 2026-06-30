@@ -19,6 +19,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { useRouter } from 'expo-router';
+import * as Calendar from 'expo-calendar';
 import TimePicker from './TimePicker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
@@ -179,6 +180,73 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         userApi.toggleGroupMute(api, meetup.group._id, 'untilNext').catch(() => {});
     };
 
+    const handleAddToCalendar = async () => {
+        const { status } = await Calendar.requestCalendarPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Please allow calendar access in your device settings to add meetup events.');
+            return;
+        }
+
+        const [time, modifier] = meetup.time.split(' ');
+        let [hours, minutes] = time.split(':').map(Number);
+        if (modifier === 'PM' && hours < 12) hours += 12;
+        if (modifier === 'AM' && hours === 12) hours = 0;
+
+        const startDate = new Date(meetup.date);
+        startDate.setHours(hours, minutes, 0, 0);
+        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+        const groupName = (meetup.group as any)?.name || '';
+
+        try {
+            // Search all calendars (including subscribed feed) for a duplicate
+            const allCalendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+            const searchStart = new Date(startDate.getTime() - 60 * 1000);
+            const searchEnd = new Date(startDate.getTime() + 60 * 1000);
+            const existing = await Calendar.getEventsAsync(
+                allCalendars.map(c => c.id),
+                searchStart,
+                searchEnd
+            );
+
+            const alreadyExists = existing.some(e =>
+                e.title === meetup.name ||                          // added via this button
+                e.title === `${groupName}: ${meetup.name}` ||      // added via calendar feed sync
+                (e.notes?.includes(`groupthat-id:${meetup._id}`))  // tagged from a previous add
+            );
+
+            if (alreadyExists) {
+                Alert.alert('Already on Your Calendar', 'This meetup is already saved to your calendar.');
+                return;
+            }
+
+            let calendarId: string;
+            if (Platform.OS === 'ios') {
+                const defaultCal = await Calendar.getDefaultCalendarAsync();
+                calendarId = defaultCal.id;
+            } else {
+                const writable = allCalendars.find(c => c.isPrimary && c.allowsModifications)
+                    || allCalendars.find(c => c.allowsModifications);
+                if (!writable) {
+                    Alert.alert('Error', 'No writable calendar found on your device.');
+                    return;
+                }
+                calendarId = writable.id;
+            }
+
+            await Calendar.createEventAsync(calendarId, {
+                title: meetup.name,
+                startDate,
+                endDate,
+                location: meetup.location || (meetup.group as any)?.defaultLocation || '',
+                notes: `GroupThat meetup with ${groupName}\ngroupthat-id:${meetup._id}`,
+                timeZone: meetup.timezone,
+            });
+            Alert.alert('Added!', `"${meetup.name}" has been added to your calendar.`);
+        } catch {
+            Alert.alert('Error', 'Could not add this event to your calendar. Please try again.');
+        }
+    };
+
     const handleGoToChat = () => {
         onClose();
         router.push({
@@ -300,9 +368,14 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough]}>
                             {meetup.name}
                         </Text>
-                        <TouchableOpacity onPress={handleGoToChat} style={styles.chatButton} activeOpacity={0.7}>
-                            <Feather name="message-circle" size={22} color="#4A90E2" />
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                            <TouchableOpacity onPress={handleAddToCalendar} style={styles.calendarButton} activeOpacity={0.7}>
+                                <Feather name="calendar" size={22} color="#22C55E" />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleGoToChat} style={styles.chatButton} activeOpacity={0.7}>
+                                <Feather name="message-circle" size={22} color="#4A90E2" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
                     
                     <View style={styles.detailsCard}>
@@ -493,25 +566,18 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             const guestEntry = meetup.guests?.find(g => g.userId === (user as any).clerkId);
                             const userGuestCount = guestEntry?.count ?? 0;
                             return (
-                                <React.Fragment key={user._id}>
-                                    <View style={styles.memberRow}>
-                                        {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
-                                        <View style={styles.memberInfo}>
+                                <View key={user._id} style={styles.memberRow}>
+                                    {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
+                                    <View style={styles.memberInfo}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                                             <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
-                                            <Text style={styles.memberUsername}>@{user.username}</Text>
+                                            {userGuestCount > 0 && (
+                                                <Text style={{ color: '#22C55E', fontWeight: '700', fontSize: 13 }}>+{userGuestCount}</Text>
+                                            )}
                                         </View>
+                                        <Text style={styles.memberUsername}>@{user.username}</Text>
                                     </View>
-                                    {Array.from({ length: userGuestCount }).map((_, i) => (
-                                        <View key={`${user._id}-g-${i}`} style={styles.memberRow}>
-                                            <View style={[styles.avatar, styles.guestAvatarPlaceholder]}>
-                                                <Feather name="user" size={18} color="#9CA3AF" />
-                                            </View>
-                                            <View style={styles.memberInfo}>
-                                                <Text style={styles.memberName}>{user.firstName} {user.lastName}'s Guest</Text>
-                                            </View>
-                                        </View>
-                                    ))}
-                                </React.Fragment>
+                                </View>
                             );
                         })}
 
@@ -649,6 +715,17 @@ const styles = StyleSheet.create({
     titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
     meetupTitle: { fontSize: 28, fontWeight: '900', color: '#111827', letterSpacing: -1, lineHeight: 32, flex: 1 },
     // Chat Button Styling
+    calendarButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#F0FFF4',
+        padding: 8,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#C6F6D5',
+        marginLeft: 12,
+        marginTop: 2,
+    },
     chatButton: {
         alignItems: 'center',
         justifyContent: 'center',

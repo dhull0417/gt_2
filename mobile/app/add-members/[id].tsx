@@ -56,10 +56,10 @@ const AddMembersScreen = () => {
         });
     };
 
-    const inviteLink = inviteLinkData?.link ?? 'https://dhull0417.github.io/groupthat-testing/';
+    const inviteLink = inviteLinkData?.link;
 
     const handleSmsInvite = async (contact: ContactEntry) => {
-        if (!groupDetails) return;
+        if (!groupDetails || !inviteLink) return;
         try {
             await Share.share({
                 message: `Hey ${contact.name.split(' ')[0]}! Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join: ${inviteLink}`,
@@ -70,7 +70,7 @@ const AddMembersScreen = () => {
     };
 
     const handleShareInvite = async () => {
-        if (!groupDetails) return;
+        if (!groupDetails || !inviteLink) return;
         try {
             await Share.share({
                 message: `Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join: ${inviteLink}`,
@@ -180,9 +180,9 @@ const AddMembersScreen = () => {
                 )}
             </View>
 
-            <TouchableOpacity style={styles.shareLinkBtn} onPress={handleShareInvite}>
-                <Feather name="share-2" size={20} color="#4A90E2" />
-                <Text style={styles.shareLinkText}>Share Invite Link</Text>
+            <TouchableOpacity style={[styles.shareLinkBtn, !inviteLink && styles.shareLinkBtnDisabled]} onPress={handleShareInvite} disabled={!inviteLink}>
+                <Feather name="share-2" size={20} color={inviteLink ? "#4A90E2" : "#9CA3AF"} />
+                <Text style={[styles.shareLinkText, !inviteLink && styles.shareLinkTextDisabled]}>Share Invite Link</Text>
             </TouchableOpacity>
         </SafeAreaView>
     );
@@ -205,7 +205,9 @@ const styles = StyleSheet.create({
     smsButtonText: { color: '#6B7280', fontWeight: '600', fontSize: 13 },
     emptyText: { textAlign: 'center', marginTop: 32, color: '#6B7280', fontSize: 16 },
     shareLinkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#F5F7FF', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#4A90E2', marginTop: 16 },
+    shareLinkBtnDisabled: { backgroundColor: '#F3F4F6', borderColor: '#D1D5DB' },
     shareLinkText: { color: '#4A90E2', fontWeight: '700', fontSize: 16, marginLeft: 10 },
+    shareLinkTextDisabled: { color: '#9CA3AF' },
 });
 
 export default AddMembersScreen;

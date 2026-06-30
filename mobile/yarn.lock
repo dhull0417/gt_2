@@ -4150,6 +4150,11 @@ expo-build-properties@~1.0.10:
     ajv "^8.11.0"
     semver "^7.6.0"
 
+expo-calendar@~15.0.8:
+  version "15.0.8"
+  resolved "https://registry.yarnpkg.com/expo-calendar/-/expo-calendar-15.0.8.tgz#55b0b811cbf9285f9989340f26aa4bf5370f9c6b"
+  integrity sha512-i+ojy6zFnWSPb2DYp4L4W4U5iVI+NXnuHr3xysShoV8znNOmixP1TOYuJXt5Lpz+BpHCWseU31gV1E5SSkIKsw==
+
 expo-clipboard@~8.0.8:
   version "8.0.8"
   resolved "https://registry.yarnpkg.com/expo-clipboard/-/expo-clipboard-8.0.8.tgz#5e52054a4bbaebef090ec6fe5eaa200072ff94f7"

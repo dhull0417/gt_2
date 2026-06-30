@@ -28,9 +28,7 @@ export const getCalendarSyncUrl = asyncHandler(async (req, res) => {
         await user.save();
     }
 
-    const protocol = req.protocol === 'https' ? 'https' : req.headers['x-forwarded-proto'] || 'http';
-    const host = req.get('host');
-    const syncUrl = `${protocol}://${host}/api/users/calendar/feed?token=${user.calendarToken}`;
+    const syncUrl = `https://cal.groupthatapp.com/api/users/calendar/feed?token=${user.calendarToken}`;
 
     res.status(200).json({ url: syncUrl });
 });

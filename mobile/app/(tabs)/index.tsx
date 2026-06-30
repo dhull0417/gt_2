@@ -73,11 +73,12 @@ const RsvpStatusDot = ({ meetup, userId }: { meetup: Meetup; userId: string }) =
 };
 
 const RsvpCounts = ({ meetup }: { meetup: Meetup }) => {
+    const totalGuests = (meetup.guests || []).reduce((sum, g) => sum + (g.count || 0), 0);
     return (
         <View className="flex-row items-center mt-3 flex-wrap">
             <View className="flex-row items-center mr-4">
                 <View className="w-2 h-2 rounded-full bg-green-500 mr-1.5" />
-                <Text className="text-gray-600 font-medium">{meetup.in.length} In</Text>
+                <Text className="text-gray-600 font-medium">{meetup.in.length + totalGuests} In</Text>
             </View>
 
             <View className="flex-row items-center mr-4">
@@ -115,7 +116,17 @@ const MeetupCard = ({
   groupBorderColor?: string;
 }) => {
   const [guestExpanded, setGuestExpanded] = useState(false);
-  const [localGuestCount, setLocalGuestCount] = useState(0);
+  const [localGuestCount, setLocalGuestCount] = useState(() => {
+    const entry = meetup.guests?.find(g => g.userId === currentUser?.clerkId);
+    return entry?.count ?? 0;
+  });
+
+  useEffect(() => {
+    if (!guestExpanded) {
+      const entry = meetup.guests?.find(g => g.userId === currentUser?.clerkId);
+      setLocalGuestCount(entry?.count ?? 0);
+    }
+  }, [meetup.guests, currentUser?.clerkId, guestExpanded]);
 
   const isCancelled = meetup.status === 'cancelled';
   const isPast = new Date(meetup.date) < new Date();
@@ -125,6 +136,7 @@ const MeetupCard = ({
   const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
   const isWaitlisted = currentUser ? meetup.waitlist.some(u => getUserId(u) === currentUser._id) : false;
   const isIn = currentUser ? meetup.in.some(u => getUserId(u) === currentUser._id) : false;
+  const isOut = currentUser ? meetup.out.some(u => getUserId(u) === currentUser._id) : false;
 
   const isReadOnly = isCancelled || isExpired;
 
@@ -224,26 +236,28 @@ const MeetupCard = ({
                 <View style={{
                   flex: 1, flexDirection: 'row', borderRadius: 12,
                   overflow: 'hidden', height: 48,
-                  backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#4FD1C5',
+                  backgroundColor: isIn ? '#4FD1C5' : isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#F9FAFB',
+                  borderWidth: (isIn || isWaitlisted || (isFull && !isIn)) ? 0 : 1.5,
+                  borderColor: '#4FD1C5',
                 }}>
                   <TouchableOpacity
                     onPress={() => { setGuestExpanded(false); onRsvp('in', 0); }}
                     disabled={isRsvping}
                     style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
+                    <Text style={{ color: (isIn || isWaitlisted || (isFull && !isIn)) ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 16 }}>
                       {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                     </Text>
                   </TouchableOpacity>
-                  <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.35)' }} />
+                  <View style={{ width: 1, backgroundColor: (isIn || isWaitlisted || (isFull && !isIn)) ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />
                   <TouchableOpacity
                     onPress={() => { setLocalGuestCount(0); setGuestExpanded(v => !v); }}
                     disabled={isRsvping}
                     style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                   >
                     {guestExpanded
-                      ? <Feather name="x" size={18} color="white" />
-                      : <MaterialIcons name="group-add" size={20} color="white" />
+                      ? <Feather name="x" size={18} color={(isIn || isWaitlisted || (isFull && !isIn)) ? 'white' : '#4FD1C5'} />
+                      : <MaterialIcons name="group-add" size={20} color={(isIn || isWaitlisted || (isFull && !isIn)) ? 'white' : '#4FD1C5'} />
                     }
                   </TouchableOpacity>
                 </View>
@@ -251,22 +265,24 @@ const MeetupCard = ({
                 <View style={{
                   flex: 1, flexDirection: 'row', borderRadius: 12,
                   overflow: 'hidden', height: 48,
-                  backgroundColor: '#FF7A6E',
+                  backgroundColor: isOut ? '#FF7A6E' : '#F9FAFB',
+                  borderWidth: isOut ? 0 : 1.5,
+                  borderColor: '#FF7A6E',
                 }}>
                   <TouchableOpacity
                     onPress={() => { setGuestExpanded(false); onRsvp('out'); }}
                     disabled={isRsvping}
                     style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
+                    <Text style={{ color: isOut ? 'white' : '#FF7A6E', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
                   </TouchableOpacity>
-                  <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.35)' }} />
+                  <View style={{ width: 1, backgroundColor: isOut ? 'rgba(255,255,255,0.35)' : '#FFE4E1' }} />
                   <TouchableOpacity
                     onPress={() => { setGuestExpanded(false); onRsvp('out', 0, true); }}
                     disabled={isRsvping}
                     style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Feather name="bell-off" size={18} color="white" />
+                    <Feather name="bell-off" size={18} color={isOut ? 'white' : '#FF7A6E'} />
                   </TouchableOpacity>
                 </View>
               </View>
