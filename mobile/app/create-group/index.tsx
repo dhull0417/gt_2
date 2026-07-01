@@ -24,8 +24,6 @@ import { Feather } from "@expo/vector-icons";
 import { pickAndUploadImage } from "@/utils/uploadImage";
 import { DateTime } from "luxon";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
-import { useSearchUsers } from "../../hooks/useSearchUsers";
-import { useContactMatching, ContactEntry } from "../../hooks/useContactMatching";
 import TimePicker from "../../components/TimePicker";
 import { Frequency, DayTime } from "../../utils/api";
 
@@ -329,65 +327,8 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
 const MembersScreen = ({ groupName, onNext, onBack }: {
     groupName: string; onNext: (members: UserStub[]) => void; onBack: () => void;
 }) => {
-    const [selected, setSelected] = useState<UserStub[]>([]);
-    const [query, setQuery] = useState("");
-    const { data: results, isLoading: isSearching } = useSearchUsers(query);
-    const { contacts, isLoading: isLoadingContacts } = useContactMatching();
-
-    const isSearchActive = query.length > 0;
-
-    const toggle = (u: UserStub) => {
-        setSelected(prev => prev.some(m => m._id === u._id) ? prev.filter(m => m._id !== u._id) : [...prev, u]);
-        setQuery("");
-        Keyboard.dismiss();
-    };
-
     const handleShare = async () => {
-        try { await Share.share({ message: `Join my group "${groupName}" on GroupThat! Download the app: https://dhull0417.github.io/groupthat-testing/` }); } catch {}
-    };
-
-    const handleSmsContact = async (contact: ContactEntry) => {
-        try {
-            await Share.share({
-                message: `Hey ${contact.name.split(' ')[0]}! I'm inviting you to join "${groupName}" on GroupThat. Download the app: https://dhull0417.github.io/groupthat-testing/`,
-            });
-        } catch {}
-    };
-
-    const renderContact = ({ item }: { item: ContactEntry }) => {
-        const appUser = item.appUser;
-        const isSelected = !!appUser && selected.some(m => m._id === appUser._id);
-        return (
-            <View style={s.resultRow}>
-                <View style={{ flex: 1, marginRight: 12 }}>
-                    <Text style={s.resultText}>{item.name}</Text>
-                    {appUser?.username ? (
-                        <Text style={[s.resultSubText, { color: '#6B7280' }]}>@{appUser.username}</Text>
-                    ) : null}
-                    <Text style={[s.resultSubText, appUser ? s.statusOnApp : s.statusNotOnApp]}>
-                        {appUser ? 'On GroupThat' : 'Invite to GroupThat'}
-                    </Text>
-                </View>
-                {appUser ? (
-                    <TouchableOpacity
-                        style={isSelected ? s.contactBtnSelected : s.contactBtnAdd}
-                        onPress={() => toggle(appUser)}
-                    >
-                        <Text style={isSelected ? s.contactBtnSelectedText : s.contactBtnAddText}>
-                            {isSelected ? 'Added' : 'Add'}
-                        </Text>
-                    </TouchableOpacity>
-                ) : (
-                    <TouchableOpacity
-                        style={s.contactBtnSms}
-                        onPress={() => handleSmsContact(item)}
-                    >
-                        <Feather name="send" size={13} color="#6B7280" />
-                        <Text style={s.contactBtnSmsText}>SMS</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
-        );
+        try { await Share.share({ message: `Join my group "${groupName}" on GroupThat! Download the app: https://invite.groupthatapp.com/download` }); } catch {}
     };
 
     return (
@@ -399,89 +340,23 @@ const MembersScreen = ({ groupName, onNext, onBack }: {
                 <StepDots total={4} current={1} />
                 <View style={{ width: 36 }} />
             </View>
-            <View style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: 4 }}>
+            <View style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24 }}>
                 <Text style={s.screenTitle}>Invite members</Text>
-                <Text style={s.screenSub}>Search or pick from your contacts</Text>
-            </View>
-            <View style={[s.searchRow, { marginHorizontal: 24 }]}>
-                <Feather name="search" size={18} color="#9CA3AF" />
-                <TextInput
-                    style={s.searchInput}
-                    placeholder="Search by name or username..."
-                    placeholderTextColor="#C4C9D4"
-                    value={query}
-                    onChangeText={setQuery}
-                    autoCapitalize="none"
-                />
-                {query.length > 0 && (
-                    <TouchableOpacity onPress={() => setQuery('')}>
-                        <Feather name="x" size={16} color="#9CA3AF" />
-                    </TouchableOpacity>
-                )}
-            </View>
-
-            {selected.length > 0 && (
-                <View style={s.selectedChipsWrap}>
-                    {selected.map(u => (
-                        <TouchableOpacity key={u._id} style={s.chip} onPress={() => toggle(u)}>
-                            <Text style={s.chipText}>{u.firstName ? `${u.firstName}` : `@${u.username}`}</Text>
-                            <Feather name="x" size={11} color="#3730A3" style={{ marginLeft: 4 }} />
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            )}
-
-            <View style={{ flex: 1, paddingHorizontal: 24 }}>
-                {isSearchActive ? (
-                    isSearching ? (
-                        <ActivityIndicator color="#4A90E2" style={{ marginTop: 20 }} />
-                    ) : (
-                        <FlatList
-                            data={results || []}
-                            keyExtractor={i => i._id}
-                            keyboardShouldPersistTaps="handled"
-                            renderItem={({ item }) => (
-                                <TouchableOpacity style={s.resultRow} onPress={() => toggle(item)}>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={s.resultText}>{item.firstName} {item.lastName}</Text>
-                                        <Text style={[s.resultSubText, { color: '#6B7280' }]}>@{item.username}</Text>
-                                    </View>
-                                    {selected.some(m => m._id === item._id) && (
-                                        <Feather name="check-circle" size={20} color="#4A90E2" />
-                                    )}
-                                </TouchableOpacity>
-                            )}
-                        />
-                    )
-                ) : (
-                    isLoadingContacts ? (
-                        <ActivityIndicator color="#4A90E2" style={{ marginTop: 20 }} />
-                    ) : (
-                        <FlatList
-                            data={contacts}
-                            keyExtractor={i => i.id}
-                            keyboardShouldPersistTaps="handled"
-                            renderItem={renderContact}
-                            ListEmptyComponent={
-                                <Text style={{ textAlign: 'center', marginTop: 24, color: '#9CA3AF', fontSize: 14 }}>
-                                    No contacts found.
-                                </Text>
-                            }
-                        />
-                    )
-                )}
+                <Text style={s.screenSub}>Invite your friends with an easy link</Text>
             </View>
 
             <TouchableOpacity style={[s.shareBtn, { marginHorizontal: 24, marginBottom: 12 }]} onPress={handleShare}>
                 <Feather name="share-2" size={16} color="#4A90E2" />
-                <Text style={s.shareBtnText}>Share Invite Link</Text>
+                <Text style={s.shareBtnText}>Invite Friends</Text>
             </TouchableOpacity>
+
+            <View style={{ flex: 1 }} />
 
             <View style={s.screenFooter}>
                 <TouchableOpacity style={s.skipBtn} onPress={() => onNext([])}>
-                    <Text style={s.skipBtnText}>Skip</Text>
+                    <Text style={s.skipBtnText}>Skip for now</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.primaryBtn} onPress={() => onNext(selected)}>
+                <TouchableOpacity style={s.primaryBtn} onPress={() => onNext([])}>
                     <Text style={s.primaryBtnText}>Continue</Text>
                     <Feather name="arrow-right" size={18} color="#fff" style={{ marginLeft: 6 }} />
                 </TouchableOpacity>

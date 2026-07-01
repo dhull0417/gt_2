@@ -138,10 +138,11 @@ app.get('/join/:token', (req, res) => {
     try { navigator.clipboard.writeText(deepLink).catch(() => {}); } catch(e) {}
 
     // Attempt to open the app via custom URL scheme.
-    // If the app is installed but Universal Links aren't set up yet, this catches it.
     window.location.href = deepLink;
 
-    setTimeout(() => {
+    // If the app opens successfully the browser goes into the background,
+    // firing visibilitychange/blur. Cancel the store redirect in that case.
+    const timer = setTimeout(() => {
       document.getElementById('opening').style.display = 'none';
       document.getElementById('download').style.display = 'block';
       if (isIOS) {
@@ -152,6 +153,11 @@ app.get('/join/:token', (req, res) => {
         window.location.href = '${PLAY_STORE_URL}';
       }
     }, 1500);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) clearTimeout(timer);
+    });
+    window.addEventListener('blur', () => clearTimeout(timer));
   </script>
 </body>
 </html>`);

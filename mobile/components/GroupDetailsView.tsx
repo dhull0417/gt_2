@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { 
-    View, 
-    Text, 
-    Image, 
-    TouchableOpacity, 
+import {
+    View,
+    Text,
+    Image,
+    TouchableOpacity,
     StyleSheet,
-    Share, 
+    Share,
     ActivityIndicator,
     Alert
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { GroupDetails, User } from '@/utils/api';
+import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import AddMeetupWizard from './AddMeetupWizard';
+import { useQuery } from '@tanstack/react-query';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 interface GroupDetailsViewProps {
@@ -68,7 +69,15 @@ export const GroupDetailsView = ({
     // --- Wizard Visibility State ---
     const [wizardVisible, setWizardVisible] = useState(false);
     const router = useRouter();
+    const api = useApiClient();
     const { mutate: leaveGroup, isPending: isLeaving } = useLeaveGroup();
+
+    const { data: inviteLinkData } = useQuery({
+        queryKey: ['inviteLink', groupDetails._id],
+        queryFn: () => groupApi.generateInviteLink(api, groupDetails._id),
+        enabled: !groupDetails.isDM,
+        staleTime: 1000 * 60 * 5,
+    });
     
 
     // --- Permissions ---
@@ -78,25 +87,18 @@ export const GroupDetailsView = ({
     ) ?? false;
     const canManage = isOwner || isMod;
 
-    const handleInvitePress = () => {
-        router.push({
-            pathname: '/add-members/[id]',
-            params: { id: groupDetails._id }
-        });
-    };
-
-    /**
-     * Share Link Logic
-     * Triggers the native share sheet with the group invitation link.
-     */
-    const handleShareLink = async () => {
+    const handleInvitePress = async () => {
+        const inviteLink = inviteLinkData?.link;
+        if (!inviteLink) {
+            Alert.alert('Not Ready', 'The invite link is still loading. Please try again in a moment.');
+            return;
+        }
         try {
             await Share.share({
-                message: `Join my group "${groupDetails.name}" on GroupThat! Download the app to get started: https://dhull0417.github.io/groupthat-testing/`,
-                title: `Join ${groupDetails.name} on GroupThat`
+                message: `Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join: ${inviteLink}`,
             });
         } catch (error: any) {
-            Alert.alert("Error", "Could not share invite link.");
+            Alert.alert('Error', 'Could not share invite link.');
         }
     };
 
