@@ -23,9 +23,10 @@ import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import { pickAndUploadImage } from "@/utils/uploadImage";
 import { DateTime } from "luxon";
+import { useQuery } from "@tanstack/react-query";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
 import TimePicker from "../../components/TimePicker";
-import { Frequency, DayTime } from "../../utils/api";
+import { Frequency, DayTime, useApiClient, groupApi } from "../../utils/api";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -322,22 +323,33 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
     );
 };
 
-// ─── SCREEN 2: Members ────────────────────────────────────────────────────────
+// ─── SCREEN 4: Invite ─────────────────────────────────────────────────────────
 
-const MembersScreen = ({ groupName, onNext, onBack }: {
-    groupName: string; onNext: (members: UserStub[]) => void; onBack: () => void;
+const MembersScreen = ({ groupId, onDone }: {
+    groupId: string; onDone: () => void;
 }) => {
+    const api = useApiClient();
+    const { data: inviteLinkData } = useQuery({
+        queryKey: ['inviteLink', groupId],
+        queryFn: () => groupApi.generateInviteLink(api, groupId),
+        enabled: !!groupId,
+        staleTime: 1000 * 60 * 5,
+    });
+
     const handleShare = async () => {
-        try { await Share.share({ message: `Join my group "${groupName}" on GroupThat! Download the app: https://invite.groupthatapp.com/download` }); } catch {}
+        const inviteLink = inviteLinkData?.link;
+        if (!inviteLink) {
+            Alert.alert('Not Ready', 'The invite link is still loading. Please try again in a moment.');
+            return;
+        }
+        try { await Share.share({ message: `Join my new group on GroupThat!\n\nOpen this link to join: ${inviteLink}` }); } catch {}
     };
 
     return (
         <View style={s.screen}>
             <View style={s.screenHeader}>
-                <TouchableOpacity onPress={onBack} style={s.iconBtn}>
-                    <Feather name="arrow-left" size={24} color="#6B7280" />
-                </TouchableOpacity>
-                <StepDots total={4} current={1} />
+                <View style={{ width: 36 }} />
+                <StepDots total={4} current={3} />
                 <View style={{ width: 36 }} />
             </View>
             <View style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24 }}>
@@ -353,12 +365,12 @@ const MembersScreen = ({ groupName, onNext, onBack }: {
             <View style={{ flex: 1 }} />
 
             <View style={s.screenFooter}>
-                <TouchableOpacity style={s.skipBtn} onPress={() => onNext([])}>
+                <TouchableOpacity style={s.skipBtn} onPress={onDone}>
                     <Text style={s.skipBtnText}>Skip for now</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.primaryBtn} onPress={() => onNext([])}>
-                    <Text style={s.primaryBtnText}>Continue</Text>
-                    <Feather name="arrow-right" size={18} color="#fff" style={{ marginLeft: 6 }} />
+                <TouchableOpacity style={s.primaryBtn} onPress={onDone}>
+                    <Text style={s.primaryBtnText}>Done</Text>
+                    <Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
             </View>
         </View>
@@ -917,7 +929,7 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
                 <TouchableOpacity onPress={onBack} style={s.iconBtn}>
                     <Feather name="arrow-left" size={24} color="#6B7280" />
                 </TouchableOpacity>
-                <StepDots total={4} current={2} />
+                <StepDots total={4} current={1} />
                 <View style={{ width: 36 }} />
             </View>
             <ScrollView
@@ -1090,7 +1102,7 @@ const ReviewScreen = ({ groupName, members, schedule, onConfirm, onBack, isPendi
             <TouchableOpacity onPress={onBack} style={s.iconBtn}>
                 <Feather name="arrow-left" size={24} color="#6B7280" />
             </TouchableOpacity>
-            <StepDots total={4} current={3} />
+            <StepDots total={4} current={2} />
             <View style={{ width: 36 }} />
         </View>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
@@ -1160,7 +1172,7 @@ const ReviewScreen = ({ groupName, members, schedule, onConfirm, onBack, isPendi
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
-type Step = "name" | "members" | "schedule" | "review";
+type Step = "name" | "schedule" | "review" | "invite";
 
 const CreateGroupScreen = () => {
     const router = useRouter();
@@ -1168,19 +1180,16 @@ const CreateGroupScreen = () => {
     const [step, setStep] = useState<Step>("name");
     const [groupName, setGroupName] = useState("");
     const [groupImage, setGroupImage] = useState("");
-    const [members, setMembers] = useState<UserStub[]>([]);
     const [schedule, setSchedule] = useState<ScheduleData | null>(null);
+    const [createdGroupId, setCreatedGroupId] = useState<string | null>(null);
 
     const handleClose = () => router.replace("/(tabs)/groups");
 
     const handleCreate = () => {
-        console.log("Schedule at create time:", JSON.stringify(schedule, null, 2)); // ← add this
         const schedulePayload = schedule?.frequency ? buildSchedulePayload(schedule) : {};
-        console.log("Built payload:", JSON.stringify(schedulePayload, null, 2)); // ← and this
         const payload: any = {
             name: groupName,
             image: groupImage,
-            members: members.map(m => m._id),
             meetupsToDisplay: 1,
             generationLeadDays: schedule?.leadDays ?? 4,
             generationLeadTime: schedule?.leadTime ?? "09:00 AM",
@@ -1189,17 +1198,18 @@ const CreateGroupScreen = () => {
             ...schedulePayload,
         };
         mutate(payload, {
-            onSuccess: () => {
-                router.replace("/(tabs)/groups");
+            onSuccess: (data) => {
+                setCreatedGroupId(data.group._id);
+                setStep("invite");
             },
             onError: (err: any) => Alert.alert("Error", err?.response?.data?.error || "Failed to create group."),
         });
     };
 
-    if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("members"); }} onClose={handleClose} /></SafeAreaView>;
-    if (step === "members") return <SafeAreaView style={s.safe}><MembersScreen groupName={groupName} onNext={m => { setMembers(m); setStep("schedule"); }} onBack={() => setStep("name")} /></SafeAreaView>;
-    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen onNext={data => { setSchedule(data); setStep("review"); }} onBack={() => setStep("members")} onSkip={() => { setSchedule(null); setStep("review"); }} /></SafeAreaView>;
-    return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} members={members} schedule={schedule} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
+    if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("schedule"); }} onClose={handleClose} /></SafeAreaView>;
+    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen onNext={data => { setSchedule(data); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedule(null); setStep("review"); }} /></SafeAreaView>;
+    if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} members={[]} schedule={schedule} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
+    return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} onDone={() => router.replace("/(tabs)/groups")} /></SafeAreaView>;
 };
 
 export default CreateGroupScreen;

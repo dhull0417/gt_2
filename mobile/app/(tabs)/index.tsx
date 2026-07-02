@@ -232,12 +232,12 @@ const MeetupCard = ({
           ) : (
             <>
               <View style={{ flexDirection: 'row', gap: 12 }}>
-                {/* Split I'm In button: left 80% = RSVP in, right 20% = open guest counter */}
+                {/* Split I'm In button: left 70% = RSVP in, right 30% = open guest counter */}
                 <View style={{
                   flex: 1, flexDirection: 'row', borderRadius: 12,
                   overflow: 'hidden', height: 48,
-                  backgroundColor: isIn ? '#4FD1C5' : isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#F9FAFB',
-                  borderWidth: (isIn || isWaitlisted || (isFull && !isIn)) ? 0 : 1.5,
+                  backgroundColor: isOut ? 'transparent' : isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#4FD1C5',
+                  borderWidth: isOut ? 1.5 : 0,
                   borderColor: '#4FD1C5',
                 }}>
                   <TouchableOpacity
@@ -245,19 +245,19 @@ const MeetupCard = ({
                     disabled={isRsvping}
                     style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Text style={{ color: (isIn || isWaitlisted || (isFull && !isIn)) ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 16 }}>
+                    <Text style={{ color: isOut ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 16 }}>
                       {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                     </Text>
                   </TouchableOpacity>
-                  <View style={{ width: 1, backgroundColor: (isIn || isWaitlisted || (isFull && !isIn)) ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />
+                  <View style={{ width: 1, backgroundColor: isOut ? '#D1FAE5' : 'rgba(255,255,255,0.35)' }} />
                   <TouchableOpacity
                     onPress={() => { setLocalGuestCount(0); setGuestExpanded(v => !v); }}
                     disabled={isRsvping}
                     style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                   >
                     {guestExpanded
-                      ? <Feather name="x" size={18} color={(isIn || isWaitlisted || (isFull && !isIn)) ? 'white' : '#4FD1C5'} />
-                      : <MaterialIcons name="group-add" size={20} color={(isIn || isWaitlisted || (isFull && !isIn)) ? 'white' : '#4FD1C5'} />
+                      ? <Feather name="x" size={18} color={isOut ? '#4FD1C5' : 'white'} />
+                      : <MaterialIcons name="group-add" size={20} color={isOut ? '#4FD1C5' : 'white'} />
                     }
                   </TouchableOpacity>
                 </View>
@@ -265,8 +265,8 @@ const MeetupCard = ({
                 <View style={{
                   flex: 1, flexDirection: 'row', borderRadius: 12,
                   overflow: 'hidden', height: 48,
-                  backgroundColor: isOut ? '#FF7A6E' : '#F9FAFB',
-                  borderWidth: isOut ? 0 : 1.5,
+                  backgroundColor: isIn ? 'transparent' : '#FF7A6E',
+                  borderWidth: isIn ? 1.5 : 0,
                   borderColor: '#FF7A6E',
                 }}>
                   <TouchableOpacity
@@ -274,15 +274,15 @@ const MeetupCard = ({
                     disabled={isRsvping}
                     style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Text style={{ color: isOut ? 'white' : '#FF7A6E', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
+                    <Text style={{ color: isIn ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
                   </TouchableOpacity>
-                  <View style={{ width: 1, backgroundColor: isOut ? 'rgba(255,255,255,0.35)' : '#FFE4E1' }} />
+                  <View style={{ width: 1, backgroundColor: isIn ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
                   <TouchableOpacity
                     onPress={() => { setGuestExpanded(false); onRsvp('out', 0, true); }}
                     disabled={isRsvping}
                     style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Feather name="bell-off" size={18} color={isOut ? 'white' : '#FF7A6E'} />
+                    <Feather name="bell-off" size={18} color={isIn ? '#FF7A6E' : 'white'} />
                   </TouchableOpacity>
                 </View>
               </View>

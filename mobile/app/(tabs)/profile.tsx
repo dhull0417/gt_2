@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable, Platform } from 'react-native';
 import React, { useCallback, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
@@ -88,10 +88,16 @@ const HomeScreen = () => {
 
   const handleShareApp = async () => {
     try {
-      const result = await Share.share({
-        message: 'Join me on GroupThat! The easiest way to coordinate meetups with your group. Download here: https://invite.groupthatapp.com/download',
-        url: 'https://invite.groupthatapp.com/download',
-      });
+      const result = await Share.share(
+        Platform.OS === 'ios'
+          ? {
+              message: 'Join me on GroupThat! The easiest way to coordinate meetups with your group.',
+              url: 'https://invite.groupthatapp.com/download',
+            }
+          : {
+              message: 'Join me on GroupThat! The easiest way to coordinate meetups with your group. Download here: https://invite.groupthatapp.com/download',
+            }
+      );
 
       if (result.action === Share.sharedAction) {
         if (result.activityType) {

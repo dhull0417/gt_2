@@ -163,8 +163,23 @@ app.get('/join/:token', (req, res) => {
 </html>`);
 });
 
+// OG preview image — returned as SVG for link preview cards
+app.get('/og-image.svg', (req, res) => {
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.send(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#4A90E2"/>
+  <rect x="460" y="155" width="280" height="280" rx="64" fill="white" opacity="0.15"/>
+  <g transform="translate(490,185) scale(9.3)">
+    <path fill="white" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+  </g>
+  <text x="600" y="498" font-family="Arial,Helvetica,sans-serif" font-size="72" font-weight="700" fill="white" text-anchor="middle">GroupThat</text>
+  <text x="600" y="558" font-family="Arial,Helvetica,sans-serif" font-size="30" fill="rgba(255,255,255,0.8)" text-anchor="middle">Organize your group, not your calendar</text>
+</svg>`);
+});
+
 // General app download page — shared by users to invite friends to the app
 app.get('/download', (req, res) => {
+  const OG_IMAGE = 'https://invite.groupthatapp.com/og-image.svg';
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -172,6 +187,16 @@ app.get('/download', (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GroupThat — Organize your group, not your calendar</title>
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://invite.groupthatapp.com/download">
+  <meta property="og:site_name" content="GroupThat">
+  <meta property="og:title" content="GroupThat — Organize your group, not your calendar">
+  <meta property="og:description" content="The easiest way to coordinate meetups with your group. No group chats, no endless polls.">
+  <meta property="og:image" content="${OG_IMAGE}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="GroupThat">
+  <meta name="twitter:description" content="The easiest way to coordinate meetups with your group.">
+  <meta name="twitter:image" content="${OG_IMAGE}">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F9FAFB; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
