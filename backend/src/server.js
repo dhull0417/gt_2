@@ -137,19 +137,20 @@ app.get('/join/:token', (req, res) => {
     // (deferred deep link fallback for users who don't tap the link again after install)
     try { navigator.clipboard.writeText(deepLink).catch(() => {}); } catch(e) {}
 
-    // Attempt to open the app via custom URL scheme.
-    window.location.href = deepLink;
+    // Attempt to open the app via a hidden iframe instead of window.location.href.
+    // If no app handles the custom scheme, the iframe fails silently — Safari would
+    // show "address is invalid" if we used window.location.href directly.
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = deepLink;
+    document.body.appendChild(iframe);
 
     // If the app opens successfully the browser goes into the background,
     // firing visibilitychange/blur. Cancel the store redirect in that case.
     const timer = setTimeout(() => {
-      document.getElementById('opening').style.display = 'none';
-      document.getElementById('download').style.display = 'block';
       if (isIOS) {
-        document.getElementById('android-btn').style.display = 'none';
         window.location.href = '${APP_STORE_URL}';
       } else if (isAndroid) {
-        document.getElementById('ios-btn').style.display = 'none';
         window.location.href = '${PLAY_STORE_URL}';
       }
     }, 1500);
