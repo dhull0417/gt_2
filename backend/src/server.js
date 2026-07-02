@@ -95,6 +95,16 @@ app.get('/join/:token', (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Join a group on GroupThat</title>
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://invite.groupthatapp.com/join/${token}">
+  <meta property="og:site_name" content="GroupThat">
+  <meta property="og:title" content="You've been invited to join a group on GroupThat">
+  <meta property="og:description" content="Tap to join the group and coordinate meetups with your crew.">
+  <meta property="og:image" content="https://invite.groupthatapp.com/logo.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="You've been invited to GroupThat">
+  <meta name="twitter:description" content="Tap to join the group and coordinate meetups with your crew.">
+  <meta name="twitter:image" content="https://invite.groupthatapp.com/logo.png">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F9FAFB; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
