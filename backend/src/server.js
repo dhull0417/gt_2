@@ -99,8 +99,8 @@ app.get('/join/:token', (req, res) => {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F9FAFB; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
     .card { background: white; border-radius: 24px; padding: 48px 32px; text-align: center; max-width: 360px; width: 100%; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
-    .logo { width: 100px; height: 100px; margin: 0 auto 24px; }
-    .logo img { width: 100px; height: 100px; border-radius: 22px; }
+    .logo { width: 200px; height: 100px; margin: 0 auto 24px; }
+    .logo img { width: 200px; height: 100px; object-fit: contain; border-radius: 22px; }
     h1 { font-size: 22px; font-weight: 700; color: #111827; margin-bottom: 8px; }
     p { font-size: 15px; color: #6B7280; line-height: 1.5; margin-bottom: 32px; }
     .spinner { width: 36px; height: 36px; border: 3px solid #E5E7EB; border-top-color: #4A90E2; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 20px; }
