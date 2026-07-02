@@ -206,7 +206,7 @@ app.get('/download', (req, res) => {
   if (/Android/i.test(ua)) return res.redirect(302, PLAY_STORE_URL);
 
   // Desktop / unknown — show the branded landing page
-  const OG_IMAGE = 'https://invite.groupthatapp.com/og-image.svg';
+  const OG_IMAGE = 'https://invite.groupthatapp.com/logo.png';
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
 <html lang="en">
