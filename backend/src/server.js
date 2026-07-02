@@ -4,9 +4,23 @@ import { clerkMiddleware } from "@clerk/express";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import Jimp from "jimp";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const logoBuffer = fs.readFileSync(path.join(__dirname, '../public/logo.png'));
+
+let ogImageBuffer = null;
+async function buildOgImage() {
+  if (ogImageBuffer) return ogImageBuffer;
+  const logo = await Jimp.read(logoBuffer);
+  const targetH = Math.round(630 * 0.55);
+  const scale = targetH / logo.bitmap.height;
+  logo.resize(Math.round(logo.bitmap.width * scale), targetH);
+  const canvas = new Jimp(1200, 630, 0xffffffff);
+  canvas.composite(logo, Math.round((1200 - logo.bitmap.width) / 2), Math.round((630 - logo.bitmap.height) / 2));
+  ogImageBuffer = await canvas.getBufferAsync(Jimp.MIME_PNG);
+  return ogImageBuffer;
+}
 
 import userRoutes from "./routes/user.route.js";
 import groupRoutes from "./routes/group.route.js";
@@ -31,6 +45,13 @@ app.get('/logo.png', (req, res) => {
   res.setHeader('Content-Type', 'image/png');
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.send(logoBuffer);
+});
+
+app.get('/og-image.png', async (req, res) => {
+  const buf = await buildOgImage();
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(buf);
 });
 // app.use(arcjetMiddleware);
 
@@ -106,11 +127,15 @@ app.get('/join/:token', (req, res) => {
   <meta property="og:site_name" content="GroupThat">
   <meta property="og:title" content="You've been invited to join a group on GroupThat">
   <meta property="og:description" content="Tap to join the group and coordinate meetups with your crew.">
-  <meta property="og:image" content="https://invite.groupthatapp.com/logo.png">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://invite.groupthatapp.com/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/png">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="You've been invited to GroupThat">
   <meta name="twitter:description" content="Tap to join the group and coordinate meetups with your crew.">
-  <meta name="twitter:image" content="https://invite.groupthatapp.com/logo.png">
+  <meta name="twitter:image" content="https://invite.groupthatapp.com/og-image.png">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F9FAFB; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
@@ -206,7 +231,7 @@ app.get('/download', (req, res) => {
   if (/Android/i.test(ua)) return res.redirect(302, PLAY_STORE_URL);
 
   // Desktop / unknown — show the branded landing page
-  const OG_IMAGE = 'https://invite.groupthatapp.com/logo.png';
+  const OG_IMAGE = 'https://invite.groupthatapp.com/og-image.png';
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -220,6 +245,10 @@ app.get('/download', (req, res) => {
   <meta property="og:title" content="GroupThat — Organize your group, not your calendar">
   <meta property="og:description" content="The easiest way to coordinate meetups with your group. No group chats, no endless polls.">
   <meta property="og:image" content="${OG_IMAGE}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/png">
+  <meta name="theme-color" content="#ffffff">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="GroupThat">
   <meta name="twitter:description" content="The easiest way to coordinate meetups with your group.">
