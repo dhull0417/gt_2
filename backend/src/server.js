@@ -2,9 +2,11 @@ import express from "express";
 import cors from "cors";
 import { clerkMiddleware } from "@clerk/express";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const logoBuffer = fs.readFileSync(path.join(__dirname, '../public/logo.png'));
 
 import userRoutes from "./routes/user.route.js";
 import groupRoutes from "./routes/group.route.js";
@@ -25,7 +27,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(clerkMiddleware());
-app.use(express.static(path.join(__dirname, '../public')));
+app.get('/logo.png', (req, res) => {
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(logoBuffer);
+});
 // app.use(arcjetMiddleware);
 
 app.get("/", (req, res) => res.send("Hello from server"));
