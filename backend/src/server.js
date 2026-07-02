@@ -183,13 +183,13 @@ app.get('/join/:token', (req, res) => {
 app.get('/og-image.svg', (req, res) => {
   res.setHeader('Content-Type', 'image/svg+xml');
   res.send(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
-  <rect width="1200" height="630" fill="#4A90E2"/>
-  <rect x="460" y="155" width="280" height="280" rx="64" fill="white" opacity="0.15"/>
-  <g transform="translate(490,185) scale(9.3)">
-    <path fill="white" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+  <rect width="1200" height="630" fill="white"/>
+  <rect x="460" y="115" width="280" height="280" rx="64" fill="#4A90E2" opacity="0.12"/>
+  <g transform="translate(490,145) scale(9.3)">
+    <path fill="#4A90E2" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
   </g>
-  <text x="600" y="498" font-family="Arial,Helvetica,sans-serif" font-size="72" font-weight="700" fill="white" text-anchor="middle">GroupThat</text>
-  <text x="600" y="558" font-family="Arial,Helvetica,sans-serif" font-size="30" fill="rgba(255,255,255,0.8)" text-anchor="middle">Organize your group, not your calendar</text>
+  <text x="600" y="468" font-family="Arial,Helvetica,sans-serif" font-size="72" font-weight="700" fill="#111827" text-anchor="middle">GroupThat</text>
+  <text x="600" y="530" font-family="Arial,Helvetica,sans-serif" font-size="30" fill="#6B7280" text-anchor="middle">Organize your group, not your calendar</text>
 </svg>`);
 });
 
