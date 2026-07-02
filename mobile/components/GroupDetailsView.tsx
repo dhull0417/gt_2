@@ -6,6 +6,7 @@ import {
     TouchableOpacity,
     StyleSheet,
     Share,
+    Platform,
     ActivityIndicator,
     Alert
 } from 'react-native';
@@ -94,9 +95,11 @@ export const GroupDetailsView = ({
             return;
         }
         try {
-            await Share.share({
-                message: `Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join: ${inviteLink}`,
-            });
+            await Share.share(
+                Platform.OS === 'ios'
+                    ? { message: `Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join:`, url: inviteLink }
+                    : { message: `Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join: ${inviteLink}` }
+            );
         } catch (error: any) {
             Alert.alert('Error', 'Could not share invite link.');
         }

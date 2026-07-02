@@ -4,14 +4,11 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    TouchableWithoutFeedback,
     ScrollView,
-    FlatList,
     StyleSheet,
     Alert,
     Platform,
     Share,
-    Keyboard,
     ActivityIndicator,
     LayoutAnimation,
     UIManager,
@@ -342,7 +339,13 @@ const MembersScreen = ({ groupId, onDone }: {
             Alert.alert('Not Ready', 'The invite link is still loading. Please try again in a moment.');
             return;
         }
-        try { await Share.share({ message: `Join my new group on GroupThat!\n\nOpen this link to join: ${inviteLink}` }); } catch {}
+        try {
+            await Share.share(
+                Platform.OS === 'ios'
+                    ? { message: `Join my new group on GroupThat!\n\nOpen this link to join:`, url: inviteLink }
+                    : { message: `Join my new group on GroupThat!\n\nOpen this link to join: ${inviteLink}` }
+            );
+        } catch {}
     };
 
     return (
