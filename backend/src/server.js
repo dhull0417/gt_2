@@ -1,6 +1,10 @@
 import express from "express";
 import cors from "cors";
 import { clerkMiddleware } from "@clerk/express";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 import userRoutes from "./routes/user.route.js";
 import groupRoutes from "./routes/group.route.js";
@@ -21,6 +25,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(clerkMiddleware());
+app.use(express.static(path.join(__dirname, '../../public')));
 // app.use(arcjetMiddleware);
 
 app.get("/", (req, res) => res.send("Hello from server"));
@@ -94,8 +99,8 @@ app.get('/join/:token', (req, res) => {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F9FAFB; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
     .card { background: white; border-radius: 24px; padding: 48px 32px; text-align: center; max-width: 360px; width: 100%; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
-    .logo { width: 80px; height: 80px; background: #4A90E2; border-radius: 20px; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center; }
-    .logo svg { width: 44px; height: 44px; fill: white; }
+    .logo { width: 100px; height: 100px; margin: 0 auto 24px; }
+    .logo img { width: 100px; height: 100px; border-radius: 22px; }
     h1 { font-size: 22px; font-weight: 700; color: #111827; margin-bottom: 8px; }
     p { font-size: 15px; color: #6B7280; line-height: 1.5; margin-bottom: 32px; }
     .spinner { width: 36px; height: 36px; border: 3px solid #E5E7EB; border-top-color: #4A90E2; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 20px; }
@@ -110,7 +115,7 @@ app.get('/join/:token', (req, res) => {
 <body>
   <div class="card">
     <div class="logo">
-      <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+      <img src="/logo.png" alt="GroupThat" />
     </div>
 
     <div id="opening">
