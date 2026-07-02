@@ -177,8 +177,13 @@ app.get('/og-image.svg', (req, res) => {
 </svg>`);
 });
 
-// General app download page — shared by users to invite friends to the app
+// General app download page — auto-redirects based on device OS
 app.get('/download', (req, res) => {
+  const ua = req.headers['user-agent'] || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return res.redirect(302, APP_STORE_URL);
+  if (/Android/i.test(ua)) return res.redirect(302, PLAY_STORE_URL);
+
+  // Desktop / unknown — show the branded landing page
   const OG_IMAGE = 'https://invite.groupthatapp.com/og-image.svg';
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
