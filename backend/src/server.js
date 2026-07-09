@@ -183,16 +183,8 @@ app.get('/join/:token', (req, res) => {
     // (deferred deep link fallback for users who don't tap the link again after install)
     try { navigator.clipboard.writeText(deepLink).catch(() => {}); } catch(e) {}
 
-    // Attempt to open the app via a hidden iframe instead of window.location.href.
-    // If no app handles the custom scheme, the iframe fails silently — Safari would
-    // show "address is invalid" if we used window.location.href directly.
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = deepLink;
-    document.body.appendChild(iframe);
-
-    // If the app opens successfully the browser goes into the background,
-    // firing visibilitychange/blur. Cancel the store redirect in that case.
+    // If the app opens the browser goes to background, firing visibilitychange/blur.
+    // Attach listeners before attempting the deep link so we never miss the event.
     const timer = setTimeout(() => {
       if (isIOS) {
         window.location.href = '${APP_STORE_URL}';
@@ -205,6 +197,13 @@ app.get('/join/:token', (req, res) => {
       if (document.hidden) clearTimeout(timer);
     });
     window.addEventListener('blur', () => clearTimeout(timer));
+
+    // Use window.location.href instead of an iframe. iOS 16+ silently drops
+    // custom-scheme navigations inside iframes, so the iframe approach never
+    // opens the app. With window.location.href the OS opens GroupThat when
+    // installed (triggering the visibilitychange above), and shows a brief
+    // "cannot open" notice when it isn't — then the timer sends them to the store.
+    setTimeout(() => { window.location.href = deepLink; }, 25);
   </script>
 </body>
 </html>`);
