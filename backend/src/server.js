@@ -193,24 +193,26 @@ app.get('/join/:token', (req, res) => {
       // Avoids ERR_UNKNOWN_URL_SCHEME which would strand the user on an error page.
       setTimeout(() => { window.location.href = intentUri; }, 25);
     } else {
-      // iOS: use a hidden iframe so the custom-scheme attempt never touches the
-      // main window's navigation context. window.location.href revokes Safari's
-      // gesture context on a failed navigation, blocking the timer's App Store
-      // redirect via popup blocker. The iframe fails silently instead, keeping
-      // the timer clean. Installed users on iOS 16+ are handled by Universal
-      // Links (the page never loads for them).
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = deepLink;
-      document.body.appendChild(iframe);
+      // iOS: use window.location.href so the OS can open the app when installed.
+      // If the app is not installed Safari shows a brief "cannot open" notice —
+      // that's fine because the share message already told the user to download
+      // first. We show the download section via DOM (not navigation) after 2s so
+      // it isn't blocked by Safari's popup blocker after a failed custom-scheme
+      // navigation. If the app does open the page goes to background, firing
+      // visibilitychange, which cancels the download section reveal.
+      document.getElementById('android-btn').style.display = 'none';
 
-      const timer = setTimeout(() => {
-        window.location.href = '${APP_STORE_URL}';
-      }, 1500);
+      const showDownload = setTimeout(() => {
+        document.getElementById('opening').style.display = 'none';
+        document.getElementById('download').style.display = 'block';
+      }, 2000);
+
       document.addEventListener('visibilitychange', () => {
-        if (document.hidden) clearTimeout(timer);
+        if (document.hidden) clearTimeout(showDownload);
       });
-      window.addEventListener('blur', () => clearTimeout(timer));
+      window.addEventListener('blur', () => clearTimeout(showDownload));
+
+      setTimeout(() => { window.location.href = deepLink; }, 25);
     }
   </script>
 </body>
