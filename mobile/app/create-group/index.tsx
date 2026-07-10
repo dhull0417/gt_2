@@ -342,8 +342,13 @@ const MembersScreen = ({ groupId, onDone }: {
         try {
             await Share.share(
                 Platform.OS === 'ios'
-                    ? { message: `Join my new group on GroupThat!\n\nOpen this link to join:`, url: inviteLink }
-                    : { message: `Join my new group on GroupThat!\n\nOpen this link to join: ${inviteLink}` }
+                    ? {
+                        message: `Join my new group on GroupThat!\n\nDon't have GroupThat yet? Download it first:\nhttps://invite.groupthatapp.com/download\n\nThen tap this link to join:`,
+                        url: inviteLink,
+                      }
+                    : {
+                        message: `Join my new group on GroupThat!\n\nDon't have GroupThat yet? Download it first:\nhttps://invite.groupthatapp.com/download\n\nThen tap this link to join: ${inviteLink}`,
+                      }
             );
         } catch {}
     };

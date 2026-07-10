@@ -114,6 +114,9 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
 app.get('/join/:token', (req, res) => {
   const { token } = req.params;
   const deepLink = `groupthat://join/${token}`;
+  // Android intent URI: opens the app directly if installed, otherwise Chrome
+  // falls through to the Play Store immediately — no timer needed on Android.
+  const intentUri = `intent://join/${token}#Intent;scheme=groupthat;package=com.dallinhull.groupthat;S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`;
 
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
@@ -178,32 +181,37 @@ app.get('/join/:token', (req, res) => {
     const isIOS = /iPhone|iPad|iPod/.test(ua);
     const isAndroid = /Android/.test(ua);
     const deepLink = ${JSON.stringify(deepLink)};
+    const intentUri = ${JSON.stringify(intentUri)};
 
     // Write the deep link to clipboard so the app can pick it up on first launch
     // (deferred deep link fallback for users who don't tap the link again after install)
     try { navigator.clipboard.writeText(deepLink).catch(() => {}); } catch(e) {}
 
-    // If the app opens the browser goes to background, firing visibilitychange/blur.
-    // Attach listeners before attempting the deep link so we never miss the event.
-    const timer = setTimeout(() => {
-      if (isIOS) {
+    if (isAndroid) {
+      // intent:// tells Chrome to open the app by package name if installed,
+      // or navigate to browser_fallback_url (Play Store) immediately if not.
+      // Avoids ERR_UNKNOWN_URL_SCHEME which would strand the user on an error page.
+      setTimeout(() => { window.location.href = intentUri; }, 25);
+    } else {
+      // iOS: use a hidden iframe so the custom-scheme attempt never touches the
+      // main window's navigation context. window.location.href revokes Safari's
+      // gesture context on a failed navigation, blocking the timer's App Store
+      // redirect via popup blocker. The iframe fails silently instead, keeping
+      // the timer clean. Installed users on iOS 16+ are handled by Universal
+      // Links (the page never loads for them).
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = deepLink;
+      document.body.appendChild(iframe);
+
+      const timer = setTimeout(() => {
         window.location.href = '${APP_STORE_URL}';
-      } else if (isAndroid) {
-        window.location.href = '${PLAY_STORE_URL}';
-      }
-    }, 1500);
-
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) clearTimeout(timer);
-    });
-    window.addEventListener('blur', () => clearTimeout(timer));
-
-    // Use window.location.href instead of an iframe. iOS 16+ silently drops
-    // custom-scheme navigations inside iframes, so the iframe approach never
-    // opens the app. With window.location.href the OS opens GroupThat when
-    // installed (triggering the visibilitychange above), and shows a brief
-    // "cannot open" notice when it isn't — then the timer sends them to the store.
-    setTimeout(() => { window.location.href = deepLink; }, 25);
+      }, 1500);
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) clearTimeout(timer);
+      });
+      window.addEventListener('blur', () => clearTimeout(timer));
+    }
   </script>
 </body>
 </html>`);

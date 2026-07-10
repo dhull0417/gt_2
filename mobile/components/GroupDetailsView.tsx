@@ -97,8 +97,13 @@ export const GroupDetailsView = ({
         try {
             await Share.share(
                 Platform.OS === 'ios'
-                    ? { message: `Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join:`, url: inviteLink }
-                    : { message: `Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join: ${inviteLink}` }
+                    ? {
+                        message: `Join my group "${groupDetails.name}" on GroupThat!\n\nDon't have GroupThat yet? Download it first:\nhttps://invite.groupthatapp.com/download\n\nThen tap this link to join:`,
+                        url: inviteLink,
+                      }
+                    : {
+                        message: `Join my group "${groupDetails.name}" on GroupThat!\n\nDon't have GroupThat yet? Download it first:\nhttps://invite.groupthatapp.com/download\n\nThen tap this link to join: ${inviteLink}`,
+                      }
             );
         } catch (error: any) {
             Alert.alert('Error', 'Could not share invite link.');
