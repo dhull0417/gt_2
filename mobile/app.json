@@ -2,7 +2,7 @@
   "expo": {
     "name": "GroupThat",
     "slug": "groupthat",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "groupthat",
@@ -54,7 +54,7 @@
         "READ_CALENDAR",
         "WRITE_CALENDAR"
       ],
-      "runtimeVersion": "1.3.0",
+      "runtimeVersion": "1.3.1",
       "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {
