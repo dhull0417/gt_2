@@ -340,16 +340,9 @@ const MembersScreen = ({ groupId, onDone }: {
             return;
         }
         try {
-            await Share.share(
-                Platform.OS === 'ios'
-                    ? {
-                        message: `Join my new group on GroupThat!\n\nDon't have GroupThat yet? Download it first:\nhttps://invite.groupthatapp.com/download\n\nThen tap this link to join:`,
-                        url: inviteLink,
-                      }
-                    : {
-                        message: `Join my new group on GroupThat!\n\nDon't have GroupThat yet? Download it first:\nhttps://invite.groupthatapp.com/download\n\nThen tap this link to join: ${inviteLink}`,
-                      }
-            );
+            await Share.share({
+                message: `Join my new group on GroupThat!\n\nSTEP 1 — Download the app:\n→ https://invite.groupthatapp.com/download\n\nSTEP 2 — Join the group:\n→ ${inviteLink}`,
+            });
         } catch {}
     };
 
