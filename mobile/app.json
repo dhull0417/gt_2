@@ -2,7 +2,7 @@
   "expo": {
     "name": "GroupThat",
     "slug": "groupthat",
-    "version": "1.3.1",
+    "version": "1.3.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "groupthat",
@@ -54,7 +54,7 @@
         "READ_CALENDAR",
         "WRITE_CALENDAR"
       ],
-      "runtimeVersion": "1.3.1",
+      "runtimeVersion": "1.3.2",
       "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {
@@ -63,43 +63,8 @@
           "data": [
             {
               "scheme": "https",
-              "host": "gt-2-peach.vercel.app",
-              "pathPrefix": "/join"
-            }
-          ],
-          "category": ["BROWSABLE", "DEFAULT"]
-        },
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "https",
               "host": "invite.groupthatapp.com",
               "pathPrefix": "/join"
-            }
-          ],
-          "category": ["BROWSABLE", "DEFAULT"]
-        },
-        {
-          "action": "VIEW",
-          "data": [
-            {
-              "scheme": "https",
-              "host": "gt-2-peach.vercel.app",
-              "pathPrefix": "/download"
-            }
-          ],
-          "category": ["BROWSABLE", "DEFAULT"]
-        },
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "https",
-              "host": "invite.groupthatapp.com",
-              "pathPrefix": "/download"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
