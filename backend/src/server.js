@@ -25,6 +25,7 @@ async function buildOgImage() {
 import userRoutes from "./routes/user.route.js";
 import groupRoutes from "./routes/group.route.js";
 import meetupRoutes from "./routes/meetup.route.js";
+import pollRoutes from "./routes/poll.route.js";
 import jobRoutes from "./routes/job.route.js";
 import notificationRoutes from "./routes/notification.route.js"; 
 // Project 4: Import webhook routes
@@ -60,7 +61,8 @@ app.get("/", (req, res) => res.send("Hello from server"));
 app.use("/api/users", userRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/meetups", meetupRoutes);
-app.use("/api/jobs", jobRoutes); 
+app.use("/api/polls", pollRoutes);
+app.use("/api/jobs", jobRoutes);
 app.use("/api/notifications", notificationRoutes); 
 // Project 4: Mount the webhook route
 app.use("/api/webhooks", webhookRoutes);
