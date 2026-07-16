@@ -110,6 +110,28 @@ export interface Meetup {
   guests?: { userId: string; count: number }[];
 }
 
+export interface PollOption {
+  _id: string;
+  text: string;
+  voters: (User | string)[];
+}
+
+export interface Poll {
+  _id: string;
+  group: {
+    _id: string;
+    owner: string;
+    name: string;
+  };
+  creator: User;
+  prompt: string;
+  allowMultiple: boolean;
+  options: PollOption[];
+  status: 'active' | 'expired' | 'cancelled';
+  expiresAt: string;
+  createdAt: string;
+}
+
 export interface Notification {
   _id: string;
   recipient: string;
@@ -193,6 +215,19 @@ interface UpdateModeratorsPayload {
 interface RsvpMeetupPayload {
   meetupId: string;
   status: 'in' | 'out';
+}
+
+interface CreatePollPayload {
+  groupId: string;
+  prompt: string;
+  options: string[];
+  allowMultiple: boolean;
+  expiresAt: string;
+}
+
+interface VotePollPayload {
+  pollId: string;
+  optionIds: string[];
 }
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
@@ -337,6 +372,25 @@ export const meetupApi = {
   },
   setGuestCount: async (api: AxiosInstance, meetupId: string, count: number): Promise<{ meetup: Meetup }> => {
     const response = await api.patch<{ meetup: Meetup }>(`/api/meetups/${meetupId}/guests`, { count });
+    return response.data;
+  },
+};
+
+export const pollApi = {
+  getPolls: async (api: AxiosInstance, groupId: string): Promise<Poll[]> => {
+    const response = await api.get<Poll[]>(`/api/polls?groupId=${groupId}`);
+    return response.data;
+  },
+  createPoll: async (api: AxiosInstance, payload: CreatePollPayload): Promise<{ poll: Poll }> => {
+    const response = await api.post<{ poll: Poll }>('/api/polls', payload);
+    return response.data;
+  },
+  votePoll: async (api: AxiosInstance, { pollId, optionIds }: VotePollPayload): Promise<{ poll: Poll }> => {
+    const response = await api.post<{ poll: Poll }>(`/api/polls/${pollId}/vote`, { optionIds });
+    return response.data;
+  },
+  cancelPoll: async (api: AxiosInstance, pollId: string): Promise<{ message: string }> => {
+    const response = await api.patch(`/api/polls/${pollId}/cancel`);
     return response.data;
   },
 };

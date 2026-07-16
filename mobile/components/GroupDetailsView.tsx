@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import AddMeetupWizard from './AddMeetupWizard';
+import CreatePollModal from './CreatePollModal';
 import { useQuery } from '@tanstack/react-query';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
@@ -68,6 +69,7 @@ export const GroupDetailsView = ({
     
     // --- Wizard Visibility State ---
     const [wizardVisible, setWizardVisible] = useState(false);
+    const [pollModalVisible, setPollModalVisible] = useState(false);
     const router = useRouter();
     const api = useApiClient();
     const { mutate: leaveGroup, isPending: isLeaving } = useLeaveGroup();
@@ -229,6 +231,13 @@ export const GroupDetailsView = ({
                     </TouchableOpacity>
                 )}
 
+                {canManage && (
+                    <TouchableOpacity onPress={() => setPollModalVisible(true)} style={styles.actionPill}>
+                        <Feather name="bar-chart-2" size={16} color="#4A90E2" />
+                        <Text style={styles.actionPillText}>Create Poll</Text>
+                    </TouchableOpacity>
+                )}
+
                 {/* Invite Friends Action - Visible to all members */}
                 <TouchableOpacity onPress={handleInvitePress} style={styles.actionPill}>
                     <Feather name="user-plus" size={16} color="#4A90E2" />
@@ -293,10 +302,18 @@ export const GroupDetailsView = ({
                 </View>
             )}
             {/* --- Add Meetup Wizard Modal --- */}
-            <AddMeetupWizard 
-                visible={wizardVisible} 
-                onClose={() => setWizardVisible(false)} 
-                groupDetails={groupDetails} 
+            <AddMeetupWizard
+                visible={wizardVisible}
+                onClose={() => setWizardVisible(false)}
+                groupDetails={groupDetails}
+            />
+
+            {/* --- Create Poll Modal --- */}
+            <CreatePollModal
+                visible={pollModalVisible}
+                onClose={() => setPollModalVisible(false)}
+                groupId={groupDetails._id}
+                timezone={groupDetails.timezone}
             />
         </View>
     );
@@ -314,8 +331,8 @@ const styles = StyleSheet.create({
     routineBlock: { marginBottom: 8 },
     frequencyLabel: { fontSize: 14, fontWeight: '800', color: '#4A90E2', marginBottom: 4, textTransform: 'capitalize' },
     scheduleDetailText: { fontSize: 15, fontWeight: '600', color: '#374151', marginBottom: 2 },
-    managerActionsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
-    actionPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f9ff', paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: '#4A90E2' },
+    managerActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
+    actionPill: { flexGrow: 1, flexBasis: '46%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f9ff', paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: '#4A90E2' },
     actionPillText: { marginLeft: 8, color: '#4A90E2', fontWeight: 'bold', fontSize: 13 },
     sectionTitle: { fontSize: 20, fontWeight: '900', color: '#111827', marginBottom: 16 },
     memberCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },

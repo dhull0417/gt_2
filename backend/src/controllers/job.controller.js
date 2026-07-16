@@ -2,6 +2,7 @@ import asyncHandler from "express-async-handler";
 import Meetup from "../models/meetup.model.js";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
+import Poll from "../models/poll.model.js";
 import { DateTime } from "luxon";
 import { calculateNextMeetupDate, computeNextGenerationAt } from "../utils/date.utils.js";
 import { notifyUsers } from "../utils/push.notifications.js";
@@ -235,4 +236,47 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
   }
 
   res.status(200).json({ message: `Notified for ${toNotify.length} meetup(s).` });
+});
+
+/**
+ * @desc    Expire polls whose expiresAt has passed and notify members of the winning option(s).
+ *          Ties are announced/highlighted as co-winners.
+ * @route   POST /api/jobs/expire-polls
+ */
+export const expirePolls = asyncHandler(async (req, res) => {
+  const now = new Date();
+
+  const toExpire = await Poll.find({
+    status: 'active',
+    expiresAt: { $lte: now },
+  }).populate('group', 'members');
+
+  let expiredCount = 0;
+
+  for (const poll of toExpire) {
+    poll.status = 'expired';
+    await poll.save();
+    expiredCount++;
+
+    const maxVotes = Math.max(...poll.options.map(o => o.voters.length));
+    const winners = maxVotes > 0 ? poll.options.filter(o => o.voters.length === maxVotes) : [];
+    const winnerText = winners.length > 0
+      ? winners.map(w => w.text).join(' & ')
+      : null;
+
+    const body = winnerText
+      ? `"${poll.prompt}" has closed. Winner: ${winnerText}.`
+      : `"${poll.prompt}" has closed with no votes.`;
+
+    const members = await User.find({ _id: { $in: poll.group?.members || [] } });
+    if (members.length > 0) {
+      await notifyUsers(members, {
+        title: "Poll Closed",
+        body,
+        data: { pollId: poll._id.toString(), groupId: poll.group._id.toString(), type: 'poll_expired' },
+      });
+    }
+  }
+
+  res.status(200).json({ message: `Job complete. Expired ${expiredCount} poll(s).` });
 });
