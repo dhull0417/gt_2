@@ -18,6 +18,7 @@ export const useVotePoll = () => {
 
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['polls', variables.groupId] });
+      Alert.alert("Success", "Your vote has been recorded.");
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Failed to submit vote.";

@@ -793,15 +793,29 @@ const GroupScreen = () => {
                   </TouchableOpacity>
                 </>
               ) : (
-                canManageGroup && (
-                  <TouchableOpacity
-                    onPress={handleSettingsPress}
-                    style={styles.settingsButton}
-                    activeOpacity={0.7}
-                  >
-                    <Feather name="settings" size={22} color="#374151" />
-                  </TouchableOpacity>
-                )
+                <>
+                  {!selectedGroup.isDM && (
+                    <TouchableOpacity
+                      ref={pollButtonRef}
+                      onLayout={handlePollButtonLayout}
+                      onPress={handlePollButtonPress}
+                      style={[styles.iconButton, styles.iconButtonPoll]}
+                    >
+                      <Feather name="bar-chart-2" size={18} color="#4A90E2" />
+                      {hasUnansweredPoll && <View style={styles.pollUnansweredDot} />}
+                    </TouchableOpacity>
+                  )}
+
+                  {canManageGroup && (
+                    <TouchableOpacity
+                      onPress={handleSettingsPress}
+                      style={styles.settingsButton}
+                      activeOpacity={0.7}
+                    >
+                      <Feather name="settings" size={22} color="#374151" />
+                    </TouchableOpacity>
+                  )}
+                </>
               )}
             </View>
           </View>
