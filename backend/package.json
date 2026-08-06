@@ -5,7 +5,11 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "node --watch src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "migrate:status": "migrate-mongo status -f migrate-mongo-config.cjs",
+    "migrate:up": "migrate-mongo up -f migrate-mongo-config.cjs",
+    "migrate:down": "migrate-mongo down -f migrate-mongo-config.cjs",
+    "migrate:create": "migrate-mongo create -f migrate-mongo-config.cjs"
   },
   "keywords": [],
   "type": "module",
@@ -25,6 +29,7 @@
     "express-async-handler": "^1.2.0",
     "jimp": "^0.22.12",
     "luxon": "^3.7.2",
+    "migrate-mongo": "^14.0.7",
     "mongoose": "^8.16.1",
     "multer": "^2.0.1",
     "prettier": "3.6.2",
