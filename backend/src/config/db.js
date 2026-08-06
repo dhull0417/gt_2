@@ -35,7 +35,7 @@ export const connectDB = async () => {
         console.log("Connected to DB successfully")
         await warnIfMigrationsPending();
     } catch (error) {
-        console.log("Error connecting to MongoDB")
+        console.error("Error connecting to MongoDB:", error);
         //Only 0 will work, but 1 will kick you out
         process.exit(1);
     }
