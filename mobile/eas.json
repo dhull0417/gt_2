@@ -7,6 +7,7 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "channel": "development",
       "environment": "development"
     },
     "preview": {
@@ -14,7 +15,7 @@
       "android": {
         "buildType": "app-bundle"
       },
-      "channel": "production",
+      "channel": "preview",
       "environment": "preview"
     },
     "production": {
@@ -33,13 +34,14 @@
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
       },
-      "channel": "production",
+      "channel": "preview",
       "environment": "preview"
     },
     "simulator": {
       "ios": {
         "simulator": true
       },
+      "channel": "development",
       "environment": "development"
     }
   },
