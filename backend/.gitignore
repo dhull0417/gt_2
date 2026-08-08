@@ -2,3 +2,5 @@
 dotenv
 
 node_modules/
+.vercel
+.env*

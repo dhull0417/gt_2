@@ -1,0 +1,16 @@
+name: Verify PR Source Branch
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require staging as source branch
+        run: |
+          if [ "${{ github.head_ref }}" != "staging" ]; then
+            echo "Pull requests into main must come from staging (got: ${{ github.head_ref }})."
+            exit 1
+          fi
