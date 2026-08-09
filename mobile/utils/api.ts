@@ -244,6 +244,19 @@ export const createApiClient = (getToken: () => Promise<string | null>): AxiosIn
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   });
+  // TEMP DEBUG — remove once the staging 401 is diagnosed.
+  api.interceptors.response.use(undefined, (error) => {
+    if (error?.response?.status === 401) {
+      console.log('[401 debug]', {
+        url: error.config?.url,
+        hadAuthHeader: !!error.config?.headers?.Authorization,
+        reason: error.response.headers?.['x-clerk-auth-reason'],
+        message: error.response.headers?.['x-clerk-auth-message'],
+        status: error.response.headers?.['x-clerk-auth-status'],
+      });
+    }
+    return Promise.reject(error);
+  });
   return api;
 };
 
