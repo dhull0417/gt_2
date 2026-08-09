@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
-  FlatList,
+  SectionList,
   Modal,
   Pressable,
   Image,
@@ -33,9 +33,17 @@ import { useMessages } from '@/hooks/useMessages';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { ChatMessageBubble } from '@/components/ChatMessageBubble';
 import { ChatMessageInput } from '@/components/ChatMessageInput';
+import { ChatDayBubble } from '@/components/ChatDayBubble';
 import PollListModal from '@/components/PollListModal';
 import { useGetPolls } from '@/hooks/useGetPolls';
+import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
 import type { ChatMessage } from '@/types/chat';
+
+interface ChatDaySection {
+  key: string;
+  title: string;
+  data: ChatMessage[];
+}
 
 const styles = StyleSheet.create({
   loadingContainer: {
@@ -133,7 +141,7 @@ const GroupChat = ({
   keyboardOffset: number;
 }) => {
   const api = useApiClient();
-  const flatListRef = useRef<FlatList<ChatMessage>>(null);
+  const sectionListRef = useRef<SectionList<ChatMessage, ChatDaySection>>(null);
 
   const senderId = currentUser.clerkId;
   const senderName = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.email;
@@ -157,15 +165,40 @@ const GroupChat = ({
     return map;
   }, [messages, senderId, senderName]);
 
+  const sections = useMemo<ChatDaySection[]>(() => {
+    const byDay = new Map<string, ChatDaySection>();
+    for (const msg of messages) {
+      const key = getDayBucketKey(msg.created_at);
+      let section = byDay.get(key);
+      if (!section) {
+        section = { key, title: getDayBucketLabel(msg.created_at), data: [] };
+        byDay.set(key, section);
+      }
+      section.data.push(msg);
+    }
+    return Array.from(byDay.values());
+  }, [messages]);
+
+  const scrollToBottom = useCallback((animated: boolean) => {
+    const lastSection = sections[sections.length - 1];
+    if (!lastSection || lastSection.data.length === 0) return;
+    sectionListRef.current?.scrollToLocation({
+      sectionIndex: sections.length - 1,
+      itemIndex: lastSection.data.length - 1,
+      animated,
+      viewPosition: 1,
+    });
+  }, [sections]);
+
   useEffect(() => {
-    if (messages.length > 0) flatListRef.current?.scrollToEnd({ animated: true });
+    if (messages.length > 0) scrollToBottom(true);
   }, [messages.length]);
 
   useEffect(() => {
     const event = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const sub = Keyboard.addListener(event, () => flatListRef.current?.scrollToEnd({ animated: true }));
+    const sub = Keyboard.addListener(event, () => scrollToBottom(true));
     return () => sub.remove();
-  }, []);
+  }, [scrollToBottom]);
 
   const isOwnSelected = selectedMessage?.sender_id === senderId;
   const isDeletedSelected = !!selectedMessage?.deleted_at;
@@ -266,9 +299,9 @@ const GroupChat = ({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={keyboardOffset}
       >
-        <FlatList
-          ref={flatListRef}
-          data={messages}
+        <SectionList
+          ref={sectionListRef}
+          sections={sections}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <ChatMessageBubble
@@ -279,13 +312,16 @@ const GroupChat = ({
               onReactionLongPress={() => setReactionDetailMessage(item)}
             />
           )}
+          renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}
+          stickySectionHeadersEnabled
           contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}
           ListEmptyComponent={
             <View style={chatStyles.center}>
               <Text style={{ color: '#9CA3AF', fontSize: 15 }}>No messages yet. Say hello!</Text>
             </View>
           }
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={() => scrollToBottom(false)}
+          onScrollToIndexFailed={() => setTimeout(() => scrollToBottom(false), 50)}
         />
 
         <View style={{ minHeight: 20, paddingHorizontal: 16, justifyContent: 'center' }}>

@@ -19,6 +19,10 @@ const meetupSchema = new mongoose.Schema({
   visibilityDate: { type: Date },
   rsvpOpenDate: { type: Date },
   rsvpNotified: { type: Boolean, default: false },
+  // Set to the `startsAt` value the 30-min reminder was last sent for. Comparing
+  // against the current `startsAt` (rather than a boolean) makes the reminder
+  // naturally reactive to reschedules — no explicit reset needed on update.
+  reminderNotifiedFor: { type: Date, default: null },
   startsAt: { type: Date },
   guests: [{
     userId: { type: String },  // clerkId of the member who brought guests
