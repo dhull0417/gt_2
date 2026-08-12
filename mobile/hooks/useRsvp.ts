@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, meetupApi } from "../utils/api";
 import { Alert } from "react-native";
+import { emitRsvpResponse } from "../utils/rsvpResponseBus";
 
 interface RsvpVariables {
   meetupId: string;
@@ -14,9 +15,9 @@ export const useRsvp = () => {
   return useMutation({
     mutationFn: (variables: RsvpVariables) =>
       meetupApi.handleRsvp(api, variables),
-    
-    onSuccess: (data) => {
-      Alert.alert("Success", "Your RSVP has been recorded.");
+
+    onSuccess: (data, variables) => {
+      emitRsvpResponse(variables.status);
       // Invalidate the main meetups query to refresh all data
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
     },

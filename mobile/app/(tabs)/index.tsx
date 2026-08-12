@@ -7,6 +7,8 @@ import { useRsvp } from '@/hooks/useRsvp';
 import { Meetup, User, useApiClient, userApi, meetupApi } from '@/utils/api';
 import { useFocusEffect, useRouter, useLocalSearchParams, Link } from 'expo-router';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
+import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
+import { GroupAvatar } from '@/components/GroupAvatar';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
@@ -32,68 +34,46 @@ const formatDate = (dateString: string, timezone: string) => {
     return new Date(dateString).toLocaleDateString(undefined, options);
 };
 
-const getTimezoneAbbreviation = (dateString: string, timezone: string) => {
-    try {
-      const options: Intl.DateTimeFormatOptions = { timeZone: timezone, timeZoneName: 'shortGeneric' };
-      const date = new Date(dateString);
-      const formatter = new Intl.DateTimeFormat('en-US', options);
-      const parts = formatter.formatToParts(date);
-      const tzPart = parts.find(part => part.type === 'timeZoneName');
-      return tzPart ? tzPart.value : '';
-    } catch (e) {
-      return timezone.split('/').pop()?.replace('_', ' ') || '';
-    }
+// Clusters a (date-ordered) meetup list into per-day buckets, so the date can be shown once above
+// every meetup that falls on it instead of repeated on each card.
+type DayGroup = { key: string; label: string; items: Meetup[] };
+const splitByDay = (list: Meetup[]): DayGroup[] => {
+    const groups: DayGroup[] = [];
+    list.forEach(meetup => {
+        const key = new Date(meetup.date).toLocaleDateString('en-CA', { timeZone: meetup.timezone });
+        let group = groups.find(g => g.key === key);
+        if (!group) {
+            const label = new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone });
+            group = { key, label, items: [] };
+            groups.push(group);
+        }
+        group.items.push(meetup);
+    });
+    return groups;
 };
 
 // --- Components ---
 
-const RsvpStatusDot = ({ meetup, userId }: { meetup: Meetup; userId: string }) => {
-    let dotColor = 'grey'; // Grey (Undecided) default
-
-    if (meetup.in.some(u => getUserId(u) === userId)) {
-        dotColor = '#4FD1C5'; // Green (In)
-    } else if (meetup.out.some(u => getUserId(u) === userId)) {
-        dotColor = '#FF7A6E'; // Red (Out)
-    }
-
-    return (
-        <View 
-            style={{ 
-                width: 12, 
-                height: 12, 
-                borderRadius: 6, 
-                backgroundColor: dotColor,
-                position: 'absolute',
-                top: 12,
-                right: 12,
-                borderWidth: 1,
-                borderColor: 'white'
-            }} 
-        />
-    );
-};
+const DayHeader = ({ label }: { label: string }) => (
+    <Text style={{ fontSize: 16, fontWeight: '800', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 8, marginTop: 28, marginBottom: 6, textAlign: 'center' }}>
+        {label}
+    </Text>
+);
 
 const RsvpCounts = ({ meetup }: { meetup: Meetup }) => {
     const totalGuests = (meetup.guests || []).reduce((sum, g) => sum + (g.count || 0), 0);
     return (
         <View className="flex-row items-center mt-3 flex-wrap">
             <View className="flex-row items-center mr-4">
-                <View className="w-2 h-2 rounded-full bg-green-500 mr-1.5" />
-                <Text className="text-gray-600 font-medium">{meetup.in.length + totalGuests} In</Text>
+                <View className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: '#4FD1C5' }} />
+                <Text className="text-gray-600 font-medium">
+                    {meetup.in.length + totalGuests}{meetup.capacity > 0 ? `/${meetup.capacity}` : ''} In
+                </Text>
             </View>
 
             <View className="flex-row items-center mr-4">
-                <View className="w-2 h-2 rounded-full bg-red-500 mr-1.5" />
+                <View className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: '#FF7A6E' }} />
                 <Text className="text-gray-600 font-medium">{meetup.out.length} Out</Text>
-            </View>
-
-            <View className="flex-row items-center">
-                <Text 
-                  className="font-bold text-[10px] uppercase" 
-                  style={{ color: '#4A90E2' }}
-                >
-                    Max Attendees: {meetup.capacity === 0 ? 'Unlimited' : meetup.capacity}
-                </Text>
             </View>
         </View>
     );
@@ -106,7 +86,6 @@ const MeetupCard = ({
   onRsvp,
   isRsvping,
   currentUser,
-  groupBorderColor,
 }: {
   meetup: Meetup;
   onPress: () => void;
@@ -114,7 +93,6 @@ const MeetupCard = ({
   onRsvp: (status: 'in' | 'out', guestCount?: number, mute?: boolean) => void;
   isRsvping: boolean;
   currentUser: User | undefined;
-  groupBorderColor?: string;
 }) => {
   const [guestExpanded, setGuestExpanded] = useState(false);
   const [localGuestCount, setLocalGuestCount] = useState(() => {
@@ -138,41 +116,43 @@ const MeetupCard = ({
   const isWaitlisted = currentUser ? meetup.waitlist.some(u => getUserId(u) === currentUser._id) : false;
   const isIn = currentUser ? meetup.in.some(u => getUserId(u) === currentUser._id) : false;
   const isOut = currentUser ? meetup.out.some(u => getUserId(u) === currentUser._id) : false;
+  const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
+  const outUnselected = !isOut;
 
   const isReadOnly = isCancelled || isExpired;
 
+  // Faint RSVP-status tint to match the detail modal: amber until the user
+  // responds, then green ("in"/waitlisted) or red ("out").
+  const rsvpBackgroundColor = isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
+
   return (
-    <View 
+    <View
       className={`p-5 my-2 rounded-2xl shadow-sm border relative ${
-        isCancelled ? 'bg-red-50/30 border-red-100 opacity-80' : 
-        isExpired ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-200'
+        isCancelled ? 'bg-red-50/30 border-red-100 opacity-80' :
+        isExpired ? 'bg-gray-100 border-gray-200' : 'border-gray-200'
       }`}
       style={{
         ...(isExpired && !isCancelled ? { opacity: 0.75 } : {}),
-        ...(!isReadOnly && groupBorderColor ? {
-          borderLeftWidth: 6,
-          borderLeftColor: groupBorderColor,
-          borderTopColor: groupBorderColor,
-          borderRightColor: groupBorderColor,
-          borderBottomColor: groupBorderColor,
-          shadowColor: groupBorderColor,
-          shadowOffset: { width: -5, height: 0 },
-          shadowOpacity: 0.5,
-          shadowRadius: 3,
-        } : {}),
+        ...(!isReadOnly ? { backgroundColor: rsvpBackgroundColor } : {}),
       }}
     >
-      <TouchableOpacity onPress={onPress}>
-        {!isReadOnly && currentUser && <RsvpStatusDot meetup={meetup} userId={currentUser._id} />}
+      <TouchableOpacity onPress={onPress} style={{ flexDirection: 'row' }}>
+        <View style={{ marginRight: 12 }}>
+          <GroupAvatar name={meetup.group.name} imageUrl={meetup.group.image} size={44} />
+        </View>
+        <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 }}>
+          {meetup.time}
+        </Text>
 
-        <View className="flex-row justify-between items-start">
+        <View className="flex-row justify-between items-start" style={{ marginTop: 4 }}>
           <View className="flex-1 pr-6">
-            <Text 
-              style={{ 
-                fontSize: 20, 
-                fontWeight: 'bold', 
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: 'bold',
                 color: isReadOnly ? '#9CA3AF' : '#4FD1C5',
-                textDecorationLine: isCancelled ? 'line-through' : 'none' 
+                textDecorationLine: isCancelled ? 'line-through' : 'none'
               }}
             >
               {meetup.name}
@@ -188,11 +168,21 @@ const MeetupCard = ({
               </View>
             )}
           </View>
+          {!isReadOnly && (
+            isIn || isOut ? (
+              <Text style={{ fontSize: 13, fontWeight: '900', letterSpacing: 1, color: isIn ? '#4FD1C5' : '#FF7A6E' }}>
+                {isIn ? 'IN' : 'OUT'}
+              </Text>
+            ) : isRsvpLocked ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Feather name="clock" size={16} color="#9CA3AF" />
+                <Feather name="lock" size={16} color="#9CA3AF" />
+              </View>
+            ) : (
+              <Feather name="unlock" size={16} color="#F59E0B" />
+            )
+          )}
         </View>
-
-        <Text style={{ fontSize: 16, color: isReadOnly ? '#9CA3AF' : '#4B5563', marginTop: 4 }}>
-          {formatDate(meetup.date, meetup.timezone)} at {meetup.time} {getTimezoneAbbreviation(meetup.date, meetup.timezone)}
-        </Text>
 
         {!isReadOnly && <RsvpCounts meetup={meetup} />}
 
@@ -217,6 +207,7 @@ const MeetupCard = ({
             </Text>
           </View>
         )}
+        </View>
       </TouchableOpacity>
 
       {showRsvpButtons && !isReadOnly && (
@@ -237,8 +228,8 @@ const MeetupCard = ({
                 <View style={{
                   flex: 1, flexDirection: 'row', borderRadius: 12,
                   overflow: 'hidden', height: 48,
-                  backgroundColor: isOut ? 'transparent' : isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#4FD1C5',
-                  borderWidth: isOut ? 1.5 : 0,
+                  backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : isIn ? '#4FD1C5' : 'white',
+                  borderWidth: inUnselected ? 1.5 : 0,
                   borderColor: '#4FD1C5',
                 }}>
                   <TouchableOpacity
@@ -246,19 +237,19 @@ const MeetupCard = ({
                     disabled={isRsvping}
                     style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Text style={{ color: isOut ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 16 }}>
+                    <Text style={{ color: inUnselected ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 16 }}>
                       {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                     </Text>
                   </TouchableOpacity>
-                  <View style={{ width: 1, backgroundColor: isOut ? '#D1FAE5' : 'rgba(255,255,255,0.35)' }} />
+                  <View style={{ width: 1, backgroundColor: inUnselected ? '#D1FAE5' : 'rgba(255,255,255,0.35)' }} />
                   <TouchableOpacity
                     onPress={() => { setLocalGuestCount(0); setGuestExpanded(v => !v); }}
                     disabled={isRsvping}
                     style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                   >
                     {guestExpanded
-                      ? <Feather name="x" size={18} color={isOut ? '#4FD1C5' : 'white'} />
-                      : <MaterialIcons name="group-add" size={20} color={isOut ? '#4FD1C5' : 'white'} />
+                      ? <Feather name="x" size={18} color={inUnselected ? '#4FD1C5' : 'white'} />
+                      : <MaterialIcons name="group-add" size={20} color={inUnselected ? '#4FD1C5' : 'white'} />
                     }
                   </TouchableOpacity>
                 </View>
@@ -266,8 +257,8 @@ const MeetupCard = ({
                 <View style={{
                   flex: 1, flexDirection: 'row', borderRadius: 12,
                   overflow: 'hidden', height: 48,
-                  backgroundColor: isIn ? 'transparent' : '#FF7A6E',
-                  borderWidth: isIn ? 1.5 : 0,
+                  backgroundColor: isOut ? '#FF7A6E' : 'white',
+                  borderWidth: outUnselected ? 1.5 : 0,
                   borderColor: '#FF7A6E',
                 }}>
                   <TouchableOpacity
@@ -275,15 +266,15 @@ const MeetupCard = ({
                     disabled={isRsvping}
                     style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Text style={{ color: isIn ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
+                    <Text style={{ color: outUnselected ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
                   </TouchableOpacity>
-                  <View style={{ width: 1, backgroundColor: isIn ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
+                  <View style={{ width: 1, backgroundColor: outUnselected ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
                   <TouchableOpacity
                     onPress={() => { setGuestExpanded(false); onRsvp('out', 0, true); }}
                     disabled={isRsvping}
                     style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                   >
-                    <Feather name="bell-off" size={18} color={isIn ? '#FF7A6E' : 'white'} />
+                    <Feather name="bell-off" size={18} color={outUnselected ? '#FF7A6E' : 'white'} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -560,7 +551,7 @@ const DashboardScreen = () => {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50">
+    <SafeAreaView className="flex-1 bg-gray-50" edges={['top', 'left', 'right']}>
       <View className="items-center px-6 py-4 border-b border-gray-200 bg-white">
         <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#111827' }}>
           Home
@@ -583,7 +574,11 @@ const DashboardScreen = () => {
 
 
               {visibleUndecidedMeetups.length > 0 ? (
-                visibleUndecidedMeetups.map(meetup => (
+                <>
+                {splitByDay(visibleUndecidedMeetups).map(day => (
+                  <DayHeader key={day.key} label={day.label} />
+                ))}
+                {visibleUndecidedMeetups.map(meetup => (
                   <RemovableCard
                     key={meetup._id}
                     isRemoving={removingId === meetup._id}
@@ -600,10 +595,10 @@ const DashboardScreen = () => {
                       onRsvp={(status, guestCount, mute) => handleDashboardRsvp(meetup, status, guestCount, mute)}
                       isRsvping={isRsvping}
                       currentUser={currentUser}
-                      groupBorderColor={hashGroupColor(meetup.group._id)}
                     />
                   </RemovableCard>
-                ))
+                ))}
+                </>
               ) : (
                 <View className="bg-white p-8 my-2 rounded-[2rem] items-center border border-dashed border-gray-300">
                   <Text className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">
@@ -693,17 +688,21 @@ const DashboardScreen = () => {
                         {groupTitle}
                       </Text>
                     )}
-                    {groupMeetups.map((meetup: Meetup) => (
-                        <MeetupCard
-                            key={meetup._id}
-                            meetup={meetup}
-                            onPress={() => handleOpenModal(meetup)}
-                            showRsvpButtons={false}
-                            onRsvp={() => {}}
-                            isRsvping={false}
-                            currentUser={currentUser}
-                            groupBorderColor={hashGroupColor(meetup.group._id)}
-                        />
+                    {splitByDay(groupMeetups).map(day => (
+                      <View key={day.key}>
+                        <DayHeader label={day.label} />
+                        {day.items.map((meetup: Meetup) => (
+                          <MeetupCard
+                              key={meetup._id}
+                              meetup={meetup}
+                              onPress={() => handleOpenModal(meetup)}
+                              showRsvpButtons={false}
+                              onRsvp={() => {}}
+                              isRsvping={false}
+                              currentUser={currentUser}
+                          />
+                        ))}
+                      </View>
                     ))}
                   </View>
                 );
@@ -719,9 +718,7 @@ const DashboardScreen = () => {
         presentationStyle="pageSheet"
         onRequestClose={handleCloseModal}
       >
-        <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top', 'bottom']}>
-            <MeetupDetailModal meetup={selectedMeetup} onClose={handleCloseModal} />
-        </SafeAreaView>
+        <MeetupDetailModal meetup={selectedMeetup} onClose={handleCloseModal} />
       </Modal>
 
       <Modal
@@ -801,6 +798,8 @@ const DashboardScreen = () => {
           </View>
         </Animated.View>
       )}
+
+      <RsvpResponseOverlay />
     </SafeAreaView>
   );
 };

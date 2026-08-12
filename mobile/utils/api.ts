@@ -62,6 +62,7 @@ export interface LastMessage {
   user: {
     name: string;
   };
+  createdAt?: string;
 }
 
 export interface Group {
@@ -91,6 +92,7 @@ export interface Meetup {
     _id: string;
     owner: string;
     name: string;
+    image?: string;
   };
   name: string;
   date: string;

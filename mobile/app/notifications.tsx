@@ -84,8 +84,8 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
     const handlePress = () => {
         if (notification.group?._id) {
             router.push({
-                pathname: '/(tabs)/groups',
-                params: { openChatId: notification.group._id }
+                pathname: '/group/[id]',
+                params: { id: notification.group._id }
             });
         }
     };

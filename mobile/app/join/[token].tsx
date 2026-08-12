@@ -39,7 +39,7 @@ const JoinGroupScreen = () => {
     }, [isSignedIn, token]);
 
     const goToChat = () => {
-        router.replace({ pathname: '/(tabs)/groups', params: { openChatId: groupId } });
+        router.replace({ pathname: '/group/[id]', params: { id: groupId } });
     };
 
     if (!isSignedIn) {

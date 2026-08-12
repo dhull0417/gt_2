@@ -109,7 +109,7 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
 
     const group = await Group.findByIdAndUpdate(
       req.params.id,
-      { lastMessage: { text, user: { name: senderName } } },
+      { lastMessage: { text, user: { name: senderName }, createdAt: new Date() } },
       { new: true }
     );
     if (!group) return res.status(404).json({ message: 'Group not found' });

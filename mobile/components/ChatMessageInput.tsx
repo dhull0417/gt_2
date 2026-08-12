@@ -95,7 +95,7 @@ export function ChatMessageInput({ onSend, onTyping }: Props) {
           disabled={sending || uploading}
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
-          <Feather name="image" size={22} color={sending || uploading ? '#C0C0C0' : '#4A90E2'} />
+          <Feather name="image" size={22} color={sending || uploading ? '#D1D5DB' : '#4A90E2'} />
         </TouchableOpacity>
 
         <TextInput

@@ -70,6 +70,7 @@ const groupSchema = new mongoose.Schema({
   lastMessage: {
     text: { type: String },
     user: { name: { type: String } },
+    createdAt: { type: Date },
   },
   isDM: { type: Boolean, default: false },
   dmParticipants: [{

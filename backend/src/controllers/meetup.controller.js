@@ -52,7 +52,7 @@ export const getMeetups = asyncHandler(async (req, res) => {
             { visibilityDate: { $lte: now } },  // scheduled meetups within the window
         ]
     })
-        .populate('group', 'name owner moderators timezone defaultLocation visibilityLeadDays')
+        .populate('group', 'name image owner moderators timezone defaultLocation visibilityLeadDays')
         .populate('members', 'firstName lastName username profilePicture clerkId')
         .sort({ date: 1 });
 
@@ -81,6 +81,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     const MAX_RETRIES = 3;
     let meetup;
     let promotedUserId = null;
+    let statusUnchanged = false;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         meetup = await Meetup.findById(meetupId);
@@ -89,6 +90,14 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         if (meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
             return res.status(400).json({ error: "RSVPs are not open yet." });
         }
+
+        // Re-tapping the same RSVP button shouldn't re-notify the group. "In" covers
+        // both the 'in' and 'waitlist' arrays since both represent an 'in' request.
+        const wasIn = meetup.in.some(id => id.equals(user._id));
+        const wasOut = meetup.out.some(id => id.equals(user._id));
+        const wasWaitlisted = meetup.waitlist.some(id => id.equals(user._id));
+        statusUnchanged = status === 'in' ? (wasIn || wasWaitlisted) : wasOut;
+        if (statusUnchanged) break;
 
         // Safely extract the user from all arrays first to prevent duplicates using Mongoose .pull()
         meetup.in.pull(user._id);
@@ -128,7 +137,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
 
     // Notify the promoted waitlister only after the save actually succeeded,
     // so a retried attempt can't double-send this.
-    if (promotedUserId) {
+    if (!statusUnchanged && promotedUserId) {
         const nextUser = await User.findById(promotedUserId);
         if (nextUser) {
             await notifyUsers([nextUser], {
@@ -154,7 +163,9 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     }
 
     // Notify all other group members that this user has RSVP'd
-    const otherMembers = await User.find({ _id: { $in: meetup.members, $ne: user._id } });
+    const otherMembers = statusUnchanged
+        ? []
+        : await User.find({ _id: { $in: meetup.members, $ne: user._id } });
     if (otherMembers.length > 0) {
         const displayName = user.firstName && user.lastName
             ? `${user.firstName} ${user.lastName}`

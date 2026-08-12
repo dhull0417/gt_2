@@ -15,14 +15,125 @@ import {
     Pressable
 } from 'react-native';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
+import Animated, {
+    FadeIn,
+    FadeOut,
+    LinearTransition,
+    useSharedValue,
+    useAnimatedStyle,
+    withRepeat,
+    withSequence,
+    withTiming,
+    runOnJS,
+    Easing,
+} from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/utils/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
+import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
 import TimePicker from './TimePicker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+
+// Watermark that slowly breathes between a base and darker opacity, one full cycle every 5 seconds.
+const PulsingWatermark = ({ label, style, baseOpacity, peakOpacity }: {
+    label: string;
+    style: any;
+    baseOpacity: number;
+    peakOpacity: number;
+}) => {
+    const opacity = useSharedValue(baseOpacity);
+
+    useEffect(() => {
+        opacity.value = withRepeat(
+            withTiming(peakOpacity, { duration: 2500, easing: Easing.inOut(Easing.sin) }),
+            -1,
+            true
+        );
+    }, []);
+
+    const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+    return (
+        <Animated.Text style={[style, animatedStyle]} pointerEvents="none">
+            {label}
+        </Animated.Text>
+    );
+};
+
+// Drives the In/Out RSVP buttons through breathe-up -> shake "In" -> shake "Out" -> breathe-down,
+// on and on, while the user hasn't responded yet. Each phase is explicitly chained off the previous
+// one's finish callback (rather than a single looping withRepeat/withSequence) so it always continues
+// from wherever the value actually is instead of snapping back to a start value on each lap.
+const RsvpBreather = ({ active, children }: {
+    active: boolean;
+    children: (styles: { boxStyle: any; inTextStyle: any; outTextStyle: any }) => React.ReactNode;
+}) => {
+    const opacity = useSharedValue(0.6);
+    const inShakeX = useSharedValue(0);
+    const outShakeX = useSharedValue(0);
+    const breathCount = useSharedValue(0);
+
+    useEffect(() => {
+        let cancelled = false;
+        breathCount.value = 0;
+        let runUp: () => void;
+        let runInShake: () => void;
+        let runOutShake: () => void;
+        let runDown: () => void;
+
+        const shakeThenCall = (onDone: () => void) => withSequence(
+            withTiming(-6, { duration: 50 }),
+            withTiming(6, { duration: 50 }),
+            withTiming(-6, { duration: 50 }),
+            withTiming(6, { duration: 50 }),
+            withTiming(-3, { duration: 50 }),
+            withTiming(0, { duration: 50 }, (finished) => { if (finished) runOnJS(onDone)(); })
+        );
+
+        runUp = () => {
+            if (cancelled) return;
+            opacity.value = withTiming(1, { duration: 1900, easing: Easing.inOut(Easing.sin) }, (finished) => {
+                if (!finished) return;
+                breathCount.value += 1;
+                runOnJS(breathCount.value % 3 === 0 ? runInShake : runDown)();
+            });
+        };
+        runInShake = () => {
+            if (cancelled) return;
+            inShakeX.value = shakeThenCall(runOutShake);
+        };
+        runOutShake = () => {
+            if (cancelled) return;
+            outShakeX.value = shakeThenCall(runDown);
+        };
+        runDown = () => {
+            if (cancelled) return;
+            opacity.value = withTiming(0.6, { duration: 1900, easing: Easing.inOut(Easing.sin) }, (finished) => {
+                if (finished) runOnJS(runUp)();
+            });
+        };
+
+        if (active) {
+            runUp();
+        } else {
+            opacity.value = withTiming(1, { duration: 200 });
+            inShakeX.value = withTiming(0, { duration: 150 });
+            outShakeX.value = withTiming(0, { duration: 150 });
+        }
+
+        return () => { cancelled = true; };
+    }, [active]);
+
+    const boxStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+    const inTextStyle = useAnimatedStyle(() => ({ transform: [{ translateX: inShakeX.value }] }));
+    const outTextStyle = useAnimatedStyle(() => ({ transform: [{ translateX: outShakeX.value }] }));
+
+    return <>{children({ boxStyle, inTextStyle, outTextStyle })}</>;
+};
 
 interface MeetupDetailModalProps {
   meetup: Meetup | null;
@@ -74,6 +185,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [localGuestCount, setLocalGuestCount] = useState(0);
     const [isSettingGuests, setIsSettingGuests] = useState(false);
     const [guestExpanded, setGuestExpanded] = useState(false);
+    const [manualRsvpEdit, setManualRsvpEdit] = useState(false);
 
     useEffect(() => {
         if (!isSettingGuests && meetup && currentUser) {
@@ -111,6 +223,15 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const isWaitlisted = meetup.waitlist?.some(u => getUserId(u) === currentUser._id) || false;
     const isIn = meetup.in?.some(u => getUserId(u) === currentUser._id) || false;
     const isOut = meetup.out?.some(u => getUserId(u) === currentUser._id) || false;
+    const hasRsvpResponse = isIn || isOut || isWaitlisted;
+    const showRsvpSelector = !hasRsvpResponse || manualRsvpEdit;
+    const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
+    const outUnselected = !isOut;
+    const isUndecided = inUnselected && outUnselected;
+
+    // Faint RSVP-status tint for the whole modal: amber until the user responds,
+    // then green ("in"/waitlisted) or red ("out") to match the RSVP button colors.
+    const modalBackgroundColor = isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
 
     const goingUsers = (meetup.members || []).filter(m => meetup.in?.some(u => getUserId(u) === m._id));
     const outUsers = (meetup.members || []).filter(m => meetup.out?.some(u => getUserId(u) === m._id));
@@ -142,6 +263,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             onSuccess: (data: any) => {
                 queryClient.invalidateQueries({ queryKey: ['meetups'] });
                 if (data.meetup) setMeetup(data.meetup);
+                setManualRsvpEdit(false);
             },
             onError: (error: any) => {
                 Alert.alert("RSVP Failed", error.response?.data?.error || "An error occurred while updating your RSVP.");
@@ -266,8 +388,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const handleGoToChat = () => {
         onClose();
         router.push({
-            pathname: '/(tabs)/groups',
-            params: { openChatId: meetup.group._id }
+            pathname: '/group/[id]',
+            params: { id: meetup.group._id }
         });
     };
 
@@ -280,8 +402,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             setDmTargetUser(null);
             onClose();
             router.push({
-                pathname: '/(tabs)/groups',
-                params: { openChatId: group._id }
+                pathname: '/group/[id]',
+                params: { id: group._id }
             });
         } catch {
             Alert.alert('Error', 'Could not open DM. Please try again.');
@@ -408,9 +530,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         );
     };
 
-    const renderSectionHeader = (label: string, count: number, color: string) => (
+    const renderSectionHeader = (label: string, count: number, color: string, rightElement?: React.ReactNode) => (
         <View style={styles.sectionHeaderWrap}>
-            <Text style={[styles.sectionHeaderText, { color }]}>{label} ({count})</Text>
+            <View style={styles.sectionHeaderRow}>
+                <Text style={[styles.sectionHeaderText, { color, marginBottom: 0 }]}>{label} - {count}</Text>
+                {rightElement}
+            </View>
             <View style={[styles.sectionHeaderLine, { backgroundColor: color }]} />
         </View>
     );
@@ -438,7 +563,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: modalBackgroundColor }]} edges={['top', 'bottom']}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                     <Feather name="chevron-down" size={32} color="#9CA3AF" />
@@ -452,7 +577,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                <View style={{ marginBottom: 32 }}>
+                <View style={{ marginBottom: showRsvpSelector ? 32 : 14 }}>
                     {/* Updated Banner Logic */}
                     {isCancelled && (
                         <View style={styles.cancelBanner}>
@@ -467,9 +592,17 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         </View>
                     )}
                     
-                    <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough, { marginBottom: 18 }]}>
-                        {meetup.name}
-                    </Text>
+                    <View style={{ marginTop: 8, marginBottom: 18 }}>
+                        {isIn && (
+                            <PulsingWatermark label="IN" style={styles.inWatermark} baseOpacity={0.32} peakOpacity={0.55} />
+                        )}
+                        {isOut && (
+                            <PulsingWatermark label="OUT" style={styles.outWatermark} baseOpacity={0.32} peakOpacity={0.42} />
+                        )}
+                        <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough]}>
+                            {meetup.name}
+                        </Text>
+                    </View>
 
                     <View style={[styles.actionRow, { justifyContent: 'center' }]}>
                         {canManage && (
@@ -491,7 +624,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
                 {/* Hide RSVP Actions if Read Only */}
                 {!isReadOnly && (
-                    <View style={{ marginTop: 24, marginBottom: 60 }}>
+                    <Animated.View layout={LinearTransition.duration(300)} style={{ marginTop: showRsvpSelector ? 24 : 0, marginBottom: 60 }}>
                         {isRsvpLocked ? (
                             <View style={styles.rsvpLockedBanner}>
                                 <Feather name="lock" size={16} color="#6B7280" />
@@ -502,64 +635,99 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     })}
                                 </Text>
                             </View>
+                        ) : !showRsvpSelector ? (
+                            <Animated.View
+                                key="rsvp-pill"
+                                entering={FadeIn.duration(220)}
+                                exiting={FadeOut.duration(160)}
+                                layout={LinearTransition.duration(280)}
+                                style={{ alignItems: 'center' }}
+                            >
+                                <TouchableOpacity
+                                    onPress={() => setManualRsvpEdit(true)}
+                                    style={[
+                                        styles.changeRsvpPill,
+                                        { borderColor: isOut ? '#FF7A6E' : '#4FD1C5', backgroundColor: 'white' }
+                                    ]}
+                                    activeOpacity={0.7}
+                                >
+                                    <Feather name="repeat" size={14} color={isOut ? '#FF7A6E' : '#3FABA1'} />
+                                    <Text style={[styles.changeRsvpPillText, { color: isOut ? '#C2453A' : '#3FABA1' }]}>Change In/Out</Text>
+                                </TouchableOpacity>
+                            </Animated.View>
                         ) : (
-                            <>
-                                <View style={{ flexDirection: 'row', gap: 12 }}>
-                                    {/* Split I'm In button */}
-                                    <View style={{
-                                        flex: 1, flexDirection: 'row', borderRadius: 16,
-                                        overflow: 'hidden', height: 72,
-                                        backgroundColor: isOut ? 'transparent' : isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#4FD1C5',
-                                        borderWidth: isOut ? 1.5 : 0,
-                                        borderColor: '#4FD1C5',
-                                    }}>
-                                        <TouchableOpacity
-                                            onPress={() => { setGuestExpanded(false); handleRsvpAction('in'); }}
-                                            disabled={isRsvping}
-                                            style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
-                                        >
-                                            <Text style={{ color: isOut ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 18 }}>
-                                                {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
-                                            </Text>
-                                        </TouchableOpacity>
-                                        <View style={{ width: 1, backgroundColor: isOut ? '#D1FAE5' : 'rgba(255,255,255,0.35)' }} />
-                                        <TouchableOpacity
-                                            onPress={() => setGuestExpanded(v => !v)}
-                                            disabled={isRsvping}
-                                            style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
-                                        >
-                                            {guestExpanded
-                                                ? <Feather name="x" size={20} color={isOut ? '#4FD1C5' : 'white'} />
-                                                : <MaterialIcons name="group-add" size={22} color={isOut ? '#4FD1C5' : 'white'} />
-                                            }
-                                        </TouchableOpacity>
-                                    </View>
+                            <Animated.View
+                                key="rsvp-buttons"
+                                entering={FadeIn.duration(220)}
+                                exiting={FadeOut.duration(160)}
+                                layout={LinearTransition.duration(280)}
+                            >
+                                <RsvpBreather active={isUndecided}>
+                                    {({ boxStyle, inTextStyle, outTextStyle }) => (
+                                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                                            {/* Split I'm In button */}
+                                            <View style={{
+                                                flex: 1, borderRadius: 16, overflow: 'hidden', height: 72,
+                                                backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : isIn ? '#4FD1C5' : 'white',
+                                            }}>
+                                                <Animated.View style={[{
+                                                    flex: 1, flexDirection: 'row', borderRadius: 16,
+                                                    borderWidth: inUnselected ? 1.5 : 0,
+                                                    borderColor: '#4FD1C5',
+                                                }, boxStyle]}>
+                                                    <TouchableOpacity
+                                                        onPress={() => { setGuestExpanded(false); handleRsvpAction('in'); }}
+                                                        disabled={isRsvping}
+                                                        style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
+                                                    >
+                                                        <Animated.Text style={[{ color: inUnselected ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 18 }, inTextStyle]}>
+                                                            {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+                                                        </Animated.Text>
+                                                    </TouchableOpacity>
+                                                    <View style={{ width: 1, backgroundColor: inUnselected ? '#D1FAE5' : 'rgba(255,255,255,0.35)' }} />
+                                                    <TouchableOpacity
+                                                        onPress={() => setGuestExpanded(v => !v)}
+                                                        disabled={isRsvping}
+                                                        style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
+                                                    >
+                                                        {guestExpanded
+                                                            ? <Feather name="x" size={20} color={inUnselected ? '#4FD1C5' : 'white'} />
+                                                            : <MaterialIcons name="group-add" size={22} color={inUnselected ? '#4FD1C5' : 'white'} />
+                                                        }
+                                                    </TouchableOpacity>
+                                                </Animated.View>
+                                            </View>
 
-                                    {/* Split I'm Out button */}
-                                    <View style={{
-                                        flex: 1, flexDirection: 'row', borderRadius: 16,
-                                        overflow: 'hidden', height: 72,
-                                        backgroundColor: isIn ? 'transparent' : '#FF7A6E',
-                                        borderWidth: isIn ? 1.5 : 0,
-                                        borderColor: '#FF7A6E',
-                                    }}>
-                                        <TouchableOpacity
-                                            onPress={() => { setGuestExpanded(false); handleRsvpAction('out'); }}
-                                            disabled={isRsvping}
-                                            style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
-                                        >
-                                            <Text style={{ color: isIn ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 18 }}>I'm Out</Text>
-                                        </TouchableOpacity>
-                                        <View style={{ width: 1, backgroundColor: isIn ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
-                                        <TouchableOpacity
-                                            onPress={handleRsvpOutAndMute}
-                                            disabled={isRsvping}
-                                            style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
-                                        >
-                                            <Feather name="bell-off" size={20} color={isIn ? '#FF7A6E' : 'white'} />
-                                        </TouchableOpacity>
-                                    </View>
-                                </View>
+                                            {/* Split I'm Out button */}
+                                            <View style={{
+                                                flex: 1, borderRadius: 16, overflow: 'hidden', height: 72,
+                                                backgroundColor: isOut ? '#FF7A6E' : 'white',
+                                            }}>
+                                                <Animated.View style={[{
+                                                    flex: 1, flexDirection: 'row', borderRadius: 16,
+                                                    borderWidth: outUnselected ? 1.5 : 0,
+                                                    borderColor: '#FF7A6E',
+                                                }, boxStyle]}>
+                                                    <TouchableOpacity
+                                                        onPress={() => { setGuestExpanded(false); handleRsvpAction('out'); }}
+                                                        disabled={isRsvping}
+                                                        style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
+                                                    >
+                                                        <Animated.Text style={[{ color: outUnselected ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 18 }, outTextStyle]}>I'm Out</Animated.Text>
+                                                    </TouchableOpacity>
+                                                    <View style={{ width: 1, backgroundColor: outUnselected ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
+                                                    <TouchableOpacity
+                                                        onPress={handleRsvpOutAndMute}
+                                                        disabled={isRsvping}
+                                                        style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
+                                                    >
+                                                        <Feather name="bell-off" size={20} color={outUnselected ? '#FF7A6E' : 'white'} />
+                                                    </TouchableOpacity>
+                                                </Animated.View>
+                                            </View>
+                                        </View>
+                                    )}
+                                </RsvpBreather>
 
                                 {/* Inline guest counter */}
                                 {guestExpanded && (
@@ -619,13 +787,17 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         </View>
                                     </View>
                                 )}
-                            </>
+                            </Animated.View>
                         )}
-                    </View>
+                    </Animated.View>
                 )}
 
-                <View style={{ marginBottom: 40 }}>
-                    {renderSectionHeader('In', goingUsers.length + totalGuestsForInTab, '#4FD1C5')}
+                <Animated.View layout={LinearTransition.duration(300)} style={{ marginBottom: 40 }}>
+                    {renderSectionHeader('In', goingUsers.length + totalGuestsForInTab, '#4FD1C5',
+                        <Text style={[styles.sectionHeaderText, { color: '#4FD1C5', marginBottom: 0 }]}>
+                            {meetup.capacity > 0 ? `Max: ${meetup.capacity}` : 'Unlimited'}
+                        </Text>
+                    )}
                     <View style={styles.grid}>
                         {goingUsers.length === 0 && totalGuestsForInTab === 0 && (
                             <Text style={styles.emptyText}>No one is in yet.</Text>
@@ -640,18 +812,14 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         {outUsers.map(user => renderUserTile(user, user._id))}
                     </View>
 
-                    <View style={styles.sectionHeaderWrap}>
-                        <View style={styles.sectionHeaderRow}>
-                            <Text style={[styles.sectionHeaderText, { color: '#9CA3AF', marginBottom: 0 }]}>Undecided ({undecidedUsers.length})</Text>
-                            {canManage && undecidedUsers.length > 0 && (
-                                <TouchableOpacity onPress={handleRemindAll} disabled={isSendingReminder} style={styles.remindAllBtn} activeOpacity={0.7}>
-                                    <Feather name="bell" size={12} color="#4A90E2" />
-                                    <Text style={styles.remindAllText}>Remind All</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-                        <View style={[styles.sectionHeaderLine, { backgroundColor: '#9CA3AF' }]} />
-                    </View>
+                    {renderSectionHeader('Undecided', undecidedUsers.length, '#9CA3AF',
+                        canManage && undecidedUsers.length > 0 ? (
+                            <TouchableOpacity onPress={handleRemindAll} disabled={isSendingReminder} style={styles.remindAllBtn} activeOpacity={0.7}>
+                                <Feather name="bell" size={12} color="#4A90E2" />
+                                <Text style={styles.remindAllText}>Remind All</Text>
+                            </TouchableOpacity>
+                        ) : undefined
+                    )}
                     <View style={styles.grid}>
                         {undecidedUsers.length === 0 && <Text style={styles.emptyText}>Everyone has responded.</Text>}
                         {undecidedUsers.map(user => renderUserTile(user, user._id))}
@@ -665,7 +833,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             </View>
                         </>
                     )}
-                </View>
+                </Animated.View>
 
                 {/* Hide Management section if Read Only */}
                 {canManage && (
@@ -860,7 +1028,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     />
                 )
             )}
-        </View>
+
+            <RsvpResponseOverlay />
+        </SafeAreaView>
     );
 };
 
@@ -874,6 +1044,30 @@ const styles = StyleSheet.create({
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
     meetupTitle: { fontSize: 26, fontWeight: '900', color: '#111827', letterSpacing: -0.5, lineHeight: 30, marginBottom: 4, textAlign: 'center' },
+    inWatermark: {
+        position: 'absolute',
+        top: '50%',
+        left: 0,
+        right: 0,
+        textAlign: 'center',
+        fontSize: 116,
+        fontWeight: '900',
+        color: '#4FD1C5',
+        letterSpacing: 4,
+        transform: [{ translateY: -58 }],
+    },
+    outWatermark: {
+        position: 'absolute',
+        top: '50%',
+        left: 0,
+        right: 0,
+        textAlign: 'center',
+        fontSize: 96,
+        fontWeight: '900',
+        color: '#FF7A6E',
+        letterSpacing: 4,
+        transform: [{ translateY: -48 }],
+    },
     actionRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
     actionBtn: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
     editActionBtn: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
@@ -908,11 +1102,25 @@ rsvpLockedTitle: {
     letterSpacing: 0.5,
     marginTop: 4
 },
-rsvpLockedSubtitle: { 
-    fontSize: 13, 
-    fontWeight: '600', 
-    color: '#9CA3AF' 
+rsvpLockedSubtitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9CA3AF'
 },
+    changeRsvpPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 7,
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 999,
+        borderWidth: 1.5,
+    },
+    changeRsvpPillText: {
+        fontWeight: '800',
+        fontSize: 13,
+        letterSpacing: 0.2,
+    },
     // Roster sections
     sectionHeaderWrap: { marginTop: 8, marginBottom: 14 },
     sectionHeaderText: { fontSize: 15, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
