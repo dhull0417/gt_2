@@ -138,7 +138,6 @@ const AuthLayout = () => {
       <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true }} />
       <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
       <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
-      <Stack.Screen name="group" options={{ headerShown: false }} />
       <Stack.Screen name="group-settings" options={{ headerShown: false }} />
       <Stack.Screen name="meetup-edit" options={{ headerShown: false }} />
       <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />

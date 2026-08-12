@@ -258,6 +258,9 @@ const GroupChat = ({
       );
       const notifyText = text || '📷 Photo';
       api.patch(`/api/groups/${group._id}/last-message`, { text: notifyText, senderName }).catch(() => {});
+      // Sending a message means you've obviously "read" up to it — keep the unread
+      // dot from lighting back up on your own message once you leave the chat.
+      userApi.markGroupRead(api, group._id).catch(() => {});
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? JSON.stringify(err));
     }
@@ -502,6 +505,13 @@ const chatStyles = StyleSheet.create({
   saveBtn: { paddingHorizontal: 20, paddingVertical: 9, borderRadius: 10, backgroundColor: '#4A90E2' },
 });
 
+// The native tab bar doesn't report its own height through the safe-area insets for a
+// screen nested this way (insets.bottom here only reflects the home-indicator/gesture-bar
+// inset) — expo-router's native-tabs has no measurement hook for it either, since it's a
+// real native bar, not a JS view we could onLayout. So we pad by the OS's documented
+// standard bar height on top of insets.bottom instead of trying to measure it.
+const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
+
 const GroupChatScreen = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState<'Chat' | 'Details'>('Chat');
@@ -511,6 +521,14 @@ const GroupChatScreen = () => {
   const api = useApiClient();
   const router = useRouter();
   const queryClient = useQueryClient();
+
+  // Tapping into a chat clears its unread dot on the groups list.
+  useEffect(() => {
+    if (!id) return;
+    userApi.markGroupRead(api, id)
+      .then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] }))
+      .catch(() => {});
+  }, [id]);
 
   // Cached (or freshly fetched) list data gives an instant name/avatar/isDM fallback
   // while the heavier per-group details request below is still in flight.
@@ -625,7 +643,7 @@ const GroupChatScreen = () => {
       const { group } = await groupApi.createOrGetDM(api, dmTargetMember._id);
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       setDmTargetMember(null);
-      router.push({ pathname: '/group/[id]', params: { id: group._id } });
+      router.push({ pathname: '/groups/[id]', params: { id: group._id } });
     } catch {
       Alert.alert('Error', 'Could not open DM. Please try again.');
     } finally {
@@ -675,7 +693,7 @@ const GroupChatScreen = () => {
     : (groupDetails?.name || fallbackGroup?.name || '');
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top', 'left', 'right']}>
       <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200" onLayout={(e) => setChatHeaderHeight(e.nativeEvent.layout.height)}>
         <View className="flex-row items-center flex-1">
           <TouchableOpacity
@@ -754,7 +772,7 @@ const GroupChatScreen = () => {
       </View>
 
       {activeTab === 'Chat' ? (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}>
           {groupDetails && currentUser && (
             <GroupChat
               group={groupDetails}
@@ -770,7 +788,7 @@ const GroupChatScreen = () => {
           )}
         </View>
       ) : (
-        <ScrollView className="flex-1 bg-gray-50" keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
+        <ScrollView className="flex-1 bg-gray-50" keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}>
           <View className="p-6" style={{ flex: 1 }}>
             {(isLoadingDetails || !groupDetails) ? (
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>

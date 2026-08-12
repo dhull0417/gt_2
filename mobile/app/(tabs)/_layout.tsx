@@ -24,6 +24,9 @@ const TabsLayout = () => {
       indicatorColor="#4A90E2"
       rippleColor="rgba(74, 144, 226, 0.15)"
       labelVisibilityMode="unlabeled"
+      blurEffect="none"
+      backgroundColor="white"
+      disableTransparentOnScrollEdge
     >
       <NativeTabs.Trigger name="index">
         <Icon

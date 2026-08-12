@@ -1,40 +1,74 @@
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import React from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
+const SETTINGS = [
+    { id: 'name', label: 'Update Name', href: '/account/update-name' as const, icon: 'user' as const, color: '#4A90E2' },
+    { id: 'username', label: 'Update Username', href: '/account/update-username' as const, icon: 'at-sign' as const, color: '#4FD1C5' },
+    { id: 'email', label: 'Update Email', href: '/account/update-email' as const, icon: 'mail' as const, color: '#7C3AED' },
+    { id: 'password', label: 'Change Password', href: '/account/change-password' as const, icon: 'lock' as const, color: '#F59E0B' },
+];
+
 const AccountSettingsScreen = () => {
+    const router = useRouter();
     return (
         <SafeAreaView className="flex-1 bg-gray-100">
             <View className="mt-6 mx-4">
-                <Link href="/account/update-name" asChild>
-                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm" style={{ marginBottom: 16 }}>
-                        <Text className="text-base text-gray-800">Update Name</Text>
-                        <Feather name="chevron-right" size={20} color="#6B7280" />
-                    </TouchableOpacity>
-                </Link>
-                <Link href="/account/update-username" asChild>
-                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm" style={{ marginBottom: 16 }}>
-                        <Text className="text-base text-gray-800">Update Username</Text>
-                        <Feather name="chevron-right" size={20} color="#6B7280" />
-                    </TouchableOpacity>
-                </Link>
-                <Link href="/account/update-email" asChild>
-                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm" style={{ marginBottom: 16 }}>
-                        <Text className="text-base text-gray-800">Update Email</Text>
-                        <Feather name="chevron-right" size={20} color="#6B7280" />
-                    </TouchableOpacity>
-                </Link>
-                <Link href="/account/change-password" asChild>
-                    <TouchableOpacity className="bg-white p-4 rounded-lg flex-row justify-between items-center shadow-sm">
-                        <Text className="text-base text-gray-800">Change Password</Text>
-                        <Feather name="chevron-right" size={20} color="#6B7280" />
-                    </TouchableOpacity>
-                </Link>
+                <View style={styles.card}>
+                    {SETTINGS.map((item, index) => (
+                        <TouchableOpacity
+                            key={item.id}
+                            onPress={() => router.push(item.href)}
+                            activeOpacity={0.7}
+                            style={[styles.row, index < SETTINGS.length - 1 && styles.rowDivider]}
+                        >
+                            <View style={[styles.rowIcon, { backgroundColor: item.color + '18' }]}>
+                                <Feather name={item.icon} size={18} color={item.color} />
+                            </View>
+                            <Text style={styles.rowLabel}>{item.label}</Text>
+                            <Feather name="chevron-right" size={18} color="#9CA3AF" />
+                        </TouchableOpacity>
+                    ))}
+                </View>
             </View>
         </SafeAreaView>
     );
 };
+
+const styles = StyleSheet.create({
+    card: {
+        backgroundColor: 'white',
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+        overflow: 'hidden',
+    },
+    row: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+    },
+    rowDivider: {
+        borderBottomWidth: 1,
+        borderBottomColor: '#F3F4F6',
+    },
+    rowIcon: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 14,
+    },
+    rowLabel: {
+        flex: 1,
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#1F2937',
+    },
+});
 
 export default AccountSettingsScreen;

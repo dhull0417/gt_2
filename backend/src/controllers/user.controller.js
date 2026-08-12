@@ -42,6 +42,24 @@ export const toggleGroupMute = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Mark a group's chat as read up to now, for the unread dot on the groups list
+ * @route   PATCH /api/users/groups/:groupId/read
+ */
+export const markGroupRead = asyncHandler(async (req, res) => {
+  const { userId: clerkId } = getAuth(req);
+  const { groupId } = req.params;
+
+  const user = await User.findOneAndUpdate(
+    { clerkId },
+    { $set: { [`lastReadAt.${groupId}`]: new Date() } },
+    { new: true }
+  );
+  if (!user) return res.status(404).json({ error: "User not found." });
+
+  res.status(200).json({ ok: true });
+});
+
+/**
  * @desc    Save/Update User's Expo Push Token
  * @route   POST /api/users/push-token
  */

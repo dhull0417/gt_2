@@ -50,7 +50,7 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
 
     if (type === 'chat' && targetChatId) {
       router.push({
-        pathname: '/group/[id]',
+        pathname: '/groups/[id]',
         params: { id: String(targetChatId) }
       });
     } else if (meetupId) {

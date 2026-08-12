@@ -84,7 +84,7 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
     const handlePress = () => {
         if (notification.group?._id) {
             router.push({
-                pathname: '/group/[id]',
+                pathname: '/groups/[id]',
                 params: { id: notification.group._id }
             });
         }

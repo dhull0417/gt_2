@@ -51,13 +51,13 @@ const GroupScreen = () => {
 
   useEffect(() => {
     if (openChatId) {
-      router.push({ pathname: '/group/[id]', params: { id: openChatId } });
+      router.push({ pathname: '/groups/[id]', params: { id: openChatId } });
       router.setParams({ openChatId: undefined });
     }
   }, [openChatId]);
 
   const handleOpenGroupDetail = (group: Group) => {
-    router.push({ pathname: '/group/[id]', params: { id: group._id } });
+    router.push({ pathname: '/groups/[id]', params: { id: group._id } });
   };
 
   const renderGroupList = () => {
@@ -68,12 +68,18 @@ const GroupScreen = () => {
     return sortedGroups.map((group) => {
       const isMuted = currentUser?.mutedGroups?.includes(group._id) || currentUser?.mutedUntilNextMeetup?.includes(group._id);
       const displayName = group.isDM ? getDMDisplayName(group, currentUser?.clerkId) : group.name;
+      const lastReadAt = currentUser?.lastReadAt?.[group._id];
+      const isUnread = !!group.lastMessage?.createdAt &&
+        (!lastReadAt || new Date(lastReadAt) < new Date(group.lastMessage.createdAt));
       return (
         <TouchableOpacity
           key={group._id}
-          className="bg-white px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100"
+          className="relative bg-white px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100"
           onPress={() => handleOpenGroupDetail(group)}
         >
+          {isUnread && (
+            <View className="absolute top-3 right-3 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+          )}
           <View className="flex-row items-center">
             <View style={{ marginRight: 12 }}>
               <GroupAvatar name={displayName} imageUrl={group.image} size={44} />

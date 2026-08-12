@@ -9,6 +9,7 @@ import {
   matchContacts,
   updatePushToken,
   toggleGroupMute,
+  markGroupRead,
   deleteAccount,
 } from "../controllers/user.controller.js";
 import { getCalendarSyncUrl, getCalendarFeed } from "../controllers/calendar.controller.js"; // <-- Add this import
@@ -25,6 +26,7 @@ router.get("/me", protectRoute, getCurrentUser);
 router.put("/profile", protectRoute, updateProfile);
 router.post("/push-token", protectRoute, updatePushToken);
 router.patch("/mute-group", protectRoute, toggleGroupMute);
+router.patch("/groups/:groupId/read", protectRoute, markGroupRead);
 router.delete("/account", protectRoute, deleteAccount);
 
 // --- NEW CALENDAR ROUTES ---

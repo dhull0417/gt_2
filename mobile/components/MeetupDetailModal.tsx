@@ -388,7 +388,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const handleGoToChat = () => {
         onClose();
         router.push({
-            pathname: '/group/[id]',
+            pathname: '/groups/[id]',
             params: { id: meetup.group._id }
         });
     };
@@ -402,7 +402,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             setDmTargetUser(null);
             onClose();
             router.push({
-                pathname: '/group/[id]',
+                pathname: '/groups/[id]',
                 params: { id: group._id }
             });
         } catch {

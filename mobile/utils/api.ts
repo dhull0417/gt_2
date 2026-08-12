@@ -54,6 +54,7 @@ export interface User {
   groups?: string[];
   mutedGroups: string[];
   mutedUntilNextMeetup: string[];
+  lastReadAt?: Record<string, string>;
   zipCode?: string;
 }
 
@@ -272,6 +273,10 @@ export const userApi = {
   },
   toggleGroupMute: async (api: AxiosInstance, groupId: string, muteType: 'indefinite' | 'untilNext' | 'none'): Promise<{ muted: boolean }> => {
     const response = await api.patch<{ muted: boolean }>("/api/users/mute-group", { groupId, muteType });
+    return response.data;
+  },
+  markGroupRead: async (api: AxiosInstance, groupId: string): Promise<{ ok: boolean }> => {
+    const response = await api.patch<{ ok: boolean }>(`/api/users/groups/${groupId}/read`);
     return response.data;
   },
   getCalendarSyncUrl: async (api: AxiosInstance): Promise<{ url: string }> => {
