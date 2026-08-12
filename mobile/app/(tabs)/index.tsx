@@ -5,10 +5,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { useRsvp } from '@/hooks/useRsvp';
 import { Meetup, User, useApiClient, userApi, meetupApi } from '@/utils/api';
-import { useFocusEffect, useRouter, Link } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams, Link } from 'expo-router';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
 
 type GroupedMeetups = {
   'Upcoming': Meetup[];
@@ -399,6 +400,7 @@ const DashboardScreen = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const { openMeetupId } = useLocalSearchParams<{ openMeetupId?: string }>();
   const [selectedMeetup, setSelectedMeetup] = useState<Meetup | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
 
@@ -504,6 +506,17 @@ const DashboardScreen = () => {
     setSelectedMeetup(null);
   };
 
+  // Deep link from a push notification tap (e.g. RSVP reminder) — open that meetup's detail modal.
+  useEffect(() => {
+    if (openMeetupId && meetups && meetups.length > 0) {
+      const target = meetups.find(m => m._id === openMeetupId);
+      if (target) {
+        handleOpenModal(target);
+        router.setParams({ openMeetupId: undefined });
+      }
+    }
+  }, [openMeetupId, meetups]);
+
   const handleDashboardRsvp = (meetup: Meetup, status: 'in' | 'out', guestCount = 0, mute = false) => {
     if (!currentUser) return;
     rsvp({ meetupId: meetup._id, status }, {
@@ -554,9 +567,9 @@ const DashboardScreen = () => {
         </Text>
       </View>
 
-      <ScrollView className="p-4">
+      <ScrollView className="p-4" contentContainerStyle={{ flexGrow: 1 }}>
         {isLoading ? (
-          <ActivityIndicator size="large" color="#4A90E2" className="mt-16" />
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
         ) : isError ? (
           <Text style={{ textAlign: 'center', color: '#ef4444', marginTop: 32 }}>
             Failed to load meetups.

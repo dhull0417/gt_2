@@ -4,7 +4,8 @@ import {
     deleteMeetup,
     cancelMeetup,
     getMeetups,
-    rsvpMeetup
+    rsvpMeetup,
+    remindUndecided
 } from "../controllers/meetup.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 import { getAuth } from "@clerk/express";
@@ -18,6 +19,7 @@ router.get("/", protectRoute, getMeetups);
 
 // --- Actions ---
 router.post("/:meetupId/rsvp", protectRoute, rsvpMeetup);
+router.post("/:meetupId/remind", protectRoute, remindUndecided);
 
 router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
     try {

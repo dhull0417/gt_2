@@ -1,3 +1,9 @@
+export interface PendingImage {
+  url: string;
+  width?: number;
+  height?: number;
+}
+
 export interface ReactionResult {
   action: 'added' | 'removed' | 'changed';
   emoji: string;
@@ -21,4 +27,6 @@ export interface ChatMessage {
   reply_to_content?: string | null;
   reply_to_sender?: string | null;
   image_url?: string | null;
+  image_width?: number | null;
+  image_height?: number | null;
 }

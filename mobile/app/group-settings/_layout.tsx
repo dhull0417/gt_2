@@ -22,14 +22,6 @@ export default function GroupSettingsLayout() {
           gestureEnabled: true
         }}
       />
-      {/* TEMPORARY: Report Generator screen — remove with app/group-settings/report/[id].tsx */}
-      <Stack.Screen
-        name="report/[id]"
-        options={{
-          title: 'Report Generator',
-          gestureEnabled: true,
-        }}
-      />
     </Stack>
   );
 }

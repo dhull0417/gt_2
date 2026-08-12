@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { useApiClient, groupApi } from '@/utils/api';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
 
 export const PENDING_INVITE_KEY = 'GROUPTHAT_PENDING_INVITE';
 
@@ -61,7 +62,7 @@ const JoinGroupScreen = () => {
     if (state === 'loading') {
         return (
             <SafeAreaView style={styles.container}>
-                <ActivityIndicator size="large" color="#4A90E2" />
+                <LoadingAnimation />
                 <Text style={styles.subtitle}>Joining group...</Text>
             </SafeAreaView>
         );

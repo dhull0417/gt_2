@@ -1,20 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    View, 
-    Text, 
-    TouchableOpacity, 
-    ScrollView, 
-    Image, 
-    Alert, 
+import {
+    View,
+    Text,
+    TouchableOpacity,
+    ScrollView,
+    Image,
+    Alert,
     ActivityIndicator,
     TextInput,
     Modal,
     StyleSheet,
     KeyboardAvoidingView,
-    Platform
+    Platform,
+    Pressable
 } from 'react-native';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
-import { Meetup, User, useApiClient, userApi, meetupApi } from '@/utils/api';
+import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/utils/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
@@ -38,9 +39,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     
     const [meetup, setMeetup] = useState<Meetup | null>(initialMeetup);
     const { data: allMeetups } = useGetMeetups();
-    const [activeTab, setActiveTab] = useState<'in' | 'out' | 'waitlist'>('in');
-    
+
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+    const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
     const [newDate, setNewDate] = useState(new Date());
     const [tempDate, setTempDate] = useState(new Date());
     const [newTime, setNewTime] = useState('');
@@ -48,6 +49,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [newLocation, setNewLocation] = useState('');
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
+    const [dmTargetUser, setDmTargetUser] = useState<User | null>(null);
+    const [isCreatingDM, setIsCreatingDM] = useState(false);
+    const [isSendingReminder, setIsSendingReminder] = useState(false);
 
     useEffect(() => {
         setMeetup(initialMeetup);
@@ -82,12 +86,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         .map(u => (meetup?.members || []).find(m => m._id === getUserId(u)))
         .filter((u): u is User => !!u);
 
-    useEffect(() => {
-        if (activeTab === 'waitlist' && waitlistUsers.length === 0) {
-            setActiveTab('in');
-        }
-    }, [waitlistUsers.length, activeTab]);
-
     if (!meetup || !currentUser) return null;
 
     // --- READ-ONLY & PERMISSIONS LOGIC ---
@@ -116,10 +114,28 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const goingUsers = (meetup.members || []).filter(m => meetup.in?.some(u => getUserId(u) === m._id));
     const outUsers = (meetup.members || []).filter(m => meetup.out?.some(u => getUserId(u) === m._id));
+
+    // Guests stay attached to their host's clerkId even after the host RSVPs 'out'
+    // (the "Keep Guests" option). Since the host no longer appears in goingUsers,
+    // surface those guests as their own row instead of losing the attribution.
+    const orphanGuestEntries = (meetup.guests || []).filter(g => {
+        if (!g.count) return false;
+        return !goingUsers.some(user => (user as any).clerkId === g.userId);
+    });
+    // Every user who brought guests gets its own tile (not just orphans),
+    // shown alongside their own tile in the "In" grid.
+    const allGuestEntries = (meetup.guests || []).filter(g => !!g.count);
     const totalGuestsForInTab = goingUsers.reduce((sum, user) => {
         const entry = (meetup.guests || []).find(g => g.userId === (user as any).clerkId);
         return sum + (entry?.count ?? 0);
-    }, 0);
+    }, 0) + orphanGuestEntries.reduce((sum, g) => sum + g.count, 0);
+
+    const respondedIds = new Set([
+        ...(meetup.in || []).map(getUserId),
+        ...(meetup.out || []).map(getUserId),
+        ...(meetup.waitlist || []).map(getUserId),
+    ]);
+    const undecidedUsers = (meetup.members || []).filter(m => !respondedIds.has(m._id));
 
     const performRsvp = (status: 'in' | 'out') => {
         rsvp({ meetupId: meetup._id, status }, {
@@ -255,6 +271,52 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         });
     };
 
+    const handleSendDM = async () => {
+        if (!dmTargetUser) return;
+        setIsCreatingDM(true);
+        try {
+            const { group } = await groupApi.createOrGetDM(api, dmTargetUser._id);
+            queryClient.invalidateQueries({ queryKey: ['groups'] });
+            setDmTargetUser(null);
+            onClose();
+            router.push({
+                pathname: '/(tabs)/groups',
+                params: { openChatId: group._id }
+            });
+        } catch {
+            Alert.alert('Error', 'Could not open DM. Please try again.');
+        } finally {
+            setIsCreatingDM(false);
+        }
+    };
+
+    const handleSendReminder = async (userId?: string) => {
+        setIsSendingReminder(true);
+        try {
+            await meetupApi.sendReminder(api, meetup._id, userId);
+            setDmTargetUser(null);
+            Alert.alert(
+                'Reminder Sent',
+                userId ? "They'll get a push notification to RSVP." : "All undecided members will get a push notification to RSVP."
+            );
+        } catch (e: any) {
+            Alert.alert('Error', e.response?.data?.error || 'Could not send the reminder. Please try again.');
+        } finally {
+            setIsSendingReminder(false);
+        }
+    };
+
+    const handleRemindAll = () => {
+        Alert.alert(
+            'Remind All Undecided?',
+            `Send an RSVP reminder to all ${undecidedUsers.length} undecided member${undecidedUsers.length === 1 ? '' : 's'}?`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Send', onPress: () => handleSendReminder() },
+            ]
+        );
+    };
+
     const handleUpdateMeetupDetails = async () => {
         if (isReadOnly) return;
         const payload: any = { meetupId: meetup._id };
@@ -299,6 +361,60 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         setShowDatePicker(false);
     };
 
+    const openEditModal = () => {
+        setNewDate(new Date(meetup.date));
+        setTempDate(new Date(meetup.date));
+        setNewTime(meetup.time);
+        setNewCapacity(meetup.capacity.toString());
+        setNewLocation(meetup.location || '');
+        setIsEditModalVisible(true);
+    };
+
+    const renderUserTile = (user: User, key: string, opts?: { waitlistPosition?: number }) => {
+        const isSelf = user._id === currentUser._id;
+        const Wrapper = isSelf ? View : TouchableOpacity;
+        const wrapperProps = isSelf ? {} : { onPress: () => setDmTargetUser(user), activeOpacity: 0.7 };
+        return (
+            <Wrapper key={key} style={styles.gridItem} {...wrapperProps}>
+                <View style={styles.gridAvatarWrap}>
+                    {user.profilePicture
+                        ? <Image source={{ uri: user.profilePicture }} style={styles.gridAvatar} />
+                        : (
+                            <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder]}>
+                                <Feather name="user" size={22} color="#9CA3AF" />
+                            </View>
+                        )}
+                    {opts?.waitlistPosition != null && (
+                        <View style={styles.waitlistBadge}>
+                            <Text style={styles.waitlistBadgeText}>{opts.waitlistPosition}</Text>
+                        </View>
+                    )}
+                </View>
+                <Text style={styles.gridName} numberOfLines={1}>{user.firstName} {user.lastName}</Text>
+            </Wrapper>
+        );
+    };
+
+    const renderGuestTile = (g: { userId: string; count: number }) => {
+        const host = (meetup.members || []).find(m => (m as any).clerkId === g.userId);
+        const hostName = host ? host.firstName : 'A member';
+        return (
+            <View key={`guests-${g.userId}`} style={styles.gridItem}>
+                <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder]}>
+                    <Text style={styles.guestCountText}>+{g.count}</Text>
+                </View>
+                <Text style={styles.gridName} numberOfLines={1}>{hostName}&apos;s guests</Text>
+            </View>
+        );
+    };
+
+    const renderSectionHeader = (label: string, count: number, color: string) => (
+        <View style={styles.sectionHeaderWrap}>
+            <Text style={[styles.sectionHeaderText, { color }]}>{label} ({count})</Text>
+            <View style={[styles.sectionHeaderLine, { backgroundColor: color }]} />
+        </View>
+    );
+
     const handleCancelMeetup = () => {
         if (isReadOnly && !isCancelled) return; // Can't cancel if already ended
         const action = isCancelled ? "Reactivate" : "Cancel";
@@ -328,24 +444,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <Feather name="chevron-down" size={32} color="#9CA3AF" />
                 </TouchableOpacity>
                 <View style={styles.headerTitleContainer}>
-                    <Text style={styles.headerTitle}>Meetup Details</Text>
+                    <Text style={styles.headerTitle}>
+                        {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })} • {meetup.time}
+                    </Text>
                 </View>
-                {/* Hide Edit Button if Read Only */}
-                {canManage ? (
-                    <TouchableOpacity 
-                        onPress={() => {
-                            setNewDate(new Date(meetup.date));
-                            setTempDate(new Date(meetup.date));
-                            setNewTime(meetup.time);
-                            setNewCapacity(meetup.capacity.toString());
-                            setNewLocation(meetup.location || '');
-                            setIsEditModalVisible(true);
-                        }}
-                        style={styles.editHeaderBtn}
-                    >
-                        <Feather name="edit-2" size={20} color="#4A90E2" />
-                    </TouchableOpacity>
-                ) : <View style={{ width: 44 }} />}
+                <View style={{ width: 44 }} />
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -364,40 +467,25 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         </View>
                     )}
                     
-                    <View style={styles.titleRow}>
-                        <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough]}>
-                            {meetup.name}
-                        </Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                            <TouchableOpacity onPress={handleAddToCalendar} style={styles.calendarButton} activeOpacity={0.7}>
-                                <Feather name="calendar" size={22} color="#22C55E" />
+                    <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough, { marginBottom: 18 }]}>
+                        {meetup.name}
+                    </Text>
+
+                    <View style={[styles.actionRow, { justifyContent: 'center' }]}>
+                        {canManage && (
+                            <TouchableOpacity onPress={openEditModal} style={[styles.actionBtn, styles.editActionBtn]} activeOpacity={0.7}>
+                                <Feather name="edit-2" size={20} color="#F59E0B" />
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={handleGoToChat} style={styles.chatButton} activeOpacity={0.7}>
-                                <Feather name="message-circle" size={22} color="#4A90E2" />
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                    
-                    <View style={styles.detailsCard}>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Date & Time</Text>
-                            <Text style={[styles.detailValue, isExpired && { color: '#6B7280' }]}>
-                                {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })} • {meetup.time}
-                            </Text>
-                        </View>
-                        <View style={styles.detailSeparator} />
-                        <View style={styles.detailRow}>
-                            <View style={[styles.detailItem, { flex: 1, marginRight: 16 }]}>
-                                <Text style={styles.detailLabel}>Location</Text>
-                                <Text style={[styles.detailValue, isExpired && { color: '#6B7280' }]} numberOfLines={1}>{meetup.location || "No location set"}</Text>
-                            </View>
-                            <View style={styles.detailItem}>
-                                <Text style={styles.detailLabel}>Capacity</Text>
-                                <Text style={[styles.detailValue, isFull && !isReadOnly && { color: '#C2410C' }, isExpired && { color: '#6B7280' }]}>
-                                    {meetup.capacity === 0 ? "Unlimited" : `${meetup.in?.length || 0}/${meetup.capacity}`}
-                                </Text>
-                            </View>
-                        </View>
+                        )}
+                        <TouchableOpacity onPress={handleAddToCalendar} style={[styles.actionBtn, styles.calendarActionBtn]} activeOpacity={0.7}>
+                            <Feather name="calendar" size={20} color="#16A34A" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleGoToChat} style={[styles.actionBtn, styles.chatActionBtn]} activeOpacity={0.7}>
+                            <Feather name="message-circle" size={20} color="#0EA5E9" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setIsDetailsModalVisible(true)} style={[styles.actionBtn, styles.moreActionBtn]} activeOpacity={0.7}>
+                            <Feather name="info" size={20} color="#7C3AED" />
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -419,8 +507,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <View style={{ flexDirection: 'row', gap: 12 }}>
                                     {/* Split I'm In button */}
                                     <View style={{
-                                        flex: 1, flexDirection: 'row', borderRadius: 12,
-                                        overflow: 'hidden', height: 48,
+                                        flex: 1, flexDirection: 'row', borderRadius: 16,
+                                        overflow: 'hidden', height: 72,
                                         backgroundColor: isOut ? 'transparent' : isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : '#4FD1C5',
                                         borderWidth: isOut ? 1.5 : 0,
                                         borderColor: '#4FD1C5',
@@ -430,7 +518,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             disabled={isRsvping}
                                             style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                                         >
-                                            <Text style={{ color: isOut ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 16 }}>
+                                            <Text style={{ color: isOut ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 18 }}>
                                                 {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                                             </Text>
                                         </TouchableOpacity>
@@ -441,16 +529,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                                         >
                                             {guestExpanded
-                                                ? <Feather name="x" size={18} color={isOut ? '#4FD1C5' : 'white'} />
-                                                : <MaterialIcons name="group-add" size={20} color={isOut ? '#4FD1C5' : 'white'} />
+                                                ? <Feather name="x" size={20} color={isOut ? '#4FD1C5' : 'white'} />
+                                                : <MaterialIcons name="group-add" size={22} color={isOut ? '#4FD1C5' : 'white'} />
                                             }
                                         </TouchableOpacity>
                                     </View>
 
                                     {/* Split I'm Out button */}
                                     <View style={{
-                                        flex: 1, flexDirection: 'row', borderRadius: 12,
-                                        overflow: 'hidden', height: 48,
+                                        flex: 1, flexDirection: 'row', borderRadius: 16,
+                                        overflow: 'hidden', height: 72,
                                         backgroundColor: isIn ? 'transparent' : '#FF7A6E',
                                         borderWidth: isIn ? 1.5 : 0,
                                         borderColor: '#FF7A6E',
@@ -460,7 +548,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             disabled={isRsvping}
                                             style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                                         >
-                                            <Text style={{ color: isIn ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
+                                            <Text style={{ color: isIn ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 18 }}>I'm Out</Text>
                                         </TouchableOpacity>
                                         <View style={{ width: 1, backgroundColor: isIn ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
                                         <TouchableOpacity
@@ -468,7 +556,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             disabled={isRsvping}
                                             style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                                         >
-                                            <Feather name="bell-off" size={18} color={isIn ? '#FF7A6E' : 'white'} />
+                                            <Feather name="bell-off" size={20} color={isIn ? '#FF7A6E' : 'white'} />
                                         </TouchableOpacity>
                                     </View>
                                 </View>
@@ -509,9 +597,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             </TouchableOpacity>
 
                                             <TouchableOpacity
-                                                onPress={() => {
+                                                onPress={async () => {
                                                     setGuestExpanded(false);
-                                                    performSetGuests(localGuestCount);
+                                                    await performSetGuests(localGuestCount);
                                                     if (!isIn) performRsvp('in');
                                                 }}
                                                 disabled={isRsvping || isSettingGuests}
@@ -537,71 +625,46 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 )}
 
                 <View style={{ marginBottom: 40 }}>
-                    <View style={styles.tabContainer}>
-                        <TouchableOpacity onPress={() => setActiveTab('in')} style={[styles.tabItem, activeTab === 'in' && { borderBottomColor: '#4FD1C5' }]}>
-                            <Text style={[styles.tabText, activeTab === 'in' && { color: '#4FD1C5' }]}>In ({goingUsers.length + totalGuestsForInTab})</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setActiveTab('out')} style={[styles.tabItem, activeTab === 'out' && { borderBottomColor: '#FF7A6E' }]}>
-                            <Text style={[styles.tabText, activeTab === 'out' && { color: '#FF7A6E' }]}>Out ({outUsers.length})</Text>
-                        </TouchableOpacity>
-                        {waitlistUsers.length > 0 && (
-                            <TouchableOpacity onPress={() => setActiveTab('waitlist')} style={[styles.tabItem, activeTab === 'waitlist' && { borderBottomColor: '#2563EB' }]}>
-                                <Text style={[styles.tabText, activeTab === 'waitlist' && { color: '#2563EB' }]}>Waitlist ({waitlistUsers.length})</Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-
-                    <View style={styles.listContainer}>
-                        {activeTab === 'in' && goingUsers.length === 0 && totalGuestsForInTab === 0 && (
+                    {renderSectionHeader('In', goingUsers.length + totalGuestsForInTab, '#4FD1C5')}
+                    <View style={styles.grid}>
+                        {goingUsers.length === 0 && totalGuestsForInTab === 0 && (
                             <Text style={styles.emptyText}>No one is in yet.</Text>
                         )}
-                        {activeTab === 'out' && outUsers.length === 0 && (
-                            <Text style={styles.emptyText}>No one is out.</Text>
-                        )}
-                        {activeTab === 'waitlist' && waitlistUsers.length === 0 && (
-                            <Text style={styles.emptyText}>Waitlist is empty.</Text>
-                        )}
-
-                        {activeTab === 'in' && goingUsers.map(user => {
-                            const guestEntry = meetup.guests?.find(g => g.userId === (user as any).clerkId);
-                            const userGuestCount = guestEntry?.count ?? 0;
-                            return (
-                                <View key={user._id} style={styles.memberRow}>
-                                    {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
-                                    <View style={styles.memberInfo}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                            <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
-                                            {userGuestCount > 0 && (
-                                                <Text style={{ color: '#22C55E', fontWeight: '700', fontSize: 13 }}>+{userGuestCount}</Text>
-                                            )}
-                                        </View>
-                                        <Text style={styles.memberUsername}>@{user.username}</Text>
-                                    </View>
-                                </View>
-                            );
-                        })}
-
-                        {activeTab === 'out' && outUsers.map(user => (
-                            <View key={user._id} style={styles.memberRow}>
-                                {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
-                                <View style={styles.memberInfo}>
-                                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
-                                    <Text style={styles.memberUsername}>@{user.username}</Text>
-                                </View>
-                            </View>
-                        ))}
-
-                        {activeTab === 'waitlist' && waitlistUsers.map((user, index) => (
-                            <View key={user._id} style={styles.memberRow}>
-                                <Text style={styles.waitlistIndex}>{index + 1}</Text>
-                                {user.profilePicture ? <Image source={{ uri: user.profilePicture }} style={styles.avatar} /> : <View style={styles.avatar} />}
-                                <View style={styles.memberInfo}>
-                                    <Text style={styles.memberName}>{user.firstName} {user.lastName}</Text>
-                                    <Text style={styles.memberUsername}>@{user.username}</Text>
-                                </View>
-                            </View>
-                        ))}
+                        {goingUsers.map(user => renderUserTile(user, user._id))}
+                        {allGuestEntries.map(renderGuestTile)}
                     </View>
+
+                    {renderSectionHeader('Out', outUsers.length, '#FF7A6E')}
+                    <View style={styles.grid}>
+                        {outUsers.length === 0 && <Text style={styles.emptyText}>No one is out.</Text>}
+                        {outUsers.map(user => renderUserTile(user, user._id))}
+                    </View>
+
+                    <View style={styles.sectionHeaderWrap}>
+                        <View style={styles.sectionHeaderRow}>
+                            <Text style={[styles.sectionHeaderText, { color: '#9CA3AF', marginBottom: 0 }]}>Undecided ({undecidedUsers.length})</Text>
+                            {canManage && undecidedUsers.length > 0 && (
+                                <TouchableOpacity onPress={handleRemindAll} disabled={isSendingReminder} style={styles.remindAllBtn} activeOpacity={0.7}>
+                                    <Feather name="bell" size={12} color="#4A90E2" />
+                                    <Text style={styles.remindAllText}>Remind All</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                        <View style={[styles.sectionHeaderLine, { backgroundColor: '#9CA3AF' }]} />
+                    </View>
+                    <View style={styles.grid}>
+                        {undecidedUsers.length === 0 && <Text style={styles.emptyText}>Everyone has responded.</Text>}
+                        {undecidedUsers.map(user => renderUserTile(user, user._id))}
+                    </View>
+
+                    {waitlistUsers.length > 0 && (
+                        <>
+                            {renderSectionHeader('Waitlist', waitlistUsers.length, '#2563EB')}
+                            <View style={styles.grid}>
+                                {waitlistUsers.map((user, index) => renderUserTile(user, user._id, { waitlistPosition: index + 1 }))}
+                            </View>
+                        </>
+                    )}
                 </View>
 
                 {/* Hide Management section if Read Only */}
@@ -615,6 +678,105 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </View>
                 )}
             </ScrollView>
+
+            {/* More Details Modal */}
+            <Modal transparent visible={isDetailsModalVisible} animationType="slide" onRequestClose={() => setIsDetailsModalVisible(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeaderInner}>
+                            <Text style={styles.modalTitleInner}>More Details</Text>
+                            <TouchableOpacity onPress={() => setIsDetailsModalVisible(false)}>
+                                <Feather name="x" size={24} color="#9CA3AF" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.detailsCard}>
+                            <View style={styles.detailItem}>
+                                <Text style={styles.detailLabel}>Location</Text>
+                                <Text style={styles.detailValue}>{meetup.location || (meetup.group as any)?.defaultLocation || "No location set"}</Text>
+                            </View>
+                            <View style={styles.detailSeparator} />
+                            <View style={styles.detailItem}>
+                                <Text style={styles.detailLabel}>Capacity</Text>
+                                <Text style={[styles.detailValue, isFull && !isReadOnly && { color: '#C2410C' }]}>
+                                    {meetup.capacity === 0 ? "Unlimited" : `${meetup.in?.length || 0}/${meetup.capacity} spots filled`}
+                                </Text>
+                            </View>
+                            <View style={styles.detailSeparator} />
+                            <View style={styles.detailItem}>
+                                <Text style={styles.detailLabel}>Group</Text>
+                                <Text style={styles.detailValue}>{(meetup.group as any)?.name || '—'}</Text>
+                            </View>
+                            {meetup.rsvpOpenDate && (
+                                <>
+                                    <View style={styles.detailSeparator} />
+                                    <View style={styles.detailItem}>
+                                        <Text style={styles.detailLabel}>RSVPs Open</Text>
+                                        <Text style={styles.detailValue}>
+                                            {new Date(meetup.rsvpOpenDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })}
+                                        </Text>
+                                    </View>
+                                </>
+                            )}
+                            <View style={styles.detailSeparator} />
+                            <View style={styles.detailItem}>
+                                <Text style={styles.detailLabel}>Status</Text>
+                                <Text style={styles.detailValue}>{isCancelled ? "Cancelled" : isExpired ? "Ended" : "Upcoming"}</Text>
+                            </View>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Start DM Confirmation Sheet */}
+            <Modal
+                visible={!!dmTargetUser}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setDmTargetUser(null)}
+            >
+                <Pressable style={dmStyles.backdrop} onPress={() => setDmTargetUser(null)}>
+                    <Pressable style={dmStyles.sheet} onPress={() => {}}>
+                        <View style={dmStyles.dragHandle} />
+                        {dmTargetUser && (
+                            <>
+                                <Image
+                                    source={{ uri: dmTargetUser.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${dmTargetUser.username?.[0]}` }}
+                                    style={dmStyles.avatar}
+                                />
+                                <Text style={dmStyles.name}>
+                                    {[dmTargetUser.firstName, dmTargetUser.lastName].filter(Boolean).join(' ') || dmTargetUser.username}
+                                </Text>
+                                <Text style={dmStyles.username}>@{dmTargetUser.username}</Text>
+                                <TouchableOpacity
+                                    style={dmStyles.dmBtn}
+                                    onPress={handleSendDM}
+                                    disabled={isCreatingDM}
+                                    activeOpacity={0.8}
+                                >
+                                    {isCreatingDM
+                                        ? <ActivityIndicator color="#fff" size="small" />
+                                        : <Text style={dmStyles.dmBtnText}>Send DM</Text>
+                                    }
+                                </TouchableOpacity>
+                                {canManage && undecidedUsers.some(u => u._id === dmTargetUser._id) && (
+                                    <TouchableOpacity
+                                        style={dmStyles.remindBtn}
+                                        onPress={() => handleSendReminder(dmTargetUser._id)}
+                                        disabled={isSendingReminder}
+                                        activeOpacity={0.8}
+                                    >
+                                        {isSendingReminder
+                                            ? <ActivityIndicator color="#4A90E2" size="small" />
+                                            : <Text style={dmStyles.remindBtnText}>Send Reminder</Text>
+                                        }
+                                    </TouchableOpacity>
+                                )}
+                            </>
+                        )}
+                    </Pressable>
+                </Pressable>
+            </Modal>
 
             {/* Combined Edit Details Modal */}
             <Modal transparent visible={isEditModalVisible} animationType="slide">
@@ -708,35 +870,16 @@ const styles = StyleSheet.create({
     closeButton: { padding: 4 },
     headerTitleContainer: { flex: 1, alignItems: 'center' },
     headerTitle: { fontSize: 14, fontWeight: '900', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
-    editHeaderBtn: { padding: 8, backgroundColor: '#EEF2FF', borderRadius: 10, borderWidth: 1, borderColor: '#C7D2FE' },
     content: { flex: 1, padding: 24 },
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
-    titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
-    meetupTitle: { fontSize: 28, fontWeight: '900', color: '#111827', letterSpacing: -1, lineHeight: 32, flex: 1 },
-    // Chat Button Styling
-    calendarButton: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#F0FFF4',
-        padding: 8,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#C6F6D5',
-        marginLeft: 12,
-        marginTop: 2,
-    },
-    chatButton: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#EEF2FF',
-        padding: 8,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#C7D2FE',
-        marginLeft: 12,
-        marginTop: 2
-    },
+    meetupTitle: { fontSize: 26, fontWeight: '900', color: '#111827', letterSpacing: -0.5, lineHeight: 30, marginBottom: 4, textAlign: 'center' },
+    actionRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+    actionBtn: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+    editActionBtn: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
+    calendarActionBtn: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
+    chatActionBtn: { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' },
+    moreActionBtn: { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
     strikeThrough: { textDecorationLine: 'line-through', color: '#D1D5DB' },
     detailsCard: { backgroundColor: '#F9FAFB', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#F3F4F6' },
     detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
@@ -770,18 +913,23 @@ rsvpLockedSubtitle: {
     fontWeight: '600', 
     color: '#9CA3AF' 
 },
-    // Tabs
-    tabContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', marginBottom: 16 },
-    tabItem: { flex: 1, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent', alignItems: 'center' },
-    tabText: { fontSize: 16, fontWeight: 'bold', color: '#9CA3AF' },
-    listContainer: { minHeight: 50 },
-    waitlistIndex: { fontSize: 16, fontWeight: 'bold', color: '#9CA3AF', marginRight: 12, width: 24, textAlign: 'center' },
-    memberRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-    avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#F3F4F6' },
-    memberInfo: { marginLeft: 12 },
-    memberName: { fontSize: 15, fontWeight: '800', color: '#1F2937' },
-    memberUsername: { fontSize: 11, fontWeight: '600', color: '#9CA3AF' },
-    emptyText: { color: '#9CA3AF', fontStyle: 'italic' },
+    // Roster sections
+    sectionHeaderWrap: { marginTop: 8, marginBottom: 14 },
+    sectionHeaderText: { fontSize: 15, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+    sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+    sectionHeaderLine: { height: 3, borderRadius: 2, opacity: 0.85 },
+    remindAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#EEF6FF', borderWidth: 1, borderColor: '#93C5FD', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
+    remindAllText: { color: '#4A90E2', fontWeight: '800', fontSize: 11, textTransform: 'uppercase' },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 8 },
+    gridItem: { width: '30%', alignItems: 'center' },
+    gridAvatarWrap: { width: '100%', position: 'relative' },
+    gridAvatar: { width: '100%', aspectRatio: 1, borderRadius: 14, backgroundColor: '#F3F4F6' },
+    gridAvatarPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+    gridName: { fontSize: 12, fontWeight: '700', color: '#374151', marginTop: 6, textAlign: 'center' },
+    guestCountText: { fontSize: 26, fontWeight: '900', color: '#4FD1C5' },
+    waitlistBadge: { position: 'absolute', top: -6, left: -6, backgroundColor: '#2563EB', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
+    waitlistBadgeText: { color: 'white', fontSize: 11, fontWeight: '800' },
+    emptyText: { color: '#9CA3AF', fontStyle: 'italic', marginBottom: 20 },
     ownerSection: { marginTop: 40, paddingBottom: 60, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 24 },
     cancelToggle: { height: 50, borderRadius: 14, borderWidth: 2, borderColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
     cancelToggleText: { color: '#EF4444', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
@@ -801,6 +949,19 @@ rsvpLockedSubtitle: {
     datePickerContent: { backgroundColor: 'white', borderTopRightRadius: 20, borderTopLeftRadius: 20, padding: 16 },
     doneButton: { backgroundColor: '#4A90E2', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 10 },
     doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
+});
+
+const dmStyles = StyleSheet.create({
+    backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12, alignItems: 'center' },
+    dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginBottom: 24 },
+    avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 14, backgroundColor: '#F3F4F6' },
+    name: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 4 },
+    username: { fontSize: 14, color: '#9CA3AF', fontWeight: '600', marginBottom: 28 },
+    dmBtn: { backgroundColor: '#4A90E2', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
+    dmBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+    remindBtn: { marginTop: 12, backgroundColor: '#EEF6FF', borderWidth: 1.5, borderColor: '#93C5FD', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
+    remindBtnText: { color: '#4A90E2', fontWeight: '700', fontSize: 16 },
 });
 
 export default MeetupDetailModal;

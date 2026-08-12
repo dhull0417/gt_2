@@ -34,10 +34,12 @@ import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { ChatMessageBubble } from '@/components/ChatMessageBubble';
 import { ChatMessageInput } from '@/components/ChatMessageInput';
 import { ChatDayBubble } from '@/components/ChatDayBubble';
+import { ChatImageViewer } from '@/components/ChatImageViewer';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
 import PollListModal from '@/components/PollListModal';
 import { useGetPolls } from '@/hooks/useGetPolls';
 import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage, PendingImage } from '@/types/chat';
 
 interface ChatDaySection {
   key: string;
@@ -135,10 +137,12 @@ const GroupChat = ({
   group,
   currentUser,
   keyboardOffset,
+  onReady,
 }: {
   group: GroupDetails;
   currentUser: User;
   keyboardOffset: number;
+  onReady?: () => void;
 }) => {
   const api = useApiClient();
   const sectionListRef = useRef<SectionList<ChatMessage, ChatDaySection>>(null);
@@ -155,6 +159,7 @@ const GroupChat = ({
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [editText, setEditText] = useState('');
   const [reactionDetailMessage, setReactionDetailMessage] = useState<ChatMessage | null>(null);
+  const [fullscreenImage, setFullscreenImage] = useState<{ url: string; width?: number | null; height?: number | null } | null>(null);
 
   const userNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -179,31 +184,69 @@ const GroupChat = ({
     return Array.from(byDay.values());
   }, [messages]);
 
+  const [listHeight, setListHeight] = useState(0);
+  // Gates the first paint of a freshly opened chat so it never visibly starts at the
+  // oldest message and animates down — see the two effects below.
+  const [contentReady, setContentReady] = useState(false);
+
+  const hasNotifiedReady = useRef(false);
+
+  useEffect(() => {
+    setContentReady(false);
+    hasNotifiedReady.current = false;
+  }, [group._id]);
+
+  // Tell the parent exactly once per chat-open — it owns the single, persistent loading
+  // animation instance that covers this whole span, so this never mounts its own.
+  useEffect(() => {
+    if (contentReady && !hasNotifiedReady.current) {
+      hasNotifiedReady.current = true;
+      onReady?.();
+    }
+  }, [contentReady, onReady]);
+
+  // scrollToLocation estimates an item's offset from average cell height for anything
+  // it hasn't actually measured yet — with our wildly variable message heights (short
+  // text vs. images vs. reactions) that estimate is unreliable, landing short of the
+  // true end. getScrollResponder() gives the real underlying ScrollView, whose
+  // scrollToEnd() uses the actual measured content size — no estimation involved.
   const scrollToBottom = useCallback((animated: boolean) => {
-    const lastSection = sections[sections.length - 1];
-    if (!lastSection || lastSection.data.length === 0) return;
-    sectionListRef.current?.scrollToLocation({
-      sectionIndex: sections.length - 1,
-      itemIndex: lastSection.data.length - 1,
-      animated,
-      viewPosition: 1,
-    });
-  }, [sections]);
+    sectionListRef.current?.getScrollResponder()?.scrollToEnd({ animated });
+  }, []);
 
+  // First paint for this chat: jump to the bottom instantly (not animated — an
+  // animation here is exactly the visible "zip from oldest to newest" this avoids),
+  // then reveal the list only once that position has actually landed.
   useEffect(() => {
-    if (messages.length > 0) scrollToBottom(true);
-  }, [messages.length]);
+    if (contentReady || messages.length === 0) return;
+    scrollToBottom(false);
+    requestAnimationFrame(() => requestAnimationFrame(() => setContentReady(true)));
+  }, [messages.length, contentReady, scrollToBottom]);
 
+  // A genuinely empty chat has nothing to position — reveal the empty state immediately.
   useEffect(() => {
-    const event = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const sub = Keyboard.addListener(event, () => scrollToBottom(true));
-    return () => sub.remove();
-  }, [scrollToBottom]);
+    if (!loading && messages.length === 0) setContentReady(true);
+  }, [loading, messages.length]);
+
+  // Once the chat is visibly open, new messages arriving get the usual animated
+  // scroll-into-view.
+  useEffect(() => {
+    if (!contentReady) return;
+    scrollToBottom(true);
+  }, [messages.length, contentReady, scrollToBottom]);
+
+  // Re-anchor to the bottom whenever the list's own measured height actually changes —
+  // this is what KeyboardAvoidingView resizing it (keyboard open/close) looks like from
+  // the list's point of view, and it's the real signal that the resize has landed, unlike
+  // guessing a delay off the keyboard event (which fires before the resize finishes).
+  useEffect(() => {
+    if (listHeight > 0) scrollToBottom(true);
+  }, [listHeight]);
 
   const isOwnSelected = selectedMessage?.sender_id === senderId;
   const isDeletedSelected = !!selectedMessage?.deleted_at;
 
-  const handleSend = async (text: string, imageUrl?: string) => {
+  const handleSend = async (text: string, image?: PendingImage) => {
     const currentReply = replyingTo;
     setReplyingTo(null);
     try {
@@ -214,7 +257,7 @@ const GroupChat = ({
         currentReply
           ? { id: currentReply.id, content: currentReply.content, senderName: currentReply.sender_name }
           : undefined,
-        imageUrl
+        image
       );
       const notifyText = text || '📷 Photo';
       api.patch(`/api/groups/${group._id}/last-message`, { text: notifyText, senderName }).catch(() => {});
@@ -284,23 +327,21 @@ const GroupChat = ({
     : typingNames.length === 2 ? `${typingNames[0]} and ${typingNames[1]} are typing…`
     : 'Several people are typing…';
 
-  if (loading) {
-    return (
-      <View style={chatStyles.center}>
-        <ActivityIndicator size="large" color="#4A90E2" />
-      </View>
-    );
-  }
+  // No early return here — the parent's single persistent loading animation covers this
+  // whole span, so this component just quietly finishes preparing underneath it (see the
+  // opacity/pointerEvents gating below) rather than mounting its own competing instance.
 
   return (
     <View style={{ flex: 1 }}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, opacity: contentReady ? 1 : 0 }}
+        pointerEvents={contentReady ? 'auto' : 'none'}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={keyboardOffset}
       >
         <SectionList
           ref={sectionListRef}
+          style={{ flex: 1 }}
           sections={sections}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
@@ -310,6 +351,7 @@ const GroupChat = ({
               currentUserId={senderId}
               onLongPress={() => setSelectedMessage(item)}
               onReactionLongPress={() => setReactionDetailMessage(item)}
+              onImagePress={(url, width, height) => setFullscreenImage({ url, width, height })}
             />
           )}
           renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}
@@ -321,7 +363,7 @@ const GroupChat = ({
             </View>
           }
           onContentSizeChange={() => scrollToBottom(false)}
-          onScrollToIndexFailed={() => setTimeout(() => scrollToBottom(false), 50)}
+          onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
         />
 
         <View style={{ minHeight: 20, paddingHorizontal: 16, justifyContent: 'center' }}>
@@ -432,6 +474,14 @@ const GroupChat = ({
           </Pressable>
         </Pressable>
       </Modal>
+
+      <ChatImageViewer
+        visible={!!fullscreenImage}
+        imageUrl={fullscreenImage?.url ?? null}
+        imageWidth={fullscreenImage?.width}
+        imageHeight={fullscreenImage?.height}
+        onClose={() => setFullscreenImage(null)}
+      />
     </View>
   );
 };
@@ -479,8 +529,14 @@ const GroupScreen = () => {
   const stableUserRef = useRef<User | null>(null);
   if (!stableUserRef.current && currentUser) stableUserRef.current = currentUser;
 
+  // Single source of truth for "is the chat done opening" — GroupChat reports in via
+  // onReady once, so exactly one loading animation instance covers the whole span from
+  // tapping a group through group-details fetch through message-list positioning.
+  const [chatReady, setChatReady] = useState(false);
+
   useEffect(() => {
     if (!selectedGroup) stableUserRef.current = null;
+    setChatReady(false);
   }, [selectedGroup?._id]);
 
   useEffect(() => {
@@ -675,7 +731,7 @@ const GroupScreen = () => {
   };
 
   const renderGroupList = () => {
-    if (isLoadingGroups || (!currentUser && isLoadingUser)) return <ActivityIndicator size="large" color="#4FD1C5" className="mt-8"/>;
+    if (isLoadingGroups || (!currentUser && isLoadingUser)) return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>;
     if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
     if (!groups || groups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
 
@@ -727,7 +783,7 @@ const GroupScreen = () => {
           <Feather name="plus-circle" size={26} color="#4A90E2" />
         </TouchableOpacity>
       </View>
-      <ScrollView className="px-4">
+      <ScrollView className="px-4" contentContainerStyle={{ flexGrow: 1 }}>
         {renderGroupList()}
       </ScrollView>
 
@@ -858,23 +914,25 @@ const GroupScreen = () => {
 
           {activeTab === 'Chat' ? (
             <View style={{ flex: 1 }}>
-              {(isLoadingDetails || !groupDetails || !currentUser) ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color="#4A90E2" />
-                </View>
-              ) : (
+              {groupDetails && currentUser && (
                 <GroupChat
                   group={groupDetails}
                   currentUser={stableUserRef.current || currentUser}
                   keyboardOffset={insets.top + chatHeaderHeight}
+                  onReady={() => setChatReady(true)}
                 />
+              )}
+              {(isLoadingDetails || !groupDetails || !currentUser || !chatReady) && (
+                <View style={[styles.loadingContainer, StyleSheet.absoluteFillObject]} pointerEvents="none">
+                  <LoadingAnimation />
+                </View>
               )}
             </View>
           ) : (
-            <ScrollView className="flex-1 bg-gray-50" keyboardShouldPersistTaps="handled">
-              <View className="p-6">
+            <ScrollView className="flex-1 bg-gray-50" keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
+              <View className="p-6" style={{ flex: 1 }}>
                 {(isLoadingDetails || !groupDetails) ? (
-                    <ActivityIndicator size="large" color="#4A90E2" className="my-8" />
+                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
                 ) : isErrorDetails ? (
                     <Text className="text-center text-red-500 mt-4">Failed to load group details.</Text>
                 ) : (

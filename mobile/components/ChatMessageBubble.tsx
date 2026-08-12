@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
 import { Image } from 'expo-image';
 import type { ChatMessage } from '@/types/chat';
 
@@ -8,13 +8,42 @@ interface Props {
   onLongPress: () => void;
   currentUserId?: string;
   onReactionLongPress?: () => void;
+  onImagePress?: (url: string, width?: number | null, height?: number | null) => void;
 }
 
-export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, onReactionLongPress }: Props) {
+const MAX_IMAGE_WIDTH = 240;
+const MAX_IMAGE_HEIGHT = 300;
+const MIN_IMAGE_WIDTH = 140;
+
+// Legacy messages sent before dimensions were captured fall back to the old fixed box.
+function getImageDisplaySize(width?: number | null, height?: number | null) {
+  if (!width || !height) return { width: 220, height: 165 };
+
+  const ratio = width / height;
+  let w = MAX_IMAGE_WIDTH;
+  let h = w / ratio;
+
+  if (h > MAX_IMAGE_HEIGHT) {
+    h = MAX_IMAGE_HEIGHT;
+    w = h * ratio;
+  }
+  if (w < MIN_IMAGE_WIDTH) {
+    w = MIN_IMAGE_WIDTH;
+    h = w / ratio;
+  }
+  // Safety net for pathological aspect ratios (e.g. a very tall narrow screenshot) —
+  // accept minor cropping via contentFit="cover" rather than an oversized bubble.
+  h = Math.min(h, MAX_IMAGE_HEIGHT);
+
+  return { width: Math.round(w), height: Math.round(h) };
+}
+
+export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, onReactionLongPress, onImagePress }: Props) {
   const isDeleted = !!message.deleted_at;
   const isEdited = !!message.edited_at && !isDeleted;
   const hasImage = !!message.image_url && !isDeleted;
   const hasText = !!message.content && !isDeleted;
+  const imageSize = hasImage ? getImageDisplaySize(message.image_width, message.image_height) : null;
 
   const time = new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const reactions = (!isDeleted && message.reactions) ? message.reactions : {};
@@ -43,12 +72,18 @@ export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, 
           )}
 
           {hasImage && (
-            <Image
-              source={{ uri: message.image_url! }}
-              style={[styles.messageImage, hasText && styles.messageImageWithText]}
-              contentFit="cover"
-              transition={150}
-            />
+            <Pressable
+              onPress={() => onImagePress?.(message.image_url!, message.image_width, message.image_height)}
+              onLongPress={onLongPress}
+              delayLongPress={350}
+            >
+              <Image
+                source={{ uri: message.image_url! }}
+                style={[styles.messageImage, imageSize, hasText && styles.messageImageWithText]}
+                contentFit="cover"
+                transition={150}
+              />
+            </Pressable>
           )}
 
           {isDeleted ? (
@@ -92,7 +127,7 @@ const styles = StyleSheet.create({
   bubbleOther: { backgroundColor: '#E5E7EB', borderBottomLeftRadius: 4 },
   bubbleImageOnly: { paddingHorizontal: 4, paddingVertical: 4 },
   senderName: { fontSize: 12, fontWeight: '600', color: '#555', marginBottom: 2 },
-  messageImage: { width: 220, height: 165, borderRadius: 10 },
+  messageImage: { borderRadius: 10 },
   messageImageWithText: { marginBottom: 6 },
   content: { fontSize: 15, color: '#111827' },
   contentOwn: { color: '#fff' },

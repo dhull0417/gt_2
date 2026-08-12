@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from '@expo/vector-icons';
 import * as AppleAuthentication from "expo-apple-authentication";
+import { SignInLogoIntro } from "@/components/SignInLogoIntro";
 
 export default function Index() {
   const { handleSocialAuth, isLoading } = useSocialAuth();
@@ -22,11 +23,14 @@ export default function Index() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
           <View style={styles.logoContainer}>
-            <Image 
-              source={require("../../assets/images/adaptive-icon.png")}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
+            <View style={styles.logoBox}>
+              <Image
+                source={require("../../assets/images/splash-icon.png")}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+              <SignInLogoIntro width={320} height={196} delay={2000} />
+            </View>
           </View>
 
           <View style={styles.buttonGroup}>
@@ -113,9 +117,14 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
+  logoBox: {
+    width: 320,
+    height: 196,
+    position: 'relative',
+  },
   logoImage: {
-    width: 384,
-    height: 384,
+    width: 320,
+    height: 196,
   },
   buttonGroup: {
     gap: 8,
@@ -136,7 +145,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#D1D5DB',
     borderRadius: 9999,
-    paddingVertical: 12,
+    height: 48,
     paddingHorizontal: 24,
   },
   shadow: {
@@ -152,14 +161,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconImage: {
-    width: 32,
-    height: 32,
-    marginRight: 12,
+    width: 20,
+    height: 20,
+    marginRight: 10,
   },
   buttonText: {
     color: '#000000',
-    fontWeight: '500',
-    fontSize: 16,
+    fontWeight: '600',
+    fontSize: 18,
   },
   separatorContainer: {
     flexDirection: 'row',

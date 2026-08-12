@@ -18,6 +18,7 @@ import { DateTime } from "luxon";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
 import { useApiClient, GroupDetails, Frequency, DayTime, Routine } from "../../utils/api";
+import { LoadingAnimation } from "@/components/LoadingAnimation";
 import TimePicker from "../../components/TimePicker";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -989,7 +990,7 @@ const EditScheduleScreen = () => {
         return (
             <SafeAreaView style={s.safe}>
                 <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-                    <ActivityIndicator size="large" color="#4A90E2" />
+                    <LoadingAnimation />
                 </View>
             </SafeAreaView>
         );

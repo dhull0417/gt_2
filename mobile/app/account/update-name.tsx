@@ -1,9 +1,10 @@
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useUpdateProfile } from '@/hooks/useUpdateProfile';
 import { User, useApiClient, userApi } from '@/utils/api';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
 
 const UpdateNameScreen = () => {
     const api = useApiClient();
@@ -32,7 +33,7 @@ const UpdateNameScreen = () => {
     };
 
     if (isLoadingUser) {
-        return <ActivityIndicator size="large" className="flex-1 justify-center" />;
+        return <View className="flex-1 justify-center items-center"><LoadingAnimation /></View>;
     }
 
     return (

@@ -2,18 +2,20 @@ import { useState } from 'react';
 import { View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Image, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
-import { useApiClient } from '@/utils/api';
+import { useAuth } from '@clerk/expo';
+import { uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
+import type { PendingImage } from '@/types/chat';
 
 interface Props {
-  onSend: (text: string, imageUrl?: string) => Promise<void>;
+  onSend: (text: string, image?: PendingImage) => Promise<void>;
   onTyping?: () => void;
 }
 
 export function ChatMessageInput({ onSend, onTyping }: Props) {
-  const api = useApiClient();
+  const { getToken } = useAuth();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [pendingImage, setPendingImage] = useState<{ localUri: string; uploadedUrl?: string } | null>(null);
+  const [pendingImage, setPendingImage] = useState<{ localUri: string; uploaded?: PendingImage } | null>(null);
   const [uploading, setUploading] = useState(false);
 
   const pickImage = async () => {
@@ -36,18 +38,12 @@ export function ChatMessageInput({ onSend, onTyping }: Props) {
     setUploading(true);
 
     try {
-      const formData = new FormData();
-      formData.append('image', {
-        uri: asset.uri,
-        name: `chat_${Date.now()}.jpg`,
-        type: asset.mimeType ?? 'image/jpeg',
-      } as any);
+      const token = await getToken({ template: 'supabase' });
+      if (!token) throw new Error('No auth token');
+      const filePath = `chat/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
+      const { url, width, height } = await uploadImageFromUriWithDimensions(asset.uri, 'chat-images', filePath, token);
 
-      const { data } = await api.post('/api/upload/chat-image', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      setPendingImage({ localUri: asset.uri, uploadedUrl: data.url });
+      setPendingImage({ localUri: asset.uri, uploaded: { url, width, height } });
     } catch {
       Alert.alert('Upload failed', 'Could not upload the image. Please try again.');
       setPendingImage(null);
@@ -56,15 +52,15 @@ export function ChatMessageInput({ onSend, onTyping }: Props) {
     }
   };
 
-  const canSend = !sending && !uploading && (!!text.trim() || !!pendingImage?.uploadedUrl);
+  const canSend = !sending && !uploading && (!!text.trim() || !!pendingImage?.uploaded);
 
   const handleSend = async () => {
     if (!canSend) return;
     setSending(true);
-    const imageUrl = pendingImage?.uploadedUrl;
+    const image = pendingImage?.uploaded;
     const trimmed = text.trim();
     try {
-      await onSend(trimmed, imageUrl);
+      await onSend(trimmed, image);
       setText('');
       setPendingImage(null);
     } finally {

@@ -244,19 +244,6 @@ export const createApiClient = (getToken: () => Promise<string | null>): AxiosIn
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   });
-  // TEMP DEBUG — remove once the staging 401 is diagnosed.
-  api.interceptors.response.use(undefined, (error) => {
-    if (error?.response?.status === 401) {
-      console.log('[401 debug]', {
-        url: error.config?.url,
-        hadAuthHeader: !!error.config?.headers?.Authorization,
-        reason: error.response.headers?.['x-clerk-auth-reason'],
-        message: error.response.headers?.['x-clerk-auth-message'],
-        status: error.response.headers?.['x-clerk-auth-status'],
-      });
-    }
-    return Promise.reject(error);
-  });
   return api;
 };
 
@@ -385,6 +372,10 @@ export const meetupApi = {
   },
   setGuestCount: async (api: AxiosInstance, meetupId: string, count: number): Promise<{ meetup: Meetup }> => {
     const response = await api.patch<{ meetup: Meetup }>(`/api/meetups/${meetupId}/guests`, { count });
+    return response.data;
+  },
+  sendReminder: async (api: AxiosInstance, meetupId: string, userId?: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(`/api/meetups/${meetupId}/remind`, userId ? { userId } : {});
     return response.data;
   },
 };

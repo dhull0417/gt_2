@@ -10,6 +10,7 @@ import * as Updates from 'expo-updates';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { pickAndUploadImage } from '@/utils/uploadImage';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
 
 const CALENDAR_OPTIONS = [
   {
@@ -223,9 +224,9 @@ const HomeScreen = () => {
         <Text className="text-xl font-bold text-gray-900">Profile</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 20, flexGrow: 1 }}>
         {isLoading ? (
-            <ActivityIndicator size="large" color="#4A90E2" className="mt-16" />
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
         ) : isError || !currentUser ? (
             <Text className="text-center text-red-500 mt-8">Failed to load profile.</Text>
         ) : (
