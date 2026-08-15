@@ -471,8 +471,8 @@ export const getGroupDetails = asyncHandler(async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid ID." });
     
     const group = await Group.findById(groupId)
-        .populate("members", "firstName lastName _id profilePicture username")
-        .populate("moderators", "firstName lastName username profilePicture _id")
+        .populate("members", "firstName lastName _id profilePicture")
+        .populate("moderators", "firstName lastName profilePicture _id")
         .lean();
         
     if (!group) return res.status(404).json({ error: "Group not found." });

@@ -5,7 +5,6 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from '@expo/vector-icons';
 import * as AppleAuthentication from "expo-apple-authentication";
-import { SignInLogoIntro } from "@/components/SignInLogoIntro";
 
 export default function Index() {
   const { handleSocialAuth, isLoading } = useSocialAuth();
@@ -29,7 +28,6 @@ export default function Index() {
                 style={styles.logoImage}
                 resizeMode="contain"
               />
-              <SignInLogoIntro width={320} height={196} delay={2000} />
             </View>
           </View>
 

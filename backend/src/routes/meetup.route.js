@@ -49,7 +49,7 @@ router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
 
         const updated = await Meetup.findById(meetup._id)
             .populate('group', 'name owner moderators timezone defaultLocation')
-            .populate('members', 'firstName lastName username profilePicture clerkId');
+            .populate('members', 'firstName lastName profilePicture clerkId');
         res.json({ meetup: updated });
     } catch (err) {
         console.error('Guest update error:', err);

@@ -7,16 +7,28 @@ import {
     StyleSheet,
     Share,
     ActivityIndicator,
-    Alert
+    Alert,
+    Platform,
+    LayoutAnimation,
+    UIManager,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import AddMeetupWizard from './AddMeetupWizard';
 import CreatePollModal from './CreatePollModal';
+import { GroupAvatar } from './GroupAvatar';
 import { useQuery } from '@tanstack/react-query';
+import { getDMDisplayName } from '@/utils/groupDisplay';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
 interface GroupDetailsViewProps {
     groupDetails: GroupDetails;
     currentUser: User;
@@ -70,6 +82,8 @@ export const GroupDetailsView = ({
     // --- Wizard Visibility State ---
     const [wizardVisible, setWizardVisible] = useState(false);
     const [pollModalVisible, setPollModalVisible] = useState(false);
+    const [detailsExpanded, setDetailsExpanded] = useState(false);
+    const [actionsExpanded, setActionsExpanded] = useState(false);
     const router = useRouter();
     const api = useApiClient();
     const { mutate: leaveGroup, isPending: isLeaving } = useLeaveGroup();
@@ -173,122 +187,216 @@ export const GroupDetailsView = ({
     };
 
     const isDM = !!groupDetails.isDM;
+    const headerName = isDM ? getDMDisplayName(groupDetails as any, currentUser.clerkId) : groupDetails.name;
+
+    const toggleDetails = () => {
+        animate();
+        setDetailsExpanded(v => !v);
+    };
+
+    const toggleActions = () => {
+        animate();
+        setActionsExpanded(v => !v);
+    };
 
     return (
         <View style={styles.container}>
-            {/* 1. Core Details Card — hidden for DMs */}
+            {/* 0. Group Photo Header */}
+            <View style={styles.groupHeader}>
+                <GroupAvatar name={headerName} imageUrl={groupDetails.image} size={140} borderRadius={32} />
+                <Text style={styles.groupHeaderName}>{headerName}</Text>
+            </View>
+
+            {/* 1. Details — collapsible, hidden for DMs */}
             {!isDM && <View style={styles.card}>
-                <View style={styles.cardHeader}><Text style={styles.cardTitle}>Details</Text></View>
-                
-                {/* Detailed Schedule Section */}
-                <View style={styles.infoRowTop}>
-                    <Feather name="calendar" size={18} color="#4A90E2" style={{ marginTop: 2 }} />
-                    <View style={styles.scheduleContent}>
-                        {groupDetails.schedule?.routines && groupDetails.schedule.routines.length > 0 ? (
-                            groupDetails.schedule.routines.map((routine, rIdx) => (
-                                <View key={rIdx} style={styles.routineBlock}>
-                                    <Text style={styles.frequencyLabel}>
-                                        {routine.frequency === 'biweekly' ? 'Every 2 Weeks' : routine.frequency.charAt(0).toUpperCase() + routine.frequency.slice(1)}
-                                    </Text>
-                                    {renderScheduleLines(routine.frequency, routine.dayTimes)}
-                                </View>
-                            ))
-                        ) : (
-                            <Text style={styles.infoText}>No schedule defined</Text>
-                        )}
+                <TouchableOpacity style={styles.collapsibleHeader} onPress={toggleDetails} activeOpacity={0.7}>
+                    <View style={styles.collapsibleHeaderLeft}>
+                        <View style={[styles.iconWrap, styles.iconWrapSmall, styles.iconWrapBlue]}>
+                            <Feather name="info" size={14} color="#4A90E2" />
+                        </View>
+                        <Text style={styles.cardTitle}>Details</Text>
                     </View>
-                </View>
-
-                {/* Location Info */}
-                <View style={styles.infoRow}>
-                    <Feather name="map-pin" size={18} color="#4A90E2" style={{ marginTop: 2 }} />
-                    <Text style={styles.infoText}>
-                        {groupDetails.defaultLocation || "No default location set"}
-                    </Text>
-                </View>
-
-                {/* Capacity Limit */}
-                <View style={styles.infoRow}>
-                    <Feather name="users" size={18} color="#4A90E2" />
-                    <Text style={styles.infoText}>{groupDetails.defaultCapacity === 0 ? "Unlimited Attendees" : groupDetails.defaultCapacity}</Text>
-                </View>
-
-                {/* JIT Schedule Info */}
-                <View style={styles.infoRow}>
-                    <Feather name="bell" size={18} color="#4A90E2" />
-                    <Text style={styles.infoText}>
-                        RSVP {groupDetails.generationLeadDays} day{groupDetails.generationLeadDays > 1 ? 's' : ''} before @ {groupDetails.generationLeadTime}
-                    </Text>
-                </View>
-            </View>}
-
-            {/* 2. Quick Actions — hidden for DMs */}
-            {!isDM && <View style={styles.managerActionsRow}>
-                {canManage && (
-                    <TouchableOpacity onPress={() => setWizardVisible(true)} style={styles.actionPill}>
-                        <Feather name="plus" size={16} color="#4A90E2" />
-                        <Text style={styles.actionPillText}>Add Meetup</Text>
-                    </TouchableOpacity>
-                )}
-
-                {canManage && (
-                    <TouchableOpacity onPress={() => setPollModalVisible(true)} style={styles.actionPill}>
-                        <Feather name="bar-chart-2" size={16} color="#4A90E2" />
-                        <Text style={styles.actionPillText}>Create Poll</Text>
-                    </TouchableOpacity>
-                )}
-
-                {/* Invite Friends Action - Visible to all members */}
-                <TouchableOpacity onPress={handleInvitePress} style={styles.actionPill}>
-                    <Feather name="user-plus" size={16} color="#4A90E2" />
-                    <Text style={styles.actionPillText}>Invite Friends</Text>
+                    <Feather name={detailsExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#9CA3AF" />
                 </TouchableOpacity>
+
+                {detailsExpanded && (
+                    <View style={styles.collapsibleBody}>
+                        {/* Detailed Schedule Section */}
+                        <View style={styles.infoRowTop}>
+                            <View style={[styles.iconWrap, styles.iconWrapBlue]}>
+                                <Feather name="calendar" size={16} color="#4A90E2" />
+                            </View>
+                            <View style={styles.scheduleContent}>
+                                {groupDetails.schedule?.routines && groupDetails.schedule.routines.length > 0 ? (
+                                    groupDetails.schedule.routines.map((routine, rIdx) => (
+                                        <View key={rIdx} style={styles.routineBlock}>
+                                            <Text style={styles.frequencyLabel}>
+                                                {routine.frequency === 'biweekly' ? 'Every 2 Weeks' : routine.frequency.charAt(0).toUpperCase() + routine.frequency.slice(1)}
+                                            </Text>
+                                            {renderScheduleLines(routine.frequency, routine.dayTimes)}
+                                        </View>
+                                    ))
+                                ) : (
+                                    <Text style={styles.infoText}>No schedule defined</Text>
+                                )}
+                            </View>
+                        </View>
+
+                        {/* Location Info */}
+                        <View style={styles.infoRow}>
+                            <View style={[styles.iconWrap, styles.iconWrapGreen]}>
+                                <Feather name="map-pin" size={16} color="#16A34A" />
+                            </View>
+                            <Text style={styles.infoText}>
+                                {groupDetails.defaultLocation || "No default location set"}
+                            </Text>
+                        </View>
+
+                        {/* Capacity Limit */}
+                        <View style={styles.infoRow}>
+                            <View style={[styles.iconWrap, styles.iconWrapPurple]}>
+                                <Feather name="users" size={16} color="#7C3AED" />
+                            </View>
+                            <Text style={styles.infoText}>{groupDetails.defaultCapacity === 0 ? "Unlimited Attendees" : groupDetails.defaultCapacity}</Text>
+                        </View>
+
+                        {/* JIT Schedule Info */}
+                        <View style={[styles.infoRow, { marginBottom: 0 }]}>
+                            <View style={[styles.iconWrap, styles.iconWrapAmber]}>
+                                <Feather name="bell" size={16} color="#D97706" />
+                            </View>
+                            <Text style={styles.infoText}>
+                                RSVP {groupDetails.generationLeadDays} day{groupDetails.generationLeadDays > 1 ? 's' : ''} before @ {groupDetails.generationLeadTime}
+                            </Text>
+                        </View>
+                    </View>
+                )}
             </View>}
 
-            {/* 3. Member List */}
-            <View style={{ marginBottom: 24 }}>
-                <Text style={styles.sectionTitle}>Members ({groupDetails.members.length})</Text>
-                {groupDetails.members.map(member => {
+            {/* 2. Actions — collapsible, hidden for DMs */}
+            {!isDM && <View style={styles.card}>
+                <TouchableOpacity style={styles.collapsibleHeader} onPress={toggleActions} activeOpacity={0.7}>
+                    <View style={styles.collapsibleHeaderLeft}>
+                        <View style={[styles.iconWrap, styles.iconWrapSmall, styles.iconWrapTeal]}>
+                            <Feather name="zap" size={14} color="#0D9488" />
+                        </View>
+                        <Text style={styles.cardTitle}>Actions</Text>
+                    </View>
+                    <Feather name={actionsExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#9CA3AF" />
+                </TouchableOpacity>
+
+                {actionsExpanded && (
+                    <View style={[styles.collapsibleBody, styles.managerActionsRow]}>
+                        {canManage && (
+                            <TouchableOpacity onPress={() => setWizardVisible(true)} style={[styles.actionPill, styles.actionPillBlue]} activeOpacity={0.7}>
+                                <Feather name="plus" size={16} color="#4A90E2" />
+                                <Text style={[styles.actionPillText, { color: '#4A90E2' }]}>Add Meetup</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {canManage && (
+                            <TouchableOpacity onPress={() => setPollModalVisible(true)} style={[styles.actionPill, styles.actionPillPurple]} activeOpacity={0.7}>
+                                <Feather name="bar-chart-2" size={16} color="#7C3AED" />
+                                <Text style={[styles.actionPillText, { color: '#7C3AED' }]}>Create Poll</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Invite Friends Action - Visible to all members */}
+                        <TouchableOpacity onPress={handleInvitePress} style={[styles.actionPill, styles.actionPillTeal]} activeOpacity={0.7}>
+                            <Feather name="user-plus" size={16} color="#0D9488" />
+                            <Text style={[styles.actionPillText, { color: '#0D9488' }]}>Invite Friends</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </View>}
+
+            {/* 3. Member List — split into Owner/Moderators and Members, always expanded */}
+            {(() => {
+                const isStaff = (member: User) => {
+                    const isMemberOwner = member._id === groupDetails.owner;
+                    const isMemberMod = groupDetails.moderators?.some((m: User | string) =>
+                        typeof m === 'string' ? m === member._id : m._id === member._id
+                    ) ?? false;
+                    return isMemberOwner || isMemberMod;
+                };
+                const staffMembers = groupDetails.members.filter(isStaff);
+                const regularMembers = groupDetails.members.filter(m => !isStaff(m));
+
+                const renderMemberTile = (member: User) => {
                     const isMemberOwner = member._id === groupDetails.owner;
                     const isMemberMod = groupDetails.moderators?.some((m: User | string) =>
                         typeof m === 'string' ? m === member._id : m._id === member._id
                     ) ?? false;
                     const isSelf = member._id === currentUser._id;
                     const canTap = !isDM && !isSelf && !!onMemberPress;
+                    const canRemove = !isDM && !isMemberOwner && (isOwner || (canManage && !isMemberMod));
 
-                    const cardContent = (
-                        <>
-                            <Image
-                                source={{ uri: member.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${member.username?.[0]}` }}
-                                style={styles.avatar}
-                            />
-                            <View style={{ flex: 1 }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                    <Text style={styles.memberName}>{member.firstName} {member.lastName}</Text>
-                                    {isMemberOwner && <View style={styles.ownerBadge}><Text style={styles.badgeText}>Owner</Text></View>}
-                                    {isMemberMod && !isMemberOwner && <View style={styles.modBadge}><Text style={styles.badgeText}>Mod</Text></View>}
-                                </View>
-                                <Text style={styles.memberHandle}>@{member.username}</Text>
+                    const Wrapper = canTap ? TouchableOpacity : View;
+                    const wrapperProps = canTap ? { onPress: () => onMemberPress!(member), activeOpacity: 0.7 } : {};
+
+                    return (
+                        <Wrapper key={member._id} style={styles.gridItem} {...wrapperProps}>
+                            <View style={styles.gridAvatarWrap}>
+                                {member.profilePicture
+                                    ? <Image source={{ uri: member.profilePicture }} style={styles.gridAvatar} />
+                                    : (
+                                        <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder]}>
+                                            <Feather name="user" size={22} color="#9CA3AF" />
+                                        </View>
+                                    )}
+                                {isMemberOwner && (
+                                    <View style={[styles.roleBadge, styles.ownerRoleBadge]}>
+                                        <Feather name="star" size={11} color="white" />
+                                    </View>
+                                )}
+                                {isMemberMod && !isMemberOwner && (
+                                    <View style={[styles.roleBadge, styles.modRoleBadge]}>
+                                        <Feather name="shield" size={11} color="white" />
+                                    </View>
+                                )}
+                                {canRemove && (
+                                    <TouchableOpacity
+                                        style={styles.removeBadge}
+                                        onPress={() => onRemoveMember(member._id)}
+                                        disabled={isRemovingMember}
+                                    >
+                                        <Feather name="x" size={12} color="white" />
+                                    </TouchableOpacity>
+                                )}
                             </View>
-                            {canManage && !isDM && member._id !== groupDetails.owner && (
-                                <TouchableOpacity onPress={() => onRemoveMember(member._id)} disabled={isRemovingMember}>
-                                    <Feather name="x-circle" size={20} color="#EF4444" />
-                                </TouchableOpacity>
-                            )}
-                        </>
+                            <Text style={styles.gridName} numberOfLines={1}>{member.firstName} {member.lastName}</Text>
+                        </Wrapper>
                     );
+                };
 
-                    return canTap ? (
-                        <TouchableOpacity key={member._id} style={styles.memberCard} onPress={() => onMemberPress!(member)} activeOpacity={0.7}>
-                            {cardContent}
-                        </TouchableOpacity>
-                    ) : (
-                        <View key={member._id} style={styles.memberCard}>
-                            {cardContent}
-                        </View>
-                    );
-                })}
-            </View>
+                return (
+                    <>
+                        {staffMembers.length > 0 && (
+                            <View style={{ marginTop: 8, marginBottom: 24 }}>
+                                <View style={styles.sectionHeaderWrap}>
+                                    <Text style={[styles.sectionTitle, { color: '#7C3AED' }]}>Owner & Moderators — {staffMembers.length}</Text>
+                                    <View style={[styles.sectionHeaderLine, { backgroundColor: '#7C3AED' }]} />
+                                </View>
+                                <View style={styles.grid}>
+                                    {staffMembers.map(renderMemberTile)}
+                                </View>
+                            </View>
+                        )}
+
+                        {regularMembers.length > 0 && (
+                            <View style={{ marginTop: 8, marginBottom: 24 }}>
+                                <View style={styles.sectionHeaderWrap}>
+                                    <Text style={styles.sectionTitle}>Members — {regularMembers.length}</Text>
+                                    <View style={styles.sectionHeaderLine} />
+                                </View>
+                                <View style={styles.grid}>
+                                    {regularMembers.map(renderMemberTile)}
+                                </View>
+                            </View>
+                        )}
+                    </>
+                );
+            })()}
 
             {/* --- LEAVE GROUP BUTTON (for non-managers) --- */}
             {!canManage && (
@@ -321,9 +429,13 @@ export const GroupDetailsView = ({
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    card: { backgroundColor: 'white', padding: 20, borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, marginBottom: 16 },
-    cardHeader: { marginBottom: 16 },
-    cardTitle: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
+    groupHeader: { alignItems: 'center', paddingVertical: 20, marginBottom: 8 },
+    groupHeaderName: { fontSize: 20, fontWeight: '900', color: '#111827', marginTop: 12, textAlign: 'center' },
+    card: { backgroundColor: 'white', padding: 12, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, marginBottom: 12 },
+    collapsibleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    collapsibleHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    collapsibleBody: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+    cardTitle: { fontSize: 14, fontWeight: '800', color: '#111827' },
     infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     infoRowTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
     infoText: { marginLeft: 12, fontSize: 16, fontWeight: '600', color: '#374151', flex: 1 },
@@ -331,17 +443,32 @@ const styles = StyleSheet.create({
     routineBlock: { marginBottom: 8 },
     frequencyLabel: { fontSize: 14, fontWeight: '800', color: '#4A90E2', marginBottom: 4, textTransform: 'capitalize' },
     scheduleDetailText: { fontSize: 15, fontWeight: '600', color: '#374151', marginBottom: 2 },
-    managerActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
-    actionPill: { flexGrow: 1, flexBasis: '46%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f9ff', paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: '#4A90E2' },
-    actionPillText: { marginLeft: 8, color: '#4A90E2', fontWeight: 'bold', fontSize: 13 },
-    sectionTitle: { fontSize: 20, fontWeight: '900', color: '#111827', marginBottom: 16 },
-    memberCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-    avatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12, backgroundColor: '#F3F4F6' },
-    memberName: { fontSize: 16, fontWeight: '800', color: '#374151' },
-    memberHandle: { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
-    ownerBadge: { backgroundColor: '#EEF2FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 8, borderWidth: 1, borderColor: '#C3DAFE' },
-    modBadge: { backgroundColor: '#F3F4F6', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 8, borderWidth: 1, borderColor: '#E5E7EB' },
-    badgeText: { fontSize: 10, fontWeight: 'bold', color: '#4FD1C5', textTransform: 'uppercase' },
+    iconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+    iconWrapSmall: { width: 26, height: 26, borderRadius: 9 },
+    iconWrapBlue: { backgroundColor: '#EEF6FF', borderColor: '#BFDBFE' },
+    iconWrapGreen: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
+    iconWrapPurple: { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
+    iconWrapAmber: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
+    iconWrapTeal: { backgroundColor: '#F0FDFA', borderColor: '#99F6E4' },
+    managerActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 0 },
+    actionPill: { flexGrow: 1, flexBasis: '46%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 14, borderWidth: 1 },
+    actionPillBlue: { backgroundColor: '#EEF6FF', borderColor: '#BFDBFE' },
+    actionPillPurple: { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
+    actionPillTeal: { backgroundColor: '#F0FDFA', borderColor: '#99F6E4' },
+    actionPillText: { marginLeft: 8, fontWeight: 'bold', fontSize: 13 },
+    sectionHeaderWrap: { marginBottom: 16 },
+    sectionTitle: { fontSize: 15, fontWeight: '900', color: '#4A90E2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+    sectionHeaderLine: { height: 3, borderRadius: 2, backgroundColor: '#4A90E2', opacity: 0.85 },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+    gridItem: { width: '30%', alignItems: 'center' },
+    gridAvatarWrap: { width: '100%', position: 'relative' },
+    gridAvatar: { width: '100%', aspectRatio: 1, borderRadius: 14, backgroundColor: '#F3F4F6' },
+    gridAvatarPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+    gridName: { fontSize: 12, fontWeight: '700', color: '#374151', marginTop: 6, textAlign: 'center' },
+    roleBadge: { position: 'absolute', top: -6, left: -6, width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
+    ownerRoleBadge: { backgroundColor: '#4F46E5' },
+    modRoleBadge: { backgroundColor: '#6B7280' },
+    removeBadge: { position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
     footerActionContainer: { paddingHorizontal: 20, paddingVertical: 24, borderTopWidth: 1, borderTopColor: '#F3F4F6', marginTop: 16 },
     leaveButton: { backgroundColor: '#EF4444', paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
     leaveButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },

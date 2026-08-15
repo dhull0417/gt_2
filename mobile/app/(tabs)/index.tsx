@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Animated, LayoutChangeEvent, TextInput, Alert } from 'react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { useRsvp } from '@/hooks/useRsvp';
@@ -12,6 +12,9 @@ import { GroupAvatar } from '@/components/GroupAvatar';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { RsvpBreather } from '@/components/RsvpBreather';
+import { TAB_BAR_HEIGHT } from '@/utils/layout';
+import ReanimatedAnimated from 'react-native-reanimated';
 
 type GroupedMeetups = {
   'Upcoming': Meetup[];
@@ -118,6 +121,7 @@ const MeetupCard = ({
   const isOut = currentUser ? meetup.out.some(u => getUserId(u) === currentUser._id) : false;
   const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
   const outUnselected = !isOut;
+  const isUndecided = inUnselected && outUnselected;
 
   const isReadOnly = isCancelled || isExpired;
 
@@ -223,61 +227,71 @@ const MeetupCard = ({
             </View>
           ) : (
             <>
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                {/* Split I'm In button: left 70% = RSVP in, right 30% = open guest counter */}
-                <View style={{
-                  flex: 1, flexDirection: 'row', borderRadius: 12,
-                  overflow: 'hidden', height: 48,
-                  backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : isIn ? '#4FD1C5' : 'white',
-                  borderWidth: inUnselected ? 1.5 : 0,
-                  borderColor: '#4FD1C5',
-                }}>
-                  <TouchableOpacity
-                    onPress={() => { setGuestExpanded(false); onRsvp('in', 0); }}
-                    disabled={isRsvping}
-                    style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Text style={{ color: inUnselected ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 16 }}>
-                      {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
-                    </Text>
-                  </TouchableOpacity>
-                  <View style={{ width: 1, backgroundColor: inUnselected ? '#D1FAE5' : 'rgba(255,255,255,0.35)' }} />
-                  <TouchableOpacity
-                    onPress={() => { setLocalGuestCount(0); setGuestExpanded(v => !v); }}
-                    disabled={isRsvping}
-                    style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    {guestExpanded
-                      ? <Feather name="x" size={18} color={inUnselected ? '#4FD1C5' : 'white'} />
-                      : <MaterialIcons name="group-add" size={20} color={inUnselected ? '#4FD1C5' : 'white'} />
-                    }
-                  </TouchableOpacity>
-                </View>
-                {/* Split I'm Out button: left 70% = RSVP out, right 30% = RSVP out + mute group */}
-                <View style={{
-                  flex: 1, flexDirection: 'row', borderRadius: 12,
-                  overflow: 'hidden', height: 48,
-                  backgroundColor: isOut ? '#FF7A6E' : 'white',
-                  borderWidth: outUnselected ? 1.5 : 0,
-                  borderColor: '#FF7A6E',
-                }}>
-                  <TouchableOpacity
-                    onPress={() => { setGuestExpanded(false); onRsvp('out'); }}
-                    disabled={isRsvping}
-                    style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Text style={{ color: outUnselected ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 16 }}>I'm Out</Text>
-                  </TouchableOpacity>
-                  <View style={{ width: 1, backgroundColor: outUnselected ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
-                  <TouchableOpacity
-                    onPress={() => { setGuestExpanded(false); onRsvp('out', 0, true); }}
-                    disabled={isRsvping}
-                    style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Feather name="bell-off" size={18} color={outUnselected ? '#FF7A6E' : 'white'} />
-                  </TouchableOpacity>
-                </View>
-              </View>
+              <RsvpBreather active={isUndecided}>
+                {({ boxStyle, inTextStyle, outTextStyle }) => (
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    {/* Split I'm In button: left 70% = RSVP in, right 30% = open guest counter */}
+                    <View style={{
+                      flex: 1, borderRadius: 12, overflow: 'hidden', height: 48,
+                      backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : isIn ? '#4FD1C5' : 'white',
+                    }}>
+                      <ReanimatedAnimated.View style={[{
+                        flex: 1, flexDirection: 'row', borderRadius: 12,
+                        borderWidth: inUnselected ? 1.5 : 0,
+                        borderColor: '#4FD1C5',
+                      }, boxStyle]}>
+                        <TouchableOpacity
+                          onPress={() => { setGuestExpanded(false); onRsvp('in', 0); }}
+                          disabled={isRsvping}
+                          style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <ReanimatedAnimated.Text style={[{ color: inUnselected ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 16 }, inTextStyle]}>
+                            {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+                          </ReanimatedAnimated.Text>
+                        </TouchableOpacity>
+                        <View style={{ width: 1, backgroundColor: inUnselected ? '#D1FAE5' : 'rgba(255,255,255,0.35)' }} />
+                        <TouchableOpacity
+                          onPress={() => { setLocalGuestCount(0); setGuestExpanded(v => !v); }}
+                          disabled={isRsvping}
+                          style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          {guestExpanded
+                            ? <Feather name="x" size={18} color={inUnselected ? '#4FD1C5' : 'white'} />
+                            : <MaterialIcons name="group-add" size={20} color={inUnselected ? '#4FD1C5' : 'white'} />
+                          }
+                        </TouchableOpacity>
+                      </ReanimatedAnimated.View>
+                    </View>
+                    {/* Split I'm Out button: left 70% = RSVP out, right 30% = RSVP out + mute group */}
+                    <View style={{
+                      flex: 1, borderRadius: 12, overflow: 'hidden', height: 48,
+                      backgroundColor: isOut ? '#FF7A6E' : 'white',
+                    }}>
+                      <ReanimatedAnimated.View style={[{
+                        flex: 1, flexDirection: 'row', borderRadius: 12,
+                        borderWidth: outUnselected ? 1.5 : 0,
+                        borderColor: '#FF7A6E',
+                      }, boxStyle]}>
+                        <TouchableOpacity
+                          onPress={() => { setGuestExpanded(false); onRsvp('out'); }}
+                          disabled={isRsvping}
+                          style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <ReanimatedAnimated.Text style={[{ color: outUnselected ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 16 }, outTextStyle]}>I'm Out</ReanimatedAnimated.Text>
+                        </TouchableOpacity>
+                        <View style={{ width: 1, backgroundColor: outUnselected ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
+                        <TouchableOpacity
+                          onPress={() => { setGuestExpanded(false); onRsvp('out', 0, true); }}
+                          disabled={isRsvping}
+                          style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Feather name="bell-off" size={18} color={outUnselected ? '#FF7A6E' : 'white'} />
+                        </TouchableOpacity>
+                      </ReanimatedAnimated.View>
+                    </View>
+                  </View>
+                )}
+              </RsvpBreather>
 
               {/* Inline guest counter — expands below buttons when + is tapped */}
               {guestExpanded && (
@@ -391,6 +405,7 @@ const DashboardScreen = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { openMeetupId } = useLocalSearchParams<{ openMeetupId?: string }>();
   const [selectedMeetup, setSelectedMeetup] = useState<Meetup | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -552,13 +567,11 @@ const DashboardScreen = () => {
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top', 'left', 'right']}>
-      <View className="items-center px-6 py-4 border-b border-gray-200 bg-white">
-        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#111827' }}>
-          Home
-        </Text>
+      <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
+        <Text className="text-xl font-black text-gray-900">Meetups</Text>
       </View>
 
-      <ScrollView className="p-4" contentContainerStyle={{ flexGrow: 1 }}>
+      <ScrollView className="p-4" contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}>
         {isLoading ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
         ) : isError ? (

@@ -5,7 +5,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import React, { useCallback, useEffect, useMemo } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
@@ -15,10 +15,12 @@ import { Feather } from '@expo/vector-icons';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { TAB_BAR_HEIGHT } from '@/utils/layout';
 
 const GroupScreen = () => {
   const api = useApiClient();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const { openChatId } = useLocalSearchParams<{ openChatId?: string }>();
 
@@ -82,7 +84,7 @@ const GroupScreen = () => {
           )}
           <View className="flex-row items-center">
             <View style={{ marginRight: 12 }}>
-              <GroupAvatar name={displayName} imageUrl={group.image} size={44} />
+              <GroupAvatar name={displayName} imageUrl={group.image} size={44} borderRadius={12} />
             </View>
             <View className="flex-1">
               <View className="flex-row items-center">
@@ -114,12 +116,12 @@ const GroupScreen = () => {
             <View className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
           )}
         </TouchableOpacity>
-        <Text className="text-xl font-bold text-gray-900">Groups</Text>
+        <Text className="text-xl font-black text-gray-900">Groups</Text>
         <TouchableOpacity onPress={() => router.push('/create-group')}>
           <Feather name="plus-circle" size={26} color="#4A90E2" />
         </TouchableOpacity>
       </View>
-      <ScrollView className="px-4" contentContainerStyle={{ flexGrow: 1 }}>
+      <ScrollView className="px-4" contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}>
         {renderGroupList()}
       </ScrollView>
     </SafeAreaView>

@@ -19,12 +19,6 @@ const userSchema = new mongoose.Schema(
              unique: true,
              sparse: true,
         },
-        username: {
-            type: String,
-            required: false, 
-            unique: true,
-            sparse: true, 
-        },
         firstName: {
             type: String,
         },

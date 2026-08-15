@@ -99,7 +99,7 @@ export const matchContacts = asyncHandler(async (req, res) => {
   const users = await User.find({
     $or: conditions,
     clerkId: { $ne: clerkId },
-  }).select("firstName lastName username profilePicture email phoneNumber");
+  }).select("firstName lastName profilePicture email phoneNumber");
 
   res.status(200).json(users);
 });
@@ -111,32 +111,17 @@ export const searchUsers = asyncHandler(async (req, res) => {
 
   const regex = { $regex: query, $options: "i" };
   const users = await User.find({
-    $or: [{ firstName: regex }, { lastName: regex }, { username: regex }],
+    $or: [{ firstName: regex }, { lastName: regex }],
     clerkId: { $ne: clerkId },
   })
-    .select("firstName lastName username profilePicture")
+    .select("firstName lastName profilePicture")
     .limit(10);
 
   res.status(200).json(users);
 });
 
-export const getUserProfile = asyncHandler(async (req, res) => {
-  const { username } = req.params;
-  const user = await User.findOne({ username });
-  if (!user) return res.status(404).json({ error: "User not found" });
-  res.status(200).json({ user });
-});
-
 export const updateProfile = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
-  const { username } = req.body;
-
-  if (username) {
-    const existingUser = await User.findOne({ username });
-    if (existingUser && existingUser.clerkId !== userId) {
-      return res.status(409).json({ error: "Username is already taken." });
-    }
-  }
 
   const user = await User.findOneAndUpdate({ clerkId: userId }, req.body, { new: true });
   if (!user) return res.status(404).json({ error: "User not found" });
@@ -161,7 +146,6 @@ export const syncUser = asyncHandler(async (req, res) => {
   const userData = {
     clerkId: userId,
     email: clerkUser.emailAddresses[0]?.emailAddress,
-    ...(clerkUser.username ? { username: clerkUser.username } : {}),
     firstName: bodyFirstName || clerkUser.firstName || "",
     lastName: bodyLastName || clerkUser.lastName || "",
     profilePicture: clerkUser.imageUrl || "",

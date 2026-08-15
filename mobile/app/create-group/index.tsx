@@ -65,7 +65,7 @@ const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.ease
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface UserStub { _id: string; username: string; firstName?: string; lastName?: string; }
+interface UserStub { _id: string; firstName?: string; lastName?: string; }
 
 interface WeekdayRow {
     id: string;
@@ -127,7 +127,20 @@ interface ScheduleData {
     customBuilding: boolean;
     customFreq: Frequency | null;
     customShowFreqPicker: boolean;
+    maxAttendeesMode: "unlimited" | "limited";
+    maxAttendeesInput: string;
 }
+
+// Shared by the live inline error and the Continue-button gate so both agree on
+// what counts as valid. Empty input is treated as "not yet answered" (no error
+// shown) rather than invalid, so the field doesn't flash red before typing starts.
+const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
+    if (mode !== "limited" || input === "") return null;
+    if (!/^\d+$/.test(input)) return "Numbers only, please.";
+    const n = parseInt(input, 10);
+    if (n < 1 || n > 200) return "Enter a number between 1 and 200.";
+    return null;
+};
 
 const defaultSchedule = (): ScheduleData => ({
     location: "",
@@ -155,6 +168,8 @@ const defaultSchedule = (): ScheduleData => ({
     customBuilding: false,
     customFreq: null,
     customShowFreqPicker: false,
+    maxAttendeesMode: "unlimited",
+    maxAttendeesInput: "",
 });
 
 // ─── Inline Calendar ──────────────────────────────────────────────────────────
@@ -165,13 +180,19 @@ const InlineCalendar = ({ value, onChange, minDate }: {
     const [month, setMonth] = useState(
         value ? DateTime.fromISO(value).startOf("month") : DateTime.now().startOf("month")
     );
-    const grid = useMemo(() => {
+    // Chunked into explicit 7-cell week rows rather than one flex-wrap grid — letting
+    // aspect-ratio cells wrap on their own leaves Yoga reserving a phantom trailing row
+    // of blank space whenever the day count isn't a clean multiple of 7.
+    const weeks = useMemo(() => {
         const start = month.startOf("month");
         const firstDow = start.weekday === 7 ? 0 : start.weekday;
         const cells: (DateTime | null)[] = [];
         for (let i = 0; i < firstDow; i++) cells.push(null);
         for (let d = 1; d <= month.daysInMonth!; d++) cells.push(month.set({ day: d }));
-        return cells;
+        while (cells.length % 7 !== 0) cells.push(null);
+        const chunks: (DateTime | null)[][] = [];
+        for (let i = 0; i < cells.length; i += 7) chunks.push(cells.slice(i, i + 7));
+        return chunks;
     }, [month]);
     const minDT = minDate ? DateTime.fromISO(minDate) : DateTime.now().startOf("day");
     return (
@@ -185,29 +206,33 @@ const InlineCalendar = ({ value, onChange, minDate }: {
                     <Feather name="chevron-right" size={18} color="#4A90E2" />
                 </TouchableOpacity>
             </View>
-            <View style={cal.grid}>
+            <View style={cal.weekRow}>
                 {["S","M","T","W","T","F","S"].map((d, i) => (
                     <Text key={i} style={cal.dayHeader}>{d}</Text>
                 ))}
-                {grid.map((day, i) => {
-                    if (!day) return <View key={`e-${i}`} style={cal.cell} />;
-                    const iso = day.toISODate()!;
-                    const selected = iso === value;
-                    const disabled = day < minDT;
-                    return (
-                        <TouchableOpacity
-                            key={iso}
-                            style={[cal.cell, selected && cal.cellSelected, disabled && cal.cellDisabled]}
-                            onPress={() => !disabled && onChange(iso)}
-                            disabled={disabled}
-                        >
-                            <Text style={[cal.cellText, selected && cal.cellTextSelected, disabled && cal.cellTextDisabled]}>
-                                {day.day}
-                            </Text>
-                        </TouchableOpacity>
-                    );
-                })}
             </View>
+            {weeks.map((week, wi) => (
+                <View key={wi} style={cal.weekRow}>
+                    {week.map((day, i) => {
+                        if (!day) return <View key={`e-${wi}-${i}`} style={cal.cell} />;
+                        const iso = day.toISODate()!;
+                        const selected = iso === value;
+                        const disabled = day < minDT;
+                        return (
+                            <TouchableOpacity
+                                key={iso}
+                                style={[cal.cell, selected && cal.cellSelected, disabled && cal.cellDisabled]}
+                                onPress={() => !disabled && onChange(iso)}
+                                disabled={disabled}
+                            >
+                                <Text style={[cal.cellText, selected && cal.cellTextSelected, disabled && cal.cellTextDisabled]}>
+                                    {day.day}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+            ))}
         </View>
     );
 };
@@ -293,12 +318,12 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
                         <>
                             <Image source={{ uri: localUri }} style={s.imagePreview} />
                             <View style={s.imageEditBadge}>
-                                <Feather name="camera" size={12} color="#fff" />
+                                <Feather name="camera" size={18} color="#fff" />
                             </View>
                         </>
                     ) : (
                         <>
-                            <Feather name="image" size={24} color="#9CA3AF" />
+                            <Feather name="image" size={36} color="#9CA3AF" />
                             <Text style={s.imagePickerText}>Add group photo</Text>
                             <Text style={s.imagePickerSub}>Optional</Text>
                         </>
@@ -576,6 +601,9 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
 
     // ── Validation ────────────────────────────────────────────────────────────
     const canProceed = (): boolean => {
+        if (d.maxAttendeesMode === "limited") {
+            if (d.maxAttendeesInput === "" || getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput)) return false;
+        }
         if (!d.frequency) return true;
         if (d.frequency === "daily") return d.dailySameTime !== null;
         if (d.frequency === "weekly" || d.frequency === "biweekly")
@@ -938,6 +966,7 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
                 contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
+                automaticallyAdjustKeyboardInsets
             >
                 <Text style={s.screenTitle}>Schedule</Text>
                 <Text style={s.screenSub}>Set up when and where you meet</Text>
@@ -1031,6 +1060,42 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
                         <TimePicker initialValue={d.leadTime} onTimeChange={t => upd({ leadTime: t })} />
                     </View>
                 )}
+
+                {/* Max Attendees */}
+                <Text style={[s.fieldLabel, { marginTop: 20 }]}>Max Attendees</Text>
+                <View style={s.boolRow}>
+                    <TouchableOpacity
+                        style={[s.boolBtn, d.maxAttendeesMode === "unlimited" && s.boolBtnActive]}
+                        onPress={() => upd({ maxAttendeesMode: "unlimited", maxAttendeesInput: "" })}
+                    >
+                        <Text style={[s.boolBtnText, d.maxAttendeesMode === "unlimited" && s.boolBtnTextActive]}>Unlimited</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[s.boolBtn, d.maxAttendeesMode === "limited" && s.boolBtnActive]}
+                        onPress={() => upd({ maxAttendeesMode: "limited" })}
+                    >
+                        <Text style={[s.boolBtnText, d.maxAttendeesMode === "limited" && s.boolBtnTextActive]}>Limited</Text>
+                    </TouchableOpacity>
+                </View>
+                {d.maxAttendeesMode === "limited" && (() => {
+                    const maxAttendeesError = getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput);
+                    return (
+                        <View style={{ marginTop: 10 }}>
+                            <View style={[s.inputRow, { marginBottom: 0 }, maxAttendeesError && s.inputRowError]}>
+                                <Feather name="users" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                                <TextInput
+                                    style={s.inlineInput}
+                                    placeholder="How many?"
+                                    placeholderTextColor="#C4C9D4"
+                                    keyboardType="number-pad"
+                                    value={d.maxAttendeesInput}
+                                    onChangeText={v => upd({ maxAttendeesInput: v })}
+                                />
+                            </View>
+                            {maxAttendeesError && <Text style={s.errorText}>{maxAttendeesError}</Text>}
+                        </View>
+                    );
+                })()}
             </ScrollView>
             <View style={s.screenFooter}>
                 <TouchableOpacity style={s.skipBtn} onPress={onSkip}>
@@ -1119,8 +1184,17 @@ const ReviewScreen = ({ groupName, members, schedule, onConfirm, onBack, isPendi
                 <Text style={s.reviewCardLabel}>Members</Text>
                 {members.length === 0
                     ? <Text style={s.reviewCardMuted}>Just you for now</Text>
-                    : members.map(m => <Text key={m._id} style={s.reviewCardValue}>@{m.username}</Text>)
+                    : members.map(m => <Text key={m._id} style={s.reviewCardValue}>{[m.firstName, m.lastName].filter(Boolean).join(' ')}</Text>)
                 }
+            </View>
+
+            <View style={s.reviewCard}>
+                <Text style={s.reviewCardLabel}>Max Attendees</Text>
+                <Text style={s.reviewCardValue}>
+                    {schedule?.maxAttendeesMode === "limited" && schedule.maxAttendeesInput
+                        ? schedule.maxAttendeesInput
+                        : "Unlimited"}
+                </Text>
             </View>
 
             <View style={s.reviewCard}>
@@ -1188,6 +1262,9 @@ const CreateGroupScreen = () => {
 
     const handleCreate = () => {
         const schedulePayload = schedule?.frequency ? buildSchedulePayload(schedule) : {};
+        const defaultCapacity = schedule?.maxAttendeesMode === "limited"
+            ? parseInt(schedule.maxAttendeesInput, 10)
+            : 0;
         const payload: any = {
             name: groupName,
             image: groupImage,
@@ -1196,6 +1273,7 @@ const CreateGroupScreen = () => {
             generationLeadTime: schedule?.leadTime ?? "09:00 AM",
             timezone: schedule?.timezone ?? "America/Denver",
             defaultLocation: schedule?.location ?? "",
+            defaultCapacity,
             ...schedulePayload,
         };
         mutate(payload, {
@@ -1233,7 +1311,9 @@ const s = StyleSheet.create({
     dotLineFilled: { backgroundColor: "#4A90E2" },
     bigInput: { fontSize: 22, fontWeight: "700", color: "#111827", borderBottomWidth: 2, borderBottomColor: "#4A90E2", paddingVertical: 12, marginTop: 8 },
     inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
+    inputRowError: { borderColor: "#EF4444" },
     inlineInput: { flex: 1, fontSize: 15, color: "#374151" },
+    errorText: { fontSize: 12, fontWeight: "600", color: "#EF4444", marginTop: 6, marginLeft: 2 },
     searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8 },
     searchInput: { flex: 1, marginLeft: 8, fontSize: 15, color: "#374151" },
     selectedChipsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingHorizontal: 24, paddingBottom: 8 },
@@ -1314,11 +1394,11 @@ const s = StyleSheet.create({
     reviewCardMuted: { fontSize: 14, color: "#6B7280", marginBottom: 2 },
     reviewRoutineChip: { backgroundColor: "#EEF6FF", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: "flex-start", marginBottom: 4 },
     reviewRoutineChipText: { fontSize: 13, fontWeight: "700", color: "#1D4ED8" },
-    imagePicker: { alignItems: "center", justifyContent: "center", marginTop: 24, width: 100, height: 100, borderRadius: 50, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "#E5E7EB", borderStyle: "dashed", alignSelf: "center" },
-    imagePreview: { width: 100, height: 100, borderRadius: 50 },
-    imageEditBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#4A90E2", borderRadius: 10, padding: 4 },
-    imagePickerText: { fontSize: 11, fontWeight: "600", color: "#6B7280", marginTop: 4, textAlign: "center" },
-    imagePickerSub: { fontSize: 10, color: "#9CA3AF", textAlign: "center" },
+    imagePicker: { alignItems: "center", justifyContent: "center", marginTop: 24, width: 160, height: 160, borderRadius: 32, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "#E5E7EB", borderStyle: "dashed", alignSelf: "center" },
+    imagePreview: { width: 160, height: 160, borderRadius: 32 },
+    imageEditBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#4A90E2", borderRadius: 14, padding: 6 },
+    imagePickerText: { fontSize: 13, fontWeight: "600", color: "#6B7280", marginTop: 6, textAlign: "center" },
+    imagePickerSub: { fontSize: 11, color: "#9CA3AF", textAlign: "center" },
 });
 
 const cal = StyleSheet.create({
@@ -1326,7 +1406,7 @@ const cal = StyleSheet.create({
     nav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
     navBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
     monthLabel: { fontSize: 15, fontWeight: "800", color: "#111827" },
-    grid: { flexDirection: "row", flexWrap: "wrap" },
+    weekRow: { flexDirection: "row" },
     dayHeader: { width: `${100 / 7}%`, textAlign: "center", fontSize: 11, fontWeight: "800", color: "#9CA3AF", marginBottom: 4 },
     cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: "center", justifyContent: "center" },
     cellSelected: { backgroundColor: "#4A90E2", borderRadius: 100 },

@@ -22,7 +22,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useRemoveMember } from '@/hooks/useRemoveMember';
-import { GroupDetails, User, useApiClient, userApi, groupApi } from '@/utils/api';
+import { useGetMeetups } from '@/hooks/useGetMeetups';
+import { GroupDetails, Meetup, User, useApiClient, userApi, groupApi } from '@/utils/api';
+import MeetupDetailModal from '@/components/MeetupDetailModal';
 import { getDMDisplayName } from '@/utils/groupDisplay';
 import { Feather } from '@expo/vector-icons';
 import { useSearchUsers } from '@/hooks/useSearchUsers';
@@ -39,6 +41,7 @@ import { LoadingAnimation } from '@/components/LoadingAnimation';
 import PollListModal from '@/components/PollListModal';
 import { useGetPolls } from '@/hooks/useGetPolls';
 import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
+import { TAB_BAR_HEIGHT } from '@/utils/layout';
 import type { ChatMessage, PendingImage } from '@/types/chat';
 
 interface ChatDaySection {
@@ -65,6 +68,10 @@ const styles = StyleSheet.create({
   iconButtonMuted: {
     backgroundColor: '#FEF2F2',
     borderColor: '#FECACA',
+  },
+  iconButtonMutedUntilNext: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
   },
   iconButtonActive: {
     backgroundColor: '#F0FDF4',
@@ -130,6 +137,8 @@ const styles = StyleSheet.create({
 
 const REACTIONS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
 
+const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
+
 const GroupChat = ({
   group,
   currentUser,
@@ -142,6 +151,7 @@ const GroupChat = ({
   onReady?: () => void;
 }) => {
   const api = useApiClient();
+  const queryClient = useQueryClient();
   const sectionListRef = useRef<SectionList<ChatMessage, ChatDaySection>>(null);
 
   const senderId = currentUser.clerkId;
@@ -150,6 +160,47 @@ const GroupChat = ({
   const { messages, loading, sendMessage, addReaction, deleteMessage, editMessage } =
     useMessages(group._id);
   const { typingNames, handleTyping } = useTypingIndicator(group._id, senderId, senderName);
+
+  // Keeps the group "read" while its chat is open: a message from someone else arriving
+  // here (via realtime) would otherwise leave the server-side lastReadAt stale, making the
+  // unread dot pop back up on the groups list even though the user is looking right at it.
+  const lastMarkedReadMessageId = useRef<string | null>(null);
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const latest = messages[messages.length - 1];
+    if (latest.id === lastMarkedReadMessageId.current || latest.sender_id === senderId) return;
+    lastMarkedReadMessageId.current = latest.id;
+    userApi.markGroupRead(api, group._id)
+      .then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] }))
+      .catch(() => {});
+  }, [messages, api, group._id, senderId, queryClient]);
+
+  const { data: allMeetups } = useGetMeetups();
+  const nextMeetup = useMemo<Meetup | null>(() => {
+    if (!allMeetups) return null;
+    const upcoming = allMeetups
+      .filter(m => m.group._id === group._id && m.status === 'scheduled' && new Date(m.date) >= new Date());
+    return upcoming[0] ?? null;
+  }, [allMeetups, group._id]);
+  const [nextMeetupModalVisible, setNextMeetupModalVisible] = useState(false);
+  const nextMeetupLabel = nextMeetup
+    ? new Date(nextMeetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: nextMeetup.timezone })
+    : null;
+  // Mirrors the RSVP state MeetupDetailModal and the meetup card compute, so the bar
+  // previews the same tint/status the card and modal already show.
+  const nextMeetupRsvpStatus = useMemo(() => {
+    if (!nextMeetup) return null;
+    const isOut = nextMeetup.out?.some(u => getUserId(u) === currentUser._id) || false;
+    const isIn = nextMeetup.in?.some(u => getUserId(u) === currentUser._id) || false;
+    const isWaitlisted = nextMeetup.waitlist?.some(u => getUserId(u) === currentUser._id) || false;
+    const isRsvpLocked = nextMeetup.rsvpOpenDate ? new Date(nextMeetup.rsvpOpenDate) > new Date() : false;
+    return { isIn, isOut, isWaitlisted, isRsvpLocked };
+  }, [nextMeetup, currentUser._id]);
+  const nextMeetupBarColor = useMemo(() => {
+    if (!nextMeetupRsvpStatus) return '#EEF6FF';
+    const { isOut, isIn, isWaitlisted } = nextMeetupRsvpStatus;
+    return isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
+  }, [nextMeetupRsvpStatus]);
 
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -382,6 +433,32 @@ const GroupChat = ({
           </View>
         )}
 
+        {nextMeetup && nextMeetupLabel && (
+          <TouchableOpacity
+            onPress={() => setNextMeetupModalVisible(true)}
+            style={[chatStyles.nextEventBar, { backgroundColor: nextMeetupBarColor }]}
+            activeOpacity={0.7}
+          >
+            <Feather name="calendar" size={15} color="#4A90E2" />
+            <Text style={chatStyles.nextEventText}>Next Meetup: {nextMeetupLabel}</Text>
+            {nextMeetupRsvpStatus && (
+              nextMeetupRsvpStatus.isIn || nextMeetupRsvpStatus.isOut ? (
+                <Text style={[chatStyles.nextEventStatusText, { color: nextMeetupRsvpStatus.isIn ? '#4FD1C5' : '#FF7A6E' }]}>
+                  {nextMeetupRsvpStatus.isIn ? 'IN' : 'OUT'}
+                </Text>
+              ) : nextMeetupRsvpStatus.isRsvpLocked ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Feather name="clock" size={13} color="#9CA3AF" />
+                  <Feather name="lock" size={13} color="#9CA3AF" />
+                </View>
+              ) : (
+                <Feather name="unlock" size={13} color="#F59E0B" />
+              )
+            )}
+            <Feather name="chevron-right" size={13} color="#93C5FD" />
+          </TouchableOpacity>
+        )}
+
         <ChatMessageInput onSend={handleSend} onTyping={handleTyping} />
       </KeyboardAvoidingView>
 
@@ -482,6 +559,15 @@ const GroupChat = ({
         imageHeight={fullscreenImage?.height}
         onClose={() => setFullscreenImage(null)}
       />
+
+      <Modal
+        visible={nextMeetupModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setNextMeetupModalVisible(false)}
+      >
+        <MeetupDetailModal meetup={nextMeetup} onClose={() => setNextMeetupModalVisible(false)} />
+      </Modal>
     </View>
   );
 };
@@ -496,6 +582,9 @@ const chatStyles = StyleSheet.create({
   actionRow: { paddingVertical: 16, paddingHorizontal: 20 },
   actionLabel: { fontSize: 16, color: '#111827', fontWeight: '600' },
   detailPanel: { backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 360, maxHeight: '70%', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
+  nextEventBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#EEF6FF', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#DBEAFE', paddingVertical: 6 },
+  nextEventText: { fontSize: 15, fontWeight: '400', color: '#111827' },
+  nextEventStatusText: { fontSize: 13, fontWeight: '900', letterSpacing: 1 },
   replyPreview: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E7EB', paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
   replyPreviewBody: { flex: 1, borderLeftWidth: 3, borderLeftColor: '#4A90E2', paddingLeft: 8 },
   replyPreviewLabel: { fontSize: 12, fontWeight: '700', color: '#4A90E2', marginBottom: 1 },
@@ -505,12 +594,6 @@ const chatStyles = StyleSheet.create({
   saveBtn: { paddingHorizontal: 20, paddingVertical: 9, borderRadius: 10, backgroundColor: '#4A90E2' },
 });
 
-// The native tab bar doesn't report its own height through the safe-area insets for a
-// screen nested this way (insets.bottom here only reflects the home-indicator/gesture-bar
-// inset) — expo-router's native-tabs has no measurement hook for it either, since it's a
-// real native bar, not a JS view we could onLayout. So we pad by the OS's documented
-// standard bar height on top of insets.bottom instead of trying to measure it.
-const TAB_BAR_HEIGHT = Platform.select({ ios: 49, android: 80, default: 49 });
 
 const GroupChatScreen = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -561,11 +644,15 @@ const GroupChatScreen = () => {
 
   const isDM = groupDetails?.isDM ?? fallbackGroup?.isDM ?? false;
 
+  const isMutedUntilNext = useMemo(() => {
+    if (!id || !currentUser) return false;
+    return !!currentUser.mutedUntilNextMeetup?.includes(id);
+  }, [id, currentUser]);
+
   const isCurrentlyMuted = useMemo(() => {
     if (!id || !currentUser) return false;
-    return currentUser.mutedGroups?.includes(id) ||
-           currentUser.mutedUntilNextMeetup?.includes(id);
-  }, [id, currentUser]);
+    return !!currentUser.mutedGroups?.includes(id) || isMutedUntilNext;
+  }, [id, currentUser, isMutedUntilNext]);
 
   // --- Polls ---
   const [pollListVisible, setPollListVisible] = useState(false);
@@ -611,20 +698,19 @@ const GroupChatScreen = () => {
     }
   };
 
+  const [muteOptionsVisible, setMuteOptionsVisible] = useState(false);
+
   const handleMutePress = () => {
     if (isCurrentlyMuted) {
       performMuteUpdate('none');
     } else {
-      Alert.alert(
-          "Mute Notifications",
-          "How long would you like to silence this chat?",
-          [
-              { text: "Until Next Meetup", onPress: () => performMuteUpdate('untilNext') },
-              { text: "Indefinitely", onPress: () => performMuteUpdate('indefinite') },
-              { text: "Cancel", style: "cancel" }
-          ]
-      );
+      setMuteOptionsVisible(true);
     }
+  };
+
+  const handleMuteOptionPress = (type: 'indefinite' | 'untilNext') => {
+    setMuteOptionsVisible(false);
+    performMuteUpdate(type);
   };
 
   const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
@@ -703,7 +789,7 @@ const GroupChatScreen = () => {
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
           </TouchableOpacity>
           <View style={{ marginRight: 10 }}>
-            <GroupAvatar name={headerName} imageUrl={groupDetails?.image || fallbackGroup?.image} size={36} />
+            <GroupAvatar name={headerName} imageUrl={groupDetails?.image || fallbackGroup?.image} size={36} borderRadius={9} />
           </View>
           <Text className="text-lg font-black text-gray-900 flex-1" numberOfLines={1}>
             {headerName}
@@ -727,12 +813,15 @@ const GroupChatScreen = () => {
 
               <TouchableOpacity
                 onPress={handleMutePress}
-                style={[styles.iconButton, isCurrentlyMuted ? styles.iconButtonMuted : styles.iconButtonActive]}
+                style={[
+                  styles.iconButton,
+                  isMutedUntilNext ? styles.iconButtonMutedUntilNext : isCurrentlyMuted ? styles.iconButtonMuted : styles.iconButtonActive,
+                ]}
               >
                 <Feather
-                  name={isCurrentlyMuted ? "bell-off" : "bell"}
+                  name={isMutedUntilNext ? "clock" : isCurrentlyMuted ? "bell-off" : "bell"}
                   size={18}
-                  color={isCurrentlyMuted ? "#EF4444" : "#10B981"}
+                  color={isMutedUntilNext ? "#D97706" : isCurrentlyMuted ? "#EF4444" : "#10B981"}
                 />
               </TouchableOpacity>
 
@@ -851,13 +940,12 @@ const GroupChatScreen = () => {
             {dmTargetMember && (
               <>
                 <Image
-                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${dmTargetMember.username?.[0]}` }}
+                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${dmTargetMember.firstName?.[0] ?? dmTargetMember.email?.[0]}` }}
                   style={dmStyles.avatar}
                 />
                 <Text style={dmStyles.name}>
-                  {[dmTargetMember.firstName, dmTargetMember.lastName].filter(Boolean).join(' ') || dmTargetMember.username}
+                  {[dmTargetMember.firstName, dmTargetMember.lastName].filter(Boolean).join(' ') || dmTargetMember.email?.split('@')[0]}
                 </Text>
-                <Text style={dmStyles.username}>@{dmTargetMember.username}</Text>
                 <TouchableOpacity
                   style={dmStyles.dmBtn}
                   onPress={handleSendDM}
@@ -874,6 +962,46 @@ const GroupChatScreen = () => {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Mute options */}
+      <Modal visible={muteOptionsVisible} transparent animationType="fade" onRequestClose={() => setMuteOptionsVisible(false)}>
+        <Pressable style={chatStyles.overlay} onPress={() => setMuteOptionsVisible(false)}>
+          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 16 }}>Mute Notifications</Text>
+            <TouchableOpacity
+              style={[muteStyles.option, muteStyles.untilNextOption]}
+              onPress={() => handleMuteOptionPress('untilNext')}
+              activeOpacity={0.7}
+            >
+              <View style={[muteStyles.iconWrap, muteStyles.untilNextIconWrap]}>
+                <Feather name="clock" size={18} color="#D97706" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={muteStyles.untilNextText}>Mute until next meetup</Text>
+                <Text style={muteStyles.optionSubtitle}>We'll turn notifications back on for you</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color="#D1D5DB" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[muteStyles.option, muteStyles.indefiniteOption]}
+              onPress={() => handleMuteOptionPress('indefinite')}
+              activeOpacity={0.7}
+            >
+              <View style={[muteStyles.iconWrap, muteStyles.indefiniteIconWrap]}>
+                <Feather name="bell-off" size={18} color="#DC2626" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={muteStyles.indefiniteText}>Mute</Text>
+                <Text style={muteStyles.optionSubtitle}>Stay silent until you turn it back on</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color="#D1D5DB" />
+            </TouchableOpacity>
+            <TouchableOpacity style={chatStyles.cancelBtn} onPress={() => setMuteOptionsVisible(false)}>
+              <Text style={{ fontSize: 15, color: '#6B7280', fontWeight: '600', textAlign: 'center' }}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -883,10 +1011,36 @@ const dmStyles = StyleSheet.create({
   sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12, alignItems: 'center' },
   dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginBottom: 24 },
   avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 14, backgroundColor: '#F3F4F6' },
-  name: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 4 },
-  username: { fontSize: 14, color: '#9CA3AF', fontWeight: '600', marginBottom: 28 },
+  name: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 28 },
   dmBtn: { backgroundColor: '#4A90E2', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
   dmBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+});
+
+const muteStyles = StyleSheet.create({
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    marginBottom: 10,
+  },
+  untilNextOption: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
+  indefiniteOption: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  untilNextIconWrap: { backgroundColor: '#FEF3C7' },
+  indefiniteIconWrap: { backgroundColor: '#FEE2E2' },
+  untilNextText: { fontSize: 15, fontWeight: '800', color: '#B45309' },
+  indefiniteText: { fontSize: 15, fontWeight: '800', color: '#DC2626' },
+  optionSubtitle: { fontSize: 12, fontWeight: '500', color: '#9CA3AF', marginTop: 2 },
 });
 
 export default GroupChatScreen;

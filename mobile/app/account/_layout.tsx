@@ -31,19 +31,12 @@ const AccountLayout = () => {
                     presentation: 'modal',
                 }} 
             />
-            <Stack.Screen 
-                name="change-password" 
-                options={{ 
+            <Stack.Screen
+                name="change-password"
+                options={{
                     headerTitle: 'Change Password',
                     presentation: 'modal',
-                }} 
-            />
-            <Stack.Screen 
-                name="update-username" 
-                options={{ 
-                    headerTitle: 'Update Username',
-                    presentation: 'modal',
-                }} 
+                }}
             />
         </Stack>
     );

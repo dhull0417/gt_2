@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
   senderName: { fontSize: 12, fontWeight: '700', color: '#6B7280', marginBottom: 2 },
   messageImage: { borderRadius: 10 },
   messageImageWithText: { marginBottom: 6 },
-  content: { fontSize: 15, color: '#111827' },
+  content: { fontSize: 15, fontWeight: '400', color: '#111827' },
   contentOwn: { color: '#fff' },
   deletedText: { fontSize: 14, color: '#9CA3AF', fontStyle: 'italic' },
   quoteBlock: { borderLeftWidth: 3, borderLeftColor: 'rgba(255,255,255,0.6)', paddingLeft: 8, paddingVertical: 3, marginBottom: 6, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 4 },

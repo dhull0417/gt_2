@@ -47,7 +47,6 @@ export interface User {
   email: string;
   phoneNumber?: string;
   phone: string;
-  username: string;
   firstName?: string;
   lastName?: string;
   profilePicture?: string;
@@ -56,6 +55,7 @@ export interface User {
   mutedUntilNextMeetup: string[];
   lastReadAt?: Record<string, string>;
   zipCode?: string;
+  createdAt?: string;
 }
 
 export interface LastMessage {

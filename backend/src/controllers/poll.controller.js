@@ -9,8 +9,8 @@ import { notifyUsers } from "../utils/push.notifications.js";
 
 const POLL_POPULATE = [
     { path: 'group', select: 'name owner moderators' },
-    { path: 'creator', select: 'firstName lastName username profilePicture clerkId' },
-    { path: 'options.voters', select: 'firstName lastName username profilePicture clerkId' },
+    { path: 'creator', select: 'firstName lastName profilePicture clerkId' },
+    { path: 'options.voters', select: 'firstName lastName profilePicture clerkId' },
 ];
 
 /**

@@ -6,7 +6,6 @@ import { Feather } from '@expo/vector-icons';
 
 const SETTINGS = [
     { id: 'name', label: 'Update Name', href: '/account/update-name' as const, icon: 'user' as const, color: '#4A90E2' },
-    { id: 'username', label: 'Update Username', href: '/account/update-username' as const, icon: 'at-sign' as const, color: '#4FD1C5' },
     { id: 'email', label: 'Update Email', href: '/account/update-email' as const, icon: 'mail' as const, color: '#7C3AED' },
     { id: 'password', label: 'Change Password', href: '/account/change-password' as const, icon: 'lock' as const, color: '#F59E0B' },
 ];
@@ -16,22 +15,20 @@ const AccountSettingsScreen = () => {
     return (
         <SafeAreaView className="flex-1 bg-gray-100">
             <View className="mt-6 mx-4">
-                <View style={styles.card}>
-                    {SETTINGS.map((item, index) => (
-                        <TouchableOpacity
-                            key={item.id}
-                            onPress={() => router.push(item.href)}
-                            activeOpacity={0.7}
-                            style={[styles.row, index < SETTINGS.length - 1 && styles.rowDivider]}
-                        >
-                            <View style={[styles.rowIcon, { backgroundColor: item.color + '18' }]}>
-                                <Feather name={item.icon} size={18} color={item.color} />
-                            </View>
-                            <Text style={styles.rowLabel}>{item.label}</Text>
-                            <Feather name="chevron-right" size={18} color="#9CA3AF" />
-                        </TouchableOpacity>
-                    ))}
-                </View>
+                {SETTINGS.map((item, index) => (
+                    <TouchableOpacity
+                        key={item.id}
+                        onPress={() => router.push(item.href)}
+                        activeOpacity={0.7}
+                        style={[styles.card, styles.row, index < SETTINGS.length - 1 && { marginBottom: 12 }]}
+                    >
+                        <View style={[styles.rowIcon, { backgroundColor: item.color + '18' }]}>
+                            <Feather name={item.icon} size={18} color={item.color} />
+                        </View>
+                        <Text style={styles.rowLabel}>{item.label}</Text>
+                        <Feather name="chevron-right" size={18} color="#9CA3AF" />
+                    </TouchableOpacity>
+                ))}
             </View>
         </SafeAreaView>
     );
@@ -50,10 +47,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 14,
         paddingHorizontal: 16,
-    },
-    rowDivider: {
-        borderBottomWidth: 1,
-        borderBottomColor: '#F3F4F6',
     },
     rowIcon: {
         width: 38,

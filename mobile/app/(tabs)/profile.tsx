@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable, Platform, StyleSheet } from 'react-native';
 import React, { useCallback, useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TAB_BAR_HEIGHT } from '@/utils/layout';
 import { useAuth } from '@clerk/expo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi } from '@/utils/api';
@@ -35,6 +36,7 @@ const HomeScreen = () => {
   const { signOut, getToken } = useAuth();
   const api = useApiClient();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -73,18 +75,6 @@ const HomeScreen = () => {
     } finally {
       setPhotoUploading(false);
     }
-  };
-
-  const handleShareUsername = async () => {
-      if (currentUser?.username) {
-          try {
-              await Share.share({
-                  message: `Add me on GroupThat! My username is: ${currentUser.username}`,
-              });
-          } catch (error: any) {
-              Alert.alert(error.message);
-          }
-      }
   };
 
   const handleShareApp = async () => {
@@ -246,10 +236,12 @@ const HomeScreen = () => {
   return (
     <SafeAreaView className='flex-1 bg-gray-100' edges={['top', 'left', 'right']}>
       <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
-        <Text className="text-xl font-bold text-gray-900">Profile</Text>
+        <Text className="text-xl font-black text-gray-900">
+          {currentUser?.firstName ? `${currentUser.firstName}'s Profile` : 'Profile'}
+        </Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 20, flexGrow: 1 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 20, flexGrow: 1 }}>
         {isLoading ? (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
         ) : isError || !currentUser ? (
@@ -259,61 +251,58 @@ const HomeScreen = () => {
             <View className="items-center p-6 bg-white border-b border-gray-200">
               <TouchableOpacity onPress={handleChangePhoto} disabled={photoUploading} className="relative">
                 {photoUploading ? (
-                  <View className="w-24 h-24 rounded-full border-4 border-gray-200 bg-gray-100 items-center justify-center">
+                  <View style={styles.avatar} className="border-4 border-gray-200 bg-gray-100 items-center justify-center">
                     <ActivityIndicator color="#4A90E2" />
                   </View>
                 ) : currentUser.profilePicture ? (
                   <Image
                     source={{ uri: currentUser.profilePicture }}
-                    className="w-24 h-24 rounded-full border-4 border-gray-200"
+                    style={styles.avatar}
+                    className="border-4 border-gray-200"
                   />
                 ) : (
-                  <View className="w-24 h-24 rounded-full border-4 border-gray-200 bg-indigo-100 items-center justify-center">
-                    <Text className="text-3xl font-bold text-indigo-600">
-                      {(currentUser.firstName?.[0] ?? currentUser.username?.[0] ?? '?').toUpperCase()}
+                  <View style={styles.avatar} className="border-4 border-gray-200 bg-indigo-100 items-center justify-center">
+                    <Text className="text-[82px] font-bold text-indigo-600">
+                      {(currentUser.firstName?.[0] ?? '?').toUpperCase()}
                     </Text>
                   </View>
                 )}
-                <View className="absolute bottom-0 right-0 bg-[#4A90E2] rounded-full p-1.5">
-                  <Feather name="camera" size={12} color="white" />
+                <View className="absolute bottom-0 right-0 bg-[#4A90E2] rounded-full p-3.5">
+                  <Feather name="camera" size={14} color="white" />
                 </View>
               </TouchableOpacity>
               <Text style={styles.name}>
                   {currentUser.firstName} {currentUser.lastName}
               </Text>
-              <Text className="text-base text-gray-500 mt-0.5">
-                  @{currentUser.username}
-              </Text>
               <Text className="text-sm text-gray-400 mt-0.5">
                   {currentUser.email}
               </Text>
-              <TouchableOpacity onPress={handleShareUsername} style={styles.sharePill}>
-                  <Feather name="share" size={14} color="#4A90E2" />
-                  <Text style={styles.sharePillText}>Share Username</Text>
-              </TouchableOpacity>
+              {currentUser.createdAt && (
+                <Text className="text-sm text-gray-400 mt-0.5">
+                    Joined: {new Date(currentUser.createdAt).toLocaleDateString()}
+                </Text>
+              )}
             </View>
 
             <View className="px-4 mt-8">
                 <Text style={styles.sectionLabel}>Account</Text>
-                <View style={styles.card}>
-                  {ACTIONS.map((action, index) => (
-                    <TouchableOpacity
-                      key={action.id}
-                      onPress={action.onPress}
-                      disabled={action.loading}
-                      activeOpacity={0.7}
-                      style={[styles.row, index < ACTIONS.length - 1 && styles.rowDivider]}
-                    >
-                      <View style={[styles.rowIcon, { backgroundColor: action.color + '18' }]}>
-                        <Feather name={action.icon} size={18} color={action.color} />
-                      </View>
-                      <Text style={styles.rowLabel}>{action.label}</Text>
-                      {action.loading
-                        ? <ActivityIndicator size="small" color="#9CA3AF" />
-                        : <Feather name="chevron-right" size={18} color="#9CA3AF" />}
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {ACTIONS.map((action, index) => (
+                  <TouchableOpacity
+                    key={action.id}
+                    onPress={action.onPress}
+                    disabled={action.loading}
+                    activeOpacity={0.7}
+                    style={[styles.card, styles.row, index < ACTIONS.length - 1 && { marginBottom: 12 }]}
+                  >
+                    <View style={[styles.rowIcon, { backgroundColor: action.color + '18' }]}>
+                      <Feather name={action.icon} size={18} color={action.color} />
+                    </View>
+                    <Text style={styles.rowLabel}>{action.label}</Text>
+                    {action.loading
+                      ? <ActivityIndicator size="small" color="#9CA3AF" />
+                      : <Feather name="chevron-right" size={18} color="#9CA3AF" />}
+                  </TouchableOpacity>
+                ))}
 
                 <Text style={[styles.sectionLabel, { marginTop: 28 }]}>Session</Text>
                 <TouchableOpacity
@@ -442,30 +431,20 @@ const HomeScreen = () => {
   )
 }
 
+const AVATAR_SIZE = 218;
+
 const styles = StyleSheet.create({
+  avatar: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: 32,
+  },
   name: {
     fontSize: 24,
     fontWeight: '900',
     color: '#111827',
     letterSpacing: -0.5,
     marginTop: 16,
-  },
-  sharePill: {
-    marginTop: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EEF6FF',
-    borderWidth: 1,
-    borderColor: '#93C5FD',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  sharePillText: {
-    color: '#4A90E2',
-    fontSize: 13,
-    fontWeight: '700',
-    marginLeft: 6,
   },
   sectionLabel: {
     fontSize: 12,
@@ -488,10 +467,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 16,
-  },
-  rowDivider: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
   },
   rowIcon: {
     width: 38,
@@ -525,7 +500,8 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: '#F3F4F6',
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 16,

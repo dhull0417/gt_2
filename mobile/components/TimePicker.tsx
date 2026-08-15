@@ -8,8 +8,15 @@ interface TimePickerProps {
 }
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);
-const MINUTES = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
+const MINUTES = Array.from({ length: 12 }, (_, i) => (i * 5).toString().padStart(2, '0'));
 const PERIODS = ['AM', 'PM'];
+
+// Snaps an arbitrary minute value (e.g. from a previously saved time) to the
+// nearest 5-minute increment so it always matches an entry in MINUTES.
+const roundToNearestFive = (minute: string) => {
+  const rounded = (Math.round(parseInt(minute, 10) / 5) * 5) % 60;
+  return rounded.toString().padStart(2, '0');
+};
 const ITEM_HEIGHT = 50;
 const VISIBLE_ITEMS = 3;
 const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
@@ -19,10 +26,10 @@ const TimePicker: React.FC<TimePickerProps> = ({ onTimeChange, initialValue, hid
     if (!initialValue) return { initialHour: 5, initialMinute: '00', initialPeriod: 'PM' };
     const [time, period] = initialValue.split(' ');
     const [hour, minute] = time.split(':');
-    return { 
-      initialHour: parseInt(hour, 10), 
-      initialMinute: minute, 
-      initialPeriod: period as 'AM' | 'PM' 
+    return {
+      initialHour: parseInt(hour, 10),
+      initialMinute: roundToNearestFive(minute),
+      initialPeriod: period as 'AM' | 'PM'
     };
   };
 

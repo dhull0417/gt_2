@@ -22,9 +22,7 @@ import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withRepeat,
-    withSequence,
     withTiming,
-    runOnJS,
     Easing,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -33,6 +31,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
+import { RsvpBreather } from '@/components/RsvpBreather';
 import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
 import TimePicker from './TimePicker';
@@ -64,77 +63,6 @@ const PulsingWatermark = ({ label, style, baseOpacity, peakOpacity }: {
     );
 };
 
-// Drives the In/Out RSVP buttons through breathe-up -> shake "In" -> shake "Out" -> breathe-down,
-// on and on, while the user hasn't responded yet. Each phase is explicitly chained off the previous
-// one's finish callback (rather than a single looping withRepeat/withSequence) so it always continues
-// from wherever the value actually is instead of snapping back to a start value on each lap.
-const RsvpBreather = ({ active, children }: {
-    active: boolean;
-    children: (styles: { boxStyle: any; inTextStyle: any; outTextStyle: any }) => React.ReactNode;
-}) => {
-    const opacity = useSharedValue(0.6);
-    const inShakeX = useSharedValue(0);
-    const outShakeX = useSharedValue(0);
-    const breathCount = useSharedValue(0);
-
-    useEffect(() => {
-        let cancelled = false;
-        breathCount.value = 0;
-        let runUp: () => void;
-        let runInShake: () => void;
-        let runOutShake: () => void;
-        let runDown: () => void;
-
-        const shakeThenCall = (onDone: () => void) => withSequence(
-            withTiming(-6, { duration: 50 }),
-            withTiming(6, { duration: 50 }),
-            withTiming(-6, { duration: 50 }),
-            withTiming(6, { duration: 50 }),
-            withTiming(-3, { duration: 50 }),
-            withTiming(0, { duration: 50 }, (finished) => { if (finished) runOnJS(onDone)(); })
-        );
-
-        runUp = () => {
-            if (cancelled) return;
-            opacity.value = withTiming(1, { duration: 1900, easing: Easing.inOut(Easing.sin) }, (finished) => {
-                if (!finished) return;
-                breathCount.value += 1;
-                runOnJS(breathCount.value % 3 === 0 ? runInShake : runDown)();
-            });
-        };
-        runInShake = () => {
-            if (cancelled) return;
-            inShakeX.value = shakeThenCall(runOutShake);
-        };
-        runOutShake = () => {
-            if (cancelled) return;
-            outShakeX.value = shakeThenCall(runDown);
-        };
-        runDown = () => {
-            if (cancelled) return;
-            opacity.value = withTiming(0.6, { duration: 1900, easing: Easing.inOut(Easing.sin) }, (finished) => {
-                if (finished) runOnJS(runUp)();
-            });
-        };
-
-        if (active) {
-            runUp();
-        } else {
-            opacity.value = withTiming(1, { duration: 200 });
-            inShakeX.value = withTiming(0, { duration: 150 });
-            outShakeX.value = withTiming(0, { duration: 150 });
-        }
-
-        return () => { cancelled = true; };
-    }, [active]);
-
-    const boxStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-    const inTextStyle = useAnimatedStyle(() => ({ transform: [{ translateX: inShakeX.value }] }));
-    const outTextStyle = useAnimatedStyle(() => ({ transform: [{ translateX: outShakeX.value }] }));
-
-    return <>{children({ boxStyle, inTextStyle, outTextStyle })}</>;
-};
-
 interface MeetupDetailModalProps {
   meetup: Meetup | null;
   onClose: () => void;
@@ -142,6 +70,16 @@ interface MeetupDetailModalProps {
 
 // Helper to safely extract user ID whether the array contains strings or populated objects
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
+
+// Mirrors the Max Attendees validation on the group-creation Schedule screen, the
+// Add Meetup wizard, and group settings so every "attendee limit" entry point agrees.
+const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
+    if (mode !== "limited" || input === "") return null;
+    if (!/^\d+$/.test(input)) return "Numbers only, please.";
+    const n = parseInt(input, 10);
+    if (n < 1 || n > 200) return "Enter a number between 1 and 200.";
+    return null;
+};
 
 const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModalProps) => {
     const api = useApiClient();
@@ -156,6 +94,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [newDate, setNewDate] = useState(new Date());
     const [tempDate, setTempDate] = useState(new Date());
     const [newTime, setNewTime] = useState('');
+    const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
     const [newCapacity, setNewCapacity] = useState('');
     const [newLocation, setNewLocation] = useState('');
     const [showDatePicker, setShowDatePicker] = useState(false);
@@ -163,6 +102,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [dmTargetUser, setDmTargetUser] = useState<User | null>(null);
     const [isCreatingDM, setIsCreatingDM] = useState(false);
     const [isSendingReminder, setIsSendingReminder] = useState(false);
+
+    const capacityError = getMaxAttendeesError(capacityMode, newCapacity);
+    const canSaveCapacity = capacityMode !== "limited" || (newCapacity !== "" && !capacityError);
 
     useEffect(() => {
         setMeetup(initialMeetup);
@@ -440,14 +382,14 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     };
 
     const handleUpdateMeetupDetails = async () => {
-        if (isReadOnly) return;
+        if (isReadOnly || !canSaveCapacity) return;
         const payload: any = { meetupId: meetup._id };
-        const capInt = parseInt(newCapacity, 10);
-        
+        const capInt = capacityMode === "limited" ? parseInt(newCapacity, 10) : 0;
+
         if (newDate.toISOString().split('T')[0] !== new Date(meetup.date).toISOString().split('T')[0]) payload.date = newDate;
         if (newTime !== meetup.time) payload.time = newTime;
         if (newLocation !== (meetup.location || '')) payload.location = newLocation;
-        if (!isNaN(capInt) && capInt !== meetup.capacity) payload.capacity = capInt;
+        if (capInt !== meetup.capacity) payload.capacity = capInt;
 
         if (Object.keys(payload).length <= 1) {
             setIsEditModalVisible(false);
@@ -487,7 +429,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         setNewDate(new Date(meetup.date));
         setTempDate(new Date(meetup.date));
         setNewTime(meetup.time);
-        setNewCapacity(meetup.capacity.toString());
+        setCapacityMode(meetup.capacity > 0 ? "limited" : "unlimited");
+        setNewCapacity(meetup.capacity > 0 ? meetup.capacity.toString() : "");
         setNewLocation(meetup.location || '');
         setIsEditModalVisible(true);
     };
@@ -909,13 +852,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         {dmTargetUser && (
                             <>
                                 <Image
-                                    source={{ uri: dmTargetUser.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${dmTargetUser.username?.[0]}` }}
+                                    source={{ uri: dmTargetUser.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${dmTargetUser.firstName?.[0] ?? dmTargetUser.email?.[0]}` }}
                                     style={dmStyles.avatar}
                                 />
                                 <Text style={dmStyles.name}>
-                                    {[dmTargetUser.firstName, dmTargetUser.lastName].filter(Boolean).join(' ') || dmTargetUser.username}
+                                    {[dmTargetUser.firstName, dmTargetUser.lastName].filter(Boolean).join(' ') || dmTargetUser.email?.split('@')[0]}
                                 </Text>
-                                <Text style={dmStyles.username}>@{dmTargetUser.username}</Text>
                                 <TouchableOpacity
                                     style={dmStyles.dmBtn}
                                     onPress={handleSendDM}
@@ -954,12 +896,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             <View style={styles.modalHeaderInner}>
                                 <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
                                 <Text style={styles.modalTitleInner}>Edit Meetup</Text>
-                                <TouchableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating}>
-                                    {isUpdating ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={styles.saveBtnText}>Save</Text>}
+                                <TouchableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating || !canSaveCapacity}>
+                                    {isUpdating ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={[styles.saveBtnText, !canSaveCapacity && styles.saveBtnTextDisabled]}>Save</Text>}
                                 </TouchableOpacity>
                             </View>
                             
-                            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+                            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
                                 <Text style={styles.fieldLabel}>Date</Text>
                                 <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
                                     <Feather name="calendar" size={18} color="#4A90E2" />
@@ -982,13 +924,37 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     />
                                 </View>
 
-                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Attendee Limit (0 = Unlimited)</Text>
-                                <TextInput
-                                    style={styles.capInput}
-                                    keyboardType="numeric"
-                                    value={newCapacity}
-                                    onChangeText={setNewCapacity}
-                                />
+                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Max Attendees</Text>
+                                <View style={styles.boolRow}>
+                                    <TouchableOpacity
+                                        style={[styles.boolBtn, capacityMode === "unlimited" && styles.boolBtnActive]}
+                                        onPress={() => { setCapacityMode("unlimited"); setNewCapacity(""); }}
+                                    >
+                                        <Text style={[styles.boolBtnText, capacityMode === "unlimited" && styles.boolBtnTextActive]}>Unlimited</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.boolBtn, capacityMode === "limited" && styles.boolBtnActive]}
+                                        onPress={() => setCapacityMode("limited")}
+                                    >
+                                        <Text style={[styles.boolBtnText, capacityMode === "limited" && styles.boolBtnTextActive]}>Limited</Text>
+                                    </TouchableOpacity>
+                                </View>
+                                {capacityMode === "limited" && (
+                                    <View style={{ marginTop: 10 }}>
+                                        <View style={[styles.inputContainer, capacityError && styles.inputContainerError]}>
+                                            <Feather name="users" size={18} color="#4A90E2" />
+                                            <TextInput
+                                                style={styles.textInput}
+                                                placeholder="How many?"
+                                                placeholderTextColor="#C4C9D4"
+                                                keyboardType="number-pad"
+                                                value={newCapacity}
+                                                onChangeText={setNewCapacity}
+                                            />
+                                        </View>
+                                        {capacityError && <Text style={styles.errorText}>{capacityError}</Text>}
+                                    </View>
+                                )}
                             </ScrollView>
                         </View>
                     </View>
@@ -1139,18 +1105,25 @@ rsvpLockedSubtitle: {
     waitlistBadgeText: { color: 'white', fontSize: 11, fontWeight: '800' },
     emptyText: { color: '#9CA3AF', fontStyle: 'italic', marginBottom: 20 },
     ownerSection: { marginTop: 40, paddingBottom: 60, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 24 },
-    cancelToggle: { height: 50, borderRadius: 14, borderWidth: 2, borderColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+    cancelToggle: { height: 50, borderRadius: 14, borderWidth: 2, borderColor: '#EF4444', backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
     cancelToggleText: { color: '#EF4444', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 60 },
     modalHeaderInner: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
     modalTitleInner: { fontSize: 18, fontWeight: '900', color: '#111827' },
     saveBtnText: { color: '#4A90E2', fontWeight: '900', fontSize: 16 },
+    saveBtnTextDisabled: { color: '#BFDBFE' },
     modalBody: { paddingBottom: 60 },
     fieldLabel: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 4 },
     inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
+    inputContainerError: { borderColor: '#EF4444' },
     textInput: { flex: 1, marginLeft: 12, fontSize: 16, color: '#374151' },
-    capInput: { backgroundColor: '#F9FAFB', height: 64, borderRadius: 14, textAlign: 'center', fontSize: 24, fontWeight: '900', color: '#111827', borderWidth: 1, borderColor: '#E5E7EB' },
+    errorText: { fontSize: 12, fontWeight: '600', color: '#EF4444', marginTop: 6, marginLeft: 2 },
+    boolRow: { flexDirection: 'row', gap: 10 },
+    boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', backgroundColor: '#fff' },
+    boolBtnActive: { borderColor: '#4A90E2', backgroundColor: '#EEF6FF' },
+    boolBtnText: { fontSize: 14, fontWeight: '700', color: '#6B7280' },
+    boolBtnTextActive: { color: '#4A90E2' },
     dateInput: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
     dateInputText: { marginLeft: 12, fontSize: 16, color: '#374151', fontWeight: '600' },
     datePickerOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
@@ -1164,8 +1137,7 @@ const dmStyles = StyleSheet.create({
     sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12, alignItems: 'center' },
     dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginBottom: 24 },
     avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 14, backgroundColor: '#F3F4F6' },
-    name: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 4 },
-    username: { fontSize: 14, color: '#9CA3AF', fontWeight: '600', marginBottom: 28 },
+    name: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 28 },
     dmBtn: { backgroundColor: '#4A90E2', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
     dmBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
     remindBtn: { marginTop: 12, backgroundColor: '#EEF6FF', borderWidth: 1.5, borderColor: '#93C5FD', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },

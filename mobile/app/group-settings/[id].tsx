@@ -28,6 +28,16 @@ import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/up
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 
+// Mirrors the Max Attendees validation on the group-creation Schedule screen and
+// the Add Meetup wizard so all three "attendee limit" entry points agree on what's valid.
+const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
+  if (mode !== "limited" || input === "") return null;
+  if (!/^\d+$/.test(input)) return "Numbers only, please.";
+  const n = parseInt(input, 10);
+  if (n < 1 || n > 200) return "Enter a number between 1 and 200.";
+  return null;
+};
+
 /**
  * Group Settings Screen
  * Access is strictly restricted to the group owner and designated moderators.
@@ -61,8 +71,12 @@ const GroupSettings = () => {
   const [isSavingName, setIsSavingName] = useState(false);
 
   const [isEditingCapacity, setIsEditingCapacity] = useState(false);
+  const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
   const [tempCapacity, setTempCapacity] = useState("");
   const [isSavingCapacity, setIsSavingCapacity] = useState(false);
+
+  const capacityError = getMaxAttendeesError(capacityMode, tempCapacity);
+  const canSaveCapacity = capacityMode !== "limited" || (tempCapacity !== "" && !capacityError);
 
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [tempLocation, setTempLocation] = useState("");
@@ -143,10 +157,13 @@ const GroupSettings = () => {
         setTempName(group?.name || "");
         setIsEditingName(true);
         break;
-      case 'capacity':
-        setTempCapacity(group?.defaultCapacity?.toString() || "0");
+      case 'capacity': {
+        const currentCapacity = group?.defaultCapacity || 0;
+        setCapacityMode(currentCapacity > 0 ? "limited" : "unlimited");
+        setTempCapacity(currentCapacity > 0 ? currentCapacity.toString() : "");
         setIsEditingCapacity(true);
         break;
+      }
       case 'location':
         setTempLocation(group?.defaultLocation || "");
         setIsEditingLocation(true);
@@ -246,16 +263,16 @@ const GroupSettings = () => {
   };
 
   const handleSaveCapacity = async () => {
-    if (!id) return;
-    const capacityNum = parseInt(tempCapacity || "0", 10);
-    if (capacityNum === group?.defaultCapacity) {
+    if (!id || !canSaveCapacity) return;
+    const capacityNum = capacityMode === "limited" ? parseInt(tempCapacity, 10) : 0;
+    if (capacityNum === (group?.defaultCapacity || 0)) {
       setIsEditingCapacity(false);
       return;
     }
 
     setIsSavingCapacity(true);
     try {
-        await groupApi.updateGroup(api, { groupId: id, defaultCapacity: isNaN(capacityNum) ? 0 : capacityNum });
+        await groupApi.updateGroup(api, { groupId: id, defaultCapacity: capacityNum });
         await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
@@ -440,7 +457,7 @@ const GroupSettings = () => {
               <View style={styles.optionLeft}>
                 {option.id === 'image' ? (
                   <View style={{ marginRight: 16 }}>
-                    <GroupAvatar name={group?.name ?? ''} imageUrl={group?.image} size={40} />
+                    <GroupAvatar name={group?.name ?? ''} imageUrl={group?.image} size={40} borderRadius={11} />
                   </View>
                 ) : (
                   <View style={[styles.iconContainer, { backgroundColor: option.bg }]}>
@@ -522,6 +539,7 @@ const GroupSettings = () => {
                 name={group?.name ?? ''}
                 imageUrl={previewUri ?? group?.image}
                 size={120}
+                borderRadius={28}
               />
               <View style={styles.imageModalCameraBadge}>
                 <Feather name="camera" size={16} color="#fff" />
@@ -564,11 +582,40 @@ const GroupSettings = () => {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
             <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Attendee Limit</Text>
-                <Text style={styles.modalSubtitle}>Set to 0 for unlimited members.</Text>
-                <TextInput style={styles.modalInput} value={tempCapacity} onChangeText={setTempCapacity} placeholder="e.g. 15" keyboardType="numeric" autoFocus maxLength={5} selectTextOnFocus />
-                <View style={styles.modalButtons}>
+                <View style={[styles.boolRow, { marginTop: 16 }]}>
+                    <TouchableOpacity
+                        style={[styles.boolBtn, capacityMode === "unlimited" && styles.boolBtnActive]}
+                        onPress={() => { setCapacityMode("unlimited"); setTempCapacity(""); }}
+                    >
+                        <Text style={[styles.boolBtnText, capacityMode === "unlimited" && styles.boolBtnTextActive]}>Unlimited</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.boolBtn, capacityMode === "limited" && styles.boolBtnActive]}
+                        onPress={() => setCapacityMode("limited")}
+                    >
+                        <Text style={[styles.boolBtnText, capacityMode === "limited" && styles.boolBtnTextActive]}>Limited</Text>
+                    </TouchableOpacity>
+                </View>
+                {capacityMode === "limited" && (
+                    <View style={{ marginTop: 14 }}>
+                        <View style={[styles.inputRow, capacityError && styles.inputRowError]}>
+                            <Feather name="users" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                            <TextInput
+                                style={styles.inlineInput}
+                                placeholder="How many?"
+                                placeholderTextColor="#C4C9D4"
+                                keyboardType="number-pad"
+                                value={tempCapacity}
+                                onChangeText={setTempCapacity}
+                                autoFocus
+                            />
+                        </View>
+                        {capacityError && <Text style={styles.errorText}>{capacityError}</Text>}
+                    </View>
+                )}
+                <View style={[styles.modalButtons, { marginTop: 20 }]}>
                     <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingCapacity(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveCapacity} disabled={isSavingCapacity}>
+                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave, !canSaveCapacity && styles.modalBtnDisabled]} onPress={handleSaveCapacity} disabled={isSavingCapacity || !canSaveCapacity}>
                         {isSavingCapacity ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
                     </TouchableOpacity>
                 </View>
@@ -733,8 +780,18 @@ const styles = StyleSheet.create({
   modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   modalBtnCancel: { backgroundColor: '#F3F4F6' },
   modalBtnSave: { backgroundColor: '#4FD1C5' },
+  modalBtnDisabled: { backgroundColor: '#A7E4DE' },
   modalBtnTextCancel: { fontSize: 16, fontWeight: '700', color: '#4B5563' },
   modalBtnTextSave: { fontSize: 16, fontWeight: '700', color: 'white' },
+  boolRow: { flexDirection: 'row', gap: 10 },
+  boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', backgroundColor: '#fff' },
+  boolBtnActive: { borderColor: '#4A90E2', backgroundColor: '#EEF6FF' },
+  boolBtnText: { fontSize: 14, fontWeight: '700', color: '#6B7280' },
+  boolBtnTextActive: { color: '#4A90E2' },
+  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 14, paddingVertical: 12 },
+  inputRowError: { borderColor: '#EF4444' },
+  inlineInput: { flex: 1, fontSize: 15, color: '#374151' },
+  errorText: { fontSize: 12, fontWeight: '600', color: '#EF4444', marginTop: 6, marginLeft: 2 },
   fullModalContainer: { flex: 1, backgroundColor: 'white' },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   modalTitleLarge: { fontSize: 20, fontWeight: '900', color: '#111827' },

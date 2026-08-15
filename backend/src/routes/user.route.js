@@ -2,7 +2,6 @@
 import express from "express";
 import {
   getCurrentUser,
-  getUserProfile,
   syncUser,
   updateProfile,
   searchUsers,
@@ -17,7 +16,6 @@ import { protectRoute } from "../middleware/auth.middleware.js";
 
 const router = express.Router();  
 
-router.get("/profile/:username", getUserProfile);
 router.get("/search", protectRoute, searchUsers);
 router.post("/match-contacts", protectRoute, matchContacts);
 
