@@ -32,7 +32,7 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "runtimeVersion": {
-        "policy": "appVersion"
+        "policy": "fingerprint"
       }
     },
     "android": {
@@ -55,7 +55,7 @@
         "WRITE_CALENDAR"
       ],
       "runtimeVersion": {
-        "policy": "appVersion"
+        "policy": "fingerprint"
       },
       "googleServicesFile": "./google-services.json",
       "intentFilters": [
