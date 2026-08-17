@@ -1,6 +1,7 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable, Platform, StyleSheet } from 'react-native';
 import React, { useCallback, useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TAB_BAR_HEIGHT } from '@/utils/layout';
 import { useAuth } from '@clerk/expo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi } from '@/utils/api';
@@ -10,6 +11,7 @@ import * as Updates from 'expo-updates';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { pickAndUploadImage } from '@/utils/uploadImage';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
 
 const CALENDAR_OPTIONS = [
   {
@@ -34,6 +36,7 @@ const HomeScreen = () => {
   const { signOut, getToken } = useAuth();
   const api = useApiClient();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -72,18 +75,6 @@ const HomeScreen = () => {
     } finally {
       setPhotoUploading(false);
     }
-  };
-
-  const handleShareUsername = async () => {
-      if (currentUser?.username) {
-          try {
-              await Share.share({
-                  message: `Add me on GroupThat! My username is: ${currentUser.username}`,
-              });
-          } catch (error: any) {
-              Alert.alert(error.message);
-          }
-      }
   };
 
   const handleShareApp = async () => {
@@ -217,15 +208,42 @@ const HomeScreen = () => {
     setUrlCopied(true);
   };
 
+  const ACTIONS = [
+    {
+      id: 'account',
+      label: 'Update Account Info',
+      icon: 'user' as const,
+      color: '#4A90E2',
+      onPress: () => router.push('/account'),
+    },
+    {
+      id: 'share',
+      label: 'Share App',
+      icon: 'share-2' as const,
+      color: '#4FD1C5',
+      onPress: handleShareApp,
+    },
+    {
+      id: 'calendar',
+      label: 'Sync to My Calendar',
+      icon: 'calendar' as const,
+      color: '#16A34A',
+      onPress: handleOpenCalendarSync,
+      loading: calendarLoading,
+    },
+  ];
+
   return (
-    <SafeAreaView className='flex-1 bg-gray-100'>
+    <SafeAreaView className='flex-1 bg-gray-100' edges={['top', 'left', 'right']}>
       <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
-        <Text className="text-xl font-bold text-gray-900">Profile</Text>
+        <Text className="text-xl font-black text-gray-900">
+          {currentUser?.firstName ? `${currentUser.firstName}'s Profile` : 'Profile'}
+        </Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 20, flexGrow: 1 }}>
         {isLoading ? (
-            <ActivityIndicator size="large" color="#4A90E2" className="mt-16" />
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
         ) : isError || !currentUser ? (
             <Text className="text-center text-red-500 mt-8">Failed to load profile.</Text>
         ) : (
@@ -233,91 +251,78 @@ const HomeScreen = () => {
             <View className="items-center p-6 bg-white border-b border-gray-200">
               <TouchableOpacity onPress={handleChangePhoto} disabled={photoUploading} className="relative">
                 {photoUploading ? (
-                  <View className="w-24 h-24 rounded-full border-4 border-gray-200 bg-gray-100 items-center justify-center">
+                  <View style={styles.avatar} className="border-4 border-gray-200 bg-gray-100 items-center justify-center">
                     <ActivityIndicator color="#4A90E2" />
                   </View>
                 ) : currentUser.profilePicture ? (
                   <Image
                     source={{ uri: currentUser.profilePicture }}
-                    className="w-24 h-24 rounded-full border-4 border-gray-200"
+                    style={styles.avatar}
+                    className="border-4 border-gray-200"
                   />
                 ) : (
-                  <View className="w-24 h-24 rounded-full border-4 border-gray-200 bg-indigo-100 items-center justify-center">
-                    <Text className="text-3xl font-bold text-indigo-600">
-                      {(currentUser.firstName?.[0] ?? currentUser.username?.[0] ?? '?').toUpperCase()}
+                  <View style={styles.avatar} className="border-4 border-gray-200 bg-indigo-100 items-center justify-center">
+                    <Text className="text-[82px] font-bold text-indigo-600">
+                      {(currentUser.firstName?.[0] ?? '?').toUpperCase()}
                     </Text>
                   </View>
                 )}
-                <View className="absolute bottom-0 right-0 bg-[#4A90E2] rounded-full p-1.5">
-                  <Feather name="camera" size={12} color="white" />
+                <View className="absolute bottom-0 right-0 bg-[#4A90E2] rounded-full p-3.5">
+                  <Feather name="camera" size={14} color="white" />
                 </View>
               </TouchableOpacity>
-              <Text className="text-2xl font-bold text-gray-800 mt-4">
+              <Text style={styles.name}>
                   {currentUser.firstName} {currentUser.lastName}
               </Text>
-              <Text className="text-lg text-gray-500">
-                  @{currentUser.username}
-              </Text>
-              <Text className="text-base text-gray-500 mt-1">
+              <Text className="text-sm text-gray-400 mt-0.5">
                   {currentUser.email}
               </Text>
-              <TouchableOpacity onPress={handleShareUsername} className="mt-6 flex-row items-center bg-gray-100 px-4 py-2 rounded-full">
-                  <Feather name="share" size={14} color="#6B7280" />
-                  <Text className="text-gray-600 text-sm ml-2 font-medium">Share Username</Text>
-              </TouchableOpacity>
+              {currentUser.createdAt && (
+                <Text className="text-sm text-gray-400 mt-0.5">
+                    Joined: {new Date(currentUser.createdAt).toLocaleDateString()}
+                </Text>
+              )}
             </View>
 
             <View className="px-4 mt-8">
-                <TouchableOpacity
-                    onPress={() => router.push('/account')}
-                    className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
-                    style={{ marginBottom: 16 }}
-                >
-                    <Text className="text-[#4A90E2] text-lg font-bold">Update Account Info</Text>
-                </TouchableOpacity>
-
-                {/* 👇 NEW SHARE BUTTON 👇 */}
-                <TouchableOpacity
-                    onPress={handleShareApp}
-                    className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
-                    style={{ marginBottom: 16 }}
-                >
-                    <View className="flex-row items-center">
-                        <Feather name="share-2" size={20} color="#4A90E2" className="mr-2" />
-                        <Text className="text-[#4A90E2] text-lg font-bold ml-2">Share App</Text>
+                <Text style={styles.sectionLabel}>Account</Text>
+                {ACTIONS.map((action, index) => (
+                  <TouchableOpacity
+                    key={action.id}
+                    onPress={action.onPress}
+                    disabled={action.loading}
+                    activeOpacity={0.7}
+                    style={[styles.card, styles.row, index < ACTIONS.length - 1 && { marginBottom: 12 }]}
+                  >
+                    <View style={[styles.rowIcon, { backgroundColor: action.color + '18' }]}>
+                      <Feather name={action.icon} size={18} color={action.color} />
                     </View>
-                </TouchableOpacity>
+                    <Text style={styles.rowLabel}>{action.label}</Text>
+                    {action.loading
+                      ? <ActivityIndicator size="small" color="#9CA3AF" />
+                      : <Feather name="chevron-right" size={18} color="#9CA3AF" />}
+                  </TouchableOpacity>
+                ))}
 
-                <TouchableOpacity
-                    onPress={handleOpenCalendarSync}
-                    disabled={calendarLoading}
-                    className="py-4 bg-white border border-gray-300 rounded-lg items-center shadow-sm"
-                    style={{ marginBottom: 16 }}
-                >
-                    <View className="flex-row items-center">
-                        {calendarLoading
-                          ? <ActivityIndicator size="small" color="#4A90E2" />
-                          : <Feather name="calendar" size={20} color="#4A90E2" />}
-                        <Text className="text-[#4A90E2] text-lg font-bold ml-2">Sync to My Calendar</Text>
-                    </View>
-                </TouchableOpacity>
-
+                <Text style={[styles.sectionLabel, { marginTop: 28 }]}>Session</Text>
                 <TouchableOpacity
                     onPress={() => { queryClient.clear(); signOut(); }}
-                    className="py-4 bg-red-600 rounded-lg items-center shadow"
-                    style={{ marginBottom: 16 }}
+                    style={styles.signOutBtn}
+                    activeOpacity={0.85}
                 >
-                    <Text className="text-white text-lg font-bold">Sign Out</Text>
+                    <Feather name="log-out" size={18} color="white" />
+                    <Text style={styles.signOutText}>Sign Out</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                     onPress={handleDeleteAccount}
                     disabled={deleteLoading}
-                    className="py-4 items-center"
+                    style={styles.deleteBtn}
+                    activeOpacity={0.7}
                 >
                     {deleteLoading
                       ? <ActivityIndicator size="small" color="#EF4444" />
-                      : <Text className="text-red-500 text-base font-medium">Delete Account</Text>}
+                      : <Text style={styles.deleteText}>Delete Account</Text>}
                 </TouchableOpacity>
             </View>
           </>
@@ -425,5 +430,88 @@ const HomeScreen = () => {
     </SafeAreaView>
   )
 }
+
+const AVATAR_SIZE = 218;
+
+const styles = StyleSheet.create({
+  avatar: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: 32,
+  },
+  name: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#111827',
+    letterSpacing: -0.5,
+    marginTop: 16,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  rowIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  rowLabel: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  signOutBtn: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#4A90E2',
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signOutText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  deleteBtn: {
+    height: 50,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  deleteText: {
+    color: '#EF4444',
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    fontSize: 12,
+  },
+});
 
 export default HomeScreen;

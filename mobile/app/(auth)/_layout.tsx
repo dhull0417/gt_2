@@ -1,6 +1,7 @@
 import { Redirect, Stack } from 'expo-router'
 import { useAuth } from '@clerk/expo'
-import { View, ActivityIndicator } from 'react-native';
+import { View } from 'react-native';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
 
 export default function AuthRoutesLayout() {
   const { isSignedIn, isLoaded } = useAuth()
@@ -8,7 +9,7 @@ export default function AuthRoutesLayout() {
   if (!isLoaded) {
     return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" />
+            <LoadingAnimation />
         </View>
     );
   }

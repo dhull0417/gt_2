@@ -5,12 +5,11 @@ import { useRouter } from "expo-router";
 import * as SecureStore from 'expo-secure-store';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 
-// Include username in the variables
 interface UpdateProfileVariables {
-  username?: string;
   firstName?: string;
   lastName?: string;
   profilePicture?: string;
+  zipCode?: string;
 }
 
 export const useUpdateProfile = () => {

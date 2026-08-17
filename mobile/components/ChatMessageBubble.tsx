@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
 import { Image } from 'expo-image';
 import type { ChatMessage } from '@/types/chat';
 
@@ -8,13 +8,42 @@ interface Props {
   onLongPress: () => void;
   currentUserId?: string;
   onReactionLongPress?: () => void;
+  onImagePress?: (url: string, width?: number | null, height?: number | null) => void;
 }
 
-export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, onReactionLongPress }: Props) {
+const MAX_IMAGE_WIDTH = 240;
+const MAX_IMAGE_HEIGHT = 300;
+const MIN_IMAGE_WIDTH = 140;
+
+// Legacy messages sent before dimensions were captured fall back to the old fixed box.
+function getImageDisplaySize(width?: number | null, height?: number | null) {
+  if (!width || !height) return { width: 220, height: 165 };
+
+  const ratio = width / height;
+  let w = MAX_IMAGE_WIDTH;
+  let h = w / ratio;
+
+  if (h > MAX_IMAGE_HEIGHT) {
+    h = MAX_IMAGE_HEIGHT;
+    w = h * ratio;
+  }
+  if (w < MIN_IMAGE_WIDTH) {
+    w = MIN_IMAGE_WIDTH;
+    h = w / ratio;
+  }
+  // Safety net for pathological aspect ratios (e.g. a very tall narrow screenshot) —
+  // accept minor cropping via contentFit="cover" rather than an oversized bubble.
+  h = Math.min(h, MAX_IMAGE_HEIGHT);
+
+  return { width: Math.round(w), height: Math.round(h) };
+}
+
+export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, onReactionLongPress, onImagePress }: Props) {
   const isDeleted = !!message.deleted_at;
   const isEdited = !!message.edited_at && !isDeleted;
   const hasImage = !!message.image_url && !isDeleted;
   const hasText = !!message.content && !isDeleted;
+  const imageSize = hasImage ? getImageDisplaySize(message.image_width, message.image_height) : null;
 
   const time = new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const reactions = (!isDeleted && message.reactions) ? message.reactions : {};
@@ -43,12 +72,18 @@ export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, 
           )}
 
           {hasImage && (
-            <Image
-              source={{ uri: message.image_url! }}
-              style={[styles.messageImage, hasText && styles.messageImageWithText]}
-              contentFit="cover"
-              transition={150}
-            />
+            <Pressable
+              onPress={() => onImagePress?.(message.image_url!, message.image_width, message.image_height)}
+              onLongPress={onLongPress}
+              delayLongPress={350}
+            >
+              <Image
+                source={{ uri: message.image_url! }}
+                style={[styles.messageImage, imageSize, hasText && styles.messageImageWithText]}
+                contentFit="cover"
+                transition={150}
+              />
+            </Pressable>
           )}
 
           {isDeleted ? (
@@ -91,12 +126,12 @@ const styles = StyleSheet.create({
   bubbleOwn: { backgroundColor: '#4A90E2', borderBottomRightRadius: 4 },
   bubbleOther: { backgroundColor: '#E5E7EB', borderBottomLeftRadius: 4 },
   bubbleImageOnly: { paddingHorizontal: 4, paddingVertical: 4 },
-  senderName: { fontSize: 12, fontWeight: '600', color: '#555', marginBottom: 2 },
-  messageImage: { width: 220, height: 165, borderRadius: 10 },
+  senderName: { fontSize: 12, fontWeight: '700', color: '#6B7280', marginBottom: 2 },
+  messageImage: { borderRadius: 10 },
   messageImageWithText: { marginBottom: 6 },
-  content: { fontSize: 15, color: '#111827' },
+  content: { fontSize: 15, fontWeight: '400', color: '#111827' },
   contentOwn: { color: '#fff' },
-  deletedText: { fontSize: 14, color: '#aaa', fontStyle: 'italic' },
+  deletedText: { fontSize: 14, color: '#9CA3AF', fontStyle: 'italic' },
   quoteBlock: { borderLeftWidth: 3, borderLeftColor: 'rgba(255,255,255,0.6)', paddingLeft: 8, paddingVertical: 3, marginBottom: 6, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 4 },
   quoteBlockOwn: { borderLeftColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(255,255,255,0.15)' },
   quoteSender: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.9)', marginBottom: 1 },
@@ -105,16 +140,16 @@ const styles = StyleSheet.create({
   quoteContentOwn: { color: 'rgba(255,255,255,0.75)' },
   timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4 },
   timeRowImageOnly: { marginTop: 2 },
-  editedLabel: { fontSize: 11, color: '#888' },
+  editedLabel: { fontSize: 11, color: '#9CA3AF' },
   editedLabelOwn: { color: 'rgba(255,255,255,0.6)' },
-  time: { fontSize: 11, color: '#888' },
+  time: { fontSize: 11, color: '#9CA3AF' },
   timeOwn: { color: 'rgba(255,255,255,0.7)' },
   timeOnImage: { color: 'rgba(255,255,255,0.85)' },
   reactions: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 4 },
   reactionsOwn: { justifyContent: 'flex-end' },
-  badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0f0f0', borderRadius: 12, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: '#e0e0e0' },
-  badgeActive: { backgroundColor: '#e8f0ff', borderColor: '#4A90E2' },
+  badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: '#E5E7EB' },
+  badgeActive: { backgroundColor: '#EEF6FF', borderColor: '#4A90E2' },
   badgeEmoji: { fontSize: 14 },
-  badgeCount: { fontSize: 12, color: '#555', marginLeft: 3, fontWeight: '600' },
+  badgeCount: { fontSize: 12, color: '#6B7280', marginLeft: 3, fontWeight: '700' },
   badgeCountActive: { color: '#4A90E2' },
 });

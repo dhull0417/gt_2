@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@clerk/expo';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/utils/supabase';
-import type { ChatMessage, ReactionResult } from '@/types/chat';
+import type { ChatMessage, PendingImage, ReactionResult } from '@/types/chat';
 
 export function useMessages(groupId: string) {
   const { getToken } = useAuth();
@@ -42,7 +42,7 @@ export function useMessages(groupId: string) {
       senderId: string,
       senderName: string,
       replyTo?: { id: string; content: string; senderName: string },
-      imageUrl?: string
+      image?: PendingImage
     ) => {
       const token = await getTokenRef.current({ template: 'supabase' });
       if (!token) throw new Error('No auth token');
@@ -52,7 +52,11 @@ export function useMessages(groupId: string) {
         sender_id: senderId,
         sender_name: senderName,
         content,
-        ...(imageUrl && { image_url: imageUrl }),
+        ...(image && {
+          image_url: image.url,
+          ...(image.width && { image_width: image.width }),
+          ...(image.height && { image_height: image.height }),
+        }),
         ...(replyTo && {
           reply_to_id: replyTo.id,
           reply_to_content: replyTo.content,

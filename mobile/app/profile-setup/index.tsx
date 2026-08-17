@@ -9,7 +9,6 @@ const ProfileSetupScreen = () => {
     const { user: clerkUser } = useUser();
     const [firstName, setFirstName] = useState(clerkUser?.firstName ?? '');
     const [lastName, setLastName] = useState(clerkUser?.lastName ?? '');
-    const [username, setUsername] = useState('');
     const [zipCode, setZipCode] = useState('');
     const { mutate: syncUser, isPending: isSyncing } = useUserSync();
     const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
@@ -22,16 +21,12 @@ const ProfileSetupScreen = () => {
             Alert.alert('Missing Information', 'Please fill out all fields.');
             return;
         }
-        if (!username.trim()) {
-            Alert.alert('Missing Information', 'Please enter a username.');
-            return;
-        }
         // For Apple users, omit firstName/lastName entirely — syncUser's backend Clerk API
         // call will populate them from Apple's token, and we don't want to overwrite with
         // potentially empty client-side values.
         const profileData = isAppleUser
-            ? { username, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) }
-            : { firstName, lastName, username, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) };
+            ? { ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) }
+            : { firstName, lastName, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) };
         // Ensure the MongoDB user exists before updating profile.
         // onSettled fires whether sync succeeded or failed, so we always attempt the update.
         syncUser(undefined, {
@@ -64,15 +59,6 @@ const ProfileSetupScreen = () => {
                             />
                         </>
                     )}
-
-                    <TextInput
-                        placeholder="Username"
-                        value={username}
-                        onChangeText={setUsername}
-                        autoCapitalize="none"
-                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                        placeholderTextColor="#999"
-                    />
 
                     <TextInput
                         placeholder="Zip Code"

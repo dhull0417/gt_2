@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -12,7 +12,7 @@ const ChangePasswordScreen = () => {
     const [isCurrentVisible, setCurrentVisible] = useState(false);
     const [isNewVisible, setNewVisible] = useState(false);
     const [isConfirmVisible, setConfirmVisible] = useState(false);
-    
+
     const { mutate: changePassword, isPending } = useChangePassword();
 
     const handleSave = () => {
@@ -29,70 +29,81 @@ const ChangePasswordScreen = () => {
 
     return (
         <SafeAreaView className="flex-1 bg-gray-100">
-            <KeyboardAvoidingView 
+            <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 className="flex-1"
             >
                 <ScrollView contentContainerStyle={{ flexGrow: 1 }} className="p-6">
-                    <View className="mb-6">
-                        <Text className="text-sm text-gray-600 mb-1">Current Password</Text>
-                        <View className="w-full flex-row items-center bg-white border border-gray-300 rounded-lg pr-4">
+                    <View style={{ marginBottom: 20 }}>
+                        <Text style={styles.label}>Current Password</Text>
+                        <View style={styles.inputContainer}>
                             <TextInput
                                 value={currentPassword}
                                 onChangeText={setCurrentPassword}
                                 placeholder="Enter your current password"
                                 placeholderTextColor="#9CA3AF"
                                 secureTextEntry={!isCurrentVisible}
-                                className="flex-1 p-4 text-base"
+                                style={styles.textInput}
                             />
                             <TouchableOpacity onPress={() => setCurrentVisible(!isCurrentVisible)}>
-                                <Feather name={isCurrentVisible ? 'eye-off' : 'eye'} size={22} color="#6B7280" />
+                                <Feather name={isCurrentVisible ? 'eye-off' : 'eye'} size={20} color="#9CA3AF" />
                             </TouchableOpacity>
                         </View>
                     </View>
-                    <View className="mb-4">
-                        <Text className="text-sm text-gray-600 mb-1">New Password</Text>
-                        <View className="w-full flex-row items-center bg-white border border-gray-300 rounded-lg pr-4">
+                    <View style={{ marginBottom: 20 }}>
+                        <Text style={styles.label}>New Password</Text>
+                        <View style={styles.inputContainer}>
                             <TextInput
                                 value={newPassword}
                                 onChangeText={setNewPassword}
                                 placeholder="Enter your new password"
                                 placeholderTextColor="#9CA3AF"
                                 secureTextEntry={!isNewVisible}
-                                className="flex-1 p-4 text-base"
+                                style={styles.textInput}
                             />
                             <TouchableOpacity onPress={() => setNewVisible(!isNewVisible)}>
-                                <Feather name={isNewVisible ? 'eye-off' : 'eye'} size={22} color="#6B7280" />
+                                <Feather name={isNewVisible ? 'eye-off' : 'eye'} size={20} color="#9CA3AF" />
                             </TouchableOpacity>
                         </View>
                     </View>
-                    <View className="mb-8">
-                        <Text className="text-sm text-gray-600 mb-1">Confirm New Password</Text>
-                        <View className="w-full flex-row items-center bg-white border border-gray-300 rounded-lg pr-4">
+                    <View style={{ marginBottom: 28 }}>
+                        <Text style={styles.label}>Confirm New Password</Text>
+                        <View style={styles.inputContainer}>
                             <TextInput
                                 value={confirmPassword}
                                 onChangeText={setConfirmPassword}
                                 placeholder="Confirm your new password"
                                 placeholderTextColor="#9CA3AF"
                                 secureTextEntry={!isConfirmVisible}
-                                className="flex-1 p-4 text-base"
+                                style={styles.textInput}
                             />
                             <TouchableOpacity onPress={() => setConfirmVisible(!isConfirmVisible)}>
-                                <Feather name={isConfirmVisible ? 'eye-off' : 'eye'} size={22} color="#6B7280" />
+                                <Feather name={isConfirmVisible ? 'eye-off' : 'eye'} size={20} color="#9CA3AF" />
                             </TouchableOpacity>
                         </View>
                     </View>
                     <TouchableOpacity
                         onPress={handleSave}
                         disabled={isPending}
-                        className={`w-full py-4 rounded-lg items-center shadow ${isPending ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
+                        style={styles.saveBtn}
+                        activeOpacity={0.85}
                     >
-                        <Text className="text-white text-lg font-bold">{isPending ? "Saving..." : "Save New Password"}</Text>
+                        {isPending
+                            ? <ActivityIndicator color="white" />
+                            : <Text style={styles.saveBtnText}>Save New Password</Text>}
                     </TouchableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
 };
+
+const styles = StyleSheet.create({
+    label: { fontSize: 12, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+    inputContainer: { width: '100%', flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14, paddingHorizontal: 16, height: 56, gap: 10 },
+    textInput: { flex: 1, fontSize: 16, color: '#1F2937' },
+    saveBtn: { width: '100%', height: 54, borderRadius: 16, backgroundColor: '#4A90E2', alignItems: 'center', justifyContent: 'center' },
+    saveBtnText: { color: 'white', fontSize: 16, fontWeight: '800' },
+});
 
 export default ChangePasswordScreen;

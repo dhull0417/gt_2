@@ -11,6 +11,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
+import { ImageCropperHost } from '@/components/ImageCropperHost';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -35,6 +36,7 @@ export default function RootLayout() {
       <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
         <QueryClientProvider client={queryClient}>
           <AuthLayout />
+          <ImageCropperHost />
         </QueryClientProvider>
       </ClerkProvider>
     </GestureHandlerRootView>
@@ -87,6 +89,7 @@ const AuthLayout = () => {
       'group-edit-schedule',
       'group-edit-jit',
       'group-settings',
+      'group-chat',
       'meetup-edit',
       'schedule-meetup',
       'add-members',
@@ -98,7 +101,9 @@ const AuthLayout = () => {
 
     if (isSignedIn) {
       const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
-      const profileIncomplete = (!isAppleUser && (!currentUser?.firstName?.trim() || !currentUser?.lastName?.trim())) || !currentUser?.username?.trim();
+      // !currentUser (no Mongo user yet) always routes through profile-setup first,
+      // since its Save button is what triggers syncUser and creates the record.
+      const profileIncomplete = !currentUser || (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()));
       if (profileIncomplete && segments[0] !== 'profile-setup') {
         router.replace('/profile-setup');
       } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
@@ -119,7 +124,7 @@ const AuthLayout = () => {
   // This covers users who tapped a link while signed out and already had a profile.
   useEffect(() => {
     if (!isSignedIn || !currentUser) return;
-    const profileIncomplete = !currentUser.firstName?.trim() || !currentUser.lastName?.trim() || !currentUser.username?.trim();
+    const profileIncomplete = !currentUser.firstName?.trim() || !currentUser.lastName?.trim();
     if (profileIncomplete) return; // useUpdateProfile handles this case after setup
 
     SecureStore.getItemAsync(PENDING_INVITE_KEY).then(pendingToken => {
@@ -135,14 +140,15 @@ const AuthLayout = () => {
       <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
-      <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true }} />
+      <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true, title: 'Update Account' }} />
       <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
       <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
       <Stack.Screen name="group-settings" options={{ headerShown: false }} />
+      <Stack.Screen name="group-chat" options={{ headerShown: false }} />
       <Stack.Screen name="meetup-edit" options={{ headerShown: false }} />
       <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />
       <Stack.Screen name="add-members" options={{ headerShown: false }} />
-      <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />      
+      <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />
       <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />
       <Stack.Screen name="join" options={{ headerShown: false }} />
     </Stack>

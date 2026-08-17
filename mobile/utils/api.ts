@@ -47,14 +47,15 @@ export interface User {
   email: string;
   phoneNumber?: string;
   phone: string;
-  username: string;
   firstName?: string;
   lastName?: string;
   profilePicture?: string;
   groups?: string[];
   mutedGroups: string[];
   mutedUntilNextMeetup: string[];
+  lastReadAt?: Record<string, string>;
   zipCode?: string;
+  createdAt?: string;
 }
 
 export interface LastMessage {
@@ -62,6 +63,7 @@ export interface LastMessage {
   user: {
     name: string;
   };
+  createdAt?: string;
 }
 
 export interface Group {
@@ -91,6 +93,7 @@ export interface Meetup {
     _id: string;
     owner: string;
     name: string;
+    image?: string;
   };
   name: string;
   date: string;
@@ -272,6 +275,10 @@ export const userApi = {
     const response = await api.patch<{ muted: boolean }>("/api/users/mute-group", { groupId, muteType });
     return response.data;
   },
+  markGroupRead: async (api: AxiosInstance, groupId: string): Promise<{ ok: boolean }> => {
+    const response = await api.patch<{ ok: boolean }>(`/api/users/groups/${groupId}/read`);
+    return response.data;
+  },
   getCalendarSyncUrl: async (api: AxiosInstance): Promise<{ url: string }> => {
     const response = await api.get<{ url: string }>("/api/users/calendar-url");
     return response.data;
@@ -372,6 +379,10 @@ export const meetupApi = {
   },
   setGuestCount: async (api: AxiosInstance, meetupId: string, count: number): Promise<{ meetup: Meetup }> => {
     const response = await api.patch<{ meetup: Meetup }>(`/api/meetups/${meetupId}/guests`, { count });
+    return response.data;
+  },
+  sendReminder: async (api: AxiosInstance, meetupId: string, userId?: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(`/api/meetups/${meetupId}/remind`, userId ? { userId } : {});
     return response.data;
   },
 };

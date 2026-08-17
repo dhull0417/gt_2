@@ -52,8 +52,8 @@ export const getMeetups = asyncHandler(async (req, res) => {
             { visibilityDate: { $lte: now } },  // scheduled meetups within the window
         ]
     })
-        .populate('group', 'name owner moderators timezone defaultLocation visibilityLeadDays')
-        .populate('members', 'firstName lastName username profilePicture clerkId')
+        .populate('group', 'name image owner moderators timezone defaultLocation visibilityLeadDays')
+        .populate('members', 'firstName lastName profilePicture clerkId')
         .sort({ date: 1 });
 
     res.status(200).json(meetups);
@@ -71,71 +71,105 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     const user = await User.findOne({ clerkId }).lean();
     if (!user) return res.status(404).json({ error: "User not found." });
 
-    const meetup = await Meetup.findById(meetupId);
-    if (!meetup) return res.status(404).json({ error: "Meetup not found." });
-
     if (!['in', 'out'].includes(status)) {
         return res.status(400).json({ error: "Invalid RSVP status." });
     }
 
-    if (meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
-        return res.status(400).json({ error: "RSVPs are not open yet." });
-    }
+    // Concurrent RSVPs on the same meetup (e.g. several members racing for the
+    // last open spot) can lose Mongoose's optimistic-concurrency check. Retry
+    // with a fresh copy of the document rather than surfacing the conflict.
+    const MAX_RETRIES = 3;
+    let meetup;
+    let promotedUserId = null;
+    let statusUnchanged = false;
 
-    // Safely extract the user from all arrays first to prevent duplicates using Mongoose .pull()
-    meetup.in.pull(user._id);
-    meetup.out.pull(user._id);
-    meetup.waitlist.pull(user._id);
-    meetup.undecided.pull(user._id);
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        meetup = await Meetup.findById(meetupId);
+        if (!meetup) return res.status(404).json({ error: "Meetup not found." });
 
-    if (status === 'out') {
-        meetup.out.push(user._id);
-        
-        // Auto-promote the first person in the waitlist if capacity allows
-        if (meetup.capacity > 0 && meetup.waitlist.length > 0 && meetup.in.length < meetup.capacity) {
-            const nextUserId = meetup.waitlist.shift();
-            meetup.in.push(nextUserId);
-            
-            const nextUser = await User.findById(nextUserId);
-            if (nextUser) {
-                await notifyUsers([nextUser], {
-                    title: "You're In! 🎉",
-                    body: `A spot opened up for "${meetup.name}" and you've been moved off the waitlist!`,
-                    data: { meetupId: meetup._id.toString(), type: 'meetup_waitlist_promoted' }
-                });
+        if (meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
+            return res.status(400).json({ error: "RSVPs are not open yet." });
+        }
 
-                const promotedName = nextUser.firstName && nextUser.lastName
-                    ? `${nextUser.firstName} ${nextUser.lastName}`
-                    : nextUser.username;
-                const membersToNotify = await User.find({
-                    _id: { $in: meetup.members, $nin: [user._id, nextUser._id] }
-                });
-                if (membersToNotify.length > 0) {
-                    await notifyUsers(membersToNotify, {
-                        title: meetup.name,
-                        body: `${promotedName} is going to ${meetup.name}!`,
-                        data: { meetupId: meetup._id.toString(), type: 'meetup-rsvp' }
-                    });
-                }
+        // Re-tapping the same RSVP button shouldn't re-notify the group. "In" covers
+        // both the 'in' and 'waitlist' arrays since both represent an 'in' request.
+        const wasIn = meetup.in.some(id => id.equals(user._id));
+        const wasOut = meetup.out.some(id => id.equals(user._id));
+        const wasWaitlisted = meetup.waitlist.some(id => id.equals(user._id));
+        statusUnchanged = status === 'in' ? (wasIn || wasWaitlisted) : wasOut;
+        if (statusUnchanged) break;
+
+        // Safely extract the user from all arrays first to prevent duplicates using Mongoose .pull()
+        meetup.in.pull(user._id);
+        meetup.out.pull(user._id);
+        meetup.waitlist.pull(user._id);
+        meetup.undecided.pull(user._id);
+
+        promotedUserId = null;
+
+        if (status === 'out') {
+            meetup.out.push(user._id);
+
+            // Auto-promote the first person in the waitlist if capacity allows
+            if (meetup.capacity > 0 && meetup.waitlist.length > 0 && meetup.in.length < meetup.capacity) {
+                promotedUserId = meetup.waitlist.shift();
+                meetup.in.push(promotedUserId);
+            }
+        } else if (status === 'in') {
+            // Push to waitlist if at capacity, otherwise 'in'
+            if (meetup.capacity > 0 && meetup.in.length >= meetup.capacity) {
+                meetup.waitlist.push(user._id);
+            } else {
+                meetup.in.push(user._id);
             }
         }
-    } else if (status === 'in') {
-        // Push to waitlist if at capacity, otherwise 'in'
-        if (meetup.capacity > 0 && meetup.in.length >= meetup.capacity) {
-            meetup.waitlist.push(user._id);
-        } else {
-            meetup.in.push(user._id);
+
+        try {
+            await meetup.save();
+            break;
+        } catch (err) {
+            if (err instanceof mongoose.Error.VersionError && attempt < MAX_RETRIES) {
+                continue;
+            }
+            throw err;
         }
     }
 
-    await meetup.save();
+    // Notify the promoted waitlister only after the save actually succeeded,
+    // so a retried attempt can't double-send this.
+    if (!statusUnchanged && promotedUserId) {
+        const nextUser = await User.findById(promotedUserId);
+        if (nextUser) {
+            await notifyUsers([nextUser], {
+                title: "You're In! 🎉",
+                body: `A spot opened up for "${meetup.name}" and you've been moved off the waitlist!`,
+                data: { meetupId: meetup._id.toString(), type: 'meetup_waitlist_promoted' }
+            });
+
+            const promotedName = nextUser.firstName && nextUser.lastName
+                ? `${nextUser.firstName} ${nextUser.lastName}`
+                : nextUser.email?.split('@')[0];
+            const membersToNotify = await User.find({
+                _id: { $in: meetup.members, $nin: [user._id, nextUser._id] }
+            });
+            if (membersToNotify.length > 0) {
+                await notifyUsers(membersToNotify, {
+                    title: meetup.name,
+                    body: `${promotedName} is going to ${meetup.name}!`,
+                    data: { meetupId: meetup._id.toString(), type: 'meetup-rsvp' }
+                });
+            }
+        }
+    }
 
     // Notify all other group members that this user has RSVP'd
-    const otherMembers = await User.find({ _id: { $in: meetup.members, $ne: user._id } });
+    const otherMembers = statusUnchanged
+        ? []
+        : await User.find({ _id: { $in: meetup.members, $ne: user._id } });
     if (otherMembers.length > 0) {
         const displayName = user.firstName && user.lastName
             ? `${user.firstName} ${user.lastName}`
-            : user.username;
+            : user.email?.split('@')[0];
         const ordinal = (n) => {
             const s = ['th', 'st', 'nd', 'rd'];
             const v = n % 100;
@@ -157,7 +191,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     // Re-query with populations to return a fresh representation to the frontend hook
     const updatedMeetup = await Meetup.findById(meetupId)
         .populate('group', 'name owner moderators timezone defaultLocation')
-        .populate('members', 'firstName lastName username profilePicture clerkId');
+        .populate('members', 'firstName lastName profilePicture clerkId');
 
     res.status(200).json({ message: "RSVP updated successfully.", meetup: updatedMeetup });
 });
@@ -258,10 +292,10 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     const populatedMeetup = await Meetup.findById(meetup._id)
         .populate([
             { path: 'group', select: 'name owner moderators' },
-            { path: 'members', select: 'firstName lastName _id profilePicture username' },
-            { path: 'in', select: 'firstName lastName _id profilePicture username' },
-            { path: 'out', select: 'firstName lastName _id profilePicture username' },
-            { path: 'waitlist', select: 'firstName lastName _id profilePicture username' }
+            { path: 'members', select: 'firstName lastName _id profilePicture' },
+            { path: 'in', select: 'firstName lastName _id profilePicture' },
+            { path: 'out', select: 'firstName lastName _id profilePicture' },
+            { path: 'waitlist', select: 'firstName lastName _id profilePicture' }
         ]);
 
     res.status(200).json({ message: "Meetup updated successfully.", meetup: populatedMeetup });
@@ -307,6 +341,75 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
     }
 
     res.status(200).json({ message: "Meetup cancelled successfully.", meetup });
+});
+
+/**
+ * @desc    Send an RSVP reminder push notification to undecided meetup members
+ *          (Owner/Moderator Only). Pass a `userId` in the body to remind a single
+ *          member, or omit it to remind everyone still undecided.
+ * @route   POST /api/meetups/:meetupId/remind
+ */
+export const remindUndecided = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { meetupId } = req.params;
+    const { userId } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(meetupId)) {
+        return res.status(400).json({ error: "Invalid Meetup ID." });
+    }
+    if (userId && !mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ error: "Invalid User ID." });
+    }
+
+    const meetup = await Meetup.findById(meetupId).populate('group');
+    const requester = await User.findOne({ clerkId }).lean();
+
+    if (!meetup || !requester) return res.status(404).json({ error: "Resource not found." });
+
+    if (!canManageGroup(requester._id, meetup.group)) {
+        return res.status(403).json({ error: "Permission denied." });
+    }
+
+    const isPast = new Date(meetup.date) < new Date();
+    if (meetup.status === 'cancelled' || meetup.status === 'expired' || isPast) {
+        return res.status(400).json({ error: "This event is closed for adjustments." });
+    }
+
+    // Mirrors the "Undecided" derivation used on the meetup detail screen:
+    // any member who hasn't shown up in in/out/waitlist.
+    const respondedIds = new Set([
+        ...meetup.in.map(id => id.toString()),
+        ...meetup.out.map(id => id.toString()),
+        ...meetup.waitlist.map(id => id.toString()),
+    ]);
+    const undecidedMemberIds = meetup.members
+        .map(id => id.toString())
+        .filter(id => !respondedIds.has(id));
+
+    let targetIds;
+    if (userId) {
+        if (!undecidedMemberIds.includes(userId.toString())) {
+            return res.status(400).json({ error: "That member has already responded." });
+        }
+        targetIds = [userId.toString()];
+    } else {
+        targetIds = undecidedMemberIds;
+    }
+
+    if (targetIds.length === 0) {
+        return res.status(200).json({ message: "No undecided members to remind." });
+    }
+
+    const targetUsers = await User.find({ _id: { $in: targetIds } });
+    await notifyUsers(targetUsers, {
+        title: `RSVP Reminder: ${meetup.name}`,
+        body: `Don't forget to RSVP for "${meetup.name}"!`,
+        data: { meetupId: meetup._id.toString(), type: 'meetup_rsvp_reminder' }
+    });
+
+    res.status(200).json({
+        message: `Reminder sent to ${targetUsers.length} member${targetUsers.length === 1 ? '' : 's'}.`
+    });
 });
 
 /**

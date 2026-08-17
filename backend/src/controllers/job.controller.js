@@ -239,6 +239,49 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Send a "starting soon" push notification 30 minutes before a meetup's startsAt.
+ *          Compares reminderNotifiedFor against the live startsAt instead of a boolean flag,
+ *          so an owner/moderator rescheduling the meetup automatically re-arms the reminder
+ *          for the new time without any extra bookkeeping on the update path.
+ * @route   POST /api/jobs/notify-meetup-reminder
+ */
+export const notifyMeetupReminder = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + 30 * 60 * 1000);
+
+  const toNotify = await Meetup.find({
+    status: 'scheduled',
+    startsAt: { $gte: now, $lte: windowEnd },
+    $expr: { $ne: [{ $ifNull: ['$reminderNotifiedFor', null] }, '$startsAt'] },
+  });
+
+  for (const meetup of toNotify) {
+    await Meetup.updateOne({ _id: meetup._id }, { $set: { reminderNotifiedFor: meetup.startsAt } });
+
+    // Remind everyone still planning to go or undecided — skip anyone who already said they're out.
+    const recipientIds = [...new Set([...meetup.in, ...meetup.undecided].map(id => id.toString()))];
+    if (recipientIds.length === 0) continue;
+
+    const recipients = await User.find({
+      _id: { $in: recipientIds },
+      expoPushToken: { $exists: true, $ne: null },
+      mutedGroups: { $ne: meetup.group },
+      mutedUntilNextMeetup: { $ne: meetup.group },
+    });
+
+    if (recipients.length > 0) {
+      await notifyUsers(recipients, {
+        title: "⏰ 30 Minutes!",
+        body: `"${meetup.name}" kicks off at ${meetup.time} — start heading over!`,
+        data: { meetupId: meetup._id.toString(), type: 'meetup_reminder', groupId: meetup.group.toString() },
+      });
+    }
+  }
+
+  res.status(200).json({ message: `Reminded for ${toNotify.length} meetup(s).` });
+});
+
+/**
  * @desc    Expire polls whose expiresAt has passed and notify members of the winning option(s).
  *          Ties are announced/highlighted as co-winners.
  * @route   POST /api/jobs/expire-polls

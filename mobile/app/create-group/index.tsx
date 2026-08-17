@@ -13,12 +13,14 @@ import {
     LayoutAnimation,
     UIManager,
     Image,
+    KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import { pickAndUploadImage } from "@/utils/uploadImage";
+import { GroupAvatar } from "@/components/GroupAvatar";
 import { DateTime } from "luxon";
 import { useQuery } from "@tanstack/react-query";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
@@ -65,7 +67,7 @@ const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.ease
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface UserStub { _id: string; username: string; firstName?: string; lastName?: string; }
+interface UserStub { _id: string; firstName?: string; lastName?: string; }
 
 interface WeekdayRow {
     id: string;
@@ -127,7 +129,20 @@ interface ScheduleData {
     customBuilding: boolean;
     customFreq: Frequency | null;
     customShowFreqPicker: boolean;
+    maxAttendeesMode: "unlimited" | "limited";
+    maxAttendeesInput: string;
 }
+
+// Shared by the live inline error and the Continue-button gate so both agree on
+// what counts as valid. Empty input is treated as "not yet answered" (no error
+// shown) rather than invalid, so the field doesn't flash red before typing starts.
+const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
+    if (mode !== "limited" || input === "") return null;
+    if (!/^\d+$/.test(input)) return "Numbers only, please.";
+    const n = parseInt(input, 10);
+    if (n < 1 || n > 200) return "Enter a number between 1 and 200.";
+    return null;
+};
 
 const defaultSchedule = (): ScheduleData => ({
     location: "",
@@ -155,6 +170,8 @@ const defaultSchedule = (): ScheduleData => ({
     customBuilding: false,
     customFreq: null,
     customShowFreqPicker: false,
+    maxAttendeesMode: "unlimited",
+    maxAttendeesInput: "",
 });
 
 // ─── Inline Calendar ──────────────────────────────────────────────────────────
@@ -165,13 +182,19 @@ const InlineCalendar = ({ value, onChange, minDate }: {
     const [month, setMonth] = useState(
         value ? DateTime.fromISO(value).startOf("month") : DateTime.now().startOf("month")
     );
-    const grid = useMemo(() => {
+    // Chunked into explicit 7-cell week rows rather than one flex-wrap grid — letting
+    // aspect-ratio cells wrap on their own leaves Yoga reserving a phantom trailing row
+    // of blank space whenever the day count isn't a clean multiple of 7.
+    const weeks = useMemo(() => {
         const start = month.startOf("month");
         const firstDow = start.weekday === 7 ? 0 : start.weekday;
         const cells: (DateTime | null)[] = [];
         for (let i = 0; i < firstDow; i++) cells.push(null);
         for (let d = 1; d <= month.daysInMonth!; d++) cells.push(month.set({ day: d }));
-        return cells;
+        while (cells.length % 7 !== 0) cells.push(null);
+        const chunks: (DateTime | null)[][] = [];
+        for (let i = 0; i < cells.length; i += 7) chunks.push(cells.slice(i, i + 7));
+        return chunks;
     }, [month]);
     const minDT = minDate ? DateTime.fromISO(minDate) : DateTime.now().startOf("day");
     return (
@@ -185,29 +208,33 @@ const InlineCalendar = ({ value, onChange, minDate }: {
                     <Feather name="chevron-right" size={18} color="#4A90E2" />
                 </TouchableOpacity>
             </View>
-            <View style={cal.grid}>
+            <View style={cal.weekRow}>
                 {["S","M","T","W","T","F","S"].map((d, i) => (
                     <Text key={i} style={cal.dayHeader}>{d}</Text>
                 ))}
-                {grid.map((day, i) => {
-                    if (!day) return <View key={`e-${i}`} style={cal.cell} />;
-                    const iso = day.toISODate()!;
-                    const selected = iso === value;
-                    const disabled = day < minDT;
-                    return (
-                        <TouchableOpacity
-                            key={iso}
-                            style={[cal.cell, selected && cal.cellSelected, disabled && cal.cellDisabled]}
-                            onPress={() => !disabled && onChange(iso)}
-                            disabled={disabled}
-                        >
-                            <Text style={[cal.cellText, selected && cal.cellTextSelected, disabled && cal.cellTextDisabled]}>
-                                {day.day}
-                            </Text>
-                        </TouchableOpacity>
-                    );
-                })}
             </View>
+            {weeks.map((week, wi) => (
+                <View key={wi} style={cal.weekRow}>
+                    {week.map((day, i) => {
+                        if (!day) return <View key={`e-${wi}-${i}`} style={cal.cell} />;
+                        const iso = day.toISODate()!;
+                        const selected = iso === value;
+                        const disabled = day < minDT;
+                        return (
+                            <TouchableOpacity
+                                key={iso}
+                                style={[cal.cell, selected && cal.cellSelected, disabled && cal.cellDisabled]}
+                                onPress={() => !disabled && onChange(iso)}
+                                disabled={disabled}
+                            >
+                                <Text style={[cal.cellText, selected && cal.cellTextSelected, disabled && cal.cellTextDisabled]}>
+                                    {day.day}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+            ))}
         </View>
     );
 };
@@ -293,12 +320,12 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
                         <>
                             <Image source={{ uri: localUri }} style={s.imagePreview} />
                             <View style={s.imageEditBadge}>
-                                <Feather name="camera" size={12} color="#fff" />
+                                <Feather name="camera" size={18} color="#fff" />
                             </View>
                         </>
                     ) : (
                         <>
-                            <Feather name="image" size={24} color="#9CA3AF" />
+                            <Feather name="image" size={36} color="#9CA3AF" />
                             <Text style={s.imagePickerText}>Add group photo</Text>
                             <Text style={s.imagePickerSub}>Optional</Text>
                         </>
@@ -380,10 +407,10 @@ const MembersScreen = ({ groupId, onDone }: {
 
 // ─── SCREEN 3: Schedule ───────────────────────────────────────────────────────
 
-const ScheduleScreen = ({ onNext, onBack, onSkip }: {
-    onNext: (data: ScheduleData) => void; onBack: () => void; onSkip: () => void;
+const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
+    initialData?: ScheduleData | null; onNext: (data: ScheduleData) => void; onBack: () => void; onSkip: () => void;
 }) => {
-    const [d, setD] = useState<ScheduleData>(defaultSchedule());
+    const [d, setD] = useState<ScheduleData>(initialData ?? defaultSchedule());
 
     const upd = useCallback((patch: Partial<ScheduleData>) => {
         animate();
@@ -576,6 +603,9 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
 
     // ── Validation ────────────────────────────────────────────────────────────
     const canProceed = (): boolean => {
+        if (d.maxAttendeesMode === "limited") {
+            if (d.maxAttendeesInput === "" || getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput)) return false;
+        }
         if (!d.frequency) return true;
         if (d.frequency === "daily") return d.dailySameTime !== null;
         if (d.frequency === "weekly" || d.frequency === "biweekly")
@@ -925,7 +955,7 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
     );
 
     return (
-        <View style={s.screen}>
+        <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
             <View style={s.screenHeader}>
                 <TouchableOpacity onPress={onBack} style={s.iconBtn}>
                     <Feather name="arrow-left" size={24} color="#6B7280" />
@@ -938,6 +968,7 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
                 contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
+                automaticallyAdjustKeyboardInsets
             >
                 <Text style={s.screenTitle}>Schedule</Text>
                 <Text style={s.screenSub}>Set up when and where you meet</Text>
@@ -1031,6 +1062,42 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
                         <TimePicker initialValue={d.leadTime} onTimeChange={t => upd({ leadTime: t })} />
                     </View>
                 )}
+
+                {/* Max Attendees */}
+                <Text style={[s.fieldLabel, { marginTop: 20 }]}>Max Attendees</Text>
+                <View style={s.boolRow}>
+                    <TouchableOpacity
+                        style={[s.boolBtn, d.maxAttendeesMode === "unlimited" && s.boolBtnActive]}
+                        onPress={() => upd({ maxAttendeesMode: "unlimited", maxAttendeesInput: "" })}
+                    >
+                        <Text style={[s.boolBtnText, d.maxAttendeesMode === "unlimited" && s.boolBtnTextActive]}>Unlimited</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[s.boolBtn, d.maxAttendeesMode === "limited" && s.boolBtnActive]}
+                        onPress={() => upd({ maxAttendeesMode: "limited" })}
+                    >
+                        <Text style={[s.boolBtnText, d.maxAttendeesMode === "limited" && s.boolBtnTextActive]}>Limited</Text>
+                    </TouchableOpacity>
+                </View>
+                {d.maxAttendeesMode === "limited" && (() => {
+                    const maxAttendeesError = getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput);
+                    return (
+                        <View style={{ marginTop: 10 }}>
+                            <View style={[s.inputRow, { marginBottom: 0 }, maxAttendeesError && s.inputRowError]}>
+                                <Feather name="users" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                                <TextInput
+                                    style={s.inlineInput}
+                                    placeholder="How many?"
+                                    placeholderTextColor="#C4C9D4"
+                                    keyboardType="number-pad"
+                                    value={d.maxAttendeesInput}
+                                    onChangeText={v => upd({ maxAttendeesInput: v })}
+                                />
+                            </View>
+                            {maxAttendeesError && <Text style={s.errorText}>{maxAttendeesError}</Text>}
+                        </View>
+                    );
+                })()}
             </ScrollView>
             <View style={s.screenFooter}>
                 <TouchableOpacity style={s.skipBtn} onPress={onSkip}>
@@ -1042,7 +1109,7 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
                     <Feather name="arrow-right" size={18} color="#fff" style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
             </View>
-        </View>
+        </KeyboardAvoidingView>
     );
 };
 
@@ -1094,82 +1161,132 @@ const buildSchedulePayload = (d: ScheduleData) => {
 
 // ─── SCREEN 4: Review ─────────────────────────────────────────────────────────
 
-const ReviewScreen = ({ groupName, members, schedule, onConfirm, onBack, isPending }: {
-    groupName: string; members: UserStub[]; schedule: ScheduleData | null;
+const ReviewScreen = ({ groupName, groupImage, members, schedule, onConfirm, onBack, isPending }: {
+    groupName: string; groupImage?: string; members: UserStub[]; schedule: ScheduleData | null;
     onConfirm: () => void; onBack: () => void; isPending: boolean;
-}) => (
-    <View style={s.screen}>
-        <View style={s.screenHeader}>
-            <TouchableOpacity onPress={onBack} style={s.iconBtn}>
-                <Feather name="arrow-left" size={24} color="#6B7280" />
-            </TouchableOpacity>
-            <StepDots total={4} current={2} />
-            <View style={{ width: 36 }} />
-        </View>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-            <Text style={s.screenTitle}>Review</Text>
-            <Text style={s.screenSub}>Confirm before creating your group</Text>
+}) => {
+    const maxAttendeesLabel = schedule?.maxAttendeesMode === "limited" && schedule.maxAttendeesInput
+        ? schedule.maxAttendeesInput
+        : "Unlimited";
 
-            <View style={s.reviewCard}>
-                <Text style={s.reviewCardLabel}>Group name</Text>
-                <Text style={s.reviewCardValue}>{groupName}</Text>
+    return (
+        <View style={s.screen}>
+            <View style={s.screenHeader}>
+                <TouchableOpacity onPress={onBack} style={s.iconBtn}>
+                    <Feather name="arrow-left" size={24} color="#6B7280" />
+                </TouchableOpacity>
+                <StepDots total={4} current={2} />
+                <View style={{ width: 36 }} />
             </View>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+                <Text style={s.screenTitle}>Review</Text>
+                <Text style={s.screenSub}>Confirm before creating your group</Text>
 
-            <View style={s.reviewCard}>
-                <Text style={s.reviewCardLabel}>Members</Text>
-                {members.length === 0
-                    ? <Text style={s.reviewCardMuted}>Just you for now</Text>
-                    : members.map(m => <Text key={m._id} style={s.reviewCardValue}>@{m.username}</Text>)
-                }
-            </View>
+                {/* Hero */}
+                <View style={s.reviewHero}>
+                    <GroupAvatar name={groupName || "?"} imageUrl={groupImage} size={88} borderRadius={22} />
+                    <Text style={s.reviewHeroName} numberOfLines={2}>{groupName || "Untitled group"}</Text>
+                </View>
 
-            <View style={s.reviewCard}>
-                <Text style={s.reviewCardLabel}>Schedule</Text>
+                {/* Schedule */}
+                <View style={s.reviewSectionHeaderRow}>
+                    <View style={[s.reviewIconChip, s.reviewIconChipAmber]}>
+                        <Feather name="calendar" size={15} color="#F59E0B" />
+                    </View>
+                    <Text style={s.reviewSectionTitle}>Schedule</Text>
+                </View>
+
                 {!schedule?.frequency ? (
-                    <Text style={s.reviewCardMuted}>No schedule set</Text>
+                    <View style={s.reviewEmptyCard}>
+                        <Feather name="calendar" size={18} color="#9CA3AF" />
+                        <Text style={s.reviewMuted}>No schedule set — you can add one later</Text>
+                    </View>
                 ) : (
-                    <>
-                        <Text style={s.reviewCardValue}>{FREQ_LABELS[schedule.frequency] || schedule.frequency}</Text>
-                        {schedule.location ? <Text style={s.reviewCardMuted}>📍 {schedule.location}</Text> : null}
-                        <Text style={s.reviewCardMuted}>Starts {DateTime.fromISO(schedule.startDate).toLocaleString(DateTime.DATE_MED)}</Text>
-                        <Text style={s.reviewCardMuted}>Timezone: {USA_TIMEZONES.find(t => t.value === schedule.timezone)?.label}</Text>
-                        <Text style={s.reviewCardMuted}>RSVP opens {schedule.leadDays} days before at {schedule.leadTime}</Text>
-                        {schedule.frequency === "daily" && (schedule.dailySameTime
-                            ? <Text style={s.reviewCardMuted}>Every day @ {schedule.dailySharedTime}</Text>
-                            : schedule.dailyRows.map(r => <Text key={r.id} style={s.reviewCardMuted}>• {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}</Text>)
-                        )}
-                        {(schedule.frequency === "weekly" || schedule.frequency === "biweekly") && schedule.weekdayRows.filter(r => r.day !== null).map(r => (
-                            <Text key={r.id} style={s.reviewCardMuted}>
-                                • {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}
-                                {schedule.frequency === "biweekly" && r.startDate ? ` (from ${DateTime.fromISO(r.startDate).toLocaleString(DateTime.DATE_MED)})` : ""}
-                            </Text>
-                        ))}
-                        {schedule.frequency === "monthly" && schedule.monthlyMode === "date" && schedule.monthlyDates.map(e => (
-                            <Text key={e.id} style={s.reviewCardMuted}>• {e.date}{ordSfx(e.date)} of month @ {e.time}</Text>
-                        ))}
-                        {schedule.frequency === "monthly" && schedule.monthlyMode === "ordinal" && schedule.ordinalEntries.map(e => (
-                            <Text key={e.id} style={s.reviewCardMuted}>• {e.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === e.day)?.label} @ {e.time}</Text>
-                        ))}
-                        {schedule.frequency === "custom" && schedule.builtRoutines.map(r => (
-                            <View key={r.id} style={s.reviewRoutineChip}>
-                                <Text style={s.reviewRoutineChipText}>{r.label}</Text>
+                    <View style={s.reviewScheduleCard}>
+                        <Text style={s.reviewScheduleFreq}>{FREQ_LABELS[schedule.frequency] || schedule.frequency}</Text>
+
+                        <View style={{ marginTop: 10, gap: 7 }}>
+                            {schedule.location ? (
+                                <View style={s.reviewInlineRow}>
+                                    <Feather name="map-pin" size={13} color="#9CA3AF" />
+                                    <Text style={s.reviewInlineText}>{schedule.location}</Text>
+                                </View>
+                            ) : null}
+                            <View style={s.reviewInlineRow}>
+                                <Feather name="clock" size={13} color="#9CA3AF" />
+                                <Text style={s.reviewInlineText}>Starts {DateTime.fromISO(schedule.startDate).toLocaleString(DateTime.DATE_MED)}</Text>
                             </View>
-                        ))}
-                    </>
+                            <View style={s.reviewInlineRow}>
+                                <Feather name="globe" size={13} color="#9CA3AF" />
+                                <Text style={s.reviewInlineText}>{USA_TIMEZONES.find(t => t.value === schedule.timezone)?.label}</Text>
+                            </View>
+                            <View style={s.reviewInlineRow}>
+                                <Feather name="bell" size={13} color="#9CA3AF" />
+                                <Text style={s.reviewInlineText}>RSVP opens {schedule.leadDays} days before at {schedule.leadTime}</Text>
+                            </View>
+                        </View>
+
+                        <View style={s.reviewDetailSeparator} />
+
+                        <View style={{ gap: 4 }}>
+                            {schedule.frequency === "daily" && (schedule.dailySameTime
+                                ? <Text style={s.reviewMutedBullet}>Every day @ {schedule.dailySharedTime}</Text>
+                                : schedule.dailyRows.map(r => <Text key={r.id} style={s.reviewMutedBullet}>• {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}</Text>)
+                            )}
+                            {(schedule.frequency === "weekly" || schedule.frequency === "biweekly") && schedule.weekdayRows.filter(r => r.day !== null).map(r => (
+                                <Text key={r.id} style={s.reviewMutedBullet}>
+                                    • {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}
+                                    {schedule.frequency === "biweekly" && r.startDate ? ` (from ${DateTime.fromISO(r.startDate).toLocaleString(DateTime.DATE_MED)})` : ""}
+                                </Text>
+                            ))}
+                            {schedule.frequency === "monthly" && schedule.monthlyMode === "date" && schedule.monthlyDates.map(e => (
+                                <Text key={e.id} style={s.reviewMutedBullet}>• {e.date}{ordSfx(e.date)} of month @ {e.time}</Text>
+                            ))}
+                            {schedule.frequency === "monthly" && schedule.monthlyMode === "ordinal" && schedule.ordinalEntries.map(e => (
+                                <Text key={e.id} style={s.reviewMutedBullet}>• {e.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === e.day)?.label} @ {e.time}</Text>
+                            ))}
+                            {schedule.frequency === "custom" && (
+                                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                                    {schedule.builtRoutines.map(r => (
+                                        <View key={r.id} style={s.reviewRoutineChip}>
+                                            <Text style={s.reviewRoutineChipText}>{r.label}</Text>
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
+                        </View>
+                    </View>
                 )}
+
+                {/* Members + Max Attendees */}
+                <View style={[s.detailsCard, { marginTop: 10, marginBottom: 0 }]}>
+                    <View style={s.detailItem}>
+                        <Text style={s.detailLabel}>Members</Text>
+                        <Text style={s.detailValue}>
+                            {members.length === 0
+                                ? "Just you — invite friends after creating"
+                                : members.map(m => [m.firstName, m.lastName].filter(Boolean).join(' ')).join(', ')}
+                        </Text>
+                    </View>
+                    <View style={s.detailSeparator} />
+                    <View style={s.detailItem}>
+                        <Text style={s.detailLabel}>Max Attendees</Text>
+                        <Text style={s.detailValue}>{maxAttendeesLabel}</Text>
+                    </View>
+                </View>
+            </ScrollView>
+            <View style={s.screenFooter}>
+                <View style={{ flex: 1 }} />
+                <TouchableOpacity style={s.primaryBtn} onPress={onConfirm} disabled={isPending}>
+                    {isPending
+                        ? <ActivityIndicator color="#fff" size="small" />
+                        : <><Text style={s.primaryBtnText}>Create Group</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>
+                    }
+                </TouchableOpacity>
             </View>
-        </ScrollView>
-        <View style={s.screenFooter}>
-            <View style={{ flex: 1 }} />
-            <TouchableOpacity style={s.primaryBtn} onPress={onConfirm} disabled={isPending}>
-                {isPending
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <><Text style={s.primaryBtnText}>Create Group</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>
-                }
-            </TouchableOpacity>
         </View>
-    </View>
-);
+    );
+};
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
@@ -1188,6 +1305,9 @@ const CreateGroupScreen = () => {
 
     const handleCreate = () => {
         const schedulePayload = schedule?.frequency ? buildSchedulePayload(schedule) : {};
+        const defaultCapacity = schedule?.maxAttendeesMode === "limited"
+            ? parseInt(schedule.maxAttendeesInput, 10)
+            : 0;
         const payload: any = {
             name: groupName,
             image: groupImage,
@@ -1196,6 +1316,7 @@ const CreateGroupScreen = () => {
             generationLeadTime: schedule?.leadTime ?? "09:00 AM",
             timezone: schedule?.timezone ?? "America/Denver",
             defaultLocation: schedule?.location ?? "",
+            defaultCapacity,
             ...schedulePayload,
         };
         mutate(payload, {
@@ -1208,8 +1329,8 @@ const CreateGroupScreen = () => {
     };
 
     if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("schedule"); }} onClose={handleClose} /></SafeAreaView>;
-    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen onNext={data => { setSchedule(data); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedule(null); setStep("review"); }} /></SafeAreaView>;
-    if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} members={[]} schedule={schedule} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
+    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen initialData={schedule} onNext={data => { setSchedule(data); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedule(null); setStep("review"); }} /></SafeAreaView>;
+    if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} groupImage={groupImage} members={[]} schedule={schedule} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
     return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} onDone={() => router.replace("/(tabs)/groups")} /></SafeAreaView>;
 };
 
@@ -1233,7 +1354,9 @@ const s = StyleSheet.create({
     dotLineFilled: { backgroundColor: "#4A90E2" },
     bigInput: { fontSize: 22, fontWeight: "700", color: "#111827", borderBottomWidth: 2, borderBottomColor: "#4A90E2", paddingVertical: 12, marginTop: 8 },
     inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
+    inputRowError: { borderColor: "#EF4444" },
     inlineInput: { flex: 1, fontSize: 15, color: "#374151" },
+    errorText: { fontSize: 12, fontWeight: "600", color: "#EF4444", marginTop: 6, marginLeft: 2 },
     searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8 },
     searchInput: { flex: 1, marginLeft: 8, fontSize: 15, color: "#374151" },
     selectedChipsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingHorizontal: 24, paddingBottom: 8 },
@@ -1308,17 +1431,35 @@ const s = StyleSheet.create({
     leadCenter: { alignItems: "center", minWidth: 60 },
     leadVal: { fontSize: 22, fontWeight: "900", color: "#111827" },
     leadSub: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase" },
-    reviewCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", padding: 16, marginBottom: 12 },
-    reviewCardLabel: { fontSize: 11, fontWeight: "800", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
-    reviewCardValue: { fontSize: 16, fontWeight: "700", color: "#111827", marginBottom: 2 },
-    reviewCardMuted: { fontSize: 14, color: "#6B7280", marginBottom: 2 },
+    // Review screen — mirrors MeetupDetailModal's palette, section-header, and
+    // detail-card conventions so the two "confirm before you commit" screens feel
+    // like the same app.
+    reviewHero: { alignItems: "center", marginBottom: 24 },
+    reviewHeroName: { fontSize: 22, fontWeight: "900", color: "#111827", letterSpacing: -0.4, textAlign: "center", marginTop: 12 },
+    detailsCard: { backgroundColor: "#F9FAFB", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#F3F4F6", marginBottom: 24 },
+    detailItem: {},
+    detailLabel: { fontSize: 11, fontWeight: "700", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+    detailValue: { fontSize: 15, fontWeight: "700", color: "#1F2937" },
+    detailSeparator: { height: 1, backgroundColor: "#E5E7EB", marginVertical: 14 },
+    reviewSectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
+    reviewSectionTitle: { fontSize: 13, fontWeight: "900", color: "#111827", textTransform: "uppercase", letterSpacing: 0.5 },
+    reviewIconChip: { width: 30, height: 30, borderRadius: 9, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+    reviewIconChipAmber: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
+    reviewEmptyCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#F9FAFB", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", borderStyle: "dashed", padding: 16 },
+    reviewMuted: { fontSize: 14, color: "#6B7280" },
+    reviewMutedBullet: { fontSize: 13, color: "#6B7280", lineHeight: 19 },
+    reviewScheduleCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", padding: 16 },
+    reviewScheduleFreq: { fontSize: 17, fontWeight: "800", color: "#111827" },
+    reviewDetailSeparator: { height: 1, backgroundColor: "#F3F4F6", marginVertical: 14 },
+    reviewInlineRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    reviewInlineText: { fontSize: 14, fontWeight: "600", color: "#374151" },
     reviewRoutineChip: { backgroundColor: "#EEF6FF", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: "flex-start", marginBottom: 4 },
     reviewRoutineChipText: { fontSize: 13, fontWeight: "700", color: "#1D4ED8" },
-    imagePicker: { alignItems: "center", justifyContent: "center", marginTop: 24, width: 100, height: 100, borderRadius: 50, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "#E5E7EB", borderStyle: "dashed", alignSelf: "center" },
-    imagePreview: { width: 100, height: 100, borderRadius: 50 },
-    imageEditBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#4A90E2", borderRadius: 10, padding: 4 },
-    imagePickerText: { fontSize: 11, fontWeight: "600", color: "#6B7280", marginTop: 4, textAlign: "center" },
-    imagePickerSub: { fontSize: 10, color: "#9CA3AF", textAlign: "center" },
+    imagePicker: { alignItems: "center", justifyContent: "center", marginTop: 24, width: 160, height: 160, borderRadius: 32, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "#E5E7EB", borderStyle: "dashed", alignSelf: "center" },
+    imagePreview: { width: 160, height: 160, borderRadius: 32 },
+    imageEditBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#4A90E2", borderRadius: 14, padding: 6 },
+    imagePickerText: { fontSize: 13, fontWeight: "600", color: "#6B7280", marginTop: 6, textAlign: "center" },
+    imagePickerSub: { fontSize: 11, color: "#9CA3AF", textAlign: "center" },
 });
 
 const cal = StyleSheet.create({
@@ -1326,7 +1467,7 @@ const cal = StyleSheet.create({
     nav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
     navBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
     monthLabel: { fontSize: 15, fontWeight: "800", color: "#111827" },
-    grid: { flexDirection: "row", flexWrap: "wrap" },
+    weekRow: { flexDirection: "row" },
     dayHeader: { width: `${100 / 7}%`, textAlign: "center", fontSize: 11, fontWeight: "800", color: "#9CA3AF", marginBottom: 4 },
     cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: "center", justifyContent: "center" },
     cellSelected: { backgroundColor: "#4A90E2", borderRadius: 100 },

@@ -46,8 +46,8 @@ router.post("/dm", protectRoute, async (req, res) => {
     });
     if (existing) return res.json({ group: existing, isNew: false });
 
-    const senderName = [sender.firstName, sender.lastName].filter(Boolean).join(" ") || sender.username;
-    const targetName = [target.firstName, target.lastName].filter(Boolean).join(" ") || target.username;
+    const senderName = [sender.firstName, sender.lastName].filter(Boolean).join(" ") || sender.email?.split("@")[0];
+    const targetName = [target.firstName, target.lastName].filter(Boolean).join(" ") || target.email?.split("@")[0];
 
     const dmGroup = await Group.create({
       name: `${senderName} & ${targetName}`,
@@ -109,7 +109,7 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
 
     const group = await Group.findByIdAndUpdate(
       req.params.id,
-      { lastMessage: { text, user: { name: senderName } } },
+      { lastMessage: { text, user: { name: senderName }, createdAt: new Date() } },
       { new: true }
     );
     if (!group) return res.status(404).json({ message: 'Group not found' });

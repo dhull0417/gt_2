@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
+import { LoadingAnimation } from "@/components/LoadingAnimation";
 import { useApiClient, groupApi } from "../../utils/api"; 
 import TimePicker from "../../components/TimePicker";
 
@@ -100,7 +101,7 @@ const App = () => {
     if (loadingGroup) {
         return (
             <View style={styles.center}>
-                <ActivityIndicator size="large" color="#4A90E2" />
+                <LoadingAnimation />
             </View>
         );
     }

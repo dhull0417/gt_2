@@ -1,12 +1,13 @@
 // app/(tabs)/_layout.tsx
 import React from 'react';
-import { Tabs, Redirect, router } from 'expo-router';
+import { Platform } from 'react-native';
+import { Redirect, Tabs } from 'expo-router';
+import { NativeTabs, Icon, Label, VectorIcon } from 'expo-router/unstable-native-tabs';
 import { Feather } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
+import { AndroidTabBar } from '@/components/AndroidTabBar';
 
 const TabsLayout = () => {
-  const insets = useSafeAreaInsets();
   const { isLoaded, isSignedIn } = useAuth();
 
   // Show nothing until Clerk is ready
@@ -19,70 +20,52 @@ const TabsLayout = () => {
     return <Redirect href="/(auth)" />;
   }
 
+  // Android's NativeTabs renders the real Material 3 NavigationBar, which draws a
+  // solid pill behind the selected icon and can't be animated from JS. Use a custom
+  // JS tab bar there instead so the selected icon can tint, grow, and breathe;
+  // iOS keeps the native SF Symbols tabs below.
+  if (Platform.OS === 'android') {
+    return (
+      <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <AndroidTabBar {...props} />}>
+        <Tabs.Screen name="index" />
+        <Tabs.Screen name="groups" />
+        <Tabs.Screen name="profile" />
+      </Tabs>
+    );
+  }
+
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: '#4A90E2',
-        tabBarInactiveTintColor: '#6b7280',
-        tabBarStyle: { height: 50 + insets.bottom },
-        tabBarShowLabel: false,
-      }}
+    <NativeTabs
+      tintColor="#4A90E2"
+      indicatorColor="#4A90E2"
+      rippleColor="rgba(74, 144, 226, 0.15)"
+      labelVisibilityMode="unlabeled"
+      blurEffect="none"
+      backgroundColor="white"
+      disableTransparentOnScrollEdge
     >
-      <Tabs.Screen
-        name="index"
-        // Reset the nested stack within the tab to the 'index' screen
-        // If the screen is already active, this forces it to pop to the top
-        // This ensures tapping the tab always brings you to the root of that tab.
-        listeners={({ navigation }: { navigation: any }) => ({
-          tabPress: (e: any) => {
-            e.preventDefault(); // Prevent default behavior to handle navigation manually
-            // Navigate to the root of the tab, which resets the navigation stack.
-            navigation.navigate('index');
-          },
-        })}
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => <Feather name="home" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="groups"
-        // The listeners prop must be a direct child of Tabs.Screen (not inside options)
-        // This ensures tapping the tab always brings you to the root of that tab.
-        listeners={({ navigation }: { navigation: any }) => ({
-          tabPress: (e: any) => {
-            e.preventDefault(); // Prevent default behavior to handle navigation manually
-            // When the tab is pressed, navigate to the 'groups' screen with a 'reset'
-            // parameter. This parameter includes a timestamp to ensure it's always a
-            // new value. This triggers a `useEffect` in the groups screen to close
-            // any open detail/chat views, effectively "popping to root".
-            navigation.navigate('groups', { reset: Date.now().toString() });
-          },
-        })}
-        options={{
-          title: 'Groups',
-          tabBarIcon: ({ color, size }) => <Feather name="users" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        // Reset the nested stack within the tab to the 'index' screen
-        // If the screen is already active, this forces it to pop to the top
-        // This ensures tapping the tab always brings you to the root of that tab.
-        listeners={({ navigation }: { navigation: any }) => ({
-          tabPress: (e: any) => {
-            e.preventDefault(); // Prevent default behavior to handle navigation manually
-            // Navigate to the root of the tab, which resets the navigation stack.
-            navigation.navigate('profile');
-          },
-        })}
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => <Feather name="user" size={size} color={color} />,
-        }}
-      />
-    </Tabs>
+      <NativeTabs.Trigger name="index">
+        <Icon
+          sf={{ default: 'house', selected: 'house.fill' }}
+          androidSrc={<VectorIcon family={Feather} name="home" />}
+        />
+        <Label hidden>Home</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="groups">
+        <Icon
+          sf={{ default: 'person.3', selected: 'person.3.fill' }}
+          androidSrc={<VectorIcon family={Feather} name="users" />}
+        />
+        <Label hidden>Groups</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="profile">
+        <Icon
+          sf={{ default: 'person.crop.circle', selected: 'person.crop.circle.fill' }}
+          androidSrc={<VectorIcon family={Feather} name="user" />}
+        />
+        <Label hidden>Profile</Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 };
 

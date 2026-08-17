@@ -84,7 +84,6 @@ const AddMembersScreen = () => {
         <View style={styles.resultRow}>
             <View style={styles.resultInfo}>
                 <Text style={styles.resultName}>{item.firstName} {item.lastName}</Text>
-                <Text style={styles.resultUsername}>@{item.username}</Text>
             </View>
             <TouchableOpacity
                 style={styles.inviteButton}
@@ -102,9 +101,6 @@ const AddMembersScreen = () => {
             <View style={styles.resultRow}>
                 <View style={styles.resultInfo}>
                     <Text style={styles.resultName}>{item.name}</Text>
-                    {isOnApp && item.appUser?.username ? (
-                        <Text style={styles.resultUsername}>@{item.appUser.username}</Text>
-                    ) : null}
                     <Text style={[styles.contactStatus, isOnApp ? styles.statusOnApp : styles.statusNotOnApp]}>
                         {isOnApp ? 'On GroupThat' : 'Invite to GroupThat'}
                     </Text>
@@ -136,7 +132,7 @@ const AddMembersScreen = () => {
                 <Feather name="search" size={20} color="#9CA3AF" />
                 <TextInput
                     style={styles.searchInput}
-                    placeholder="Search by name or username..."
+                    placeholder="Search by name..."
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     autoCapitalize="none"
@@ -195,7 +191,6 @@ const styles = StyleSheet.create({
     resultRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', backgroundColor: 'white', borderRadius: 12, marginBottom: 8 },
     resultInfo: { flex: 1, marginRight: 12 },
     resultName: { fontSize: 16, fontWeight: '600', color: '#374151' },
-    resultUsername: { fontSize: 14, color: '#6B7280' },
     contactStatus: { fontSize: 12, marginTop: 2 },
     statusOnApp: { color: '#22C55E' },
     statusNotOnApp: { color: '#9CA3AF' },

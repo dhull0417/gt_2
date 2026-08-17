@@ -2,13 +2,13 @@
 import express from "express";
 import {
   getCurrentUser,
-  getUserProfile,
   syncUser,
   updateProfile,
   searchUsers,
   matchContacts,
   updatePushToken,
   toggleGroupMute,
+  markGroupRead,
   deleteAccount,
 } from "../controllers/user.controller.js";
 import { getCalendarSyncUrl, getCalendarFeed } from "../controllers/calendar.controller.js"; // <-- Add this import
@@ -16,7 +16,6 @@ import { protectRoute } from "../middleware/auth.middleware.js";
 
 const router = express.Router();  
 
-router.get("/profile/:username", getUserProfile);
 router.get("/search", protectRoute, searchUsers);
 router.post("/match-contacts", protectRoute, matchContacts);
 
@@ -25,6 +24,7 @@ router.get("/me", protectRoute, getCurrentUser);
 router.put("/profile", protectRoute, updateProfile);
 router.post("/push-token", protectRoute, updatePushToken);
 router.patch("/mute-group", protectRoute, toggleGroupMute);
+router.patch("/groups/:groupId/read", protectRoute, markGroupRead);
 router.delete("/account", protectRoute, deleteAccount);
 
 // --- NEW CALENDAR ROUTES ---

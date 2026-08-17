@@ -19,12 +19,6 @@ const userSchema = new mongoose.Schema(
              unique: true,
              sparse: true,
         },
-        username: {
-            type: String,
-            required: false, 
-            unique: true,
-            sparse: true, 
-        },
         firstName: {
             type: String,
         },
@@ -65,6 +59,16 @@ const userSchema = new mongoose.Schema(
                 ref: "Group",
             },
         ],
+        /**
+         * Per-group "last read" timestamp, keyed by Group ID (as a string).
+         * A group's chat is unread when its lastMessage.createdAt is newer
+         * than the entry here (or there's no entry at all yet).
+         */
+        lastReadAt: {
+            type: Map,
+            of: Date,
+            default: {},
+        },
         /**
          * Project 4: Push Notifications
          * Storing the unique Expo Push Token for this user's device

@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { View, Text, FlatList, ActivityIndicator, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,6 +7,7 @@ import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { useMarkNotificationsAsRead } from '@/hooks/useMarkNotificationsAsRead';
 import { Notification, User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
 
 // Extended type to handle new notification types until api.ts is updated
 type ExtendedNotification = Omit<Notification, 'type'> & {
@@ -83,8 +84,8 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
     const handlePress = () => {
         if (notification.group?._id) {
             router.push({
-                pathname: '/(tabs)/groups',
-                params: { openChatId: notification.group._id }
+                pathname: '/groups/[id]',
+                params: { id: notification.group._id }
             });
         }
     };
@@ -141,7 +142,7 @@ const NotificationsScreen = () => {
     };
 
     if (isLoading || !currentUser) {
-        return <View style={styles.center}><ActivityIndicator size="large" color="#4A90E2" /></View>;
+        return <View style={styles.center}><LoadingAnimation /></View>;
     }
 
     if (!notifications || notifications.length === 0) {

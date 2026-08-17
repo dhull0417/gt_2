@@ -1,9 +1,10 @@
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useUpdateProfile } from '@/hooks/useUpdateProfile';
 import { User, useApiClient, userApi } from '@/utils/api';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
 
 const UpdateNameScreen = () => {
     const api = useApiClient();
@@ -32,45 +33,57 @@ const UpdateNameScreen = () => {
     };
 
     if (isLoadingUser) {
-        return <ActivityIndicator size="large" className="flex-1 justify-center" />;
+        return <View className="flex-1 justify-center items-center"><LoadingAnimation /></View>;
     }
 
     return (
         <SafeAreaView className="flex-1 bg-gray-100">
-            <KeyboardAvoidingView 
+            <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 className="flex-1"
             >
                 <ScrollView contentContainerStyle={{ flexGrow: 1 }} className="p-6">
-                    <View className="mb-6">
-                        <Text className="text-sm text-gray-600 mb-1">First Name</Text>
+                    <View style={{ marginBottom: 20 }}>
+                        <Text style={styles.label}>First Name</Text>
                         <TextInput
                             value={firstName}
                             onChangeText={setFirstName}
                             placeholder="Enter your first name"
-                            className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base"
+                            placeholderTextColor="#9CA3AF"
+                            style={styles.input}
                         />
                     </View>
-                    <View className="mb-8">
-                        <Text className="text-sm text-gray-600 mb-1">Last Name</Text>
+                    <View style={{ marginBottom: 28 }}>
+                        <Text style={styles.label}>Last Name</Text>
                         <TextInput
                             value={lastName}
                             onChangeText={setLastName}
                             placeholder="Enter your last name"
-                            className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base"
+                            placeholderTextColor="#9CA3AF"
+                            style={styles.input}
                         />
                     </View>
                     <TouchableOpacity
                         onPress={handleSave}
                         disabled={isPending}
-                        className={`w-full py-4 rounded-lg items-center shadow ${isPending ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
+                        style={styles.saveBtn}
+                        activeOpacity={0.85}
                     >
-                        <Text className="text-white text-lg font-bold">{isPending ? "Saving..." : "Save Changes"}</Text>
+                        {isPending
+                            ? <ActivityIndicator color="white" />
+                            : <Text style={styles.saveBtnText}>Save Changes</Text>}
                     </TouchableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
 };
+
+const styles = StyleSheet.create({
+    label: { fontSize: 12, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+    input: { width: '100%', backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14, paddingHorizontal: 16, height: 56, fontSize: 16, color: '#1F2937' },
+    saveBtn: { width: '100%', height: 54, borderRadius: 16, backgroundColor: '#4A90E2', alignItems: 'center', justifyContent: 'center' },
+    saveBtnText: { color: 'white', fontSize: 16, fontWeight: '800' },
+});
 
 export default UpdateNameScreen;

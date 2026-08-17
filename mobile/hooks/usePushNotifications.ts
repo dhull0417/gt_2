@@ -45,13 +45,13 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
   const handleNotificationNavigation = (data: any) => {
     const { type, meetupId, groupId, channelId } = data || {};
     
-    // We use 'groupId' or 'channelId' (Stream uses channelId, but your screen uses openChatId)
+    // We use 'groupId' or 'channelId' (Stream uses channelId, but the route param is 'id')
     const targetChatId = groupId || channelId;
 
     if (type === 'chat' && targetChatId) {
       router.push({
-        pathname: '/(tabs)/groups',
-        params: { openChatId: String(targetChatId) }
+        pathname: '/group-chat/[id]',
+        params: { id: String(targetChatId) }
       });
     } else if (meetupId) {
       router.push({

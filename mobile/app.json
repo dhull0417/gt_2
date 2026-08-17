@@ -32,7 +32,7 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "runtimeVersion": {
-        "policy": "appVersion"
+        "policy": "fingerprint"
       }
     },
     "android": {
@@ -55,7 +55,7 @@
         "WRITE_CALENDAR"
       ],
       "runtimeVersion": {
-        "policy": "appVersion"
+        "policy": "fingerprint"
       },
       "googleServicesFile": "./google-services.json",
       "intentFilters": [
@@ -69,7 +69,10 @@
               "pathPrefix": "/join"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -97,17 +100,26 @@
         {
           "android": {
             "packagingOptions": {
-              "exclude": ["META-INF/versions/9/OSGI-INF/MANIFEST.MF"]
+              "exclude": [
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+              ]
             }
           },
           "ios": {
             "extraPods": [
-              { "name": "GoogleUtilities", "modular_headers": true },
-              { "name": "RecaptchaInterop", "modular_headers": true }
+              {
+                "name": "GoogleUtilities",
+                "modular_headers": true
+              },
+              {
+                "name": "RecaptchaInterop",
+                "modular_headers": true
+              }
             ]
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

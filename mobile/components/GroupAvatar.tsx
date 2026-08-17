@@ -13,10 +13,12 @@ interface Props {
   name: string;
   imageUrl?: string | null;
   size?: number;
+  // Defaults to a full circle (size / 2). Pass a smaller value for a squircle look.
+  borderRadius?: number;
 }
 
-export const GroupAvatar: React.FC<Props> = ({ name, imageUrl, size = 44 }) => {
-  const radius = size / 2;
+export const GroupAvatar: React.FC<Props> = ({ name, imageUrl, size = 44, borderRadius }) => {
+  const radius = borderRadius ?? size / 2;
   const initial = (name?.trim()?.[0] ?? "?").toUpperCase();
   const bg = pickColor(name ?? "");
 
