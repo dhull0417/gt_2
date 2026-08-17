@@ -11,6 +11,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
+import { ImageCropperHost } from '@/components/ImageCropperHost';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -35,6 +36,7 @@ export default function RootLayout() {
       <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
         <QueryClientProvider client={queryClient}>
           <AuthLayout />
+          <ImageCropperHost />
         </QueryClientProvider>
       </ClerkProvider>
     </GestureHandlerRootView>
@@ -87,6 +89,7 @@ const AuthLayout = () => {
       'group-edit-schedule',
       'group-edit-jit',
       'group-settings',
+      'group-chat',
       'meetup-edit',
       'schedule-meetup',
       'add-members',
@@ -141,6 +144,7 @@ const AuthLayout = () => {
       <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
       <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
       <Stack.Screen name="group-settings" options={{ headerShown: false }} />
+      <Stack.Screen name="group-chat" options={{ headerShown: false }} />
       <Stack.Screen name="meetup-edit" options={{ headerShown: false }} />
       <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />
       <Stack.Screen name="add-members" options={{ headerShown: false }} />

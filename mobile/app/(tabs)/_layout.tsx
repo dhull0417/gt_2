@@ -1,9 +1,11 @@
 // app/(tabs)/_layout.tsx
 import React from 'react';
-import { Redirect } from 'expo-router';
+import { Platform } from 'react-native';
+import { Redirect, Tabs } from 'expo-router';
 import { NativeTabs, Icon, Label, VectorIcon } from 'expo-router/unstable-native-tabs';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@clerk/expo';
+import { AndroidTabBar } from '@/components/AndroidTabBar';
 
 const TabsLayout = () => {
   const { isLoaded, isSignedIn } = useAuth();
@@ -16,6 +18,20 @@ const TabsLayout = () => {
   // Optional: Redirect if not signed in (adjust as needed)
   if (!isSignedIn) {
     return <Redirect href="/(auth)" />;
+  }
+
+  // Android's NativeTabs renders the real Material 3 NavigationBar, which draws a
+  // solid pill behind the selected icon and can't be animated from JS. Use a custom
+  // JS tab bar there instead so the selected icon can tint, grow, and breathe;
+  // iOS keeps the native SF Symbols tabs below.
+  if (Platform.OS === 'android') {
+    return (
+      <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <AndroidTabBar {...props} />}>
+        <Tabs.Screen name="index" />
+        <Tabs.Screen name="groups" />
+        <Tabs.Screen name="profile" />
+      </Tabs>
+    );
   }
 
   return (

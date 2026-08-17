@@ -13,12 +13,14 @@ import {
     LayoutAnimation,
     UIManager,
     Image,
+    KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import { pickAndUploadImage } from "@/utils/uploadImage";
+import { GroupAvatar } from "@/components/GroupAvatar";
 import { DateTime } from "luxon";
 import { useQuery } from "@tanstack/react-query";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
@@ -405,10 +407,10 @@ const MembersScreen = ({ groupId, onDone }: {
 
 // ─── SCREEN 3: Schedule ───────────────────────────────────────────────────────
 
-const ScheduleScreen = ({ onNext, onBack, onSkip }: {
-    onNext: (data: ScheduleData) => void; onBack: () => void; onSkip: () => void;
+const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
+    initialData?: ScheduleData | null; onNext: (data: ScheduleData) => void; onBack: () => void; onSkip: () => void;
 }) => {
-    const [d, setD] = useState<ScheduleData>(defaultSchedule());
+    const [d, setD] = useState<ScheduleData>(initialData ?? defaultSchedule());
 
     const upd = useCallback((patch: Partial<ScheduleData>) => {
         animate();
@@ -953,7 +955,7 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
     );
 
     return (
-        <View style={s.screen}>
+        <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
             <View style={s.screenHeader}>
                 <TouchableOpacity onPress={onBack} style={s.iconBtn}>
                     <Feather name="arrow-left" size={24} color="#6B7280" />
@@ -1107,7 +1109,7 @@ const ScheduleScreen = ({ onNext, onBack, onSkip }: {
                     <Feather name="arrow-right" size={18} color="#fff" style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
             </View>
-        </View>
+        </KeyboardAvoidingView>
     );
 };
 
@@ -1159,91 +1161,132 @@ const buildSchedulePayload = (d: ScheduleData) => {
 
 // ─── SCREEN 4: Review ─────────────────────────────────────────────────────────
 
-const ReviewScreen = ({ groupName, members, schedule, onConfirm, onBack, isPending }: {
-    groupName: string; members: UserStub[]; schedule: ScheduleData | null;
+const ReviewScreen = ({ groupName, groupImage, members, schedule, onConfirm, onBack, isPending }: {
+    groupName: string; groupImage?: string; members: UserStub[]; schedule: ScheduleData | null;
     onConfirm: () => void; onBack: () => void; isPending: boolean;
-}) => (
-    <View style={s.screen}>
-        <View style={s.screenHeader}>
-            <TouchableOpacity onPress={onBack} style={s.iconBtn}>
-                <Feather name="arrow-left" size={24} color="#6B7280" />
-            </TouchableOpacity>
-            <StepDots total={4} current={2} />
-            <View style={{ width: 36 }} />
-        </View>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-            <Text style={s.screenTitle}>Review</Text>
-            <Text style={s.screenSub}>Confirm before creating your group</Text>
+}) => {
+    const maxAttendeesLabel = schedule?.maxAttendeesMode === "limited" && schedule.maxAttendeesInput
+        ? schedule.maxAttendeesInput
+        : "Unlimited";
 
-            <View style={s.reviewCard}>
-                <Text style={s.reviewCardLabel}>Group name</Text>
-                <Text style={s.reviewCardValue}>{groupName}</Text>
+    return (
+        <View style={s.screen}>
+            <View style={s.screenHeader}>
+                <TouchableOpacity onPress={onBack} style={s.iconBtn}>
+                    <Feather name="arrow-left" size={24} color="#6B7280" />
+                </TouchableOpacity>
+                <StepDots total={4} current={2} />
+                <View style={{ width: 36 }} />
             </View>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+                <Text style={s.screenTitle}>Review</Text>
+                <Text style={s.screenSub}>Confirm before creating your group</Text>
 
-            <View style={s.reviewCard}>
-                <Text style={s.reviewCardLabel}>Members</Text>
-                {members.length === 0
-                    ? <Text style={s.reviewCardMuted}>Just you for now</Text>
-                    : members.map(m => <Text key={m._id} style={s.reviewCardValue}>{[m.firstName, m.lastName].filter(Boolean).join(' ')}</Text>)
-                }
-            </View>
+                {/* Hero */}
+                <View style={s.reviewHero}>
+                    <GroupAvatar name={groupName || "?"} imageUrl={groupImage} size={88} borderRadius={22} />
+                    <Text style={s.reviewHeroName} numberOfLines={2}>{groupName || "Untitled group"}</Text>
+                </View>
 
-            <View style={s.reviewCard}>
-                <Text style={s.reviewCardLabel}>Max Attendees</Text>
-                <Text style={s.reviewCardValue}>
-                    {schedule?.maxAttendeesMode === "limited" && schedule.maxAttendeesInput
-                        ? schedule.maxAttendeesInput
-                        : "Unlimited"}
-                </Text>
-            </View>
+                {/* Schedule */}
+                <View style={s.reviewSectionHeaderRow}>
+                    <View style={[s.reviewIconChip, s.reviewIconChipAmber]}>
+                        <Feather name="calendar" size={15} color="#F59E0B" />
+                    </View>
+                    <Text style={s.reviewSectionTitle}>Schedule</Text>
+                </View>
 
-            <View style={s.reviewCard}>
-                <Text style={s.reviewCardLabel}>Schedule</Text>
                 {!schedule?.frequency ? (
-                    <Text style={s.reviewCardMuted}>No schedule set</Text>
+                    <View style={s.reviewEmptyCard}>
+                        <Feather name="calendar" size={18} color="#9CA3AF" />
+                        <Text style={s.reviewMuted}>No schedule set — you can add one later</Text>
+                    </View>
                 ) : (
-                    <>
-                        <Text style={s.reviewCardValue}>{FREQ_LABELS[schedule.frequency] || schedule.frequency}</Text>
-                        {schedule.location ? <Text style={s.reviewCardMuted}>📍 {schedule.location}</Text> : null}
-                        <Text style={s.reviewCardMuted}>Starts {DateTime.fromISO(schedule.startDate).toLocaleString(DateTime.DATE_MED)}</Text>
-                        <Text style={s.reviewCardMuted}>Timezone: {USA_TIMEZONES.find(t => t.value === schedule.timezone)?.label}</Text>
-                        <Text style={s.reviewCardMuted}>RSVP opens {schedule.leadDays} days before at {schedule.leadTime}</Text>
-                        {schedule.frequency === "daily" && (schedule.dailySameTime
-                            ? <Text style={s.reviewCardMuted}>Every day @ {schedule.dailySharedTime}</Text>
-                            : schedule.dailyRows.map(r => <Text key={r.id} style={s.reviewCardMuted}>• {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}</Text>)
-                        )}
-                        {(schedule.frequency === "weekly" || schedule.frequency === "biweekly") && schedule.weekdayRows.filter(r => r.day !== null).map(r => (
-                            <Text key={r.id} style={s.reviewCardMuted}>
-                                • {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}
-                                {schedule.frequency === "biweekly" && r.startDate ? ` (from ${DateTime.fromISO(r.startDate).toLocaleString(DateTime.DATE_MED)})` : ""}
-                            </Text>
-                        ))}
-                        {schedule.frequency === "monthly" && schedule.monthlyMode === "date" && schedule.monthlyDates.map(e => (
-                            <Text key={e.id} style={s.reviewCardMuted}>• {e.date}{ordSfx(e.date)} of month @ {e.time}</Text>
-                        ))}
-                        {schedule.frequency === "monthly" && schedule.monthlyMode === "ordinal" && schedule.ordinalEntries.map(e => (
-                            <Text key={e.id} style={s.reviewCardMuted}>• {e.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === e.day)?.label} @ {e.time}</Text>
-                        ))}
-                        {schedule.frequency === "custom" && schedule.builtRoutines.map(r => (
-                            <View key={r.id} style={s.reviewRoutineChip}>
-                                <Text style={s.reviewRoutineChipText}>{r.label}</Text>
+                    <View style={s.reviewScheduleCard}>
+                        <Text style={s.reviewScheduleFreq}>{FREQ_LABELS[schedule.frequency] || schedule.frequency}</Text>
+
+                        <View style={{ marginTop: 10, gap: 7 }}>
+                            {schedule.location ? (
+                                <View style={s.reviewInlineRow}>
+                                    <Feather name="map-pin" size={13} color="#9CA3AF" />
+                                    <Text style={s.reviewInlineText}>{schedule.location}</Text>
+                                </View>
+                            ) : null}
+                            <View style={s.reviewInlineRow}>
+                                <Feather name="clock" size={13} color="#9CA3AF" />
+                                <Text style={s.reviewInlineText}>Starts {DateTime.fromISO(schedule.startDate).toLocaleString(DateTime.DATE_MED)}</Text>
                             </View>
-                        ))}
-                    </>
+                            <View style={s.reviewInlineRow}>
+                                <Feather name="globe" size={13} color="#9CA3AF" />
+                                <Text style={s.reviewInlineText}>{USA_TIMEZONES.find(t => t.value === schedule.timezone)?.label}</Text>
+                            </View>
+                            <View style={s.reviewInlineRow}>
+                                <Feather name="bell" size={13} color="#9CA3AF" />
+                                <Text style={s.reviewInlineText}>RSVP opens {schedule.leadDays} days before at {schedule.leadTime}</Text>
+                            </View>
+                        </View>
+
+                        <View style={s.reviewDetailSeparator} />
+
+                        <View style={{ gap: 4 }}>
+                            {schedule.frequency === "daily" && (schedule.dailySameTime
+                                ? <Text style={s.reviewMutedBullet}>Every day @ {schedule.dailySharedTime}</Text>
+                                : schedule.dailyRows.map(r => <Text key={r.id} style={s.reviewMutedBullet}>• {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}</Text>)
+                            )}
+                            {(schedule.frequency === "weekly" || schedule.frequency === "biweekly") && schedule.weekdayRows.filter(r => r.day !== null).map(r => (
+                                <Text key={r.id} style={s.reviewMutedBullet}>
+                                    • {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}
+                                    {schedule.frequency === "biweekly" && r.startDate ? ` (from ${DateTime.fromISO(r.startDate).toLocaleString(DateTime.DATE_MED)})` : ""}
+                                </Text>
+                            ))}
+                            {schedule.frequency === "monthly" && schedule.monthlyMode === "date" && schedule.monthlyDates.map(e => (
+                                <Text key={e.id} style={s.reviewMutedBullet}>• {e.date}{ordSfx(e.date)} of month @ {e.time}</Text>
+                            ))}
+                            {schedule.frequency === "monthly" && schedule.monthlyMode === "ordinal" && schedule.ordinalEntries.map(e => (
+                                <Text key={e.id} style={s.reviewMutedBullet}>• {e.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === e.day)?.label} @ {e.time}</Text>
+                            ))}
+                            {schedule.frequency === "custom" && (
+                                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                                    {schedule.builtRoutines.map(r => (
+                                        <View key={r.id} style={s.reviewRoutineChip}>
+                                            <Text style={s.reviewRoutineChipText}>{r.label}</Text>
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
+                        </View>
+                    </View>
                 )}
+
+                {/* Members + Max Attendees */}
+                <View style={[s.detailsCard, { marginTop: 10, marginBottom: 0 }]}>
+                    <View style={s.detailItem}>
+                        <Text style={s.detailLabel}>Members</Text>
+                        <Text style={s.detailValue}>
+                            {members.length === 0
+                                ? "Just you — invite friends after creating"
+                                : members.map(m => [m.firstName, m.lastName].filter(Boolean).join(' ')).join(', ')}
+                        </Text>
+                    </View>
+                    <View style={s.detailSeparator} />
+                    <View style={s.detailItem}>
+                        <Text style={s.detailLabel}>Max Attendees</Text>
+                        <Text style={s.detailValue}>{maxAttendeesLabel}</Text>
+                    </View>
+                </View>
+            </ScrollView>
+            <View style={s.screenFooter}>
+                <View style={{ flex: 1 }} />
+                <TouchableOpacity style={s.primaryBtn} onPress={onConfirm} disabled={isPending}>
+                    {isPending
+                        ? <ActivityIndicator color="#fff" size="small" />
+                        : <><Text style={s.primaryBtnText}>Create Group</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>
+                    }
+                </TouchableOpacity>
             </View>
-        </ScrollView>
-        <View style={s.screenFooter}>
-            <View style={{ flex: 1 }} />
-            <TouchableOpacity style={s.primaryBtn} onPress={onConfirm} disabled={isPending}>
-                {isPending
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <><Text style={s.primaryBtnText}>Create Group</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>
-                }
-            </TouchableOpacity>
         </View>
-    </View>
-);
+    );
+};
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
@@ -1286,8 +1329,8 @@ const CreateGroupScreen = () => {
     };
 
     if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("schedule"); }} onClose={handleClose} /></SafeAreaView>;
-    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen onNext={data => { setSchedule(data); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedule(null); setStep("review"); }} /></SafeAreaView>;
-    if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} members={[]} schedule={schedule} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
+    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen initialData={schedule} onNext={data => { setSchedule(data); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedule(null); setStep("review"); }} /></SafeAreaView>;
+    if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} groupImage={groupImage} members={[]} schedule={schedule} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
     return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} onDone={() => router.replace("/(tabs)/groups")} /></SafeAreaView>;
 };
 
@@ -1388,10 +1431,28 @@ const s = StyleSheet.create({
     leadCenter: { alignItems: "center", minWidth: 60 },
     leadVal: { fontSize: 22, fontWeight: "900", color: "#111827" },
     leadSub: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase" },
-    reviewCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", padding: 16, marginBottom: 12 },
-    reviewCardLabel: { fontSize: 11, fontWeight: "800", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
-    reviewCardValue: { fontSize: 16, fontWeight: "700", color: "#111827", marginBottom: 2 },
-    reviewCardMuted: { fontSize: 14, color: "#6B7280", marginBottom: 2 },
+    // Review screen — mirrors MeetupDetailModal's palette, section-header, and
+    // detail-card conventions so the two "confirm before you commit" screens feel
+    // like the same app.
+    reviewHero: { alignItems: "center", marginBottom: 24 },
+    reviewHeroName: { fontSize: 22, fontWeight: "900", color: "#111827", letterSpacing: -0.4, textAlign: "center", marginTop: 12 },
+    detailsCard: { backgroundColor: "#F9FAFB", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#F3F4F6", marginBottom: 24 },
+    detailItem: {},
+    detailLabel: { fontSize: 11, fontWeight: "700", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+    detailValue: { fontSize: 15, fontWeight: "700", color: "#1F2937" },
+    detailSeparator: { height: 1, backgroundColor: "#E5E7EB", marginVertical: 14 },
+    reviewSectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
+    reviewSectionTitle: { fontSize: 13, fontWeight: "900", color: "#111827", textTransform: "uppercase", letterSpacing: 0.5 },
+    reviewIconChip: { width: 30, height: 30, borderRadius: 9, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+    reviewIconChipAmber: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
+    reviewEmptyCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#F9FAFB", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", borderStyle: "dashed", padding: 16 },
+    reviewMuted: { fontSize: 14, color: "#6B7280" },
+    reviewMutedBullet: { fontSize: 13, color: "#6B7280", lineHeight: 19 },
+    reviewScheduleCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", padding: 16 },
+    reviewScheduleFreq: { fontSize: 17, fontWeight: "800", color: "#111827" },
+    reviewDetailSeparator: { height: 1, backgroundColor: "#F3F4F6", marginVertical: 14 },
+    reviewInlineRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    reviewInlineText: { fontSize: 14, fontWeight: "600", color: "#374151" },
     reviewRoutineChip: { backgroundColor: "#EEF6FF", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: "flex-start", marginBottom: 4 },
     reviewRoutineChipText: { fontSize: 13, fontWeight: "700", color: "#1D4ED8" },
     imagePicker: { alignItems: "center", justifyContent: "center", marginTop: 24, width: 160, height: 160, borderRadius: 32, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "#E5E7EB", borderStyle: "dashed", alignSelf: "center" },

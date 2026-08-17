@@ -1,9 +1,11 @@
 import React from 'react';
 import { Stack } from 'expo-router';
 
-// Nesting the chat under the Groups tab's own stack (rather than a
-// top-level sibling route) keeps the native tab bar visible while a chat
-// is open — leaving the tabs navigator entirely is what used to hide it.
+// [id] here is the Group Details screen — kept nested under the Groups tab's
+// stack so the native tab bar stays visible while browsing group info. The
+// message thread itself lives at the root-level /group-chat/[id] route,
+// entirely outside (tabs), which is what actually prevents the native tab
+// bar from overlapping the keyboard/input on Android.
 export default function GroupsLayout() {
   return (
     <Stack

@@ -4,10 +4,10 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { Group, User, useApiClient, userApi } from '@/utils/api';
 import { getDMDisplayName } from '@/utils/groupDisplay';
@@ -21,8 +21,6 @@ const GroupScreen = () => {
   const api = useApiClient();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-
-  const { openChatId } = useLocalSearchParams<{ openChatId?: string }>();
 
   const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups } = useGetGroups();
 
@@ -51,15 +49,8 @@ const GroupScreen = () => {
     }, [refetchGroups, refetchUser])
   );
 
-  useEffect(() => {
-    if (openChatId) {
-      router.push({ pathname: '/groups/[id]', params: { id: openChatId } });
-      router.setParams({ openChatId: undefined });
-    }
-  }, [openChatId]);
-
   const handleOpenGroupDetail = (group: Group) => {
-    router.push({ pathname: '/groups/[id]', params: { id: group._id } });
+    router.push({ pathname: '/group-chat/[id]', params: { id: group._id } });
   };
 
   const renderGroupList = () => {

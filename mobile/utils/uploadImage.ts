@@ -1,6 +1,8 @@
+import { Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { getSupabaseClient } from "./supabase";
+import { requestImageCrop } from "../components/ImageCropperHost";
 
 type Bucket = "profile-pictures" | "group-images" | "chat-images";
 
@@ -50,16 +52,26 @@ async function processAndUpload(
   };
 }
 
-/** Open the image picker and return a local URI without uploading. */
+/**
+ * Open the image picker and return a local URI without uploading.
+ *
+ * On iOS this uses the native crop/zoom editor (allowsEditing), which works well.
+ * On Android that same editor's toolbar renders with no visible confirm/cancel
+ * buttons, leaving users stuck — so on Android we use our own crop screen
+ * (ImageCropperHost, mounted at the app root) instead.
+ */
 export async function pickImageUri(): Promise<string | null> {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],
-    allowsEditing: true,
-    aspect: [1, 1],
     quality: 1,
+    ...(Platform.OS === "ios" ? { allowsEditing: true, aspect: [1, 1] as [number, number] } : {}),
   });
   if (result.canceled) return null;
-  return result.assets[0].uri;
+
+  const asset = result.assets[0];
+  if (Platform.OS !== "android") return asset.uri;
+
+  return requestImageCrop(asset.uri, asset.width, asset.height);
 }
 
 /** Upload a local URI that was already picked. */
