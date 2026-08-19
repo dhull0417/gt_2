@@ -1,5 +1,6 @@
 import { Expo } from 'expo-server-sdk';
 import User from '../models/user.model.js';
+import Notification from '../models/notification.model.js';
 
 const expo = new Expo();
 
@@ -82,4 +83,29 @@ export const notifyUsers = async (users, { title, body, data }) => {
     return await sendPushNotifications(notifications);
   }
   return [];
+};
+
+/**
+ * Sends a push notification to a group of users and persists an in-app
+ * Notification record for each of them, so every push-triggering event also
+ * shows up on the notifications screen. `users` is the full recipient list —
+ * unlike notifyUsers, it is not filtered down to users with a push token,
+ * since users without a token should still get the in-app record.
+ */
+export const notifyAndPersist = async (users, { title, body, data, type, sender, group, meetup, poll }) => {
+  await notifyUsers(users, { title, body, data });
+
+  if (!type || !users || users.length === 0) return;
+
+  const docs = users.map(user => ({
+    recipient: user._id,
+    sender,
+    type,
+    group,
+    meetup,
+    poll,
+    read: false,
+  }));
+
+  await Notification.insertMany(docs);
 };

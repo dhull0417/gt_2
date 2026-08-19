@@ -16,25 +16,28 @@ export const getNotifications = asyncHandler(async (req, res) => {
         .populate('sender', 'firstName lastName profilePicture')
         .populate('group', 'name')
         .populate('meetup', 'name')
+        .populate('poll', 'prompt')
         .sort({ createdAt: -1 });
 
     // Filter out notifications with broken references to prevent client-side crashes.
-    // This can happen if a group, meetup, or sender is deleted but the notification remains.
+    // This can happen if a group, meetup, poll, or sender is deleted but the notification
+    // remains. Sender is intentionally not required here — system-generated notifications
+    // (cron reminders, RSVP windows opening, poll closures) have no acting user.
     const validNotifications = notifications.filter(notification => {
-        // All notifications must have a sender.
-        if (!notification.sender) {
-            return false;
-        }
-
-        // Notifications related to group invites must have a valid group.
-        const groupRequiredTypes = ['group-invite', 'invite-accepted', 'invite-declined'];
+        // Notifications tied to a group must have a valid group.
+        const groupRequiredTypes = ['group-invite', 'invite-accepted', 'invite-declined', 'group-added', 'group-updated'];
         if (groupRequiredTypes.includes(notification.type) && !notification.group) {
             return false;
         }
 
-        // Future-proofing: If meetup-related notifications are added, they must have a valid meetup.
-        // This checks for a null meetup on any type starting with 'meetup-'.
+        // Meetup-related notifications must have a valid meetup.
         if (notification.meetup === null && notification.type.startsWith('meetup-')) {
+            return false;
+        }
+
+        // Poll-related notifications must have a valid poll.
+        const pollRequiredTypes = ['poll-created', 'poll-closed'];
+        if (pollRequiredTypes.includes(notification.type) && !notification.poll) {
             return false;
         }
 

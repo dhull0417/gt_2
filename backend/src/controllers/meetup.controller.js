@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 import { DateTime } from "luxon";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { canManageGroup } from "./group.controller.js";
-import { notifyUsers } from "../utils/push.notifications.js";
+import { notifyAndPersist } from "../utils/push.notifications.js";
 
 /**
  * HELPER: parseTimeString
@@ -140,10 +140,14 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     if (!statusUnchanged && promotedUserId) {
         const nextUser = await User.findById(promotedUserId);
         if (nextUser) {
-            await notifyUsers([nextUser], {
+            await notifyAndPersist([nextUser], {
                 title: "You're In! 🎉",
                 body: `A spot opened up for "${meetup.name}" and you've been moved off the waitlist!`,
-                data: { meetupId: meetup._id.toString(), type: 'meetup_waitlist_promoted' }
+                data: { meetupId: meetup._id.toString(), type: 'meetup_waitlist_promoted' },
+                type: 'waitlist-promotion',
+                sender: user._id,
+                meetup: meetup._id,
+                group: meetup.group,
             });
 
             const promotedName = nextUser.firstName && nextUser.lastName
@@ -153,10 +157,14 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
                 _id: { $in: meetup.members, $nin: [user._id, nextUser._id] }
             });
             if (membersToNotify.length > 0) {
-                await notifyUsers(membersToNotify, {
+                await notifyAndPersist(membersToNotify, {
                     title: meetup.name,
                     body: `${promotedName} is going to ${meetup.name}!`,
-                    data: { meetupId: meetup._id.toString(), type: 'meetup-rsvp' }
+                    data: { meetupId: meetup._id.toString(), type: 'meetup-rsvp' },
+                    type: 'meetup-rsvp-in',
+                    sender: nextUser._id,
+                    meetup: meetup._id,
+                    group: meetup.group,
                 });
             }
         }
@@ -181,10 +189,19 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             : waitlistPos >= 0
                 ? `${displayName} is ${ordinal(waitlistPos + 1)} in the waitlist for ${meetup.name}.`
                 : `${displayName} is going to ${meetup.name}!`;
-        await notifyUsers(otherMembers, {
+        const persistedType = status === 'out'
+            ? 'meetup-rsvp-out'
+            : waitlistPos >= 0
+                ? 'meetup-waitlist-join'
+                : 'meetup-rsvp-in';
+        await notifyAndPersist(otherMembers, {
             title: meetup.name,
             body: notifBody,
-            data: { meetupId: meetup._id.toString(), type: 'meetup-rsvp' }
+            data: { meetupId: meetup._id.toString(), type: 'meetup-rsvp' },
+            type: persistedType,
+            sender: user._id,
+            meetup: meetup._id,
+            group: meetup.group,
         });
     }
 
@@ -280,10 +297,14 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     if (hasChanged) {
         const membersToNotify = await User.find({ _id: { $in: meetup.members } });
         if (membersToNotify.length > 0) {
-            await notifyUsers(membersToNotify, {
+            await notifyAndPersist(membersToNotify, {
                 title: `Meetup Updated: ${meetup.name}`,
                 body: `The details for "${meetup.name}" have been updated. Tap to see what's new.`,
-                data: { meetupId: meetup._id.toString(), type: 'meetup_updated' }
+                data: { meetupId: meetup._id.toString(), type: 'meetup_updated' },
+                type: 'meetup-updated',
+                sender: requester._id,
+                meetup: meetup._id,
+                group: meetup.group._id,
             });
         }
     }
@@ -333,10 +354,14 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
 
     const membersToNotify = await User.find({ _id: { $in: meetup.members } });
     if (membersToNotify.length > 0) {
-        await notifyUsers(membersToNotify, {
+        await notifyAndPersist(membersToNotify, {
             title: "Meetup Cancelled",
             body: `The meetup "${meetup.name}" on ${new Date(meetup.date).toLocaleDateString('en-US', { timeZone: meetup.timezone })} has been cancelled.`,
-            data: { meetupId: meetup._id.toString(), type: 'meetup_cancellation' }
+            data: { meetupId: meetup._id.toString(), type: 'meetup_cancellation' },
+            type: 'meetup-cancelled',
+            sender: requester._id,
+            meetup: meetup._id,
+            group: meetup.group._id,
         });
     }
 
@@ -401,10 +426,14 @@ export const remindUndecided = asyncHandler(async (req, res) => {
     }
 
     const targetUsers = await User.find({ _id: { $in: targetIds } });
-    await notifyUsers(targetUsers, {
+    await notifyAndPersist(targetUsers, {
         title: `RSVP Reminder: ${meetup.name}`,
         body: `Don't forget to RSVP for "${meetup.name}"!`,
-        data: { meetupId: meetup._id.toString(), type: 'meetup_rsvp_reminder' }
+        data: { meetupId: meetup._id.toString(), type: 'meetup_rsvp_reminder' },
+        type: 'meetup-rsvp-reminder',
+        sender: requester._id,
+        meetup: meetup._id,
+        group: meetup.group._id,
     });
 
     res.status(200).json({
@@ -486,10 +515,14 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
                     // Notify users about the newly created recurring meetup
                     const membersToNotify = await User.find({ _id: { $in: parentGroup.members } });
                     if (membersToNotify.length > 0) {
-                        await notifyUsers(membersToNotify, {
+                        await notifyAndPersist(membersToNotify, {
                             title: "New Meetup Scheduled",
                             body: `A new meetup for "${parentGroup.name}" has been scheduled for ${new Date(nextDate).toLocaleDateString('en-US', { timeZone: parentGroup.timezone })}.`,
-                            data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: parentGroup._id.toString() }
+                            data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: parentGroup._id.toString() },
+                            type: 'meetup-created',
+                            sender: requester._id,
+                            meetup: newMeetup._id,
+                            group: parentGroup._id,
                         });
                     }
 

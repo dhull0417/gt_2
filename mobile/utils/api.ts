@@ -135,12 +135,21 @@ export interface Poll {
   createdAt: string;
 }
 
+export type NotificationType =
+  | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-updated'
+  | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion'
+  | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled'
+  | 'meetup-rsvp-reminder' | 'meetup-rsvp-open' | 'meetup-starting-soon'
+  | 'poll-created' | 'poll-closed';
+
 export interface Notification {
   _id: string;
   recipient: string;
-  sender: User;
-  type: 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added';
-  group: Group;
+  sender?: User;
+  type: NotificationType;
+  group?: Group;
+  meetup?: { _id: string; name: string };
+  poll?: { _id: string; prompt: string };
   status: 'pending' | 'accepted' | 'declined' | 'read';
   read: boolean;
   createdAt: string;

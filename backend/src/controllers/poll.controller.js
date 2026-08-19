@@ -5,7 +5,7 @@ import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import { getAuth } from "@clerk/express";
 import { canManageGroup } from "./group.controller.js";
-import { notifyUsers } from "../utils/push.notifications.js";
+import { notifyAndPersist } from "../utils/push.notifications.js";
 
 const POLL_POPULATE = [
     { path: 'group', select: 'name owner moderators' },
@@ -60,10 +60,14 @@ export const createPoll = asyncHandler(async (req, res) => {
 
     const membersToNotify = await User.find({ _id: { $in: group.members, $ne: requester._id } });
     if (membersToNotify.length > 0) {
-        await notifyUsers(membersToNotify, {
+        await notifyAndPersist(membersToNotify, {
             title: "New Poll",
             body: poll.prompt,
-            data: { pollId: poll._id.toString(), groupId: group._id.toString(), type: 'poll_created' }
+            data: { pollId: poll._id.toString(), groupId: group._id.toString(), type: 'poll_created' },
+            type: 'poll-created',
+            sender: requester._id,
+            poll: poll._id,
+            group: group._id,
         });
     }
 

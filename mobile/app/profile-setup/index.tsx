@@ -21,6 +21,10 @@ const ProfileSetupScreen = () => {
             Alert.alert('Missing Information', 'Please fill out all fields.');
             return;
         }
+        if (zipCode.trim() && zipCode.trim().length !== 5) {
+            Alert.alert('Invalid Zip Code', 'Zip code must be exactly 5 digits.');
+            return;
+        }
         // For Apple users, omit firstName/lastName entirely — syncUser's backend Clerk API
         // call will populate them from Apple's token, and we don't want to overwrite with
         // potentially empty client-side values.
@@ -63,9 +67,9 @@ const ProfileSetupScreen = () => {
                     <TextInput
                         placeholder="Zip Code"
                         value={zipCode}
-                        onChangeText={setZipCode}
+                        onChangeText={(text) => setZipCode(text.replace(/\D/g, '').slice(0, 5))}
                         keyboardType="numeric"
-                        maxLength={10}
+                        maxLength={5}
                         className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
                         placeholderTextColor="#999"
                     />

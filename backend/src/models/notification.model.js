@@ -9,14 +9,16 @@ const notificationSchema = new mongoose.Schema({
     sender: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true,
     },
     type: {
         type: String,
         required: true,
         enum: [
-            'group-invite', 'invite-accepted', 'invite-declined', 'group-added', 
-            'meetup-rsvp-in', 'meetup-rsvp-out', 'meetup-waitlist-join', 'waitlist-promotion'
+            'group-invite', 'invite-accepted', 'invite-declined', 'group-added', 'group-updated',
+            'meetup-rsvp-in', 'meetup-rsvp-out', 'meetup-waitlist-join', 'waitlist-promotion',
+            'meetup-created', 'meetup-updated', 'meetup-cancelled',
+            'meetup-rsvp-reminder', 'meetup-rsvp-open', 'meetup-starting-soon',
+            'poll-created', 'poll-closed',
         ],
     },
     group: {
@@ -26,6 +28,10 @@ const notificationSchema = new mongoose.Schema({
     meetup: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Meetup',
+    },
+    poll: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Poll',
     },
     status: {
         type: String,

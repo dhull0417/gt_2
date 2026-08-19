@@ -5,7 +5,7 @@ import User from "../models/user.model.js";
 import Poll from "../models/poll.model.js";
 import { DateTime } from "luxon";
 import { calculateNextMeetupDate, computeNextGenerationAt } from "../utils/date.utils.js";
-import { notifyUsers } from "../utils/push.notifications.js";
+import { notifyAndPersist } from "../utils/push.notifications.js";
 
 const parseTimeString = (timeStr) => {
   if (!timeStr) return { hours: 9, minutes: 0 };
@@ -227,10 +227,13 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
     });
     const members = await User.find({ _id: { $in: meetup.members } });
     if (members.length > 0) {
-      await notifyUsers(members, {
+      await notifyAndPersist(members, {
         title: "RSVPs Are Open!",
         body: `You can now RSVP to "${meetup.name}" on ${dateStr}.`,
         data: { meetupId: meetup._id.toString(), type: 'rsvp_open', groupId: meetup.group.toString() },
+        type: 'meetup-rsvp-open',
+        meetup: meetup._id,
+        group: meetup.group,
       });
     }
   }
@@ -270,10 +273,13 @@ export const notifyMeetupReminder = asyncHandler(async (req, res) => {
     });
 
     if (recipients.length > 0) {
-      await notifyUsers(recipients, {
+      await notifyAndPersist(recipients, {
         title: "⏰ 30 Minutes!",
         body: `"${meetup.name}" kicks off at ${meetup.time} — start heading over!`,
         data: { meetupId: meetup._id.toString(), type: 'meetup_reminder', groupId: meetup.group.toString() },
+        type: 'meetup-starting-soon',
+        meetup: meetup._id,
+        group: meetup.group,
       });
     }
   }
@@ -313,10 +319,13 @@ export const expirePolls = asyncHandler(async (req, res) => {
 
     const members = await User.find({ _id: { $in: poll.group?.members || [] } });
     if (members.length > 0) {
-      await notifyUsers(members, {
+      await notifyAndPersist(members, {
         title: "Poll Closed",
         body,
         data: { pollId: poll._id.toString(), groupId: poll.group._id.toString(), type: 'poll_expired' },
+        type: 'poll-closed',
+        poll: poll._id,
+        group: poll.group._id,
       });
     }
   }

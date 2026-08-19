@@ -8,7 +8,7 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import { calculateNextMeetupDate, computeNextGenerationAt } from "../utils/date.utils.js";
-import { notifyUsers } from "../utils/push.notifications.js";
+import { notifyAndPersist } from "../utils/push.notifications.js";
 import { DateTime } from "luxon";
 
 // --- Helpers ---
@@ -101,16 +101,14 @@ export const createGroup = asyncHandler(async (req, res) => {
   if (newlyAddedUserIds.length > 0) {
       const newlyAddedUsers = await User.find({ _id: { $in: newlyAddedUserIds } });
       if (newlyAddedUsers.length > 0) {
-          await notifyUsers(newlyAddedUsers, {
+          await notifyAndPersist(newlyAddedUsers, {
               title: "You've been added to a group!",
               body: `${owner.firstName} ${owner.lastName} added you to the group "${newGroup.name}".`,
-              data: { groupId: newGroup._id.toString(), type: 'group_added' }
+              data: { groupId: newGroup._id.toString(), type: 'group_added' },
+              type: 'group-added',
+              sender: owner._id,
+              group: newGroup._id,
           });
-          const notificationDocs = newlyAddedUsers.map(member => ({
-              recipient: member._id, sender: owner._id, type: 'group-added',
-              group: newGroup._id, read: false, status: 'read'
-          }));
-          await Notification.insertMany(notificationDocs);
       }
   }
   // --- END NOTIFICATION LOGIC ---
@@ -385,10 +383,13 @@ export const updateGroup = asyncHandler(async (req, res) => {
         // --- NOTIFICATION LOGIC ---
         const membersToNotify = await User.find({ _id: { $in: group.members } });
         if (membersToNotify.length > 0) {
-            await notifyUsers(membersToNotify, {
+            await notifyAndPersist(membersToNotify, {
                 title: "Group Name Changed",
                 body: `The group "${oldName}" is now named "${group.name}".`,
-                data: { groupId: group._id.toString(), type: 'group_updated' }
+                data: { groupId: group._id.toString(), type: 'group_updated' },
+                type: 'group-updated',
+                sender: requester._id,
+                group: group._id,
             });
         }
     }
@@ -507,18 +508,13 @@ export const addMember = asyncHandler(async (req, res) => {
         { group: group._id, date: { $gte: today } }, 
         { $addToSet: { members: userToAdd._id, undecided: userToAdd._id } }
     );
-    await notifyUsers([userToAdd], { 
-        title: "Added to Group", 
-        body: `${requester.firstName} added you to "${group.name}".`, 
-        data: { groupId: group._id.toString(), type: 'group-added' } 
-    });
-    // Create an in-app notification as well
-    await Notification.create({
-        recipient: userToAdd._id,
-        sender: requester._id,
+    await notifyAndPersist([userToAdd], {
+        title: "Added to Group",
+        body: `${requester.firstName} added you to "${group.name}".`,
+        data: { groupId: group._id.toString(), type: 'group-added' },
         type: 'group-added',
+        sender: requester._id,
         group: group._id,
-        read: false
     });
   } catch (err) { console.error(err); }
   
@@ -541,11 +537,13 @@ export const inviteUser = asyncHandler(async (req, res) => {
     const existingInvite = await Notification.findOne({ recipient: userToInvite._id, group: group._id, type: 'group-invite', status: 'pending' });
     if (existingInvite) return res.status(400).json({ error: "Invite already pending." });
 
-    await Notification.create({ recipient: userToInvite._id, sender: requester._id, type: 'group-invite', group: group._id });
-    await notifyUsers([userToInvite], { 
-        title: "Group Invitation", 
-        body: `${requester.firstName} invited you to join "${group.name}".`, 
-        data: { groupId: group._id.toString(), type: 'group-invite' } 
+    await notifyAndPersist([userToInvite], {
+        title: "Group Invitation",
+        body: `${requester.firstName} invited you to join "${group.name}".`,
+        data: { groupId: group._id.toString(), type: 'group-invite' },
+        type: 'group-invite',
+        sender: requester._id,
+        group: group._id,
     });
     res.status(200).json({ message: "Invitation sent." });
 });
@@ -603,10 +601,14 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
     // --- NOTIFICATION LOGIC ---
     const membersToNotify = await User.find({ _id: { $in: group.members } });
     if (membersToNotify.length > 0) {
-        await notifyUsers(membersToNotify, {
+        await notifyAndPersist(membersToNotify, {
             title: "New Meetup Scheduled",
             body: `A new meetup, "${newMeetup.name}", has been scheduled for your group "${group.name}".`,
-            data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: group._id.toString() }
+            data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: group._id.toString() },
+            type: 'meetup-created',
+            sender: requester._id,
+            meetup: newMeetup._id,
+            group: group._id,
         });
     }
 
@@ -696,17 +698,13 @@ export const redeemInviteToken = asyncHandler(async (req, res) => {
     const owner = await User.findById(group.owner);
     if (owner && owner._id.toString() !== user._id.toString()) {
         try {
-            await notifyUsers([owner], {
+            await notifyAndPersist([owner], {
                 title: "New Member",
                 body: `${user.firstName} joined "${group.name}" via invite link.`,
-                data: { groupId: group._id.toString(), type: 'group-added' }
-            });
-            await Notification.create({
-                recipient: owner._id,
-                sender: user._id,
+                data: { groupId: group._id.toString(), type: 'group-added' },
                 type: 'group-added',
+                sender: user._id,
                 group: group._id,
-                read: false
             });
         } catch (err) { console.error(err); }
     }

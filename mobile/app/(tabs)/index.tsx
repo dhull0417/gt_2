@@ -548,6 +548,10 @@ const DashboardScreen = () => {
       setZipCodeError('Please enter a zip code.');
       return;
     }
+    if (!/^\d{5}$/.test(trimmed)) {
+      setZipCodeError('Zip code must be 5 digits.');
+      return;
+    }
     setZipCodeError('');
     setIsSavingZip(true);
     try {
@@ -750,11 +754,11 @@ const DashboardScreen = () => {
             </Text>
             <TextInput
               value={zipCodeInput}
-              onChangeText={text => { setZipCodeInput(text); setZipCodeError(''); }}
+              onChangeText={text => { setZipCodeInput(text.replace(/\D/g, '').slice(0, 5)); setZipCodeError(''); }}
               placeholder="Zip Code"
               placeholderTextColor="#9CA3AF"
               keyboardType="numeric"
-              maxLength={10}
+              maxLength={5}
               style={{
                 backgroundColor: '#F9FAFB', borderWidth: 1,
                 borderColor: zipCodeError ? '#EF4444' : '#E5E7EB',
