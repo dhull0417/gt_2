@@ -2,7 +2,7 @@
   "expo": {
     "name": "GroupThat",
     "slug": "groupthat",
-    "version": "1.3.3",
+    "version": "1.4.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "groupthat",
@@ -18,8 +18,8 @@
       "appleTeamId": "9P29PK6A6D",
       "usesAppleSignIn": true,
       "associatedDomains": [
-        "applinks:relaxing-flounder-31.clerk.accounts.dev",
-        "webcredentials:relaxing-flounder-31.clerk.accounts.dev",
+        "applinks:accounts.groupthatapp.comv",
+        "webcredentials:accounts.groupthatapp.com",
         "applinks:gt-2-peach.vercel.app",
         "applinks:invite.groupthatapp.com"
       ],
