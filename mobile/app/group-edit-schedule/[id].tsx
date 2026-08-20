@@ -19,7 +19,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
 import { useApiClient, GroupDetails, Frequency, DayTime, Routine } from "../../utils/api";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
-import TimePicker from "../../components/TimePicker";
+import NativeTimePicker from "../../components/NativeTimePicker";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -673,9 +673,8 @@ const EditScheduleScreen = () => {
                     <TimeButton time={d.dailySharedTime} active={d.showDailySameTimePicker}
                         onPress={() => upd({ showDailySameTimePicker: !d.showDailySameTimePicker })} />
                     {d.showDailySameTimePicker && (
-                        <View style={s.inlinePickerBox}>
-                            <TimePicker initialValue={d.dailySharedTime} onTimeChange={t => upd({ dailySharedTime: t })} />
-                        </View>
+                        <NativeTimePicker value={d.dailySharedTime} onChange={t => upd({ dailySharedTime: t })}
+                            onClose={() => upd({ showDailySameTimePicker: false })} />
                     )}
                 </View>
             )}
@@ -697,13 +696,15 @@ const EditScheduleScreen = () => {
                                     }))} />
                             </View>
                             {row.showTimePicker && (
-                                <View style={s.inlinePickerBox}>
-                                    <TimePicker initialValue={row.time}
-                                        onTimeChange={t => setD(prev => ({
-                                            ...prev,
-                                            dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, time: t } : r),
-                                        }))} />
-                                </View>
+                                <NativeTimePicker value={row.time}
+                                    onChange={t => setD(prev => ({
+                                        ...prev,
+                                        dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, time: t } : r),
+                                    }))}
+                                    onClose={() => setD(prev => ({
+                                        ...prev,
+                                        dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, showTimePicker: false } : r),
+                                    }))} />
                             )}
                         </View>
                     ))}
@@ -747,10 +748,9 @@ const EditScheduleScreen = () => {
                     )}
 
                     {row.showTimePicker && (
-                        <View style={s.inlinePickerBox}>
-                            <TimePicker initialValue={row.time}
-                                onTimeChange={t => updWeekdayRow(row.id, { time: t })} />
-                        </View>
+                        <NativeTimePicker value={row.time}
+                            onChange={t => updWeekdayRow(row.id, { time: t })}
+                            onClose={() => updWeekdayRow(row.id, { showTimePicker: false })} />
                     )}
 
                     {isBiweekly && row.day !== null && (
@@ -816,10 +816,9 @@ const EditScheduleScreen = () => {
                         </TouchableOpacity>
                     </View>
                     {entry.showTimePicker && (
-                        <View style={s.inlinePickerBox}>
-                            <TimePicker initialValue={entry.time}
-                                onTimeChange={t => updMonthlyDate(entry.id, { time: t })} />
-                        </View>
+                        <NativeTimePicker value={entry.time}
+                            onChange={t => updMonthlyDate(entry.id, { time: t })}
+                            onClose={() => updMonthlyDate(entry.id, { showTimePicker: false })} />
                     )}
                 </View>
             )}
@@ -874,10 +873,9 @@ const EditScheduleScreen = () => {
                         </TouchableOpacity>
                     </View>
                     {entry.showTimePicker && (
-                        <View style={s.inlinePickerBox}>
-                            <TimePicker initialValue={entry.time}
-                                onTimeChange={t => updOrdinal(entry.id, { time: t })} />
-                        </View>
+                        <NativeTimePicker value={entry.time}
+                            onChange={t => updOrdinal(entry.id, { time: t })}
+                            onClose={() => updOrdinal(entry.id, { showTimePicker: false })} />
                     )}
                 </View>
             )}
@@ -1134,7 +1132,6 @@ const s = StyleSheet.create({
     timeBtnActive: { backgroundColor: "#4A90E2", borderColor: "#4A90E2" },
     timeBtnText: { fontSize: 12, fontWeight: "700", color: "#4A90E2" },
     timeBtnTextActive: { color: "#fff" },
-    inlinePickerBox: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 8, width: "100%", marginTop: 8 },
     inlineDayPicker: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", marginTop: 6, overflow: "hidden" },
     dayPickerTrigger: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#fff", borderRadius: 10, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10 },
     dayPickerText: { fontSize: 14, fontWeight: "600", color: "#374151" },

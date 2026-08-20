@@ -13,7 +13,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { GroupDetails, groupApi, useApiClient } from '@/utils/api';
 import { DateTime } from 'luxon';
-import TimePicker from './TimePicker';
+import NativeTimePicker from './NativeTimePicker';
 import { useQueryClient } from '@tanstack/react-query';
 
 interface AddMeetupWizardProps {
@@ -206,9 +206,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
                         <Feather name={showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     {showTimePicker && (
-                        <View style={s.inlinePickerBox}>
-                            <TimePicker onTimeChange={setMeetupTime} initialValue={meetupTime} />
-                        </View>
+                        <NativeTimePicker value={meetupTime} onChange={setMeetupTime} onClose={() => setShowTimePicker(false)} />
                     )}
 
                     {/* Timezone */}
@@ -310,7 +308,6 @@ const s = StyleSheet.create({
     fieldLabel: { fontSize: 11, fontWeight: "800", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, marginTop: 16 },
     dateFieldRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 13, marginBottom: 4 },
     dateFieldText: { fontSize: 15, color: "#374151", fontWeight: "500" },
-    inlinePickerBox: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 8, width: "100%", marginTop: 8 },
     inlineDayPicker: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", marginTop: 6, overflow: "hidden" },
     dayOption: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
     dayOptionActive: { backgroundColor: "#EEF6FF" },

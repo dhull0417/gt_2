@@ -21,7 +21,7 @@ function normalizePhone(raw: string): string {
 export function useContactMatching() {
   const api = useApiClient();
   const [permissionStatus, setPermissionStatus] = useState<Contacts.PermissionStatus | null>(null);
-  const [rawContacts, setRawContacts] = useState<Contacts.Contact[]>([]);
+  const [rawContacts, setRawContacts] = useState<Contacts.ExistingContact[]>([]);
 
   useEffect(() => {
     (async () => {

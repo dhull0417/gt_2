@@ -34,7 +34,7 @@ import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { RsvpBreather } from '@/components/RsvpBreather';
 import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
-import TimePicker from './TimePicker';
+import NativeTimePicker from './NativeTimePicker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 // Watermark that slowly breathes between a base and darker opacity, one full cycle every 5 seconds.
@@ -98,6 +98,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [newCapacity, setNewCapacity] = useState('');
     const [newLocation, setNewLocation] = useState('');
     const [showDatePicker, setShowDatePicker] = useState(false);
+    const [showTimePicker, setShowTimePicker] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [dmTargetUser, setDmTargetUser] = useState<User | null>(null);
     const [isCreatingDM, setIsCreatingDM] = useState(false);
@@ -991,7 +992,13 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 </TouchableOpacity>
 
                                 <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Time</Text>
-                                <TimePicker onTimeChange={setNewTime} initialValue={newTime} />
+                                <TouchableOpacity style={styles.dateInput} onPress={() => setShowTimePicker(true)}>
+                                    <Feather name="clock" size={18} color="#4A90E2" />
+                                    <Text style={styles.dateInputText}>{newTime}</Text>
+                                </TouchableOpacity>
+                                {showTimePicker && (
+                                    <NativeTimePicker value={newTime} onChange={setNewTime} onClose={() => setShowTimePicker(false)} />
+                                )}
 
                                 <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Location Override</Text>
                                 <View style={styles.inputContainer}>

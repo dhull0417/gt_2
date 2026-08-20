@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
-  FlatList
+  FlatList,
+  Animated,
+  Easing
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@clerk/expo';
@@ -37,6 +39,8 @@ const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): str
   if (n < 1 || n > 200) return "Enter a number between 1 and 200.";
   return null;
 };
+
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
 /**
  * Group Settings Screen
@@ -69,6 +73,11 @@ const GroupSettings = () => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
   const [isSavingName, setIsSavingName] = useState(false);
+  const nameFlashAnim = useRef(new Animated.Value(0)).current;
+  const nameFlashColor = nameFlashAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#FFFFFF', '#CFFAF7'],
+  });
 
   const [isEditingCapacity, setIsEditingCapacity] = useState(false);
   const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
@@ -203,14 +212,49 @@ const GroupSettings = () => {
     }
   };
 
+  const imageModalRotation = useRef(new Animated.Value(0)).current;
+
   const handleOpenImageModal = () => {
     setPreviewUri(null);
     setIsImageModalVisible(true);
+    imageModalRotation.setValue(0);
+    Animated.sequence([
+      Animated.timing(imageModalRotation, { toValue: -6, duration: 90, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(imageModalRotation, { toValue: 5, duration: 110, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(imageModalRotation, { toValue: -3, duration: 100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(imageModalRotation, { toValue: 1.5, duration: 100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(imageModalRotation, { toValue: 0, duration: 100, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+    ]).start();
   };
+
+  const imageModalRotateStyle = {
+    transform: [
+      {
+        rotate: imageModalRotation.interpolate({
+          inputRange: [-6, 6],
+          outputRange: ['-6deg', '6deg'],
+        }),
+      },
+    ],
+  };
+
+  const avatarPopScale = useRef(new Animated.Value(1)).current;
 
   const handlePickNewImage = async () => {
     const uri = await pickImageUri();
-    if (uri) setPreviewUri(uri);
+    if (uri) {
+      setPreviewUri(uri);
+      avatarPopScale.setValue(1);
+      Animated.sequence([
+        Animated.delay(200),
+        Animated.timing(avatarPopScale, { toValue: 1.18, duration: 2000, easing: Easing.out(Easing.exp), useNativeDriver: true }),
+        Animated.timing(avatarPopScale, { toValue: 1, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(avatarPopScale, { toValue: 1.04, duration: 70, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(avatarPopScale, { toValue: 0.98, duration: 70, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(avatarPopScale, { toValue: 1.01, duration: 60, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(avatarPopScale, { toValue: 1, duration: 60, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      ]).start();
+    }
   };
 
   const handleConfirmImage = async () => {
@@ -264,6 +308,11 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
         setIsEditingName(false);
+        nameFlashAnim.setValue(0);
+        Animated.sequence([
+            Animated.timing(nameFlashAnim, { toValue: 1, duration: 150, easing: Easing.out(Easing.quad), useNativeDriver: false }),
+            Animated.timing(nameFlashAnim, { toValue: 0, duration: 700, easing: Easing.out(Easing.quad), useNativeDriver: false }),
+        ]).start();
     } catch (error: any) {
         Alert.alert("Error", error.response?.data?.error || "Failed to update group name.");
     } finally {
@@ -457,9 +506,9 @@ const GroupSettings = () => {
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.optionsContainer}>
           {settingsOptions.map((option) => (
-            <TouchableOpacity
+            <AnimatedTouchableOpacity
               key={option.id}
-              style={styles.optionButton}
+              style={[styles.optionButton, option.id === 'name' && { backgroundColor: nameFlashColor }]}
               activeOpacity={0.7}
               onPress={() => handleOptionPress(option.id)}
             >
@@ -520,7 +569,7 @@ const GroupSettings = () => {
                 </View>
               </View>
               <Feather name="chevron-right" size={18} color="#D1D5DB" />
-            </TouchableOpacity>
+            </AnimatedTouchableOpacity>
           ))}
         </View>
         
@@ -535,38 +584,48 @@ const GroupSettings = () => {
       <Modal
         visible={isImageModalVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setIsImageModalVisible(false)}
       >
-        <Pressable style={styles.bottomSheetOverlay} onPress={() => setIsImageModalVisible(false)}>
-          <Pressable onPress={() => {}} style={styles.imageModalSheet}>
-            <View style={styles.imageModalHandle} />
-            <Text style={styles.modalTitle}>Group Photo</Text>
+        <Pressable style={styles.modalOverlay} onPress={() => setIsImageModalVisible(false)}>
+          <Animated.View style={imageModalRotateStyle}>
+            <Pressable onPress={() => {}} style={[styles.modalContent, styles.imageModalContent]}>
+              <Text style={styles.modalTitle}>Group Photo</Text>
 
-            <TouchableOpacity onPress={handlePickNewImage} disabled={isConfirmingImage} style={styles.imageModalAvatarWrap}>
-              <GroupAvatar
-                name={group?.name ?? ''}
-                imageUrl={previewUri ?? group?.image}
-                size={120}
-                borderRadius={28}
-              />
-              <View style={styles.imageModalCameraBadge}>
-                <Feather name="camera" size={16} color="#fff" />
-              </View>
-            </TouchableOpacity>
-
-            {previewUri && (
-              <TouchableOpacity
-                style={styles.confirmBtn}
-                onPress={handleConfirmImage}
-                disabled={isConfirmingImage}
-              >
-                {isConfirmingImage
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={styles.confirmBtnText}>Confirm</Text>}
+              <TouchableOpacity onPress={handlePickNewImage} disabled={isConfirmingImage} style={styles.imageModalAvatarWrap}>
+                <Animated.View style={{ transform: [{ scale: avatarPopScale }] }}>
+                  <GroupAvatar
+                    name={group?.name ?? ''}
+                    imageUrl={previewUri ?? group?.image}
+                    size={120}
+                    borderRadius={28}
+                  />
+                  <View style={styles.imageModalCameraBadge}>
+                    <Feather name="camera" size={16} color="#fff" />
+                  </View>
+                </Animated.View>
               </TouchableOpacity>
-            )}
-          </Pressable>
+
+              {previewUri ? (
+                <TouchableOpacity
+                  style={styles.confirmBtn}
+                  onPress={handleConfirmImage}
+                  disabled={isConfirmingImage}
+                >
+                  {isConfirmingImage
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={styles.confirmBtnText}>Confirm</Text>}
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.confirmBtn, styles.imageModalCancelBtn]}
+                  onPress={() => setIsImageModalVisible(false)}
+                >
+                  <Text style={styles.modalBtnTextCancel}>Cancel</Text>
+                </TouchableOpacity>
+              )}
+            </Pressable>
+          </Animated.View>
         </Pressable>
       </Modal>
 
@@ -780,7 +839,6 @@ const styles = StyleSheet.create({
   footer: { padding: 32, alignItems: 'center' },
   footerText: { fontSize: 12, color: '#9CA3AF', textAlign: 'center', fontWeight: '500', lineHeight: 18 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  bottomSheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalContent: { width: '100%', backgroundColor: 'white', borderRadius: 24, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
   modalTitle: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 4, textAlign: 'center' },
   modalSubtitle: { fontSize: 14, color: '#6B7280', marginBottom: 16, textAlign: 'center', fontWeight: '500' },
@@ -818,12 +876,12 @@ const styles = StyleSheet.create({
   textWhite70: { color: 'rgba(255,255,255,0.7)' },
   checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
   checkboxActive: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: 'white' },
-  imageModalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingTop: 12, paddingBottom: 48, alignItems: 'center' },
-  imageModalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginBottom: 20 },
+  imageModalContent: { width: 300, height: 300, alignItems: 'center', justifyContent: 'center' },
   imageModalAvatarWrap: { position: 'relative', marginTop: 8 },
   imageModalCameraBadge: { position: 'absolute', bottom: 2, right: 2, backgroundColor: '#4A90E2', borderRadius: 16, padding: 6, borderWidth: 2, borderColor: '#fff' },
   confirmBtn: { marginTop: 28, alignSelf: 'stretch', backgroundColor: '#4A90E2', borderRadius: 14, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   confirmBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  imageModalCancelBtn: { backgroundColor: '#F3F4F6' },
 });
 
 export default GroupSettings;

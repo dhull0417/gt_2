@@ -7,6 +7,7 @@ import {
     StyleSheet,
     Alert,
     ActivityIndicator,
+    Animated,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,7 +16,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
 import { useApiClient, groupApi } from "../../utils/api";
-import TimePicker from "../../components/TimePicker";
+import NativeTimePicker, { timeStringToDate } from "@/components/NativeTimePicker";
+
+// RSVP opens and RSVP deadline are each "N days before, at time of day". When both
+// land on the same day-count, only the time of day keeps opens before the deadline,
+// so the day-count comparison alone (leadDays >= deadlineDays) isn't sufficient.
+const timeToMinutes = (time: string): number => {
+    const t = timeStringToDate(time);
+    return t.getHours() * 60 + t.getMinutes();
+};
 
 // ─── TimeButton ───────────────────────────────────────────────────────────────
 
@@ -25,6 +34,31 @@ const TimeButton = ({ time, onPress, active }: { time: string; onPress: () => vo
         <Text style={[s.timeBtnText, active && s.timeBtnTextActive]}>{time}</Text>
     </TouchableOpacity>
 );
+
+// ─── ToggleSwitch ─────────────────────────────────────────────────────────────
+
+const ToggleSwitch = ({ value, onValueChange, activeColor = "#4A90E2" }: {
+    value: boolean; onValueChange: (v: boolean) => void; activeColor?: string;
+}) => {
+    const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
+    const scale = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        Animated.timing(anim, { toValue: value ? 1 : 0, duration: 180, useNativeDriver: false }).start();
+        Animated.sequence([
+            Animated.timing(scale, { toValue: 1.3, duration: 90, useNativeDriver: false }),
+            Animated.spring(scale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: false }),
+        ]).start();
+    }, [value]);
+    const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["#E5E7EB", activeColor] });
+    const thumbLeft = anim.interpolate({ inputRange: [0, 1], outputRange: [2, 20] });
+    return (
+        <TouchableOpacity activeOpacity={0.8} onPress={() => onValueChange(!value)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Animated.View style={[s.switchTrack, { backgroundColor: trackColor }]}>
+                <Animated.View style={[s.switchThumb, { left: thumbLeft, transform: [{ scale }] }]} />
+            </Animated.View>
+        </TouchableOpacity>
+    );
+};
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -48,11 +82,11 @@ const EditJitScreen = () => {
 
     const [rsvpRestricted, setRsvpRestricted] = useState(true);
     const [leadEnabled, setLeadEnabled] = useState(true);
-    const [leadDays, setLeadDays] = useState(1);
+    const [leadDays, setLeadDays] = useState(5);
     const [leadTime, setLeadTime] = useState("09:00 AM");
     const [showLeadTimePicker, setShowLeadTimePicker] = useState(false);
     const [deadlineEnabled, setDeadlineEnabled] = useState(false);
-    const [deadlineDays, setDeadlineDays] = useState(1);
+    const [deadlineDays, setDeadlineDays] = useState(2);
     const [deadlineTime, setDeadlineTime] = useState("09:00 AM");
     const [showDeadlineTimePicker, setShowDeadlineTimePicker] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -67,10 +101,10 @@ const EditJitScreen = () => {
             const initial: RsvpSettings = {
                 rsvpRestricted: group.generationLeadDays != null || group.generationDeadlineDays != null,
                 leadEnabled: group.generationLeadDays != null,
-                leadDays: group.generationLeadDays ?? 1,
+                leadDays: group.generationLeadDays ?? 5,
                 leadTime: group.generationLeadTime || "09:00 AM",
                 deadlineEnabled: group.generationDeadlineDays != null,
-                deadlineDays: group.generationDeadlineDays ?? 1,
+                deadlineDays: group.generationDeadlineDays ?? 2,
                 deadlineTime: group.generationDeadlineTime || "09:00 AM",
             };
             originalRef.current = initial;
@@ -93,6 +127,16 @@ const EditJitScreen = () => {
         originalRef.current.deadlineDays !== deadlineDays ||
         originalRef.current.deadlineTime !== deadlineTime
     );
+
+    const openLeadTimePicker = () => {
+        setShowDeadlineTimePicker(false);
+        setShowLeadTimePicker(true);
+    };
+
+    const openDeadlineTimePicker = () => {
+        setShowLeadTimePicker(false);
+        setShowDeadlineTimePicker(true);
+    };
 
     const handleSave = async () => {
         if (!id) return;
@@ -157,97 +201,89 @@ const EditJitScreen = () => {
 
                     <Text style={s.fieldLabel}>Limit when people can RSVP?</Text>
                     <View style={s.boolRow}>
-                        <TouchableOpacity style={[s.boolBtn, rsvpRestricted && s.boolBtnActive]}
-                            onPress={() => setRsvpRestricted(true)}>
-                            <Text style={[s.boolBtnText, rsvpRestricted && s.boolBtnTextActive]}>Limit RSVPs</Text>
-                        </TouchableOpacity>
                         <TouchableOpacity style={[s.boolBtn, !rsvpRestricted && s.boolBtnActive]}
                             onPress={() => setRsvpRestricted(false)}>
                             <Text style={[s.boolBtnText, !rsvpRestricted && s.boolBtnTextActive]}>Allow anytime</Text>
                         </TouchableOpacity>
+                        <TouchableOpacity style={[s.boolBtn, rsvpRestricted && s.boolBtnActive]}
+                            onPress={() => setRsvpRestricted(true)}>
+                            <Text style={[s.boolBtnText, rsvpRestricted && s.boolBtnTextActive]}>Limit RSVPs</Text>
+                        </TouchableOpacity>
                     </View>
 
                     {rsvpRestricted && (
-                        <View style={{ marginTop: 6 }}>
-                            <Text style={s.fieldLabel}>RSVP opens</Text>
-                            <View style={s.boolRow}>
-                                <TouchableOpacity style={[s.boolBtn, leadEnabled && s.boolBtnActive]}
-                                    onPress={() => setLeadEnabled(true)}>
-                                    <Text style={[s.boolBtnText, leadEnabled && s.boolBtnTextActive]}>Yes</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={[s.boolBtn, !leadEnabled && s.boolBtnActive]}
-                                    onPress={() => setLeadEnabled(false)}>
-                                    <Text style={[s.boolBtnText, !leadEnabled && s.boolBtnTextActive]}>No</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            {leadEnabled && (
-                                <>
+                        <View style={{ marginTop: 14, gap: 14 }}>
+                            <View>
+                                <View style={s.toggleRow}>
+                                    <Text style={s.toggleRowLabel}>RSVP opens</Text>
+                                    <ToggleSwitch value={leadEnabled} onValueChange={(v) => {
+                                        setLeadEnabled(v);
+                                        const nextLeadDays = v && deadlineEnabled && leadDays < deadlineDays ? deadlineDays : leadDays;
+                                        if (nextLeadDays !== leadDays) setLeadDays(nextLeadDays);
+                                        if (v && deadlineEnabled && nextLeadDays === deadlineDays && timeToMinutes(leadTime) > timeToMinutes(deadlineTime)) {
+                                            setLeadTime(deadlineTime);
+                                        }
+                                    }} />
+                                </View>
+                                {leadEnabled && (
                                     <View style={[s.leadRow, { marginTop: 10 }]}>
-                                        <TouchableOpacity onPress={() => setLeadDays(Math.max(0, leadDays - 1))} style={s.stepperBtn}>
+                                        <TouchableOpacity onPress={() => {
+                                            const nextLeadDays = Math.max(deadlineEnabled ? deadlineDays : 0, leadDays - 1);
+                                            setLeadDays(nextLeadDays);
+                                            if (deadlineEnabled && nextLeadDays === deadlineDays && timeToMinutes(leadTime) > timeToMinutes(deadlineTime)) {
+                                                setLeadTime(deadlineTime);
+                                            }
+                                        }} style={s.stepperBtn}>
                                             <Feather name="minus" size={18} color="#4A90E2" />
                                         </TouchableOpacity>
                                         <View style={s.leadCenter}>
                                             <Text style={s.leadVal}>{leadDays}</Text>
-                                            <Text style={s.leadSub}>{leadDays === 1 ? "day before" : "days before"}</Text>
+                                            <Text style={s.leadSub}>days before</Text>
                                         </View>
                                         <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={s.stepperBtn}>
                                             <Feather name="plus" size={18} color="#4A90E2" />
                                         </TouchableOpacity>
-                                    </View>
-                                    <View style={s.dateFieldRow}>
-                                        <Feather name="unlock" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                                        <Text style={s.dateFieldText}>Opens at</Text>
                                         <TimeButton time={leadTime} active={showLeadTimePicker}
-                                            onPress={() => { setShowLeadTimePicker(v => !v); setShowDeadlineTimePicker(false); }} />
+                                            onPress={openLeadTimePicker} />
                                     </View>
-                                    {showLeadTimePicker && (
-                                        <View style={s.inlinePickerBox}>
-                                            <TimePicker initialValue={leadTime} onTimeChange={setLeadTime} />
-                                        </View>
-                                    )}
-                                </>
-                            )}
-
-                            <Text style={[s.fieldLabel, { marginTop: 20 }]}>RSVP deadline</Text>
-                            <View style={s.boolRow}>
-                                <TouchableOpacity style={[s.boolBtn, deadlineEnabled && s.boolBtnActive]}
-                                    onPress={() => setDeadlineEnabled(true)}>
-                                    <Text style={[s.boolBtnText, deadlineEnabled && s.boolBtnTextActive]}>Yes</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={[s.boolBtn, !deadlineEnabled && s.boolBtnActive]}
-                                    onPress={() => setDeadlineEnabled(false)}>
-                                    <Text style={[s.boolBtnText, !deadlineEnabled && s.boolBtnTextActive]}>No</Text>
-                                </TouchableOpacity>
+                                )}
                             </View>
 
-                            {deadlineEnabled && (
-                                <>
+                            <View>
+                                <View style={s.toggleRow}>
+                                    <Text style={s.toggleRowLabel}>RSVP deadline</Text>
+                                    <ToggleSwitch value={deadlineEnabled} onValueChange={(v) => {
+                                        setDeadlineEnabled(v);
+                                        const nextDeadlineDays = v && leadEnabled && deadlineDays > leadDays ? leadDays : deadlineDays;
+                                        if (nextDeadlineDays !== deadlineDays) setDeadlineDays(nextDeadlineDays);
+                                        if (v && leadEnabled && nextDeadlineDays === leadDays && timeToMinutes(deadlineTime) < timeToMinutes(leadTime)) {
+                                            setDeadlineTime(leadTime);
+                                        }
+                                    }} />
+                                </View>
+                                {deadlineEnabled && (
                                     <View style={[s.leadRow, { marginTop: 10 }]}>
                                         <TouchableOpacity onPress={() => setDeadlineDays(Math.max(0, deadlineDays - 1))} style={s.stepperBtn}>
                                             <Feather name="minus" size={18} color="#4A90E2" />
                                         </TouchableOpacity>
                                         <View style={s.leadCenter}>
                                             <Text style={s.leadVal}>{deadlineDays}</Text>
-                                            <Text style={s.leadSub}>{deadlineDays === 1 ? "day before" : "days before"}</Text>
+                                            <Text style={s.leadSub}>days before</Text>
                                         </View>
-                                        <TouchableOpacity onPress={() => setDeadlineDays(deadlineDays + 1)} style={s.stepperBtn}>
+                                        <TouchableOpacity onPress={() => {
+                                            const nextDeadlineDays = leadEnabled ? Math.min(leadDays, deadlineDays + 1) : deadlineDays + 1;
+                                            setDeadlineDays(nextDeadlineDays);
+                                            if (leadEnabled && nextDeadlineDays === leadDays && timeToMinutes(deadlineTime) < timeToMinutes(leadTime)) {
+                                                setDeadlineTime(leadTime);
+                                            }
+                                        }} style={s.stepperBtn}>
                                             <Feather name="plus" size={18} color="#4A90E2" />
                                         </TouchableOpacity>
-                                    </View>
-                                    <View style={s.dateFieldRow}>
-                                        <Feather name="lock" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                                        <Text style={s.dateFieldText}>Closes at</Text>
                                         <TimeButton time={deadlineTime} active={showDeadlineTimePicker}
-                                            onPress={() => { setShowDeadlineTimePicker(v => !v); setShowLeadTimePicker(false); }} />
+                                            onPress={openDeadlineTimePicker} />
                                     </View>
-                                    {showDeadlineTimePicker && (
-                                        <View style={s.inlinePickerBox}>
-                                            <TimePicker initialValue={deadlineTime} onTimeChange={setDeadlineTime} />
-                                        </View>
-                                    )}
-                                </>
-                            )}
+                                )}
+                            </View>
                         </View>
                     )}
                 </ScrollView>
@@ -268,6 +304,32 @@ const EditJitScreen = () => {
                     </TouchableOpacity>
                 </View>
             </View>
+
+            {showLeadTimePicker && (
+                <NativeTimePicker value={leadTime} onChange={(t) => {
+                    const capped = deadlineEnabled && leadDays === deadlineDays && timeToMinutes(t) > timeToMinutes(deadlineTime);
+                    if (capped) {
+                        Alert.alert(
+                            "RSVP open time must happen before RSVP deadline",
+                            `• Both are ${leadDays} day${leadDays === 1 ? '' : 's'} before the meetup\n• Opens can't be later than ${deadlineTime}\n• Opens set to ${deadlineTime}`
+                        );
+                    }
+                    setLeadTime(capped ? deadlineTime : t);
+                }} onClose={() => setShowLeadTimePicker(false)} />
+            )}
+
+            {showDeadlineTimePicker && (
+                <NativeTimePicker value={deadlineTime} onChange={(t) => {
+                    const capped = leadEnabled && deadlineDays === leadDays && timeToMinutes(t) < timeToMinutes(leadTime);
+                    if (capped) {
+                        Alert.alert(
+                            "RSVP deadline must happen after RSVPs open",
+                            `• Both are ${deadlineDays} day${deadlineDays === 1 ? '' : 's'} before the meetup\n• Deadline can't be earlier than ${leadTime}\n• Deadline set to ${leadTime}`
+                        );
+                    }
+                    setDeadlineTime(capped ? leadTime : t);
+                }} onClose={() => setShowDeadlineTimePicker(false)} />
+            )}
         </SafeAreaView>
     );
 };
@@ -294,16 +356,17 @@ const s = StyleSheet.create({
     boolBtnActive: { borderColor: "#4A90E2", backgroundColor: "#EEF6FF" },
     boolBtnText: { fontSize: 14, fontWeight: "700", color: "#6B7280" },
     boolBtnTextActive: { color: "#4A90E2" },
-    leadRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", paddingVertical: 16, gap: 24 },
-    stepperBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
+    toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151", flex: 1, marginRight: 12 },
+    switchTrack: { width: 44, height: 26, borderRadius: 13, padding: 2, justifyContent: "center" },
+    switchThumb: { position: "absolute", width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.25, shadowRadius: 2, elevation: 2 },
+    leadRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+    stepperBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
     leadCenter: { alignItems: "center", minWidth: 60 },
-    leadVal: { fontSize: 28, fontWeight: "900", color: "#111827" },
+    leadVal: { fontSize: 22, fontWeight: "900", color: "#111827" },
     leadSub: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase" },
-    dateFieldRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 13, marginTop: 10, marginBottom: 4 },
-    dateFieldText: { fontSize: 14, color: "#374151", fontWeight: "500", flex: 1 },
     timeBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5, borderColor: "#93C5FD", backgroundColor: "#EFF6FF" },
     timeBtnActive: { backgroundColor: "#4A90E2", borderColor: "#4A90E2" },
     timeBtnText: { fontSize: 12, fontWeight: "700", color: "#4A90E2" },
     timeBtnTextActive: { color: "#fff" },
-    inlinePickerBox: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 8, width: "100%", marginTop: 8 },
 });

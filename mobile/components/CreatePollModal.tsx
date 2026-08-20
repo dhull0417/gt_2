@@ -13,7 +13,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import TimePicker from './TimePicker';
+import { timeStringToDate, dateToTimeString } from './NativeTimePicker';
 import { useCreatePoll } from '@/hooks/useCreatePoll';
 
 interface CreatePollModalProps {
@@ -58,6 +58,7 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
     const [tempExpiryDate, setTempExpiryDate] = useState(new Date());
     const [tempExpiryTime, setTempExpiryTime] = useState('09:00 PM');
     const [showAndroidDatePicker, setShowAndroidDatePicker] = useState(false);
+    const [showAndroidTimePicker, setShowAndroidTimePicker] = useState(false);
 
     const filledOptionCount = options.filter(o => o.trim().length > 0).length;
     const hasExpiry = !!expiryDate && !!expiryTime;
@@ -93,6 +94,11 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
     const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
         if (Platform.OS === 'android') setShowAndroidDatePicker(false);
         if (selectedDate) setTempExpiryDate(selectedDate);
+    };
+
+    const onTimeChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+        if (Platform.OS === 'android') setShowAndroidTimePicker(false);
+        if (selectedDate) setTempExpiryTime(dateToTimeString(selectedDate));
     };
 
     const confirmExpiry = () => {
@@ -185,7 +191,29 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                             )}
 
                             <Text style={styles.sheetLabel}>Time</Text>
-                            <TimePicker onTimeChange={setTempExpiryTime} initialValue={tempExpiryTime} hideLabel />
+                            {Platform.OS === 'ios' ? (
+                                <DateTimePicker
+                                    value={timeStringToDate(tempExpiryTime)}
+                                    mode="time"
+                                    display="spinner"
+                                    onChange={onTimeChange}
+                                    textColor="black"
+                                />
+                            ) : (
+                                <>
+                                    <TouchableOpacity style={styles.androidDateRow} onPress={() => setShowAndroidTimePicker(true)}>
+                                        <Text style={styles.androidDateRowText}>{tempExpiryTime}</Text>
+                                    </TouchableOpacity>
+                                    {showAndroidTimePicker && (
+                                        <DateTimePicker
+                                            value={timeStringToDate(tempExpiryTime)}
+                                            mode="time"
+                                            display="default"
+                                            onChange={onTimeChange}
+                                        />
+                                    )}
+                                </>
+                            )}
 
                             <TouchableOpacity onPress={confirmExpiry} style={styles.doneButton}>
                                 <Text style={styles.doneButtonText}>Done</Text>
