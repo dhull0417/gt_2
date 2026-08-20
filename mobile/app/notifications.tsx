@@ -50,6 +50,10 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> is going to <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-rsvp-out':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> is out for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'meetup-rsvp-admin-in':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> marked you as going to <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'meetup-rsvp-admin-out':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> marked you as not going to <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-waitlist-join':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> joined the waitlist for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'waitlist-promotion':

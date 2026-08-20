@@ -48,6 +48,19 @@ export const canManageGroup = (userId, group) => {
 };
 
 /**
+ * HELPER: canManageMember
+ * Owner can manage anyone. A moderator can manage regular members only —
+ * not the owner, and not another moderator.
+ */
+export const canManageMember = (requesterId, targetUserId, group) => {
+    if (!canManageGroup(requesterId, group)) return false;
+    if (group.owner.toString() === requesterId.toString()) return true;
+    const targetIsOwner = group.owner.toString() === targetUserId.toString();
+    const targetIsMod = group.moderators?.some(id => id.toString() === targetUserId.toString());
+    return !targetIsOwner && !targetIsMod;
+};
+
+/**
  * @desc    Create a new group
  */
 export const createGroup = asyncHandler(async (req, res) => {

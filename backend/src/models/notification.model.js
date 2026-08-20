@@ -16,6 +16,7 @@ const notificationSchema = new mongoose.Schema({
         enum: [
             'group-invite', 'invite-accepted', 'invite-declined', 'group-added', 'group-updated',
             'meetup-rsvp-in', 'meetup-rsvp-out', 'meetup-waitlist-join', 'waitlist-promotion',
+            'meetup-rsvp-admin-in', 'meetup-rsvp-admin-out',
             'meetup-created', 'meetup-updated', 'meetup-cancelled',
             'meetup-rsvp-reminder', 'meetup-rsvp-open', 'meetup-starting-soon',
             'poll-created', 'poll-closed',

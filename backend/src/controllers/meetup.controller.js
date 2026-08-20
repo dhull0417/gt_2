@@ -7,7 +7,7 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { DateTime } from "luxon";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
-import { canManageGroup } from "./group.controller.js";
+import { canManageGroup, canManageMember } from "./group.controller.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 
 /**
@@ -66,13 +66,35 @@ export const getMeetups = asyncHandler(async (req, res) => {
 export const rsvpMeetup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { meetupId } = req.params;
-    const { status } = req.body; 
+    const { status, targetUserId } = req.body;
 
-    const user = await User.findOne({ clerkId }).lean();
-    if (!user) return res.status(404).json({ error: "User not found." });
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!requester) return res.status(404).json({ error: "User not found." });
 
     if (!['in', 'out'].includes(status)) {
         return res.status(400).json({ error: "Invalid RSVP status." });
+    }
+
+    // Owner/moderator overriding another member's RSVP — permission-check up front
+    // and swap `user` to the target so the rest of the function (which only ever
+    // reads/writes `user`) applies to them instead of the requester.
+    let user = requester;
+    let actingAdmin = null;
+
+    if (targetUserId && targetUserId !== requester._id.toString()) {
+        const [targetUser, meetupForPerm] = await Promise.all([
+            User.findById(targetUserId).lean(),
+            Meetup.findById(meetupId).populate('group'),
+        ]);
+        if (!targetUser || !meetupForPerm) return res.status(404).json({ error: "Resource not found." });
+        if (!meetupForPerm.members.some(id => id.toString() === targetUserId)) {
+            return res.status(400).json({ error: "That user is not a member of this meetup." });
+        }
+        if (!canManageMember(requester._id, targetUser._id, meetupForPerm.group)) {
+            return res.status(403).json({ error: "Permission denied." });
+        }
+        user = targetUser;
+        actingAdmin = requester;
     }
 
     // Concurrent RSVPs on the same meetup (e.g. several members racing for the
@@ -87,11 +109,13 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         meetup = await Meetup.findById(meetupId);
         if (!meetup) return res.status(404).json({ error: "Meetup not found." });
 
-        if (meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
+        // Admin overrides bypass the open/deadline window — the point of a manual
+        // override is to finalize status regardless of the automatic window.
+        if (!actingAdmin && meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
             return res.status(400).json({ error: "RSVPs are not open yet." });
         }
 
-        if (meetup.rsvpCloseDate && new Date(meetup.rsvpCloseDate) < new Date()) {
+        if (!actingAdmin && meetup.rsvpCloseDate && new Date(meetup.rsvpCloseDate) < new Date()) {
             return res.status(400).json({ error: "The RSVP deadline has passed." });
         }
 
@@ -204,6 +228,19 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             data: { meetupId: meetup._id.toString(), type: 'meetup-rsvp' },
             type: persistedType,
             sender: user._id,
+            meetup: meetup._id,
+            group: meetup.group,
+        });
+    }
+
+    // Let the target know an admin changed their status on their behalf
+    if (actingAdmin && !statusUnchanged) {
+        await notifyAndPersist([user], {
+            title: meetup.name,
+            body: `${actingAdmin.firstName || 'A group admin'} marked you as ${status === 'in' ? 'going' : 'not going'} to ${meetup.name}.`,
+            data: { meetupId: meetup._id.toString(), type: 'meetup_rsvp_admin' },
+            type: status === 'in' ? 'meetup-rsvp-admin-in' : 'meetup-rsvp-admin-out',
+            sender: actingAdmin._id,
             meetup: meetup._id,
             group: meetup.group,
         });

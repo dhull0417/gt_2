@@ -114,6 +114,7 @@ const MeetupCard = ({
   const isPast = new Date(meetup.date) < new Date();
   const isExpired = meetup.status === 'expired' || isPast;
   const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
+  const isRsvpDeadlinePassed = meetup.rsvpCloseDate ? new Date(meetup.rsvpCloseDate) < new Date() : false;
 
   const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
   const isWaitlisted = currentUser ? meetup.waitlist.some(u => getUserId(u) === currentUser._id) : false;
@@ -182,6 +183,8 @@ const MeetupCard = ({
                 <Feather name="clock" size={16} color="#9CA3AF" />
                 <Feather name="lock" size={16} color="#9CA3AF" />
               </View>
+            ) : isRsvpDeadlinePassed ? (
+              <Feather name="lock" size={16} color="#9CA3AF" />
             ) : (
               <Feather name="unlock" size={16} color="#F59E0B" />
             )
@@ -222,6 +225,15 @@ const MeetupCard = ({
                 <Feather name="lock" size={14} color="#6B7280" className="mr-2" />
                 <Text className="text-gray-600 font-bold text-sm ml-1.5">
                   RSVPs open on {formatDate(meetup.rsvpOpenDate!, meetup.timezone)}
+                </Text>
+              </View>
+            </View>
+          ) : isRsvpDeadlinePassed ? (
+            <View className="bg-gray-100 py-3 rounded-xl items-center border border-gray-200">
+              <View className="flex-row items-center">
+                <Feather name="lock" size={14} color="#6B7280" className="mr-2" />
+                <Text className="text-gray-600 font-bold text-sm ml-1.5">
+                  RSVP deadline passed on {formatDate(meetup.rsvpCloseDate!, meetup.timezone)}
                 </Text>
               </View>
             </View>
@@ -440,7 +452,8 @@ const DashboardScreen = () => {
     return meetups.filter(meetup => {
       const isPast = new Date(meetup.date) < new Date();
       const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
-      return meetup.status === 'scheduled' && !isPast && !isRsvpLocked && meetup.undecided.includes(currentUser._id);
+      const isRsvpDeadlinePassed = meetup.rsvpCloseDate ? new Date(meetup.rsvpCloseDate) < new Date() : false;
+      return meetup.status === 'scheduled' && !isPast && !isRsvpLocked && !isRsvpDeadlinePassed && meetup.undecided.includes(currentUser._id);
     });
   }, [meetups, currentUser]);
 

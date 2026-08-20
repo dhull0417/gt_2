@@ -19,6 +19,8 @@ const NOTIFICATION_ICONS: Record<NotificationType, NotificationIconSpec> = {
   'group-updated': { name: 'edit-2', color: '#6366F1' },
   'meetup-rsvp-in': { name: 'log-in', color: '#4FD1C5' },
   'meetup-rsvp-out': { name: 'log-out', color: '#FF7A6E' },
+  'meetup-rsvp-admin-in': { name: 'user-check', color: '#4FD1C5' },
+  'meetup-rsvp-admin-out': { name: 'user-x', color: '#FF7A6E' },
   'meetup-waitlist-join': { name: 'clock', color: '#F59E0B' },
   'waitlist-promotion': { name: 'arrow-up-circle', color: '#A855F7' },
   'meetup-created': { name: 'calendar', color: '#22C55E' },

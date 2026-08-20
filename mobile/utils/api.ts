@@ -141,6 +141,7 @@ export interface Poll {
 export type NotificationType =
   | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-updated'
   | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion'
+  | 'meetup-rsvp-admin-in' | 'meetup-rsvp-admin-out'
   | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled'
   | 'meetup-rsvp-reminder' | 'meetup-rsvp-open' | 'meetup-starting-soon'
   | 'poll-created' | 'poll-closed';
@@ -232,6 +233,7 @@ interface UpdateModeratorsPayload {
 interface RsvpMeetupPayload {
   meetupId: string;
   status: 'in' | 'out';
+  targetUserId?: string;
 }
 
 interface CreatePollPayload {
@@ -375,8 +377,8 @@ export const meetupApi = {
     const response = await api.get<Meetup[]>('/api/meetups');
     return response.data;
   },
-  handleRsvp: async (api: AxiosInstance, { meetupId, status }: RsvpMeetupPayload): Promise<{ meetup: Meetup }> => {
-    const response = await api.post<{ meetup: Meetup }>(`/api/meetups/${meetupId}/rsvp`, { status });
+  handleRsvp: async (api: AxiosInstance, { meetupId, status, targetUserId }: RsvpMeetupPayload): Promise<{ meetup: Meetup }> => {
+    const response = await api.post<{ meetup: Meetup }>(`/api/meetups/${meetupId}/rsvp`, { status, targetUserId });
     return response.data;
   },
   updateMeetup: async (api: AxiosInstance, { meetupId, ...details }: UpdateMeetupPayload): Promise<{ meetup: Meetup }> => {

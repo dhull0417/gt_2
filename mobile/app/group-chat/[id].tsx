@@ -167,7 +167,8 @@ const GroupChatScreen = () => {
     const isIn = nextMeetup.in?.some(u => getUserId(u) === currentUser._id) || false;
     const isWaitlisted = nextMeetup.waitlist?.some(u => getUserId(u) === currentUser._id) || false;
     const isRsvpLocked = nextMeetup.rsvpOpenDate ? new Date(nextMeetup.rsvpOpenDate) > new Date() : false;
-    return { isIn, isOut, isWaitlisted, isRsvpLocked };
+    const isRsvpDeadlinePassed = nextMeetup.rsvpCloseDate ? new Date(nextMeetup.rsvpCloseDate) < new Date() : false;
+    return { isIn, isOut, isWaitlisted, isRsvpLocked, isRsvpDeadlinePassed };
   }, [nextMeetup, currentUser]);
   const nextMeetupBarColor = useMemo(() => {
     if (!nextMeetupRsvpStatus) return '#EEF6FF';
@@ -461,6 +462,8 @@ const GroupChatScreen = () => {
                     <Feather name="clock" size={13} color="#9CA3AF" />
                     <Feather name="lock" size={13} color="#9CA3AF" />
                   </View>
+                ) : nextMeetupRsvpStatus.isRsvpDeadlinePassed ? (
+                  <Feather name="lock" size={13} color="#9CA3AF" />
                 ) : (
                   <Feather name="unlock" size={13} color="#F59E0B" />
                 )

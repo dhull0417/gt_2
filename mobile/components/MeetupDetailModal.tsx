@@ -102,6 +102,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [dmTargetUser, setDmTargetUser] = useState<User | null>(null);
     const [isCreatingDM, setIsCreatingDM] = useState(false);
     const [isSendingReminder, setIsSendingReminder] = useState(false);
+    const [isUpdatingTargetRsvp, setIsUpdatingTargetRsvp] = useState(false);
 
     const capacityError = getMaxAttendeesError(capacityMode, newCapacity);
     const canSaveCapacity = capacityMode !== "limited" || (newCapacity !== "" && !capacityError);
@@ -153,14 +154,28 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const isPast = new Date(meetup.date) < new Date(); 
     const isExpired = meetup.status === 'expired' || isPast;
 
-    const isRsvpLocked = meetup.rsvpOpenDate 
-    ? new Date(meetup.rsvpOpenDate) > new Date() 
+    const isRsvpLocked = meetup.rsvpOpenDate
+    ? new Date(meetup.rsvpOpenDate) > new Date()
     : false;
-    
+
+    const isRsvpDeadlinePassed = meetup.rsvpCloseDate
+    ? new Date(meetup.rsvpCloseDate) < new Date()
+    : false;
+
     // RECOMMENDATION: This flag controls all "adjustment" UI
     const isReadOnly = isCancelled || isExpired;
-    const canManage = (isOwner || isMod) && !isReadOnly; 
-    
+    const canManage = (isOwner || isMod) && !isReadOnly;
+
+    // Owner can override anyone's RSVP; a moderator can override regular members only —
+    // not the owner, and not another moderator.
+    const canManageTarget = (target: User): boolean =>
+        canManage && target._id !== currentUser._id && (
+            isOwner || (
+                groupData.owner !== target._id &&
+                !(Array.isArray(groupData.moderators) && groupData.moderators.some((m: any) => (typeof m === 'string' ? m : m._id) === target._id))
+            )
+        );
+
     const isFull = meetup.capacity > 0 && (meetup.in?.length || 0) >= meetup.capacity;
     const isWaitlisted = meetup.waitlist?.some(u => getUserId(u) === currentUser._id) || false;
     const isIn = meetup.in?.some(u => getUserId(u) === currentUser._id) || false;
@@ -232,7 +247,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
 
     const handleRsvpAction = (status: 'in' | 'out') => {
-        if (isReadOnly) return;
+        if (isReadOnly || isRsvpLocked || isRsvpDeadlinePassed) return;
         if (status === 'out' && localGuestCount > 0) {
             Alert.alert(
                 'Remove Guests?',
@@ -367,6 +382,20 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             Alert.alert('Error', e.response?.data?.error || 'Could not send the reminder. Please try again.');
         } finally {
             setIsSendingReminder(false);
+        }
+    };
+
+    const handleAdminRsvpChange = async (targetUserId: string, status: 'in' | 'out') => {
+        setIsUpdatingTargetRsvp(true);
+        try {
+            const result = await meetupApi.handleRsvp(api, { meetupId: meetup._id, status, targetUserId });
+            if (result.meetup) setMeetup(result.meetup);
+            queryClient.invalidateQueries({ queryKey: ['meetups'] });
+            setDmTargetUser(null);
+        } catch (e: any) {
+            Alert.alert('Error', e.response?.data?.error || "Could not update their RSVP. Please try again.");
+        } finally {
+            setIsUpdatingTargetRsvp(false);
         }
     };
 
@@ -574,6 +603,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Text style={styles.rsvpLockedTitle}>RSVPs Not Open Yet</Text>
                                 <Text style={styles.rsvpLockedSubtitle}>
                                     Opens {new Date(meetup.rsvpOpenDate!).toLocaleDateString(undefined, {
+                                        weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone
+                                    })}
+                                </Text>
+                            </View>
+                        ) : isRsvpDeadlinePassed ? (
+                            <View style={styles.rsvpLockedBanner}>
+                                <Feather name="lock" size={16} color="#6B7280" />
+                                <Text style={styles.rsvpLockedTitle}>RSVP Deadline Passed</Text>
+                                <Text style={styles.rsvpLockedSubtitle}>
+                                    Closed {new Date(meetup.rsvpCloseDate!).toLocaleDateString(undefined, {
                                         weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone
                                     })}
                                 </Text>
@@ -829,6 +868,17 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     </View>
                                 </>
                             )}
+                            {meetup.rsvpCloseDate && (
+                                <>
+                                    <View style={styles.detailSeparator} />
+                                    <View style={styles.detailItem}>
+                                        <Text style={styles.detailLabel}>RSVP Deadline</Text>
+                                        <Text style={styles.detailValue}>
+                                            {new Date(meetup.rsvpCloseDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })}
+                                        </Text>
+                                    </View>
+                                </>
+                            )}
                             <View style={styles.detailSeparator} />
                             <View style={styles.detailItem}>
                                 <Text style={styles.detailLabel}>Status</Text>
@@ -882,6 +932,36 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         }
                                     </TouchableOpacity>
                                 )}
+                                {canManageTarget(dmTargetUser) && (() => {
+                                    const targetIsIn = meetup.in?.some(u => getUserId(u) === dmTargetUser._id) ?? false;
+                                    const targetIsOut = meetup.out?.some(u => getUserId(u) === dmTargetUser._id) ?? false;
+                                    return (
+                                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                                            <TouchableOpacity
+                                                style={[dmStyles.rsvpActionBtn, { backgroundColor: '#4FD1C5' }, targetIsIn && dmStyles.rsvpActionBtnDisabled]}
+                                                onPress={() => handleAdminRsvpChange(dmTargetUser._id, 'in')}
+                                                disabled={isUpdatingTargetRsvp || targetIsIn}
+                                                activeOpacity={0.8}
+                                            >
+                                                {isUpdatingTargetRsvp
+                                                    ? <ActivityIndicator color="#fff" size="small" />
+                                                    : <Text style={dmStyles.rsvpActionBtnText}>Mark as In</Text>
+                                                }
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={[dmStyles.rsvpActionBtn, { backgroundColor: '#FF7A6E' }, targetIsOut && dmStyles.rsvpActionBtnDisabled]}
+                                                onPress={() => handleAdminRsvpChange(dmTargetUser._id, 'out')}
+                                                disabled={isUpdatingTargetRsvp || targetIsOut}
+                                                activeOpacity={0.8}
+                                            >
+                                                {isUpdatingTargetRsvp
+                                                    ? <ActivityIndicator color="#fff" size="small" />
+                                                    : <Text style={dmStyles.rsvpActionBtnText}>Mark as Out</Text>
+                                                }
+                                            </TouchableOpacity>
+                                        </View>
+                                    );
+                                })()}
                             </>
                         )}
                     </Pressable>
@@ -1142,6 +1222,9 @@ const dmStyles = StyleSheet.create({
     dmBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
     remindBtn: { marginTop: 12, backgroundColor: '#EEF6FF', borderWidth: 1.5, borderColor: '#93C5FD', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
     remindBtnText: { color: '#4A90E2', fontWeight: '700', fontSize: 16 },
+    rsvpActionBtn: { flex: 1, paddingVertical: 14, borderRadius: 16, alignItems: 'center' },
+    rsvpActionBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+    rsvpActionBtnDisabled: { opacity: 0.45 },
 });
 
 export default MeetupDetailModal;
