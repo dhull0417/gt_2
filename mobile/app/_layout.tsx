@@ -1,8 +1,13 @@
 // mobile/app/_layout.tsx
+import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth, useUser } from '@clerk/expo';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { QueryClient, onlineManager, useQuery } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 import { useUserSync } from '@/hooks/useUserSync';
 import * as SecureStore from 'expo-secure-store';
 import * as Clipboard from 'expo-clipboard';
@@ -12,11 +17,40 @@ import { useEffect } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 import { ImageCropperHost } from '@/components/ImageCropperHost';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
 
-const queryClient = new QueryClient();
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Screens re-focus often (tab switches, nav back); without this every
+      // focus would refetch even when nothing could plausibly have changed.
+      staleTime: 5 * 60 * 1000,
+      // Keeps cached data around (and eligible for disk persistence) long
+      // enough to still be useful as an offline fallback after a few days
+      // away from the app, not just a few minutes.
+      gcTime: ONE_WEEK_MS,
+    },
+  },
+});
+
+const asyncStoragePersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: 'GT2_QUERY_CACHE',
+});
+
+// Drives React Query's online/offline state off real connectivity instead of
+// its default "assume online" behavior, so queries pause cleanly offline
+// (serving cached data) rather than firing and failing.
+onlineManager.setEventListener((setOnline) => {
+  return NetInfo.addEventListener((state) => {
+    setOnline(!!state.isConnected && state.isInternetReachable !== false);
+  });
+});
 
 const tokenCache = {
   async getToken(key: string) {
@@ -34,10 +68,18 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
-        <QueryClientProvider client={queryClient}>
+        <PersistQueryClientProvider
+          client={queryClient}
+          persistOptions={{
+            persister: asyncStoragePersister,
+            maxAge: ONE_WEEK_MS,
+            // Mutations aren't queued/replayed yet — only persist read data.
+            dehydrateOptions: { shouldDehydrateMutation: () => false },
+          }}
+        >
           <AuthLayout />
           <ImageCropperHost />
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </ClerkProvider>
     </GestureHandlerRootView>
   );
@@ -136,21 +178,24 @@ const AuthLayout = () => {
   }, [isSignedIn, currentUser?._id]);
 
   return (
-    <Stack>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
-      <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true, title: 'Update Account' }} />
-      <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
-      <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
-      <Stack.Screen name="group-settings" options={{ headerShown: false }} />
-      <Stack.Screen name="group-chat" options={{ headerShown: false }} />
-      <Stack.Screen name="meetup-edit" options={{ headerShown: false }} />
-      <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />
-      <Stack.Screen name="add-members" options={{ headerShown: false }} />
-      <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />
-      <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />
-      <Stack.Screen name="join" options={{ headerShown: false }} />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <OfflineBanner />
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
+        <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true, title: 'Update Account' }} />
+        <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
+        <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
+        <Stack.Screen name="group-settings" options={{ headerShown: false }} />
+        <Stack.Screen name="group-chat" options={{ headerShown: false }} />
+        <Stack.Screen name="meetup-edit" options={{ headerShown: false }} />
+        <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />
+        <Stack.Screen name="add-members" options={{ headerShown: false }} />
+        <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />
+        <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />
+        <Stack.Screen name="join" options={{ headerShown: false }} />
+      </Stack>
+    </View>
   );
 };

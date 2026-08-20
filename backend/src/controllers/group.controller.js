@@ -500,7 +500,31 @@ export const getGroups = asyncHandler(async (req, res) => {
     const user = await User.findOne({ clerkId }).lean();
     if (!user) return res.status(404).json({ error: "User not found." });
 
-    const groups = await Group.find({ members: user._id }).lean();
+    const filter = { members: user._id };
+    const { since } = req.query;
+
+    // Delta sync: the client already has a cached copy and only wants what
+    // changed since its last sync, plus the current set of valid ids so it
+    // can drop anything (left group, deleted group) that's no longer visible.
+    if (since) {
+        const sinceDate = new Date(since);
+        if (isNaN(sinceDate.getTime())) {
+            return res.status(400).json({ error: "Invalid 'since' timestamp." });
+        }
+
+        const [changed, validIds] = await Promise.all([
+            Group.find({ ...filter, updatedAt: { $gte: sinceDate } }).lean(),
+            Group.find(filter).distinct('_id'),
+        ]);
+
+        return res.status(200).json({
+            changed,
+            validIds: validIds.map((id) => id.toString()),
+            syncedAt: new Date().toISOString(),
+        });
+    }
+
+    const groups = await Group.find(filter).lean();
     res.status(200).json(groups);
 });
 

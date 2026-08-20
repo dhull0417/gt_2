@@ -82,6 +82,7 @@ export interface Group {
   moderators?: (User | string)[];
   isDM?: boolean;
   dmParticipants?: { userId: string; name: string }[];
+  updatedAt: string;
 }
 
 export interface GroupDetails extends Group {
@@ -114,6 +115,16 @@ export interface Meetup {
   rsvpOpenDate?: string;
   rsvpCloseDate?: string;
   guests?: { userId: string; count: number }[];
+  updatedAt: string;
+}
+
+// Response shape from the `?since=` delta-sync variant of a list endpoint:
+// only what changed, plus every currently-valid id so the client can drop
+// anything that's dropped out of view (left group, deleted meetup, etc).
+interface SyncResponse<T> {
+  changed: T[];
+  validIds: string[];
+  syncedAt: string;
 }
 
 export interface PollOption {
@@ -326,6 +337,10 @@ export const groupApi = {
     const response = await api.get<Group[]>("/api/groups");
     return response.data;
   },
+  getGroupsSince: async (api: AxiosInstance, since: string): Promise<SyncResponse<Group>> => {
+    const response = await api.get<SyncResponse<Group>>("/api/groups", { params: { since } });
+    return response.data;
+  },
   addMember: async (api: AxiosInstance, { groupId, userId }: AddMemberPayload): Promise<{ message: string }> => {
     const response = await api.post(`/api/groups/${groupId}/add-member`, { userId });
     return response.data;
@@ -375,6 +390,10 @@ export const groupApi = {
 export const meetupApi = {
   getMeetups: async (api: AxiosInstance): Promise<Meetup[]> => {
     const response = await api.get<Meetup[]>('/api/meetups');
+    return response.data;
+  },
+  getMeetupsSince: async (api: AxiosInstance, since: string): Promise<SyncResponse<Meetup>> => {
+    const response = await api.get<SyncResponse<Meetup>>('/api/meetups', { params: { since } });
     return response.data;
   },
   handleRsvp: async (api: AxiosInstance, { meetupId, status, targetUserId }: RsvpMeetupPayload): Promise<{ meetup: Meetup }> => {

@@ -44,14 +44,42 @@ export const getMeetups = asyncHandler(async (req, res) => {
 
     const now = new Date();
 
-    const meetups = await Meetup.find({
+    const visibilityFilter = {
         members: user._id,
         $or: [
             { date: { $lt: now } },             // past meetups always show
             { isOverride: true },               // one-offs are immediately visible
             { visibilityDate: { $lte: now } },  // scheduled meetups within the window
         ]
-    })
+    };
+
+    const { since } = req.query;
+
+    // Delta sync: the client already has a cached copy and only wants what
+    // changed since its last sync, plus the current set of valid ids so it
+    // can drop anything (left group, deleted meetup) that's no longer visible.
+    if (since) {
+        const sinceDate = new Date(since);
+        if (isNaN(sinceDate.getTime())) {
+            return res.status(400).json({ error: "Invalid 'since' timestamp." });
+        }
+
+        const [changed, validIds] = await Promise.all([
+            Meetup.find({ ...visibilityFilter, updatedAt: { $gte: sinceDate } })
+                .populate('group', 'name image owner moderators timezone defaultLocation visibilityLeadDays')
+                .populate('members', 'firstName lastName profilePicture clerkId')
+                .sort({ date: 1 }),
+            Meetup.find(visibilityFilter).distinct('_id'),
+        ]);
+
+        return res.status(200).json({
+            changed,
+            validIds: validIds.map((id) => id.toString()),
+            syncedAt: now.toISOString(),
+        });
+    }
+
+    const meetups = await Meetup.find(visibilityFilter)
         .populate('group', 'name image owner moderators timezone defaultLocation visibilityLeadDays')
         .populate('members', 'firstName lastName profilePicture clerkId')
         .sort({ date: 1 });

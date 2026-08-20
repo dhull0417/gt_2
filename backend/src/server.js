@@ -27,9 +27,7 @@ import groupRoutes from "./routes/group.route.js";
 import meetupRoutes from "./routes/meetup.route.js";
 import pollRoutes from "./routes/poll.route.js";
 import jobRoutes from "./routes/job.route.js";
-import notificationRoutes from "./routes/notification.route.js"; 
-// Project 4: Import webhook routes
-import webhookRoutes from "./routes/webhook.route.js";
+import notificationRoutes from "./routes/notification.route.js";
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
@@ -62,9 +60,7 @@ app.use("/api/groups", groupRoutes);
 app.use("/api/meetups", meetupRoutes);
 app.use("/api/polls", pollRoutes);
 app.use("/api/jobs", jobRoutes);
-app.use("/api/notifications", notificationRoutes); 
-// Project 4: Mount the webhook route
-app.use("/api/webhooks", webhookRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.post("/api/debug/log", (req, res) => {
   console.log("[DEBUG]", JSON.stringify(req.body, null, 2));
