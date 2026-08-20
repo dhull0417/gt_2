@@ -8,6 +8,7 @@ const SETTINGS = [
     { id: 'name', label: 'Update Name', href: '/account/update-name' as const, icon: 'user' as const, color: '#4A90E2' },
     { id: 'email', label: 'Update Email', href: '/account/update-email' as const, icon: 'mail' as const, color: '#7C3AED' },
     { id: 'password', label: 'Change Password', href: '/account/change-password' as const, icon: 'lock' as const, color: '#F59E0B' },
+    { id: 'delete', label: 'Delete Account', href: '/account/delete-account' as const, icon: 'trash-2' as const, color: '#EF4444' },
 ];
 
 const AccountSettingsScreen = () => {
