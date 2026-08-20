@@ -74,8 +74,10 @@ export interface Group {
   owner: string;
   timezone: string;
   defaultLocation: string;
-  generationLeadDays: number;
+  generationLeadDays: number | null;
   generationLeadTime: string;
+  generationDeadlineDays: number | null;
+  generationDeadlineTime: string;
   lastMessage?: LastMessage | null;
   moderators?: (User | string)[];
   isDM?: boolean;
@@ -110,6 +112,7 @@ export interface Meetup {
   waitlist: (User | string)[];
   visibilityDate?: string;
   rsvpOpenDate?: string;
+  rsvpCloseDate?: string;
   guests?: { userId: string; count: number }[];
 }
 
@@ -164,8 +167,10 @@ interface CreateGroupPayload {
   members?: string[];
   defaultCapacity?: number;
   defaultLocation?: string;
-  generationLeadDays: number;
+  generationLeadDays: number | null;
   generationLeadTime: string;
+  generationDeadlineDays: number | null;
+  generationDeadlineTime: string;
 }
 
 interface UpdateGroupPayload extends Partial<Omit<CreateGroupPayload, 'groupId'>> {

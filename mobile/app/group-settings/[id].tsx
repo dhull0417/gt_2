@@ -121,6 +121,15 @@ const GroupSettings = () => {
     return labels[freq] ?? 'No schedule set';
   }, [group?.schedule]);
 
+  const rsvpSettingsLabel = useMemo((): string => {
+    const leadDays = group?.generationLeadDays;
+    const deadlineDays = group?.generationDeadlineDays;
+    const opensPart = leadDays != null ? `Opens ${leadDays} day${leadDays !== 1 ? 's' : ''} before at ${group?.generationLeadTime || '—'}` : null;
+    const deadlinePart = deadlineDays != null ? `Deadline ${deadlineDays} day${deadlineDays !== 1 ? 's' : ''} before at ${group?.generationDeadlineTime || '—'}` : null;
+    if (!opensPart && !deadlinePart) return 'RSVPs open anytime';
+    return [opensPart, deadlinePart].filter(Boolean).join(' · ');
+  }, [group?.generationLeadDays, group?.generationLeadTime, group?.generationDeadlineDays, group?.generationDeadlineTime]);
+
   // --- ACCESS CONTROL GUARD ---
   useEffect(() => {
     if (!isLoadingGroup && !isLoadingUser && group && currentUser) {
@@ -138,7 +147,7 @@ const GroupSettings = () => {
     { id: 'image', label: 'Edit Group Photo', icon: 'camera', color: '#4A90E2', bg: '#EFF6FF' },
     { id: 'name', label: 'Edit Group Name', icon: 'type', color: '#3B82F6', bg: '#EFF6FF' },
     { id: 'schedule', label: 'Edit Schedule & Times', icon: 'calendar', color: '#6366F1', bg: '#EEF2FF' },
-    { id: 'jit', label: 'Edit RSVP Lead Time', icon: 'bell', color: '#F59E0B', bg: '#FFFBEB' },
+    { id: 'jit', label: 'Edit RSVP Settings', icon: 'bell', color: '#F59E0B', bg: '#FFFBEB' },
     { id: 'capacity', label: 'Edit Attendee Limit', icon: 'users', color: '#A855F7', bg: '#F5F3FF' },
     { id: 'location', label: 'Edit Location', icon: 'map-pin', color: '#10B981', bg: '#ECFDF5' },
     { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: '#ECFEFF' },
@@ -485,7 +494,7 @@ const GroupSettings = () => {
                   )}
                   {option.id === 'jit' && (
                     <Text style={styles.optionSubLabel}>
-                      {(group?.generationLeadDays ?? 0)} day{(group?.generationLeadDays ?? 0) !== 1 ? 's' : ''} before at {group?.generationLeadTime || '—'}
+                      {rsvpSettingsLabel}
                     </Text>
                   )}
                   {option.id === 'location' && (

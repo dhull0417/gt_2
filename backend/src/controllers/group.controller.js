@@ -22,6 +22,10 @@ const parseTimeString = (timeStr) => {
     return { hours, minutes };
 };
 
+// Distinguishes "field omitted" (use fallback) from "field explicitly cleared to
+// unrestricted" (keep null) — a bare Number(null) would otherwise coerce to 0.
+const numOrNull = (v, fallback) => v === undefined ? fallback : (v === null ? null : Number(v));
+
 const getVisibilityDays = (frequency) => {
   switch (frequency) {
     case 'daily':    return 3;
@@ -58,7 +62,9 @@ export const createGroup = asyncHandler(async (req, res) => {
     defaultCapacity,
     defaultLocation,
     generationLeadDays,
-    generationLeadTime
+    generationLeadTime,
+    generationDeadlineDays,
+    generationDeadlineTime
   } = req.body;
   
   if (!name || !timezone) {
@@ -84,8 +90,10 @@ export const createGroup = asyncHandler(async (req, res) => {
       members: uniqueMemberIds,
       defaultCapacity: defaultCapacity || 0,
       defaultLocation: defaultLocation || "",
-      generationLeadDays: generationLeadDays !== undefined ? Number(generationLeadDays) : 1,
+      generationLeadDays: numOrNull(generationLeadDays, 1),
       generationLeadTime: generationLeadTime || "09:00 AM",
+      generationDeadlineDays: numOrNull(generationDeadlineDays, null),
+      generationDeadlineTime: generationDeadlineTime || "09:00 AM",
       moderators: []
   };
   
@@ -172,9 +180,14 @@ export const createGroup = asyncHandler(async (req, res) => {
                               .minus({ days: getVisibilityDays(routine.frequency) })
                               .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
-                          const rsvpDT = nextMeetupDT
-                              .minus({ days: groupToUse.generationLeadDays || 1 })
-                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+                          const rsvpOpenDate = groupToUse.generationLeadDays != null
+                              ? nextMeetupDT.minus({ days: groupToUse.generationLeadDays }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate()
+                              : null;
+
+                          const { hours: closeH, minutes: closeM } = parseTimeString(groupToUse.generationDeadlineTime || "09:00 AM");
+                          const rsvpCloseDate = groupToUse.generationDeadlineDays != null
+                              ? nextMeetupDT.minus({ days: groupToUse.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
+                              : null;
 
                           await Meetup.create({
                               group: groupToUse._id,
@@ -189,7 +202,8 @@ export const createGroup = asyncHandler(async (req, res) => {
                               isOverride: false,
                               startsAt: nextDate,
                               visibilityDate: visibilityDT.toJSDate(),
-                              rsvpOpenDate: rsvpDT.toJSDate()
+                              rsvpOpenDate,
+                              rsvpCloseDate
                           });
                       }
 
@@ -302,9 +316,14 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                               .minus({ days: getVisibilityDays(routine.frequency) })
                               .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
-                          const rsvpDT = nextMeetupDT
-                              .minus({ days: group.generationLeadDays || 1 })
-                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+                          const rsvpOpenDate = group.generationLeadDays != null
+                              ? nextMeetupDT.minus({ days: group.generationLeadDays }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate()
+                              : null;
+
+                          const { hours: closeH, minutes: closeM } = parseTimeString(group.generationDeadlineTime || "09:00 AM");
+                          const rsvpCloseDate = group.generationDeadlineDays != null
+                              ? nextMeetupDT.minus({ days: group.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
+                              : null;
 
                           await Meetup.create({
                               group: group._id,
@@ -319,7 +338,8 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
                               isOverride: false,
                               startsAt: nextDate,
                               visibilityDate: visibilityDT.toJSDate(),
-                              rsvpOpenDate: rsvpDT.toJSDate()
+                              rsvpOpenDate,
+                              rsvpCloseDate
                           });
                       }
 
@@ -359,6 +379,8 @@ export const updateGroup = asyncHandler(async (req, res) => {
         defaultLocation,
         generationLeadDays,
         generationLeadTime,
+        generationDeadlineDays,
+        generationDeadlineTime,
         defaultCapacity
     } = req.body;
 
@@ -397,8 +419,10 @@ export const updateGroup = asyncHandler(async (req, res) => {
 
     if (image !== undefined) group.image = image;
     if (meetupsToDisplay) group.meetupsToDisplay = parseInt(meetupsToDisplay);
-    if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
+    if (generationLeadDays !== undefined) group.generationLeadDays = numOrNull(generationLeadDays, null);
     if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
+    if (generationDeadlineDays !== undefined) group.generationDeadlineDays = numOrNull(generationDeadlineDays, null);
+    if (generationDeadlineTime !== undefined) group.generationDeadlineTime = generationDeadlineTime;
     if (defaultCapacity !== undefined) {
         group.defaultCapacity = Number(defaultCapacity);
         await Meetup.updateMany({ group: groupId, isOverride: false }, { $set: { capacity: Number(defaultCapacity) } });

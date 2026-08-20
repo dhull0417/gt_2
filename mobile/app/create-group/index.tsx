@@ -13,7 +13,7 @@ import {
     LayoutAnimation,
     UIManager,
     Image,
-    KeyboardAvoidingView,
+    Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -111,9 +111,15 @@ interface ScheduleData {
     startDate: string;
     timezone: string;
     frequency: Frequency | null;
+    rsvpRestricted: boolean;
+    leadEnabled: boolean;
     leadDays: number;
     leadTime: string;
     showLeadTimePicker: boolean;
+    deadlineEnabled: boolean;
+    deadlineDays: number;
+    deadlineTime: string;
+    showDeadlineTimePicker: boolean;
     showStartDatePicker: boolean;
     showTZPicker: boolean;
     showFreqPicker: boolean;
@@ -149,9 +155,15 @@ const defaultSchedule = (): ScheduleData => ({
     startDate: DateTime.now().toISODate()!,
     timezone: "America/Denver",
     frequency: null,
+    rsvpRestricted: true,
+    leadEnabled: true,
     leadDays: 1,
     leadTime: "09:00 AM",
     showLeadTimePicker: false,
+    deadlineEnabled: false,
+    deadlineDays: 1,
+    deadlineTime: "09:00 AM",
+    showDeadlineTimePicker: false,
     showStartDatePicker: false,
     showTZPicker: false,
     showFreqPicker: false,
@@ -311,7 +323,7 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
                     onChangeText={setName}
                     autoFocus
                     returnKeyType="done"
-                    onSubmitEditing={() => canContinue && onNext(name.trim(), imageUrl)}
+                    onSubmitEditing={() => Keyboard.dismiss()}
                 />
                 <TouchableOpacity onPress={handlePickImage} disabled={uploading} style={s.imagePicker}>
                     {uploading ? (
@@ -955,7 +967,7 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
     );
 
     return (
-        <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <View style={s.screen}>
             <View style={s.screenHeader}>
                 <TouchableOpacity onPress={onBack} style={s.iconBtn}>
                     <Feather name="arrow-left" size={24} color="#6B7280" />
@@ -1041,25 +1053,90 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                 {d.frequency === "monthly" && renderMonthlyOptions()}
                 {d.frequency === "custom" && renderCustomOptions()}
 
-                {/* RSVP Lead */}
-                <Text style={[s.fieldLabel, { marginTop: 20 }]}>RSVP opens</Text>
-                <View style={s.leadRow}>
-                    <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ leadDays: Math.max(1, d.leadDays - 1) })}>
-                        <Feather name="minus" size={18} color="#4A90E2" />
+                {/* RSVP Restrictions */}
+                <Text style={[s.fieldLabel, { marginTop: 20 }]}>Limit when people can RSVP?</Text>
+                <View style={s.boolRow}>
+                    <TouchableOpacity style={[s.boolBtn, d.rsvpRestricted && s.boolBtnActive]}
+                        onPress={() => upd({ rsvpRestricted: true })}>
+                        <Text style={[s.boolBtnText, d.rsvpRestricted && s.boolBtnTextActive]}>Limit RSVPs</Text>
                     </TouchableOpacity>
-                    <View style={s.leadCenter}>
-                        <Text style={s.leadVal}>{d.leadDays}</Text>
-                        <Text style={s.leadSub}>days before</Text>
-                    </View>
-                    <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ leadDays: d.leadDays + 1 })}>
-                        <Feather name="plus" size={18} color="#4A90E2" />
+                    <TouchableOpacity style={[s.boolBtn, !d.rsvpRestricted && s.boolBtnActive]}
+                        onPress={() => upd({ rsvpRestricted: false })}>
+                        <Text style={[s.boolBtnText, !d.rsvpRestricted && s.boolBtnTextActive]}>Allow anytime</Text>
                     </TouchableOpacity>
-                    <TimeButton time={d.leadTime} active={d.showLeadTimePicker}
-                        onPress={() => upd({ showLeadTimePicker: !d.showLeadTimePicker, showStartDatePicker: false, showTZPicker: false, showFreqPicker: false })} />
                 </View>
-                {d.showLeadTimePicker && (
-                    <View style={s.inlinePickerBox}>
-                        <TimePicker initialValue={d.leadTime} onTimeChange={t => upd({ leadTime: t })} />
+
+                {d.rsvpRestricted && (
+                    <View style={{ marginTop: 14, gap: 14 }}>
+                        <View>
+                            <Text style={s.fieldLabel}>RSVP opens</Text>
+                            <View style={s.boolRow}>
+                                <TouchableOpacity style={[s.boolBtn, d.leadEnabled && s.boolBtnActive]}
+                                    onPress={() => upd({ leadEnabled: true })}>
+                                    <Text style={[s.boolBtnText, d.leadEnabled && s.boolBtnTextActive]}>Yes</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[s.boolBtn, !d.leadEnabled && s.boolBtnActive]}
+                                    onPress={() => upd({ leadEnabled: false })}>
+                                    <Text style={[s.boolBtnText, !d.leadEnabled && s.boolBtnTextActive]}>No</Text>
+                                </TouchableOpacity>
+                            </View>
+                            {d.leadEnabled && (
+                                <View style={[s.leadRow, { marginTop: 10 }]}>
+                                    <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ leadDays: Math.max(0, d.leadDays - 1) })}>
+                                        <Feather name="minus" size={18} color="#4A90E2" />
+                                    </TouchableOpacity>
+                                    <View style={s.leadCenter}>
+                                        <Text style={s.leadVal}>{d.leadDays}</Text>
+                                        <Text style={s.leadSub}>days before</Text>
+                                    </View>
+                                    <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ leadDays: d.leadDays + 1 })}>
+                                        <Feather name="plus" size={18} color="#4A90E2" />
+                                    </TouchableOpacity>
+                                    <TimeButton time={d.leadTime} active={d.showLeadTimePicker}
+                                        onPress={() => upd({ showLeadTimePicker: !d.showLeadTimePicker, showDeadlineTimePicker: false, showStartDatePicker: false, showTZPicker: false, showFreqPicker: false })} />
+                                </View>
+                            )}
+                            {d.leadEnabled && d.showLeadTimePicker && (
+                                <View style={s.inlinePickerBox}>
+                                    <TimePicker initialValue={d.leadTime} onTimeChange={t => upd({ leadTime: t })} />
+                                </View>
+                            )}
+                        </View>
+
+                        <View>
+                            <Text style={s.fieldLabel}>RSVP deadline</Text>
+                            <View style={s.boolRow}>
+                                <TouchableOpacity style={[s.boolBtn, d.deadlineEnabled && s.boolBtnActive]}
+                                    onPress={() => upd({ deadlineEnabled: true })}>
+                                    <Text style={[s.boolBtnText, d.deadlineEnabled && s.boolBtnTextActive]}>Yes</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[s.boolBtn, !d.deadlineEnabled && s.boolBtnActive]}
+                                    onPress={() => upd({ deadlineEnabled: false })}>
+                                    <Text style={[s.boolBtnText, !d.deadlineEnabled && s.boolBtnTextActive]}>No</Text>
+                                </TouchableOpacity>
+                            </View>
+                            {d.deadlineEnabled && (
+                                <View style={[s.leadRow, { marginTop: 10 }]}>
+                                    <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ deadlineDays: Math.max(0, d.deadlineDays - 1) })}>
+                                        <Feather name="minus" size={18} color="#4A90E2" />
+                                    </TouchableOpacity>
+                                    <View style={s.leadCenter}>
+                                        <Text style={s.leadVal}>{d.deadlineDays}</Text>
+                                        <Text style={s.leadSub}>days before</Text>
+                                    </View>
+                                    <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ deadlineDays: d.deadlineDays + 1 })}>
+                                        <Feather name="plus" size={18} color="#4A90E2" />
+                                    </TouchableOpacity>
+                                    <TimeButton time={d.deadlineTime} active={d.showDeadlineTimePicker}
+                                        onPress={() => upd({ showDeadlineTimePicker: !d.showDeadlineTimePicker, showLeadTimePicker: false, showStartDatePicker: false, showTZPicker: false, showFreqPicker: false })} />
+                                </View>
+                            )}
+                            {d.deadlineEnabled && d.showDeadlineTimePicker && (
+                                <View style={s.inlinePickerBox}>
+                                    <TimePicker initialValue={d.deadlineTime} onTimeChange={t => upd({ deadlineTime: t })} />
+                                </View>
+                            )}
+                        </View>
                     </View>
                 )}
 
@@ -1109,7 +1186,7 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                     <Feather name="arrow-right" size={18} color="#fff" style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
             </View>
-        </KeyboardAvoidingView>
+        </View>
     );
 };
 
@@ -1154,8 +1231,10 @@ const buildSchedulePayload = (d: ScheduleData) => {
         schedule: { frequency: topFreq, startDate: d.startDate, routines },
         timezone: d.timezone,
         defaultLocation: d.location,
-        generationLeadDays: d.leadDays,
+        generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
         generationLeadTime: d.leadTime,
+        generationDeadlineDays: d.rsvpRestricted && d.deadlineEnabled ? d.deadlineDays : null,
+        generationDeadlineTime: d.deadlineTime,
     };
 };
 
@@ -1220,10 +1299,27 @@ const ReviewScreen = ({ groupName, groupImage, members, schedule, onConfirm, onB
                                 <Feather name="globe" size={13} color="#9CA3AF" />
                                 <Text style={s.reviewInlineText}>{USA_TIMEZONES.find(t => t.value === schedule.timezone)?.label}</Text>
                             </View>
-                            <View style={s.reviewInlineRow}>
-                                <Feather name="bell" size={13} color="#9CA3AF" />
-                                <Text style={s.reviewInlineText}>RSVP opens {schedule.leadDays} days before at {schedule.leadTime}</Text>
-                            </View>
+                            {!schedule.rsvpRestricted || (!schedule.leadEnabled && !schedule.deadlineEnabled) ? (
+                                <View style={s.reviewInlineRow}>
+                                    <Feather name="bell" size={13} color="#9CA3AF" />
+                                    <Text style={s.reviewInlineText}>RSVPs open anytime</Text>
+                                </View>
+                            ) : (
+                                <>
+                                    {schedule.leadEnabled && (
+                                        <View style={s.reviewInlineRow}>
+                                            <Feather name="unlock" size={13} color="#9CA3AF" />
+                                            <Text style={s.reviewInlineText}>RSVP opens {schedule.leadDays} days before at {schedule.leadTime}</Text>
+                                        </View>
+                                    )}
+                                    {schedule.deadlineEnabled && (
+                                        <View style={s.reviewInlineRow}>
+                                            <Feather name="lock" size={13} color="#9CA3AF" />
+                                            <Text style={s.reviewInlineText}>RSVP deadline {schedule.deadlineDays} days before at {schedule.deadlineTime}</Text>
+                                        </View>
+                                    )}
+                                </>
+                            )}
                         </View>
 
                         <View style={s.reviewDetailSeparator} />
@@ -1312,8 +1408,10 @@ const CreateGroupScreen = () => {
             name: groupName,
             image: groupImage,
             meetupsToDisplay: 1,
-            generationLeadDays: schedule?.leadDays ?? 4,
+            generationLeadDays: null,
             generationLeadTime: schedule?.leadTime ?? "09:00 AM",
+            generationDeadlineDays: null,
+            generationDeadlineTime: schedule?.deadlineTime ?? "09:00 AM",
             timezone: schedule?.timezone ?? "America/Denver",
             defaultLocation: schedule?.location ?? "",
             defaultCapacity,

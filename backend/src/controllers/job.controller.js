@@ -106,9 +106,14 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
                 .minus({ days: getVisibilityDays(routine.frequency) })
                 .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
-              const rsvpDT = nextMeetupDT
-                .minus({ days: group.generationLeadDays || 1 })
-                .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+              const rsvpOpenDate = group.generationLeadDays != null
+                ? nextMeetupDT.minus({ days: group.generationLeadDays }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate()
+                : null;
+
+              const { hours: closeH, minutes: closeM } = parseTimeString(group.generationDeadlineTime || "09:00 AM");
+              const rsvpCloseDate = group.generationDeadlineDays != null
+                ? nextMeetupDT.minus({ days: group.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
+                : null;
 
               await Meetup.create({
                 group: group._id,
@@ -123,7 +128,8 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
                 isOverride: false,
                 startsAt: nextDate,
                 visibilityDate: visibilityDT.toJSDate(),
-                rsvpOpenDate: rsvpDT.toJSDate()
+                rsvpOpenDate,
+                rsvpCloseDate
               });
 
               generatedCount++;

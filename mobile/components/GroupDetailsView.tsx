@@ -266,7 +266,16 @@ export const GroupDetailsView = ({
                                 <Feather name="bell" size={16} color="#D97706" />
                             </View>
                             <Text style={styles.infoText}>
-                                RSVP {groupDetails.generationLeadDays} day{groupDetails.generationLeadDays > 1 ? 's' : ''} before @ {groupDetails.generationLeadTime}
+                                {groupDetails.generationLeadDays == null && groupDetails.generationDeadlineDays == null
+                                    ? "RSVPs open anytime"
+                                    : [
+                                        groupDetails.generationLeadDays != null
+                                            ? `Opens ${groupDetails.generationLeadDays} day${groupDetails.generationLeadDays !== 1 ? 's' : ''} before @ ${groupDetails.generationLeadTime}`
+                                            : null,
+                                        groupDetails.generationDeadlineDays != null
+                                            ? `Deadline ${groupDetails.generationDeadlineDays} day${groupDetails.generationDeadlineDays !== 1 ? 's' : ''} before @ ${groupDetails.generationDeadlineTime}`
+                                            : null,
+                                    ].filter(Boolean).join(' · ')}
                             </Text>
                         </View>
                     </View>

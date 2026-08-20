@@ -18,6 +18,7 @@ const meetupSchema = new mongoose.Schema({
   capacity: { type: Number, default: 0 },
   visibilityDate: { type: Date },
   rsvpOpenDate: { type: Date },
+  rsvpCloseDate: { type: Date },
   rsvpNotified: { type: Boolean, default: false },
   // Set to the `startsAt` value the 30-min reminder was last sent for. Comparing
   // against the current `startsAt` (rather than a boolean) makes the reminder

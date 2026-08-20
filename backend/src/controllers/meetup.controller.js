@@ -91,6 +91,10 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             return res.status(400).json({ error: "RSVPs are not open yet." });
         }
 
+        if (meetup.rsvpCloseDate && new Date(meetup.rsvpCloseDate) < new Date()) {
+            return res.status(400).json({ error: "The RSVP deadline has passed." });
+        }
+
         // Re-tapping the same RSVP button shouldn't re-notify the group. "In" covers
         // both the 'in' and 'waitlist' arrays since both represent an 'in' request.
         const wasIn = meetup.in.some(id => id.equals(user._id));
