@@ -3,10 +3,12 @@ import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useApiClient, userApi } from '@/utils/api';
 
 const VerifyNewEmailScreen = () => {
     const { user } = useUser();
     const router = useRouter();
+    const api = useApiClient();
     const { emailId } = useLocalSearchParams<{ emailId: string }>();
 
     const [code, setCode] = useState('');
@@ -25,7 +27,17 @@ const VerifyNewEmailScreen = () => {
             // 1. Attempt to verify the code
             await emailAddressToVerify.attemptVerification({ code });
 
-            // 2. Set the newly verified email as the user's primary
+            // 2. Make sure Mongo can accept the new email (it must be unique
+            // there too) before touching Clerk's primary email, so the two
+            // stores never end up disagreeing.
+            try {
+                await userApi.updateProfile(api, { email: emailAddressToVerify.emailAddress });
+            } catch (mongoErr: any) {
+                Alert.alert('Error', mongoErr.response?.data?.error || 'Could not update your email. Please try again.');
+                return;
+            }
+
+            // 3. Now that Mongo accepted it, set it as the user's primary email in Clerk
             await user.update({ primaryEmailAddressId: emailAddressToVerify.id });
 
             Alert.alert("Success", "Your email address has been updated.");

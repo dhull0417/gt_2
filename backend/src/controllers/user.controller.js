@@ -127,7 +127,15 @@ export const updateProfile = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "Zip code must be exactly 5 digits." });
   }
 
-  const user = await User.findOneAndUpdate({ clerkId: userId }, req.body, { new: true });
+  let user;
+  try {
+    user = await User.findOneAndUpdate({ clerkId: userId }, req.body, { new: true, runValidators: true });
+  } catch (err) {
+    if (err.code === 11000 && err.keyPattern?.email) {
+      return res.status(409).json({ error: "That email address is already in use by another account." });
+    }
+    throw err;
+  }
   if (!user) return res.status(404).json({ error: "User not found" });
 
   res.status(200).json({ user });
