@@ -29,7 +29,7 @@ import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import LocationAutocompleteInput from '@/components/LocationAutocompleteInput';
+import LocationSearchPanel from '@/components/LocationSearchPanel';
 
 // Mirrors the Max Attendees validation on the group-creation Schedule screen and
 // the Add Meetup wizard so all three "attendee limit" entry points agree on what's valid.
@@ -88,7 +88,6 @@ const GroupSettings = () => {
   const canSaveCapacity = capacityMode !== "limited" || (tempCapacity !== "" && !capacityError);
 
   const [isEditingLocation, setIsEditingLocation] = useState(false);
-  const [tempLocation, setTempLocation] = useState("");
   const [isSavingLocation, setIsSavingLocation] = useState(false);
 
   // --- State for Moderator Management ---
@@ -183,7 +182,6 @@ const GroupSettings = () => {
         break;
       }
       case 'location':
-        setTempLocation(group?.defaultLocation || "");
         setIsEditingLocation(true);
         break;
       case 'mods':
@@ -377,9 +375,9 @@ const GroupSettings = () => {
     }
   };
 
-  const handleSaveLocation = async () => {
+  const handleSaveLocation = async (locationText: string) => {
     if (!id) return;
-    const trimmedLoc = tempLocation.trim();
+    const trimmedLoc = locationText.trim();
     if (trimmedLoc === group?.defaultLocation) {
         setIsEditingLocation(false);
         return;
@@ -762,30 +760,22 @@ const GroupSettings = () => {
       </Modal>
 
       {/* Edit Location Modal */}
-      <Modal visible={isEditingLocation} transparent animationType="fade" onRequestClose={() => setIsEditingLocation(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Default Location</Text>
-                <Text style={styles.modalSubtitle}>Updates location for all associated meetups.</Text>
-                <View style={{ marginBottom: 20 }}>
-                    <LocationAutocompleteInput
-                        variant="modal"
-                        placeholder="e.g. Starbucks or Zoom link..."
-                        value={tempLocation}
-                        onChangeText={setTempLocation}
-                        onSelect={place => setTempLocation(place.address)}
-                        autoFocus
-                        selectTextOnFocus
-                    />
+      <Modal visible={isEditingLocation} transparent={false} animationType="slide" onRequestClose={() => setIsEditingLocation(false)}>
+        <View style={[styles.fullModalContainer, { paddingTop: insets.top }]}>
+            <Text style={styles.modalSubtitleLeft}>Updates location for all associated meetups.</Text>
+            {isSavingLocation ? (
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                    <ActivityIndicator size="small" color="#4A90E2" />
                 </View>
-                <View style={styles.modalButtons}>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingLocation(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveLocation} disabled={isSavingLocation}>
-                        {isSavingLocation ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </KeyboardAvoidingView>
+            ) : (
+                <LocationSearchPanel
+                    initialValue={group?.defaultLocation || ""}
+                    placeholder="e.g. Starbucks or Zoom link..."
+                    onDone={(text) => handleSaveLocation(text)}
+                    onCancel={() => setIsEditingLocation(false)}
+                />
+            )}
+        </View>
       </Modal>
 
       {/* Edit Moderators Modal */}

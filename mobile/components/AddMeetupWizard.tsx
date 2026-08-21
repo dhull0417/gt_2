@@ -14,7 +14,8 @@ import { Feather } from '@expo/vector-icons';
 import { GroupDetails, groupApi, useApiClient } from '@/utils/api';
 import { DateTime } from 'luxon';
 import NativeTimePicker from './NativeTimePicker';
-import LocationAutocompleteInput from './LocationAutocompleteInput';
+import LocationField from './LocationField';
+import LocationSearchPanel from './LocationSearchPanel';
 import { useQueryClient } from '@tanstack/react-query';
 
 interface AddMeetupWizardProps {
@@ -65,6 +66,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
         groupDetails.defaultCapacity ? String(groupDetails.defaultCapacity) : ""
     );
     const [meetupLocation, setMeetupLocation] = useState(groupDetails.defaultLocation || "");
+    const [isLocationSearchActive, setIsLocationSearchActive] = useState(false);
 
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [showTZPicker, setShowTZPicker] = useState(false);
@@ -138,6 +140,15 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
             onRequestClose={resetAndClose}
         >
             <View style={s.screen}>
+              {isLocationSearchActive ? (
+                <LocationSearchPanel
+                    initialValue={meetupLocation}
+                    placeholder="e.g. Starbucks or Zoom link..."
+                    onDone={(text) => { setMeetupLocation(text); setIsLocationSearchActive(false); }}
+                    onCancel={() => setIsLocationSearchActive(false)}
+                />
+              ) : (
+                <>
                 <View style={s.screenHeader}>
                     <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>
                         <Feather name="x" size={24} color="#6B7280" />
@@ -269,12 +280,11 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
 
                     {/* Location */}
                     <Text style={s.fieldLabel}>Location or link</Text>
-                    <LocationAutocompleteInput
+                    <LocationField
                         variant="wizard"
                         placeholder="e.g. Starbucks or Zoom link..."
                         value={meetupLocation}
-                        onChangeText={setMeetupLocation}
-                        onSelect={place => setMeetupLocation(place.address)}
+                        onPress={() => setIsLocationSearchActive(true)}
                     />
                 </ScrollView>
 
@@ -291,6 +301,8 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
                         )}
                     </TouchableOpacity>
                 </View>
+                </>
+              )}
             </View>
         </Modal>
     );

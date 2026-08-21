@@ -15,6 +15,7 @@ import {
     Image,
     Keyboard,
     Animated,
+    Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -26,7 +27,8 @@ import { DateTime } from "luxon";
 import { useQuery } from "@tanstack/react-query";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
 import NativeTimePicker, { timeStringToDate } from "../../components/NativeTimePicker";
-import LocationAutocompleteInput from "../../components/LocationAutocompleteInput";
+import LocationField from "../../components/LocationField";
+import LocationSearchPanel from "../../components/LocationSearchPanel";
 import { Frequency, DayTime, useApiClient, groupApi } from "../../utils/api";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -458,6 +460,7 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
     initialData?: ScheduleData | null; onNext: (data: ScheduleData) => void; onBack: () => void; onSkip: () => void;
 }) => {
     const [d, setD] = useState<ScheduleData>(initialData ?? defaultSchedule());
+    const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
 
     const upd = useCallback((patch: Partial<ScheduleData>) => {
         animate();
@@ -1028,12 +1031,11 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                     </View>
 
                     <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Location or link</Text>
-                    <LocationAutocompleteInput
+                    <LocationField
                         variant="wizard"
                         placeholder="e.g. 123 Main St or zoom.us/j/..."
                         value={d.location}
-                        onChangeText={v => upd({ location: v })}
-                        onSelect={place => upd({ location: place.address })}
+                        onPress={() => setIsLocationSearchOpen(true)}
                     />
                 </View>
 
@@ -1284,6 +1286,17 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                     <Feather name="arrow-right" size={18} color="#fff" style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
             </View>
+
+            <Modal visible={isLocationSearchOpen} animationType="slide" onRequestClose={() => setIsLocationSearchOpen(false)}>
+                <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['top', 'bottom']}>
+                    <LocationSearchPanel
+                        initialValue={d.location}
+                        placeholder="e.g. 123 Main St or zoom.us/j/..."
+                        onDone={(text) => { upd({ location: text }); setIsLocationSearchOpen(false); }}
+                        onCancel={() => setIsLocationSearchOpen(false)}
+                    />
+                </SafeAreaView>
+            </Modal>
         </View>
     );
 };

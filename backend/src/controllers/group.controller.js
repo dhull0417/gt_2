@@ -261,8 +261,25 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     
     if (timezone) group.timezone = timezone;
     if (defaultCapacity !== undefined) group.defaultCapacity = Number(defaultCapacity);
-    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
-    
+    if (defaultLocation !== undefined) {
+        group.defaultLocation = defaultLocation;
+        if (defaultLocation) {
+            // Sync all auto-generated meetups to the new location, plus any
+            // meetup (including manually-overridden ones) that has no location
+            // of its own yet — overrides with a location already set are left alone.
+            await Meetup.updateMany(
+                {
+                    group: group._id,
+                    $or: [
+                        { isOverride: false },
+                        { location: { $in: ["", null] } },
+                    ],
+                },
+                { $set: { location: defaultLocation } }
+            );
+        }
+    }
+
     await group.save();
 
     const today = new Date();
@@ -440,7 +457,24 @@ export const updateGroup = asyncHandler(async (req, res) => {
         group.defaultCapacity = Number(defaultCapacity);
         await Meetup.updateMany({ group: groupId, isOverride: false }, { $set: { capacity: Number(defaultCapacity) } });
     }
-    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
+    if (defaultLocation !== undefined) {
+        group.defaultLocation = defaultLocation;
+        if (defaultLocation) {
+            // Sync all auto-generated meetups to the new location, plus any
+            // meetup (including manually-overridden ones) that has no location
+            // of its own yet — overrides with a location already set are left alone.
+            await Meetup.updateMany(
+                {
+                    group: groupId,
+                    $or: [
+                        { isOverride: false },
+                        { location: { $in: ["", null] } },
+                    ],
+                },
+                { $set: { location: defaultLocation } }
+            );
+        }
+    }
 
     const updatedGroup = await group.save();
     res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully." });

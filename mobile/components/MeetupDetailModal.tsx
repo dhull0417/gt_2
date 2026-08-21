@@ -37,7 +37,8 @@ import { RsvpBreather } from '@/components/RsvpBreather';
 import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
 import NativeTimePicker from './NativeTimePicker';
-import LocationAutocompleteInput from './LocationAutocompleteInput';
+import LocationField from './LocationField';
+import LocationSearchPanel from './LocationSearchPanel';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 // Watermark that slowly breathes between a base and darker opacity, one full cycle every 5 seconds.
@@ -100,6 +101,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
     const [newCapacity, setNewCapacity] = useState('');
     const [newLocation, setNewLocation] = useState('');
+    const [isLocationSearchActive, setIsLocationSearchActive] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
@@ -641,7 +643,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 style={[styles.actionBtn, styles.inOutActionBtn]}
                                 activeOpacity={0.7}
                             >
-                                <Feather name="repeat" size={20} color={isOut ? '#FF7A6E' : '#3FABA1'} />
+                                <View style={[StyleSheet.absoluteFill, { top: 0, height: '50%', backgroundColor: '#F0FDFB', borderTopLeftRadius: 9, borderTopRightRadius: 9 }]} />
+                                <View style={[StyleSheet.absoluteFill, { top: '50%', height: '50%', backgroundColor: '#FFE4E1', borderBottomLeftRadius: 9, borderBottomRightRadius: 9 }]} />
+                                <View style={{ width: 20, height: 20 }}>
+                                    <View style={{ position: 'absolute', top: 0, left: 0, width: 20, height: 10, overflow: 'hidden' }}>
+                                        <Feather name="repeat" size={20} color="#3FABA1" />
+                                    </View>
+                                    <View style={{ position: 'absolute', top: 10, left: 0, width: 20, height: 10, overflow: 'hidden' }}>
+                                        <Feather name="repeat" size={20} color="#FF7A6E" style={{ position: 'absolute', top: -10, left: 0 }} />
+                                    </View>
+                                </View>
                             </TouchableOpacity>
                         )}
                     </View>
@@ -1059,74 +1070,84 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             <Modal transparent visible={isEditModalVisible} animationType="slide">
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
                     <View style={styles.modalOverlay}>
-                        <View style={styles.modalContent}>
-                            <View style={styles.modalHeaderInner}>
-                                <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
-                                <Text style={styles.modalTitleInner}>Edit Meetup</Text>
-                                <TouchableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating || !canSaveCapacity}>
-                                    {isUpdating ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={[styles.saveBtnText, !canSaveCapacity && styles.saveBtnTextDisabled]}>Save</Text>}
-                                </TouchableOpacity>
-                            </View>
-                            
-                            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-                                <Text style={styles.fieldLabel}>Date</Text>
-                                <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
-                                    <Feather name="calendar" size={18} color="#4A90E2" />
-                                    <Text style={styles.dateInputText}>
-                                        {newDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                                    </Text>
-                                </TouchableOpacity>
-
-                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Time</Text>
-                                <TouchableOpacity style={styles.dateInput} onPress={() => setShowTimePicker(true)}>
-                                    <Feather name="clock" size={18} color="#4A90E2" />
-                                    <Text style={styles.dateInputText}>{newTime}</Text>
-                                </TouchableOpacity>
-                                {showTimePicker && (
-                                    <NativeTimePicker value={newTime} onChange={setNewTime} onClose={() => setShowTimePicker(false)} />
-                                )}
-
-                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Location Override</Text>
-                                <LocationAutocompleteInput
-                                    variant="card"
+                        <View style={[styles.modalContent, isLocationSearchActive && styles.modalContentSearch]}>
+                            {isLocationSearchActive ? (
+                                <LocationSearchPanel
+                                    initialValue={newLocation}
                                     placeholder="Specific address or link..."
-                                    value={newLocation}
-                                    onChangeText={setNewLocation}
-                                    onSelect={place => setNewLocation(place.address)}
+                                    onDone={(text) => { setNewLocation(text); setIsLocationSearchActive(false); }}
+                                    onCancel={() => setIsLocationSearchActive(false)}
                                 />
-
-                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Max Attendees</Text>
-                                <View style={styles.boolRow}>
-                                    <TouchableOpacity
-                                        style={[styles.boolBtn, capacityMode === "unlimited" && styles.boolBtnActive]}
-                                        onPress={() => { setCapacityMode("unlimited"); setNewCapacity(""); }}
-                                    >
-                                        <Text style={[styles.boolBtnText, capacityMode === "unlimited" && styles.boolBtnTextActive]}>Unlimited</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={[styles.boolBtn, capacityMode === "limited" && styles.boolBtnActive]}
-                                        onPress={() => setCapacityMode("limited")}
-                                    >
-                                        <Text style={[styles.boolBtnText, capacityMode === "limited" && styles.boolBtnTextActive]}>Limited</Text>
-                                    </TouchableOpacity>
-                                </View>
-                                {capacityMode === "limited" && (
-                                    <View style={{ marginTop: 10 }}>
-                                        <View style={[styles.inputContainer, capacityError && styles.inputContainerError]}>
-                                            <Feather name="users" size={18} color="#4A90E2" />
-                                            <TextInput
-                                                style={styles.textInput}
-                                                placeholder="How many?"
-                                                placeholderTextColor="#C4C9D4"
-                                                keyboardType="number-pad"
-                                                value={newCapacity}
-                                                onChangeText={setNewCapacity}
-                                            />
-                                        </View>
-                                        {capacityError && <Text style={styles.errorText}>{capacityError}</Text>}
+                            ) : (
+                                <>
+                                    <View style={styles.modalHeaderInner}>
+                                        <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
+                                        <Text style={styles.modalTitleInner}>Edit Meetup</Text>
+                                        <TouchableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating || !canSaveCapacity}>
+                                            {isUpdating ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={[styles.saveBtnText, !canSaveCapacity && styles.saveBtnTextDisabled]}>Save</Text>}
+                                        </TouchableOpacity>
                                     </View>
-                                )}
-                            </ScrollView>
+
+                                    <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+                                        <Text style={styles.fieldLabel}>Date</Text>
+                                        <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
+                                            <Feather name="calendar" size={18} color="#4A90E2" />
+                                            <Text style={styles.dateInputText}>
+                                                {newDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                                            </Text>
+                                        </TouchableOpacity>
+
+                                        <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Time</Text>
+                                        <TouchableOpacity style={styles.dateInput} onPress={() => setShowTimePicker(true)}>
+                                            <Feather name="clock" size={18} color="#4A90E2" />
+                                            <Text style={styles.dateInputText}>{newTime}</Text>
+                                        </TouchableOpacity>
+                                        {showTimePicker && (
+                                            <NativeTimePicker value={newTime} onChange={setNewTime} onClose={() => setShowTimePicker(false)} />
+                                        )}
+
+                                        <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Location Override</Text>
+                                        <LocationField
+                                            variant="card"
+                                            placeholder="Specific address or link..."
+                                            value={newLocation}
+                                            onPress={() => setIsLocationSearchActive(true)}
+                                        />
+
+                                        <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Max Attendees</Text>
+                                        <View style={styles.boolRow}>
+                                            <TouchableOpacity
+                                                style={[styles.boolBtn, capacityMode === "unlimited" && styles.boolBtnActive]}
+                                                onPress={() => { setCapacityMode("unlimited"); setNewCapacity(""); }}
+                                            >
+                                                <Text style={[styles.boolBtnText, capacityMode === "unlimited" && styles.boolBtnTextActive]}>Unlimited</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={[styles.boolBtn, capacityMode === "limited" && styles.boolBtnActive]}
+                                                onPress={() => setCapacityMode("limited")}
+                                            >
+                                                <Text style={[styles.boolBtnText, capacityMode === "limited" && styles.boolBtnTextActive]}>Limited</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                        {capacityMode === "limited" && (
+                                            <View style={{ marginTop: 10 }}>
+                                                <View style={[styles.inputContainer, capacityError && styles.inputContainerError]}>
+                                                    <Feather name="users" size={18} color="#4A90E2" />
+                                                    <TextInput
+                                                        style={styles.textInput}
+                                                        placeholder="How many?"
+                                                        placeholderTextColor="#C4C9D4"
+                                                        keyboardType="number-pad"
+                                                        value={newCapacity}
+                                                        onChangeText={setNewCapacity}
+                                                    />
+                                                </View>
+                                                {capacityError && <Text style={styles.errorText}>{capacityError}</Text>}
+                                            </View>
+                                        )}
+                                    </ScrollView>
+                                </>
+                            )}
                         </View>
                     </View>
                 </KeyboardAvoidingView>
@@ -1237,7 +1258,7 @@ const styles = StyleSheet.create({
     actionsMenuIconWrap: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     actionsMenuLabel: { color: 'white', fontSize: 15, fontWeight: '600' },
     actionsMenuDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginLeft: 14 + 32 + 12 },
-    inOutActionBtn: { backgroundColor: '#F0FDFB', borderColor: '#99E6DD' },
+    inOutActionBtn: { borderColor: '#4FD1C5', overflow: 'hidden' },
     strikeThrough: { textDecorationLine: 'line-through', color: '#D1D5DB' },
     detailsCard: { backgroundColor: '#F9FAFB', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#F3F4F6' },
     detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
@@ -1292,6 +1313,7 @@ rsvpLockedSubtitle: {
     cancelToggleText: { color: '#EF4444', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 60 },
+    modalContentSearch: { height: '92%', padding: 0, paddingBottom: 0 },
     modalHeaderInner: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
     modalTitleInner: { fontSize: 18, fontWeight: '900', color: '#111827' },
     saveBtnText: { color: '#4A90E2', fontWeight: '900', fontSize: 16 },
