@@ -22,7 +22,7 @@ import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { Meetup, User, useApiClient, userApi } from '@/utils/api';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
 import { getDMDisplayName } from '@/utils/groupDisplay';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { useMessages } from '@/hooks/useMessages';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
@@ -465,7 +465,7 @@ const GroupChatScreen = () => {
                 ) : nextMeetupRsvpStatus.isRsvpDeadlinePassed ? (
                   <Feather name="lock" size={13} color="#9CA3AF" />
                 ) : (
-                  <Feather name="unlock" size={13} color="#F59E0B" />
+                  <Ionicons name="mail-open-outline" size={16} color="#F59E0B" />
                 )
               )}
               <Feather name="chevron-right" size={13} color="#93C5FD" />

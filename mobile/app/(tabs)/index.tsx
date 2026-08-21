@@ -9,7 +9,7 @@ import { useFocusEffect, useRouter, useLocalSearchParams, Link } from 'expo-rout
 import MeetupDetailModal from '@/components/MeetupDetailModal';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { GroupAvatar } from '@/components/GroupAvatar';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { RsvpBreather } from '@/components/RsvpBreather';
@@ -182,14 +182,11 @@ const MeetupCard = ({
                 {isIn ? 'IN' : 'OUT'}
               </Text>
             ) : isRsvpLocked ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Feather name="clock" size={16} color="#9CA3AF" />
-                <Feather name="lock" size={16} color="#9CA3AF" />
-              </View>
+              <Feather name="clock" size={20} color="#9CA3AF" />
             ) : isRsvpDeadlinePassed ? (
-              <Feather name="lock" size={16} color="#9CA3AF" />
+              <Feather name="lock" size={20} color="#9CA3AF" />
             ) : (
-              <Feather name="unlock" size={16} color="#F59E0B" />
+              <Ionicons name="mail-open-outline" size={20} color="#F59E0B" />
             )
           )}
         </View>
@@ -225,7 +222,7 @@ const MeetupCard = ({
           {isRsvpLocked ? (
             <View className="bg-gray-100 py-3 rounded-xl items-center border border-gray-200">
               <View className="flex-row items-center">
-                <Feather name="lock" size={14} color="#6B7280" className="mr-2" />
+                <Feather name="lock" size={22} color="#6B7280" className="mr-2" />
                 <Text className="text-gray-600 font-bold text-sm ml-1.5">
                   RSVPs open on {formatDate(meetup.rsvpOpenDate!, meetup.timezone)}
                 </Text>
@@ -234,7 +231,7 @@ const MeetupCard = ({
           ) : isRsvpDeadlinePassed ? (
             <View className="bg-gray-100 py-3 rounded-xl items-center border border-gray-200">
               <View className="flex-row items-center">
-                <Feather name="lock" size={14} color="#6B7280" className="mr-2" />
+                <Feather name="lock" size={22} color="#6B7280" className="mr-2" />
                 <Text className="text-gray-600 font-bold text-sm ml-1.5">
                   RSVP deadline passed on {formatDate(meetup.rsvpCloseDate!, meetup.timezone)}
                 </Text>

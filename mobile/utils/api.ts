@@ -316,6 +316,30 @@ export const userApi = {
   },
 };
 
+export interface PlaceSuggestion {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+}
+
+export interface PlaceDetails {
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  name: string;
+}
+
+export const placesApi = {
+  autocomplete: async (api: AxiosInstance, input: string, sessionToken: string): Promise<PlaceSuggestion[]> => {
+    const response = await api.get<PlaceSuggestion[]>("/api/places/autocomplete", { params: { input, sessionToken } });
+    return response.data;
+  },
+  getDetails: async (api: AxiosInstance, placeId: string, sessionToken: string): Promise<PlaceDetails> => {
+    const response = await api.get<PlaceDetails>("/api/places/details", { params: { placeId, sessionToken } });
+    return response.data;
+  },
+};
+
 export const groupApi = {
   createGroup: async (api: AxiosInstance, payload: CreateGroupPayload): Promise<CreateGroupResponse> => {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);

@@ -28,6 +28,7 @@ import meetupRoutes from "./routes/meetup.route.js";
 import pollRoutes from "./routes/poll.route.js";
 import jobRoutes from "./routes/job.route.js";
 import notificationRoutes from "./routes/notification.route.js";
+import placesRoutes from "./routes/places.route.js";
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
@@ -61,6 +62,7 @@ app.use("/api/meetups", meetupRoutes);
 app.use("/api/polls", pollRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/places", placesRoutes);
 
 app.post("/api/debug/log", (req, res) => {
   console.log("[DEBUG]", JSON.stringify(req.body, null, 2));

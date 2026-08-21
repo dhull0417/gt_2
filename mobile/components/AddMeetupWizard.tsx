@@ -14,6 +14,7 @@ import { Feather } from '@expo/vector-icons';
 import { GroupDetails, groupApi, useApiClient } from '@/utils/api';
 import { DateTime } from 'luxon';
 import NativeTimePicker from './NativeTimePicker';
+import LocationAutocompleteInput from './LocationAutocompleteInput';
 import { useQueryClient } from '@tanstack/react-query';
 
 interface AddMeetupWizardProps {
@@ -268,16 +269,13 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
 
                     {/* Location */}
                     <Text style={s.fieldLabel}>Location or link</Text>
-                    <View style={s.inputRow}>
-                        <Feather name="map-pin" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
-                        <TextInput
-                            style={s.inlineInput}
-                            placeholder="e.g. Starbucks or Zoom link..."
-                            placeholderTextColor="#C4C9D4"
-                            value={meetupLocation}
-                            onChangeText={setMeetupLocation}
-                        />
-                    </View>
+                    <LocationAutocompleteInput
+                        variant="wizard"
+                        placeholder="e.g. Starbucks or Zoom link..."
+                        value={meetupLocation}
+                        onChangeText={setMeetupLocation}
+                        onSelect={place => setMeetupLocation(place.address)}
+                    />
                 </ScrollView>
 
                 <View style={s.screenFooter}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -12,7 +12,9 @@ import {
     StyleSheet,
     KeyboardAvoidingView,
     Platform,
-    Pressable
+    Pressable,
+    Linking,
+    Dimensions
 } from 'react-native';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import Animated, {
@@ -35,6 +37,7 @@ import { RsvpBreather } from '@/components/RsvpBreather';
 import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
 import NativeTimePicker from './NativeTimePicker';
+import LocationAutocompleteInput from './LocationAutocompleteInput';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 // Watermark that slowly breathes between a base and darker opacity, one full cycle every 5 seconds.
@@ -130,6 +133,29 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [isSettingGuests, setIsSettingGuests] = useState(false);
     const [guestExpanded, setGuestExpanded] = useState(false);
     const [manualRsvpEdit, setManualRsvpEdit] = useState(false);
+    const [isActionsMenuVisible, setIsActionsMenuVisible] = useState(false);
+    const [actionsMenuAnchor, setActionsMenuAnchor] = useState<{ top: number; left: number; pointerLeft: number } | null>(null);
+    const moreBtnRef = useRef<View>(null);
+
+    const openActionsMenu = () => {
+        moreBtnRef.current?.measureInWindow((x, y, width, height) => {
+            const screenWidth = Dimensions.get('window').width;
+            const cardWidth = 200;
+            const pointerSize = 14;
+            const margin = 12;
+            const buttonCenterX = x + width / 2;
+            const left = Math.min(
+                Math.max(buttonCenterX - cardWidth / 2, margin),
+                screenWidth - cardWidth - margin
+            );
+            const pointerLeft = Math.min(
+                Math.max(buttonCenterX - left - pointerSize / 2, 12),
+                cardWidth - 12 - pointerSize
+            );
+            setActionsMenuAnchor({ top: y + height + 36, left, pointerLeft });
+            setIsActionsMenuVisible(true);
+        });
+    };
 
     useEffect(() => {
         if (!isSettingGuests && meetup && currentUser) {
@@ -346,6 +372,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         }
     };
 
+    const handleOpenLocation = (address: string) => {
+        const query = encodeURIComponent(address);
+        const url = Platform.OS === 'ios' ? `maps:0,0?q=${query}` : `geo:0,0?q=${query}`;
+        Linking.openURL(url).catch(() => {
+            Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`).catch(() => {
+                Alert.alert('Error', 'Could not open a navigation app.');
+            });
+        });
+    };
+
     const handleGoToChat = () => {
         onClose();
         router.push({
@@ -493,17 +529,17 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         );
     };
 
-    const renderGuestTile = (g: { userId: string; count: number }) => {
+    const renderGuestTiles = (g: { userId: string; count: number }) => {
         const host = (meetup.members || []).find(m => (m as any).clerkId === g.userId);
         const hostName = host ? host.firstName : 'A member';
-        return (
-            <View key={`guests-${g.userId}`} style={styles.gridItem}>
-                <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder]}>
-                    <Text style={styles.guestCountText}>+{g.count}</Text>
+        return Array.from({ length: g.count }, (_, i) => (
+            <View key={`guest-${g.userId}-${i}`} style={styles.gridItem}>
+                <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder, styles.guestAvatarPlaceholder]}>
+                    <Feather name="user" size={22} color="#FFFFFF" />
                 </View>
-                <Text style={styles.gridName} numberOfLines={1}>{hostName}&apos;s guests</Text>
+                <Text style={styles.gridName} numberOfLines={1}>{hostName}&apos;s Guest</Text>
             </View>
-        );
+        ));
     };
 
     const renderSectionHeader = (label: string, count: number, color: string, rightElement?: React.ReactNode) => (
@@ -548,6 +584,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <Text style={styles.headerTitle}>
                         {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })} • {meetup.time}
                     </Text>
+                    {!!(meetup.location || (meetup.group as any)?.defaultLocation) && (
+                        <TouchableOpacity
+                            onPress={() => handleOpenLocation(meetup.location || (meetup.group as any)?.defaultLocation)}
+                            activeOpacity={0.6}
+                        >
+                            <Text style={styles.headerLocation} numberOfLines={1}>
+                                {meetup.location || (meetup.group as any)?.defaultLocation}
+                            </Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
                 <View style={{ width: 44 }} />
             </View>
@@ -581,29 +627,32 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </View>
 
                     <View style={[styles.actionRow, { justifyContent: 'center' }]}>
-                        {canManage && (
-                            <TouchableOpacity onPress={openEditModal} style={[styles.actionBtn, styles.editActionBtn]} activeOpacity={0.7}>
-                                <Feather name="edit-2" size={20} color="#F59E0B" />
+                        <TouchableOpacity
+                            ref={moreBtnRef}
+                            onPress={openActionsMenu}
+                            style={[styles.actionBtn, styles.moreActionBtn]}
+                            activeOpacity={0.7}
+                        >
+                            <Feather name="more-horizontal" size={20} color="#7C3AED" />
+                        </TouchableOpacity>
+                        {!isReadOnly && !isRsvpLocked && !isRsvpDeadlinePassed && hasRsvpResponse && (
+                            <TouchableOpacity
+                                onPress={() => setManualRsvpEdit(v => !v)}
+                                style={[styles.actionBtn, styles.inOutActionBtn]}
+                                activeOpacity={0.7}
+                            >
+                                <Feather name="repeat" size={20} color={isOut ? '#FF7A6E' : '#3FABA1'} />
                             </TouchableOpacity>
                         )}
-                        <TouchableOpacity onPress={handleAddToCalendar} style={[styles.actionBtn, styles.calendarActionBtn]} activeOpacity={0.7}>
-                            <Feather name="calendar" size={20} color="#16A34A" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={handleGoToChat} style={[styles.actionBtn, styles.chatActionBtn]} activeOpacity={0.7}>
-                            <Feather name="message-circle" size={20} color="#0EA5E9" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setIsDetailsModalVisible(true)} style={[styles.actionBtn, styles.moreActionBtn]} activeOpacity={0.7}>
-                            <Feather name="info" size={20} color="#7C3AED" />
-                        </TouchableOpacity>
                     </View>
                 </View>
 
                 {/* Hide RSVP Actions if Read Only */}
                 {!isReadOnly && (
-                    <Animated.View layout={LinearTransition.duration(300)} style={{ marginTop: showRsvpSelector ? 24 : 0, marginBottom: 60 }}>
+                    <Animated.View layout={LinearTransition.duration(300)} style={{ marginTop: showRsvpSelector ? 24 : 0, marginBottom: (isRsvpLocked || isRsvpDeadlinePassed || showRsvpSelector) ? 60 : 0 }}>
                         {isRsvpLocked ? (
                             <View style={styles.rsvpLockedBanner}>
-                                <Feather name="lock" size={16} color="#6B7280" />
+                                <Feather name="lock" size={22} color="#6B7280" />
                                 <Text style={styles.rsvpLockedTitle}>RSVPs Not Open Yet</Text>
                                 <Text style={styles.rsvpLockedSubtitle}>
                                     Opens {new Date(meetup.rsvpOpenDate!).toLocaleDateString(undefined, {
@@ -613,7 +662,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             </View>
                         ) : isRsvpDeadlinePassed ? (
                             <View style={styles.rsvpLockedBanner}>
-                                <Feather name="lock" size={16} color="#6B7280" />
+                                <Feather name="lock" size={22} color="#6B7280" />
                                 <Text style={styles.rsvpLockedTitle}>RSVP Deadline Passed</Text>
                                 <Text style={styles.rsvpLockedSubtitle}>
                                     Closed {new Date(meetup.rsvpCloseDate!).toLocaleDateString(undefined, {
@@ -621,27 +670,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     })}
                                 </Text>
                             </View>
-                        ) : !showRsvpSelector ? (
-                            <Animated.View
-                                key="rsvp-pill"
-                                entering={FadeIn.duration(220)}
-                                exiting={FadeOut.duration(160)}
-                                layout={LinearTransition.duration(280)}
-                                style={{ alignItems: 'center' }}
-                            >
-                                <TouchableOpacity
-                                    onPress={() => setManualRsvpEdit(true)}
-                                    style={[
-                                        styles.changeRsvpPill,
-                                        { borderColor: isOut ? '#FF7A6E' : '#4FD1C5', backgroundColor: 'white' }
-                                    ]}
-                                    activeOpacity={0.7}
-                                >
-                                    <Feather name="repeat" size={14} color={isOut ? '#FF7A6E' : '#3FABA1'} />
-                                    <Text style={[styles.changeRsvpPillText, { color: isOut ? '#C2453A' : '#3FABA1' }]}>Change In/Out</Text>
-                                </TouchableOpacity>
-                            </Animated.View>
-                        ) : (
+                        ) : !showRsvpSelector ? null : (
                             <Animated.View
                                 key="rsvp-buttons"
                                 entering={FadeIn.duration(220)}
@@ -789,7 +818,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             <Text style={styles.emptyText}>No one is in yet.</Text>
                         )}
                         {goingUsers.map(user => renderUserTile(user, user._id))}
-                        {allGuestEntries.map(renderGuestTile)}
+                        {allGuestEntries.flatMap(renderGuestTiles)}
                     </View>
 
                     {renderSectionHeader('Out', outUsers.length, '#FF7A6E')}
@@ -832,6 +861,60 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </View>
                 )}
             </ScrollView>
+
+            {/* Actions Menu */}
+            <Modal transparent visible={isActionsMenuVisible} animationType="fade" onRequestClose={() => setIsActionsMenuVisible(false)}>
+                <Pressable style={styles.actionsMenuOverlay} onPress={() => setIsActionsMenuVisible(false)}>
+                    <View style={[styles.actionsMenuCard, actionsMenuAnchor && { top: actionsMenuAnchor.top, left: actionsMenuAnchor.left }]}>
+                        {actionsMenuAnchor && (
+                            <View style={[styles.actionsMenuPointer, { left: actionsMenuAnchor.pointerLeft }]} />
+                        )}
+                        {canManage && (
+                            <>
+                                <TouchableOpacity
+                                    style={styles.actionsMenuItem}
+                                    onPress={() => { setIsActionsMenuVisible(false); openEditModal(); }}
+                                >
+                                    <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#FFFBEB' }]}>
+                                        <Feather name="edit-2" size={18} color="#F59E0B" />
+                                    </View>
+                                    <Text style={styles.actionsMenuLabel}>Edit Meetup</Text>
+                                </TouchableOpacity>
+                                <View style={styles.actionsMenuDivider} />
+                            </>
+                        )}
+                        <TouchableOpacity
+                            style={styles.actionsMenuItem}
+                            onPress={() => { setIsActionsMenuVisible(false); handleAddToCalendar(); }}
+                        >
+                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#F0FDF4' }]}>
+                                <Feather name="calendar" size={18} color="#16A34A" />
+                            </View>
+                            <Text style={styles.actionsMenuLabel}>Add to Calendar</Text>
+                        </TouchableOpacity>
+                        <View style={styles.actionsMenuDivider} />
+                        <TouchableOpacity
+                            style={styles.actionsMenuItem}
+                            onPress={() => { setIsActionsMenuVisible(false); handleGoToChat(); }}
+                        >
+                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#F0F9FF' }]}>
+                                <Feather name="message-circle" size={18} color="#0EA5E9" />
+                            </View>
+                            <Text style={styles.actionsMenuLabel}>Go to Chat</Text>
+                        </TouchableOpacity>
+                        <View style={styles.actionsMenuDivider} />
+                        <TouchableOpacity
+                            style={styles.actionsMenuItem}
+                            onPress={() => { setIsActionsMenuVisible(false); setIsDetailsModalVisible(true); }}
+                        >
+                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#F5F3FF' }]}>
+                                <Feather name="info" size={18} color="#7C3AED" />
+                            </View>
+                            <Text style={styles.actionsMenuLabel}>More Details</Text>
+                        </TouchableOpacity>
+                    </View>
+                </Pressable>
+            </Modal>
 
             {/* More Details Modal */}
             <Modal transparent visible={isDetailsModalVisible} animationType="slide" onRequestClose={() => setIsDetailsModalVisible(false)}>
@@ -1004,15 +1087,13 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 )}
 
                                 <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Location Override</Text>
-                                <View style={styles.inputContainer}>
-                                    <Feather name="map-pin" size={18} color="#4A90E2" />
-                                    <TextInput 
-                                        style={styles.textInput}
-                                        placeholder="Specific address or link..."
-                                        value={newLocation}
-                                        onChangeText={setNewLocation}
-                                    />
-                                </View>
+                                <LocationAutocompleteInput
+                                    variant="card"
+                                    placeholder="Specific address or link..."
+                                    value={newLocation}
+                                    onChangeText={setNewLocation}
+                                    onSelect={place => setNewLocation(place.address)}
+                                />
 
                                 <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Max Attendees</Text>
                                 <View style={styles.boolRow}>
@@ -1094,8 +1175,11 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: 'white' },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     closeButton: { padding: 4 },
-    headerTitleContainer: { flex: 1, alignItems: 'center' },
+    // Fixed minHeight reserves room for the location line whether or not it's present, so the
+    // header's height — and thus where the ScrollView (and IN/OUT watermark) starts — never changes.
+    headerTitleContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
     headerTitle: { fontSize: 14, fontWeight: '900', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
+    headerLocation: { fontSize: 14, fontWeight: '500', fontStyle: 'italic', color: '#B0B7C3', textTransform: 'none', letterSpacing: 0.2, marginTop: 2, textAlign: 'center', textDecorationLine: 'underline' },
     content: { flex: 1, padding: 24 },
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
@@ -1110,7 +1194,7 @@ const styles = StyleSheet.create({
         fontWeight: '900',
         color: '#4FD1C5',
         letterSpacing: 4,
-        transform: [{ translateY: -58 }],
+        transform: [{ translateY: -60 }],
     },
     outWatermark: {
         position: 'absolute',
@@ -1122,14 +1206,38 @@ const styles = StyleSheet.create({
         fontWeight: '900',
         color: '#FF7A6E',
         letterSpacing: 4,
-        transform: [{ translateY: -48 }],
+        transform: [{ translateY: -45 }],
     },
     actionRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
     actionBtn: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-    editActionBtn: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
-    calendarActionBtn: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
-    chatActionBtn: { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' },
     moreActionBtn: { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
+    actionsMenuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.15)' },
+    actionsMenuCard: {
+        position: 'absolute',
+        backgroundColor: '#1F2937',
+        borderRadius: 16,
+        paddingVertical: 6,
+        width: 200,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
+        elevation: 8,
+    },
+    actionsMenuPointer: {
+        position: 'absolute',
+        top: -6,
+        width: 14,
+        height: 14,
+        borderRadius: 3,
+        backgroundColor: '#1F2937',
+        transform: [{ rotate: '45deg' }],
+    },
+    actionsMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14 },
+    actionsMenuIconWrap: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+    actionsMenuLabel: { color: 'white', fontSize: 15, fontWeight: '600' },
+    actionsMenuDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginLeft: 14 + 32 + 12 },
+    inOutActionBtn: { backgroundColor: '#F0FDFB', borderColor: '#99E6DD' },
     strikeThrough: { textDecorationLine: 'line-through', color: '#D1D5DB' },
     detailsCard: { backgroundColor: '#F9FAFB', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#F3F4F6' },
     detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
@@ -1137,7 +1245,7 @@ const styles = StyleSheet.create({
     detailLabel: { fontSize: 11, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 0 },
     detailValue: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
     detailSeparator: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 12 },
-    guestAvatarPlaceholder: { backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+    guestAvatarPlaceholder: { backgroundColor: '#4FD1C5', alignItems: 'center', justifyContent: 'center' },
     rsvpLockedBanner: { 
     flex: 1, 
     alignItems: 'center', 
@@ -1163,20 +1271,6 @@ rsvpLockedSubtitle: {
     fontWeight: '600',
     color: '#9CA3AF'
 },
-    changeRsvpPill: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 7,
-        paddingHorizontal: 18,
-        paddingVertical: 10,
-        borderRadius: 999,
-        borderWidth: 1.5,
-    },
-    changeRsvpPillText: {
-        fontWeight: '800',
-        fontSize: 13,
-        letterSpacing: 0.2,
-    },
     // Roster sections
     sectionHeaderWrap: { marginTop: 8, marginBottom: 14 },
     sectionHeaderText: { fontSize: 15, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
@@ -1190,7 +1284,6 @@ rsvpLockedSubtitle: {
     gridAvatar: { width: '100%', aspectRatio: 1, borderRadius: 14, backgroundColor: '#F3F4F6' },
     gridAvatarPlaceholder: { alignItems: 'center', justifyContent: 'center' },
     gridName: { fontSize: 12, fontWeight: '700', color: '#374151', marginTop: 6, textAlign: 'center' },
-    guestCountText: { fontSize: 26, fontWeight: '900', color: '#4FD1C5' },
     waitlistBadge: { position: 'absolute', top: -6, left: -6, backgroundColor: '#2563EB', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
     waitlistBadgeText: { color: 'white', fontSize: 11, fontWeight: '800' },
     emptyText: { color: '#9CA3AF', fontStyle: 'italic', marginBottom: 20 },

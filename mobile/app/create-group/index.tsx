@@ -26,6 +26,7 @@ import { DateTime } from "luxon";
 import { useQuery } from "@tanstack/react-query";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
 import NativeTimePicker, { timeStringToDate } from "../../components/NativeTimePicker";
+import LocationAutocompleteInput from "../../components/LocationAutocompleteInput";
 import { Frequency, DayTime, useApiClient, groupApi } from "../../utils/api";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -1027,11 +1028,13 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                     </View>
 
                     <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Location or link</Text>
-                    <View style={[s.inputRow, { marginBottom: 0 }]}>
-                        <Feather name="map-pin" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
-                        <TextInput style={s.inlineInput} placeholder="e.g. 123 Main St or zoom.us/j/..."
-                            placeholderTextColor="#C4C9D4" value={d.location} onChangeText={v => upd({ location: v })} />
-                    </View>
+                    <LocationAutocompleteInput
+                        variant="wizard"
+                        placeholder="e.g. 123 Main St or zoom.us/j/..."
+                        value={d.location}
+                        onChangeText={v => upd({ location: v })}
+                        onSelect={place => upd({ location: place.address })}
+                    />
                 </View>
 
                 {/* When */}

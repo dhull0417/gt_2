@@ -29,6 +29,7 @@ import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import LocationAutocompleteInput from '@/components/LocationAutocompleteInput';
 
 // Mirrors the Max Attendees validation on the group-creation Schedule screen and
 // the Add Meetup wizard so all three "attendee limit" entry points agree on what's valid.
@@ -766,7 +767,17 @@ const GroupSettings = () => {
             <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Default Location</Text>
                 <Text style={styles.modalSubtitle}>Updates location for all associated meetups.</Text>
-                <TextInput style={styles.modalInput} value={tempLocation} onChangeText={setTempLocation} placeholder="e.g. Starbucks or Zoom link..." autoFocus selectTextOnFocus />
+                <View style={{ marginBottom: 20 }}>
+                    <LocationAutocompleteInput
+                        variant="modal"
+                        placeholder="e.g. Starbucks or Zoom link..."
+                        value={tempLocation}
+                        onChangeText={setTempLocation}
+                        onSelect={place => setTempLocation(place.address)}
+                        autoFocus
+                        selectTextOnFocus
+                    />
+                </View>
                 <View style={styles.modalButtons}>
                     <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingLocation(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
                     <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveLocation} disabled={isSavingLocation}>
