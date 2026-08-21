@@ -40,8 +40,6 @@ const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): str
   return null;
 };
 
-const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
-
 /**
  * Group Settings Screen
  * Access is strictly restricted to the group owner and designated moderators.
@@ -73,11 +71,12 @@ const GroupSettings = () => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
   const [isSavingName, setIsSavingName] = useState(false);
-  const nameFlashAnim = useRef(new Animated.Value(0)).current;
-  const nameFlashColor = nameFlashAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#FFFFFF', '#CFFAF7'],
-  });
+  const [isCelebratingName, setIsCelebratingName] = useState(false);
+  const [celebrationName, setCelebrationName] = useState("");
+  const letterAnimsRef = useRef<Animated.Value[]>([]);
+  const nameFlyAnim = useRef(new Animated.Value(0)).current;
+  const heartRiseAnim = useRef(new Animated.Value(0)).current;
+  const heartPopScale = useRef(new Animated.Value(1)).current;
 
   const [isEditingCapacity, setIsEditingCapacity] = useState(false);
   const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
@@ -292,6 +291,43 @@ const GroupSettings = () => {
     }
   };
 
+  const playNameCelebration = (name: string) => {
+    letterAnimsRef.current = name.split('').map(() => new Animated.Value(0));
+    nameFlyAnim.setValue(0);
+    heartRiseAnim.setValue(0);
+    heartPopScale.setValue(1);
+    setCelebrationName(name);
+    setIsCelebratingName(true);
+
+    const waveAnimations = letterAnimsRef.current.map((letterAnim, i) =>
+      Animated.sequence([
+        Animated.delay(i * 45),
+        Animated.timing(letterAnim, { toValue: 1, duration: 180, easing: Easing.out(Easing.quad), useNativeDriver: false }),
+        Animated.timing(letterAnim, { toValue: 0, duration: 180, easing: Easing.in(Easing.quad), useNativeDriver: false }),
+      ])
+    );
+
+    Animated.sequence([
+      Animated.parallel(waveAnimations),
+      Animated.parallel([
+        Animated.timing(nameFlyAnim, { toValue: -260, duration: 450, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+        Animated.sequence([
+          Animated.timing(heartRiseAnim, { toValue: 1, duration: 450, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 1.18, duration: 500, easing: Easing.out(Easing.exp), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 1, duration: 50, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 1.04, duration: 18, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 0.98, duration: 18, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 1.01, duration: 15, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 1, duration: 15, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        ]),
+      ]),
+    ]).start(() => {
+      setIsEditingName(false);
+      setIsCelebratingName(false);
+      setCelebrationName("");
+    });
+  };
+
   const handleSaveName = async () => {
     if (!id || !tempName.trim()) return;
     if (tempName === group?.name) {
@@ -307,12 +343,7 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
-        setIsEditingName(false);
-        nameFlashAnim.setValue(0);
-        Animated.sequence([
-            Animated.timing(nameFlashAnim, { toValue: 1, duration: 150, easing: Easing.out(Easing.quad), useNativeDriver: false }),
-            Animated.timing(nameFlashAnim, { toValue: 0, duration: 700, easing: Easing.out(Easing.quad), useNativeDriver: false }),
-        ]).start();
+        playNameCelebration(tempName.trim());
     } catch (error: any) {
         Alert.alert("Error", error.response?.data?.error || "Failed to update group name.");
     } finally {
@@ -506,9 +537,9 @@ const GroupSettings = () => {
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.optionsContainer}>
           {settingsOptions.map((option) => (
-            <AnimatedTouchableOpacity
+            <TouchableOpacity
               key={option.id}
-              style={[styles.optionButton, option.id === 'name' && { backgroundColor: nameFlashColor }]}
+              style={styles.optionButton}
               activeOpacity={0.7}
               onPress={() => handleOptionPress(option.id)}
             >
@@ -569,7 +600,7 @@ const GroupSettings = () => {
                 </View>
               </View>
               <Feather name="chevron-right" size={18} color="#D1D5DB" />
-            </AnimatedTouchableOpacity>
+            </TouchableOpacity>
           ))}
         </View>
         
@@ -633,14 +664,52 @@ const GroupSettings = () => {
       <Modal visible={isEditingName} transparent animationType="fade" onRequestClose={() => setIsEditingName(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Edit Group Name</Text>
-                <TextInput style={styles.modalInput} value={tempName} onChangeText={setTempName} placeholder="Enter group name" autoFocus maxLength={50} selectTextOnFocus />
-                <View style={styles.modalButtons}>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingName(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveName} disabled={isSavingName || !tempName.trim()}>
-                        {isSavingName ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
-                    </TouchableOpacity>
-                </View>
+                {isCelebratingName ? (
+                    <View style={styles.nameCelebrationStage}>
+                        <Animated.View
+                            style={[
+                                styles.nameCelebrationHeart,
+                                {
+                                    transform: [
+                                        { translateY: heartRiseAnim.interpolate({ inputRange: [0, 1], outputRange: [150, 0] }) },
+                                        { scale: heartPopScale },
+                                    ],
+                                },
+                            ]}
+                        >
+                            <Text style={styles.nameCelebrationHeartText}>❤️</Text>
+                        </Animated.View>
+                        <Animated.View style={[styles.nameCelebrationNameRow, { transform: [{ translateY: nameFlyAnim }] }]}>
+                            {celebrationName.split('').map((char, i) => (
+                                <Animated.Text
+                                    key={`${char}-${i}`}
+                                    style={[
+                                        styles.nameCelebrationLetter,
+                                        {
+                                            transform: [{
+                                                translateY: letterAnimsRef.current[i]?.interpolate({ inputRange: [0, 1], outputRange: [0, -14] }) ?? 0,
+                                            }],
+                                            color: letterAnimsRef.current[i]?.interpolate({ inputRange: [0, 1], outputRange: ['#111827', '#4FD1C5'] }) ?? '#111827',
+                                        },
+                                    ]}
+                                >
+                                    {char === ' ' ? ' ' : char}
+                                </Animated.Text>
+                            ))}
+                        </Animated.View>
+                    </View>
+                ) : (
+                    <>
+                        <Text style={styles.modalTitle}>Edit Group Name</Text>
+                        <TextInput style={styles.modalInput} value={tempName} onChangeText={setTempName} placeholder="Enter group name" autoFocus maxLength={50} selectTextOnFocus />
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingName(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
+                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveName} disabled={isSavingName || !tempName.trim()}>
+                                {isSavingName ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                )}
             </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -850,6 +919,11 @@ const styles = StyleSheet.create({
   modalBtnDisabled: { backgroundColor: '#A7E4DE' },
   modalBtnTextCancel: { fontSize: 16, fontWeight: '700', color: '#4B5563' },
   modalBtnTextSave: { fontSize: 16, fontWeight: '700', color: 'white' },
+  nameCelebrationStage: { width: '100%', height: 220, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  nameCelebrationHeart: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  nameCelebrationHeartText: { fontSize: 56 },
+  nameCelebrationNameRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', paddingHorizontal: 16 },
+  nameCelebrationLetter: { fontSize: 30, fontWeight: '800', color: '#111827' },
   boolRow: { flexDirection: 'row', gap: 10 },
   boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', backgroundColor: '#fff' },
   boolBtnActive: { borderColor: '#4A90E2', backgroundColor: '#EEF6FF' },

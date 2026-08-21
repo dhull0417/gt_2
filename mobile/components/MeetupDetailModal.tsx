@@ -186,6 +186,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
     const outUnselected = !isOut;
     const isUndecided = inUnselected && outUnselected;
+    // While undecided, fill both buttons like they're selected so neither reads as the "default" choice.
+    const inFilled = !inUnselected || isUndecided;
+    const outFilled = !outUnselected || isUndecided;
 
     // Faint RSVP-status tint for the whole modal: amber until the user responds,
     // then green ("in"/waitlisted) or red ("out") to match the RSVP button colors.
@@ -651,11 +654,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             {/* Split I'm In button */}
                                             <View style={{
                                                 flex: 1, borderRadius: 16, overflow: 'hidden', height: 72,
-                                                backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : isIn ? '#4FD1C5' : 'white',
+                                                backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : inFilled ? '#4FD1C5' : 'white',
                                             }}>
                                                 <Animated.View style={[{
                                                     flex: 1, flexDirection: 'row', borderRadius: 16,
-                                                    borderWidth: inUnselected ? 1.5 : 0,
+                                                    borderWidth: inFilled ? 0 : 1.5,
                                                     borderColor: '#4FD1C5',
                                                 }, boxStyle]}>
                                                     <TouchableOpacity
@@ -663,19 +666,19 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                         disabled={isRsvping}
                                                         style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                                                     >
-                                                        <Animated.Text style={[{ color: inUnselected ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 18 }, inTextStyle]}>
+                                                        <Animated.Text style={[{ color: inFilled ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 18 }, inTextStyle]}>
                                                             {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                                                         </Animated.Text>
                                                     </TouchableOpacity>
-                                                    <View style={{ width: 1, backgroundColor: inUnselected ? '#D1FAE5' : 'rgba(255,255,255,0.35)' }} />
+                                                    <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />
                                                     <TouchableOpacity
                                                         onPress={() => setGuestExpanded(v => !v)}
                                                         disabled={isRsvping}
                                                         style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                                                     >
                                                         {guestExpanded
-                                                            ? <Feather name="x" size={20} color={inUnselected ? '#4FD1C5' : 'white'} />
-                                                            : <MaterialIcons name="group-add" size={22} color={inUnselected ? '#4FD1C5' : 'white'} />
+                                                            ? <Feather name="x" size={20} color={inFilled ? 'white' : '#4FD1C5'} />
+                                                            : <MaterialIcons name="group-add" size={22} color={inFilled ? 'white' : '#4FD1C5'} />
                                                         }
                                                     </TouchableOpacity>
                                                 </Animated.View>
@@ -684,11 +687,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             {/* Split I'm Out button */}
                                             <View style={{
                                                 flex: 1, borderRadius: 16, overflow: 'hidden', height: 72,
-                                                backgroundColor: isOut ? '#FF7A6E' : 'white',
+                                                backgroundColor: outFilled ? '#FF7A6E' : 'white',
                                             }}>
                                                 <Animated.View style={[{
                                                     flex: 1, flexDirection: 'row', borderRadius: 16,
-                                                    borderWidth: outUnselected ? 1.5 : 0,
+                                                    borderWidth: outFilled ? 0 : 1.5,
                                                     borderColor: '#FF7A6E',
                                                 }, boxStyle]}>
                                                     <TouchableOpacity
@@ -696,15 +699,15 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                         disabled={isRsvping}
                                                         style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                                                     >
-                                                        <Animated.Text style={[{ color: outUnselected ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 18 }, outTextStyle]}>I'm Out</Animated.Text>
+                                                        <Animated.Text style={[{ color: outFilled ? 'white' : '#FF7A6E', fontWeight: 'bold', fontSize: 18 }, outTextStyle]}>I'm Out</Animated.Text>
                                                     </TouchableOpacity>
-                                                    <View style={{ width: 1, backgroundColor: outUnselected ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
+                                                    <View style={{ width: 1, backgroundColor: outFilled ? 'rgba(255,255,255,0.35)' : '#FFE4E1' }} />
                                                     <TouchableOpacity
                                                         onPress={handleRsvpOutAndMute}
                                                         disabled={isRsvping}
                                                         style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                                                     >
-                                                        <Feather name="bell-off" size={20} color={outUnselected ? '#FF7A6E' : 'white'} />
+                                                        <Feather name="bell-off" size={20} color={outFilled ? 'white' : '#FF7A6E'} />
                                                     </TouchableOpacity>
                                                 </Animated.View>
                                             </View>

@@ -123,6 +123,9 @@ const MeetupCard = ({
   const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
   const outUnselected = !isOut;
   const isUndecided = inUnselected && outUnselected;
+  // While undecided, fill both buttons like they're selected so neither reads as the "default" choice.
+  const inFilled = !inUnselected || isUndecided;
+  const outFilled = !outUnselected || isUndecided;
 
   const isReadOnly = isCancelled || isExpired;
 
@@ -245,11 +248,11 @@ const MeetupCard = ({
                     {/* Split I'm In button: left 70% = RSVP in, right 30% = open guest counter */}
                     <View style={{
                       flex: 1, borderRadius: 12, overflow: 'hidden', height: 48,
-                      backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : isIn ? '#4FD1C5' : 'white',
+                      backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : inFilled ? '#4FD1C5' : 'white',
                     }}>
                       <ReanimatedAnimated.View style={[{
                         flex: 1, flexDirection: 'row', borderRadius: 12,
-                        borderWidth: inUnselected ? 1.5 : 0,
+                        borderWidth: inFilled ? 0 : 1.5,
                         borderColor: '#4FD1C5',
                       }, boxStyle]}>
                         <TouchableOpacity
@@ -257,19 +260,19 @@ const MeetupCard = ({
                           disabled={isRsvping}
                           style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                         >
-                          <ReanimatedAnimated.Text style={[{ color: inUnselected ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 16 }, inTextStyle]}>
+                          <ReanimatedAnimated.Text style={[{ color: inFilled ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 16 }, inTextStyle]}>
                             {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                           </ReanimatedAnimated.Text>
                         </TouchableOpacity>
-                        <View style={{ width: 1, backgroundColor: inUnselected ? '#D1FAE5' : 'rgba(255,255,255,0.35)' }} />
+                        <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />
                         <TouchableOpacity
                           onPress={() => { setLocalGuestCount(0); setGuestExpanded(v => !v); }}
                           disabled={isRsvping}
                           style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                         >
                           {guestExpanded
-                            ? <Feather name="x" size={18} color={inUnselected ? '#4FD1C5' : 'white'} />
-                            : <MaterialIcons name="group-add" size={20} color={inUnselected ? '#4FD1C5' : 'white'} />
+                            ? <Feather name="x" size={18} color={inFilled ? 'white' : '#4FD1C5'} />
+                            : <MaterialIcons name="group-add" size={20} color={inFilled ? 'white' : '#4FD1C5'} />
                           }
                         </TouchableOpacity>
                       </ReanimatedAnimated.View>
@@ -277,11 +280,11 @@ const MeetupCard = ({
                     {/* Split I'm Out button: left 70% = RSVP out, right 30% = RSVP out + mute group */}
                     <View style={{
                       flex: 1, borderRadius: 12, overflow: 'hidden', height: 48,
-                      backgroundColor: isOut ? '#FF7A6E' : 'white',
+                      backgroundColor: outFilled ? '#FF7A6E' : 'white',
                     }}>
                       <ReanimatedAnimated.View style={[{
                         flex: 1, flexDirection: 'row', borderRadius: 12,
-                        borderWidth: outUnselected ? 1.5 : 0,
+                        borderWidth: outFilled ? 0 : 1.5,
                         borderColor: '#FF7A6E',
                       }, boxStyle]}>
                         <TouchableOpacity
@@ -289,15 +292,15 @@ const MeetupCard = ({
                           disabled={isRsvping}
                           style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                         >
-                          <ReanimatedAnimated.Text style={[{ color: outUnselected ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 16 }, outTextStyle]}>I'm Out</ReanimatedAnimated.Text>
+                          <ReanimatedAnimated.Text style={[{ color: outFilled ? 'white' : '#FF7A6E', fontWeight: 'bold', fontSize: 16 }, outTextStyle]}>I'm Out</ReanimatedAnimated.Text>
                         </TouchableOpacity>
-                        <View style={{ width: 1, backgroundColor: outUnselected ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
+                        <View style={{ width: 1, backgroundColor: outFilled ? 'rgba(255,255,255,0.35)' : '#FFE4E1' }} />
                         <TouchableOpacity
                           onPress={() => { setGuestExpanded(false); onRsvp('out', 0, true); }}
                           disabled={isRsvping}
                           style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                         >
-                          <Feather name="bell-off" size={18} color={outUnselected ? '#FF7A6E' : 'white'} />
+                          <Feather name="bell-off" size={18} color={outFilled ? 'white' : '#FF7A6E'} />
                         </TouchableOpacity>
                       </ReanimatedAnimated.View>
                     </View>
