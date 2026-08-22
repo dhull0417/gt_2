@@ -36,7 +36,11 @@ import { ChatDayBubble } from '@/components/ChatDayBubble';
 import { ChatImageViewer } from '@/components/ChatImageViewer';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { GroupCalendarButton } from '@/components/GroupCalendarButton';
-import { promptForNotificationPermission } from '@/hooks/usePushNotifications';
+import {
+  promptForNotificationPermission,
+  promptForNotificationPermissionOnFirstChatOpen,
+  markNotificationPromptShown,
+} from '@/hooks/usePushNotifications';
 import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
 import type { ChatMessage, PendingImage } from '@/types/chat';
 
@@ -62,11 +66,21 @@ const GroupChatScreen = () => {
 
   // Landed here right after joining this group (see join/[token]'s goToChat) —
   // ask once, then drop the param so revisiting this chat doesn't ask again.
+  // Also counts as this user's first-ever chat open, so mark that trigger
+  // consumed too rather than asking again moments later on a different chat.
   useEffect(() => {
     if (promptNotifications !== '1') return;
     promptForNotificationPermission(api);
     router.setParams({ promptNotifications: undefined });
+    markNotificationPromptShown('firstChatOpen');
   }, [promptNotifications]);
+
+  // Independent of the above — covers the user's first-ever chat open when it
+  // didn't happen to be right after a join (e.g. opening their own new group's chat).
+  useEffect(() => {
+    if (promptNotifications === '1') return;
+    promptForNotificationPermissionOnFirstChatOpen(api);
+  }, []);
 
   // Tapping into a chat clears its unread dot on the groups list.
   useEffect(() => {

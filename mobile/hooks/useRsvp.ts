@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, meetupApi } from "../utils/api";
 import { Alert } from "react-native";
 import { emitRsvpResponse } from "../utils/rsvpResponseBus";
+import { promptForNotificationPermissionOnFirstRsvpIn } from "./usePushNotifications";
 
 interface RsvpVariables {
   meetupId: string;
@@ -18,6 +19,7 @@ export const useRsvp = () => {
 
     onSuccess: (data, variables) => {
       emitRsvpResponse(variables.status);
+      if (variables.status === 'in') promptForNotificationPermissionOnFirstRsvpIn(api);
       // Invalidate the main meetups query to refresh all data
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
     },

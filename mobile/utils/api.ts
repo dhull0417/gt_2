@@ -55,6 +55,7 @@ export interface User {
   mutedUntilNextMeetup: string[];
   lastReadAt?: Record<string, string>;
   zipCode?: string;
+  hasSeenWelcome?: boolean;
   createdAt?: string;
 }
 

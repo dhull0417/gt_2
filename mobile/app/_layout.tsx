@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth, useUser } from '@clerk/expo';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { QueryClient, onlineManager, useQuery } from '@tanstack/react-query';
+import { QueryClient, onlineManager, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,7 +13,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Clipboard from 'expo-clipboard';
 import { User, useApiClient, userApi } from '@/utils/api';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 import { ImageCropperHost } from '@/components/ImageCropperHost';
@@ -92,7 +92,10 @@ const AuthLayout = () => {
   const segments = useSegments();
   const router = useRouter();
   const api = useApiClient();
-  
+  const queryClient = useQueryClient();
+
+  const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
+
   useUserSync();
 
   // On launch: check clipboard for an invite token placed there by the web landing page.
@@ -118,12 +121,17 @@ const AuthLayout = () => {
 
   usePushNotifications(isSignedIn, isSuccess);
 
-  // Shows the first-group welcome modal exactly once, right as a brand new
-  // user's profile-setup completes (detected as a profileIncomplete
-  // true -> false transition, rather than e.g. an empty-groups check, so it
-  // doesn't reappear for existing users who simply haven't made a group yet).
-  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-  const wasProfileIncomplete = useRef<boolean | null>(null);
+  // Shows once profile-setup is done, driven entirely by the persisted
+  // hasSeenWelcome flag on the user record — not by any client-side timing
+  // or "just signed up" detection, so it works the same for every sign-in
+  // method and survives app reloads mid-flow.
+  const profileComplete = !!currentUser && (isAppleUser || (!!currentUser.firstName?.trim() && !!currentUser.lastName?.trim()));
+  const showWelcomeModal = profileComplete && !currentUser?.hasSeenWelcome;
+
+  const markWelcomeSeen = useMutation({
+    mutationFn: () => userApi.updateProfile(api, { hasSeenWelcome: true }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['currentUser'] }),
+  });
 
   // === ROUTING LOGIC ===
   useEffect(() => {
@@ -150,14 +158,9 @@ const AuthLayout = () => {
     ].includes(segments[0]);
 
     if (isSignedIn) {
-      const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
       // !currentUser (no Mongo user yet) always routes through profile-setup first,
       // since its Save button is what triggers syncUser and creates the record.
       const profileIncomplete = !currentUser || (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()));
-      if (wasProfileIncomplete.current === true && !profileIncomplete) {
-        setShowWelcomeModal(true);
-      }
-      wasProfileIncomplete.current = profileIncomplete;
       if (profileIncomplete && segments[0] !== 'profile-setup') {
         router.replace('/profile-setup');
       } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
@@ -192,7 +195,7 @@ const AuthLayout = () => {
   return (
     <View style={{ flex: 1 }}>
       <OfflineBanner />
-      <WelcomeModal visible={showWelcomeModal} onClose={() => setShowWelcomeModal(false)} />
+      <WelcomeModal visible={showWelcomeModal} onClose={() => markWelcomeSeen.mutate()} />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />

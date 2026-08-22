@@ -1,7 +1,6 @@
 import { View, Text, TouchableOpacity, Modal, StyleSheet } from 'react-native';
 import React, { useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 // Screen-recorded walkthrough of creating a group. Drop the real recording in at
@@ -14,8 +13,11 @@ interface WelcomeModalProps {
   onClose: () => void;
 }
 
+// Shown once, before profile-setup, for a brand new sign-up — see the
+// hasOfferedWelcome gate in app/_layout.tsx. Its only action is "onClose": it
+// doesn't navigate anywhere itself, since profile-setup (mandatory) is next
+// either way.
 export function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
-  const router = useRouter();
   const player = useVideoPlayer(WELCOME_VIDEO, (p) => {
     p.loop = true;
     p.muted = true;
@@ -31,22 +33,9 @@ export function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
     }
   }, [visible, player]);
 
-  const handleCreateGroup = () => {
-    onClose();
-    router.push('/create-group');
-  };
-
   return (
     <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
       <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
-        <TouchableOpacity
-          onPress={onClose}
-          className="self-end px-6 pt-2"
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Text className="text-base text-gray-400 font-semibold">Skip</Text>
-        </TouchableOpacity>
-
         <View className="flex-1 px-8 justify-center">
           <Text className="text-3xl font-black text-gray-900 text-center">
             Welcome to GroupThat!
@@ -67,10 +56,10 @@ export function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
 
         <View className="px-8 pb-4">
           <TouchableOpacity
-            onPress={handleCreateGroup}
+            onPress={onClose}
             className="w-full py-4 rounded-lg items-center shadow bg-[#4A90E2]"
           >
-            <Text className="text-white text-lg font-bold">Create your first group</Text>
+            <Text className="text-white text-lg font-bold">Let&apos;s go</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

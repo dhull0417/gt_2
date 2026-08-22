@@ -3,6 +3,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Alert, Linking, Platform } from 'react-native';
 import { AxiosInstance } from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApiClient } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
@@ -180,16 +181,21 @@ export async function requestNotificationPermission(api: AxiosInstance): Promise
   return true;
 }
 
+const NOTIFICATION_BENEFIT_MESSAGE =
+  "Get notified about:\n\n• New chat messages\n• When plans change\n• Reminders to RSVP on time";
+
 /**
  * Point-of-use notification ask, shown right after creating or joining a
  * group. Nags on repeat visits even after a prior "no" — missing group
  * notifications is costly enough to be worth re-asking, unlike the
  * one-and-done location/contacts prompts.
  *
- * A single "Okay" popup explains the benefit; tapping it fires the real OS
- * permission dialog immediately after. If the OS itself won't show that
- * dialog again (canAskAgain false — decided once on iOS, or "don't ask
- * again" on Android), this instead offers a one-tap Settings deep link.
+ * The benefits explanation always shows first. What happens after "Okay"
+ * depends on whether the OS can still show its own dialog: if so, that fires
+ * next (with a short delay — see below); if the OS has already permanently
+ * denied us (canAskAgain false — decided once on iOS, or "don't ask again"
+ * on Android) and won't show it again, the button instead deep-links to
+ * Settings.
  */
 export async function promptForNotificationPermission(api: AxiosInstance): Promise<void> {
   if (!Device.isDevice) return;
@@ -199,8 +205,8 @@ export async function promptForNotificationPermission(api: AxiosInstance): Promi
 
   if (!canAskAgain) {
     Alert.alert(
-      'Notifications are off',
-      'Turn on notifications in Settings to get updates from your groups.',
+      'Stay in the loop',
+      `${NOTIFICATION_BENEFIT_MESSAGE}\n\nTurn notifications on in Settings.`,
       [
         { text: 'Not now', style: 'cancel' },
         { text: 'Open Settings', onPress: () => Linking.openSettings() },
@@ -211,7 +217,7 @@ export async function promptForNotificationPermission(api: AxiosInstance): Promi
 
   Alert.alert(
     'Stay in the loop',
-    'Turn on notifications to know when your group plans something new or sends a message.',
+    NOTIFICATION_BENEFIT_MESSAGE,
     [{
       text: 'Okay',
       onPress: () => {
@@ -222,4 +228,35 @@ export async function promptForNotificationPermission(api: AxiosInstance): Promi
       },
     }]
   );
+}
+
+const FIRST_RSVP_IN_PROMPT_KEY = 'GT2_NOTIF_PROMPT_SHOWN_FIRST_RSVP_IN';
+const FIRST_CHAT_OPEN_PROMPT_KEY = 'GT2_NOTIF_PROMPT_SHOWN_FIRST_CHAT_OPEN';
+
+/** Runs `promptForNotificationPermission` the first time (ever, across app installs kept in AsyncStorage) this key's trigger occurs — never again after that, regardless of outcome. */
+async function promptForNotificationPermissionOnce(key: string, api: AxiosInstance): Promise<void> {
+  const alreadyShown = await AsyncStorage.getItem(key);
+  if (alreadyShown) return;
+  await AsyncStorage.setItem(key, '1');
+  promptForNotificationPermission(api);
+}
+
+/** Call from the RSVP mutation's onSuccess when status === 'in'. Fires only on the user's first-ever "I'm in" RSVP. */
+export function promptForNotificationPermissionOnFirstRsvpIn(api: AxiosInstance): Promise<void> {
+  return promptForNotificationPermissionOnce(FIRST_RSVP_IN_PROMPT_KEY, api);
+}
+
+/** Call on mount of the group chat screen. Fires only the first time the user ever opens a chat. */
+export function promptForNotificationPermissionOnFirstChatOpen(api: AxiosInstance): Promise<void> {
+  return promptForNotificationPermissionOnce(FIRST_CHAT_OPEN_PROMPT_KEY, api);
+}
+
+/**
+ * Marks a "first time" trigger as already consumed without showing anything —
+ * for when a different prompt (e.g. the post-join ask) already covered this
+ * moment, so the first-time trigger shouldn't also fire on a later visit.
+ */
+export function markNotificationPromptShown(trigger: 'firstRsvpIn' | 'firstChatOpen'): Promise<void> {
+  const key = trigger === 'firstRsvpIn' ? FIRST_RSVP_IN_PROMPT_KEY : FIRST_CHAT_OPEN_PROMPT_KEY;
+  return AsyncStorage.setItem(key, '1');
 }
