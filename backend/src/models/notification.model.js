@@ -44,6 +44,12 @@ const notificationSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    // Freeform extra context for rendering a more specific message than `type`
+    // alone allows, e.g. which fields changed on a 'meetup-updated' event:
+    // { changedFields: ['time', 'location'] }.
+    meta: {
+        type: mongoose.Schema.Types.Mixed,
+    },
 }, { timestamps: true });
 
 const Notification = mongoose.model("Notification", notificationSchema);

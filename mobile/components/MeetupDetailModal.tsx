@@ -17,6 +17,8 @@ import {
     Dimensions
 } from 'react-native';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
+import VideoServiceIcon from './VideoServiceIcon';
+import { detectVideoService, isHttpUrl } from '../utils/videoLinks';
 import Animated, {
     FadeIn,
     FadeOut,
@@ -24,6 +26,7 @@ import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withRepeat,
+    withSequence,
     withTiming,
     Easing,
 } from 'react-native-reanimated';
@@ -38,7 +41,7 @@ import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
 import NativeTimePicker from './NativeTimePicker';
 import LocationField from './LocationField';
-import LocationSearchPanel from './LocationSearchPanel';
+import LocationSearchModal from './LocationSearchModal';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 // Watermark that slowly breathes between a base and darker opacity, one full cycle every 5 seconds.
@@ -67,6 +70,45 @@ const PulsingWatermark = ({ label, style, baseOpacity, peakOpacity }: {
     );
 };
 
+// Repeat icon rendered as two color halves that spin together in a quick burst whenever
+// burstNonce changes (i.e. on tap).
+const InOutSwapIcon = ({ burstNonce }: { burstNonce: number }) => {
+    const burst = useSharedValue(0);
+    const isFirstRender = useRef(true);
+
+    useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+        burst.value = withSequence(
+            withTiming(1, { duration: 450, easing: Easing.out(Easing.cubic) }),
+            withTiming(0, { duration: 0 })
+        );
+    }, [burstNonce]);
+
+    const spinStyle = useAnimatedStyle(() => ({
+        transform: [{ rotate: `${burst.value * 360}deg` }],
+    }));
+    const greenStyle = spinStyle;
+    const redStyle = spinStyle;
+
+    return (
+        <View style={{ width: 20, height: 20 }}>
+            <View style={{ position: 'absolute', top: 0, left: 0, width: 20, height: 10, overflow: 'hidden' }}>
+                <Animated.View style={[{ position: 'absolute', top: 0, left: 0 }, greenStyle]}>
+                    <Feather name="repeat" size={20} color="#3FABA1" />
+                </Animated.View>
+            </View>
+            <View style={{ position: 'absolute', top: 10, left: 0, width: 20, height: 10, overflow: 'hidden' }}>
+                <Animated.View style={[{ position: 'absolute', top: -10, left: 0 }, redStyle]}>
+                    <Feather name="repeat" size={20} color="#FF7A6E" />
+                </Animated.View>
+            </View>
+        </View>
+    );
+};
+
 interface MeetupDetailModalProps {
   meetup: Meetup | null;
   onClose: () => void;
@@ -92,6 +134,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     
     const [meetup, setMeetup] = useState<Meetup | null>(initialMeetup);
     const { data: allMeetups } = useGetMeetups();
+    const [swapIconNonce, setSwapIconNonce] = useState(0);
 
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
@@ -375,6 +418,15 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     };
 
     const handleOpenLocation = (address: string) => {
+        if (isHttpUrl(address)) {
+            // Meeting links (Zoom, Google Meet, Teams, etc.) are universal/app links —
+            // opening the plain https URL hands off to the native app if it's installed,
+            // and falls back to the mobile browser otherwise. No custom scheme needed.
+            Linking.openURL(address.trim()).catch(() => {
+                Alert.alert('Error', 'Could not open this link.');
+            });
+            return;
+        }
         const query = encodeURIComponent(address);
         const url = Platform.OS === 'ios' ? `maps:0,0?q=${query}` : `geo:0,0?q=${query}`;
         Linking.openURL(url).catch(() => {
@@ -576,6 +628,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     };
 
 
+    const resolvedLocation = meetup.location || (meetup.group as any)?.defaultLocation || '';
+    const headerVideoService = detectVideoService(resolvedLocation);
+
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: modalBackgroundColor }]} edges={['top', 'bottom']}>
             <View style={styles.header}>
@@ -586,13 +641,19 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <Text style={styles.headerTitle}>
                         {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })} • {meetup.time}
                     </Text>
-                    {!!(meetup.location || (meetup.group as any)?.defaultLocation) && (
+                    {!!resolvedLocation && (
                         <TouchableOpacity
-                            onPress={() => handleOpenLocation(meetup.location || (meetup.group as any)?.defaultLocation)}
+                            onPress={() => handleOpenLocation(resolvedLocation)}
                             activeOpacity={0.6}
+                            style={styles.headerLocationRow}
                         >
+                            {!!headerVideoService && (
+                                <View style={styles.headerLocationIcon}>
+                                    <VideoServiceIcon service={headerVideoService} size={14} />
+                                </View>
+                            )}
                             <Text style={styles.headerLocation} numberOfLines={1}>
-                                {meetup.location || (meetup.group as any)?.defaultLocation}
+                                {resolvedLocation}
                             </Text>
                         </TouchableOpacity>
                     )}
@@ -635,24 +696,20 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             style={[styles.actionBtn, styles.moreActionBtn]}
                             activeOpacity={0.7}
                         >
-                            <Feather name="more-horizontal" size={20} color="#7C3AED" />
+                            <Feather name="more-horizontal" size={20} color="#4A90E2" />
                         </TouchableOpacity>
                         {!isReadOnly && !isRsvpLocked && !isRsvpDeadlinePassed && hasRsvpResponse && (
                             <TouchableOpacity
-                                onPress={() => setManualRsvpEdit(v => !v)}
+                                onPress={() => {
+                                    setManualRsvpEdit(v => !v);
+                                    setSwapIconNonce(n => n + 1);
+                                }}
                                 style={[styles.actionBtn, styles.inOutActionBtn]}
                                 activeOpacity={0.7}
                             >
                                 <View style={[StyleSheet.absoluteFill, { top: 0, height: '50%', backgroundColor: '#F0FDFB', borderTopLeftRadius: 9, borderTopRightRadius: 9 }]} />
                                 <View style={[StyleSheet.absoluteFill, { top: '50%', height: '50%', backgroundColor: '#FFE4E1', borderBottomLeftRadius: 9, borderBottomRightRadius: 9 }]} />
-                                <View style={{ width: 20, height: 20 }}>
-                                    <View style={{ position: 'absolute', top: 0, left: 0, width: 20, height: 10, overflow: 'hidden' }}>
-                                        <Feather name="repeat" size={20} color="#3FABA1" />
-                                    </View>
-                                    <View style={{ position: 'absolute', top: 10, left: 0, width: 20, height: 10, overflow: 'hidden' }}>
-                                        <Feather name="repeat" size={20} color="#FF7A6E" style={{ position: 'absolute', top: -10, left: 0 }} />
-                                    </View>
-                                </View>
+                                <InOutSwapIcon burstNonce={swapIconNonce} />
                             </TouchableOpacity>
                         )}
                     </View>
@@ -941,7 +998,14 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         <View style={styles.detailsCard}>
                             <View style={styles.detailItem}>
                                 <Text style={styles.detailLabel}>Location</Text>
-                                <Text style={styles.detailValue}>{meetup.location || (meetup.group as any)?.defaultLocation || "No location set"}</Text>
+                                <View style={styles.detailLocationRow}>
+                                    {!!headerVideoService && (
+                                        <View style={styles.detailLocationIcon}>
+                                            <VideoServiceIcon service={headerVideoService} size={16} />
+                                        </View>
+                                    )}
+                                    <Text style={styles.detailValue}>{resolvedLocation || "No location set"}</Text>
+                                </View>
                             </View>
                             <View style={styles.detailSeparator} />
                             <View style={styles.detailItem}>
@@ -1070,87 +1134,85 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             <Modal transparent visible={isEditModalVisible} animationType="slide">
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
                     <View style={styles.modalOverlay}>
-                        <View style={[styles.modalContent, isLocationSearchActive && styles.modalContentSearch]}>
-                            {isLocationSearchActive ? (
-                                <LocationSearchPanel
-                                    initialValue={newLocation}
+                        <View style={styles.modalContent}>
+                            <View style={styles.modalHeaderInner}>
+                                <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
+                                <Text style={styles.modalTitleInner}>Edit Meetup</Text>
+                                <TouchableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating || !canSaveCapacity}>
+                                    {isUpdating ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={[styles.saveBtnText, !canSaveCapacity && styles.saveBtnTextDisabled]}>Save</Text>}
+                                </TouchableOpacity>
+                            </View>
+
+                            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+                                <Text style={styles.fieldLabel}>Date</Text>
+                                <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
+                                    <Feather name="calendar" size={18} color="#4A90E2" />
+                                    <Text style={styles.dateInputText}>
+                                        {newDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Time</Text>
+                                <TouchableOpacity style={styles.dateInput} onPress={() => setShowTimePicker(true)}>
+                                    <Feather name="clock" size={18} color="#4A90E2" />
+                                    <Text style={styles.dateInputText}>{newTime}</Text>
+                                </TouchableOpacity>
+                                {showTimePicker && (
+                                    <NativeTimePicker value={newTime} onChange={setNewTime} onClose={() => setShowTimePicker(false)} />
+                                )}
+
+                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Location Override</Text>
+                                <LocationField
+                                    variant="card"
                                     placeholder="Specific address or link..."
-                                    onDone={(text) => { setNewLocation(text); setIsLocationSearchActive(false); }}
-                                    onCancel={() => setIsLocationSearchActive(false)}
+                                    value={newLocation}
+                                    onPress={() => setIsLocationSearchActive(true)}
                                 />
-                            ) : (
-                                <>
-                                    <View style={styles.modalHeaderInner}>
-                                        <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
-                                        <Text style={styles.modalTitleInner}>Edit Meetup</Text>
-                                        <TouchableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating || !canSaveCapacity}>
-                                            {isUpdating ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={[styles.saveBtnText, !canSaveCapacity && styles.saveBtnTextDisabled]}>Save</Text>}
-                                        </TouchableOpacity>
-                                    </View>
 
-                                    <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-                                        <Text style={styles.fieldLabel}>Date</Text>
-                                        <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
-                                            <Feather name="calendar" size={18} color="#4A90E2" />
-                                            <Text style={styles.dateInputText}>
-                                                {newDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                                            </Text>
-                                        </TouchableOpacity>
-
-                                        <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Time</Text>
-                                        <TouchableOpacity style={styles.dateInput} onPress={() => setShowTimePicker(true)}>
-                                            <Feather name="clock" size={18} color="#4A90E2" />
-                                            <Text style={styles.dateInputText}>{newTime}</Text>
-                                        </TouchableOpacity>
-                                        {showTimePicker && (
-                                            <NativeTimePicker value={newTime} onChange={setNewTime} onClose={() => setShowTimePicker(false)} />
-                                        )}
-
-                                        <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Location Override</Text>
-                                        <LocationField
-                                            variant="card"
-                                            placeholder="Specific address or link..."
-                                            value={newLocation}
-                                            onPress={() => setIsLocationSearchActive(true)}
-                                        />
-
-                                        <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Max Attendees</Text>
-                                        <View style={styles.boolRow}>
-                                            <TouchableOpacity
-                                                style={[styles.boolBtn, capacityMode === "unlimited" && styles.boolBtnActive]}
-                                                onPress={() => { setCapacityMode("unlimited"); setNewCapacity(""); }}
-                                            >
-                                                <Text style={[styles.boolBtnText, capacityMode === "unlimited" && styles.boolBtnTextActive]}>Unlimited</Text>
-                                            </TouchableOpacity>
-                                            <TouchableOpacity
-                                                style={[styles.boolBtn, capacityMode === "limited" && styles.boolBtnActive]}
-                                                onPress={() => setCapacityMode("limited")}
-                                            >
-                                                <Text style={[styles.boolBtnText, capacityMode === "limited" && styles.boolBtnTextActive]}>Limited</Text>
-                                            </TouchableOpacity>
+                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Max Attendees</Text>
+                                <View style={styles.boolRow}>
+                                    <TouchableOpacity
+                                        style={[styles.boolBtn, capacityMode === "unlimited" && styles.boolBtnActive]}
+                                        onPress={() => { setCapacityMode("unlimited"); setNewCapacity(""); }}
+                                    >
+                                        <Text style={[styles.boolBtnText, capacityMode === "unlimited" && styles.boolBtnTextActive]}>Unlimited</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.boolBtn, capacityMode === "limited" && styles.boolBtnActive]}
+                                        onPress={() => setCapacityMode("limited")}
+                                    >
+                                        <Text style={[styles.boolBtnText, capacityMode === "limited" && styles.boolBtnTextActive]}>Limited</Text>
+                                    </TouchableOpacity>
+                                </View>
+                                {capacityMode === "limited" && (
+                                    <View style={{ marginTop: 10 }}>
+                                        <View style={[styles.inputContainer, capacityError && styles.inputContainerError]}>
+                                            <Feather name="users" size={18} color="#4A90E2" />
+                                            <TextInput
+                                                style={styles.textInput}
+                                                placeholder="How many?"
+                                                placeholderTextColor="#C4C9D4"
+                                                keyboardType="number-pad"
+                                                value={newCapacity}
+                                                onChangeText={setNewCapacity}
+                                            />
                                         </View>
-                                        {capacityMode === "limited" && (
-                                            <View style={{ marginTop: 10 }}>
-                                                <View style={[styles.inputContainer, capacityError && styles.inputContainerError]}>
-                                                    <Feather name="users" size={18} color="#4A90E2" />
-                                                    <TextInput
-                                                        style={styles.textInput}
-                                                        placeholder="How many?"
-                                                        placeholderTextColor="#C4C9D4"
-                                                        keyboardType="number-pad"
-                                                        value={newCapacity}
-                                                        onChangeText={setNewCapacity}
-                                                    />
-                                                </View>
-                                                {capacityError && <Text style={styles.errorText}>{capacityError}</Text>}
-                                            </View>
-                                        )}
-                                    </ScrollView>
-                                </>
-                            )}
+                                        {capacityError && <Text style={styles.errorText}>{capacityError}</Text>}
+                                    </View>
+                                )}
+                            </ScrollView>
                         </View>
                     </View>
                 </KeyboardAvoidingView>
+
+                <LocationSearchModal
+                    visible={isLocationSearchActive}
+                    initialValue={newLocation}
+                    placeholder="Specific address or link..."
+                    onDone={(text) => { setNewLocation(text); setIsLocationSearchActive(false); }}
+                    onCancel={() => setIsLocationSearchActive(false)}
+                    asOverlay
+                />
             </Modal>
 
             {/* --- THIS IS THE NEW MODAL FOR THE DATE PICKER --- */}
@@ -1200,7 +1262,9 @@ const styles = StyleSheet.create({
     // header's height — and thus where the ScrollView (and IN/OUT watermark) starts — never changes.
     headerTitleContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
     headerTitle: { fontSize: 14, fontWeight: '900', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
-    headerLocation: { fontSize: 14, fontWeight: '500', fontStyle: 'italic', color: '#B0B7C3', textTransform: 'none', letterSpacing: 0.2, marginTop: 2, textAlign: 'center', textDecorationLine: 'underline' },
+    headerLocationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, maxWidth: '100%', flexShrink: 1 },
+    headerLocationIcon: { marginRight: 5, flexShrink: 0 },
+    headerLocation: { fontSize: 14, fontWeight: '500', fontStyle: 'italic', color: '#B0B7C3', textTransform: 'none', letterSpacing: 0.2, textAlign: 'center', textDecorationLine: 'underline', flexShrink: 1 },
     content: { flex: 1, padding: 24 },
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
@@ -1231,7 +1295,7 @@ const styles = StyleSheet.create({
     },
     actionRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
     actionBtn: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-    moreActionBtn: { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
+    moreActionBtn: { backgroundColor: '#EEF6FF', borderColor: '#93C5FD' },
     actionsMenuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.15)' },
     actionsMenuCard: {
         position: 'absolute',
@@ -1265,6 +1329,8 @@ const styles = StyleSheet.create({
     detailItem: {},
     detailLabel: { fontSize: 11, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 0 },
     detailValue: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
+    detailLocationRow: { flexDirection: 'row', alignItems: 'center' },
+    detailLocationIcon: { marginRight: 6 },
     detailSeparator: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 12 },
     guestAvatarPlaceholder: { backgroundColor: '#4FD1C5', alignItems: 'center', justifyContent: 'center' },
     rsvpLockedBanner: { 
@@ -1313,7 +1379,6 @@ rsvpLockedSubtitle: {
     cancelToggleText: { color: '#EF4444', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 60 },
-    modalContentSearch: { height: '92%', padding: 0, paddingBottom: 0 },
     modalHeaderInner: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
     modalTitleInner: { fontSize: 18, fontWeight: '900', color: '#111827' },
     saveBtnText: { color: '#4A90E2', fontWeight: '900', fontSize: 16 },

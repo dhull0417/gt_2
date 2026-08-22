@@ -163,10 +163,11 @@ export interface Notification {
   sender?: User;
   type: NotificationType;
   group?: Group;
-  meetup?: { _id: string; name: string };
+  meetup?: { _id: string; name: string; date?: string; time?: string; timezone?: string; location?: string; capacity?: number };
   poll?: { _id: string; prompt: string };
   status: 'pending' | 'accepted' | 'declined' | 'read';
   read: boolean;
+  meta?: { changedFields?: ('schedule' | 'location' | 'capacity')[] };
   createdAt: string;
 }
 

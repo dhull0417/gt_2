@@ -360,20 +360,30 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     const dateOrTimeChanged = oldDateStr !== newDateStr || oldTime !== meetup.time;
     const locationChanged = location !== undefined && oldLocation !== meetup.location;
     const capacityChanged = capacity !== undefined && oldCapacity !== meetup.capacity;
-    
-    const hasChanged = dateOrTimeChanged || locationChanged || capacityChanged;
 
-    if (hasChanged) {
+    // Recorded on the notification so the bell-icon list can say exactly what
+    // changed instead of a generic "details were updated".
+    const changedFields = [
+        ...(dateOrTimeChanged ? ['schedule'] : []),
+        ...(locationChanged ? ['location'] : []),
+        ...(capacityChanged ? ['capacity'] : []),
+    ];
+
+    if (changedFields.length > 0) {
+        const fieldLabels = { schedule: 'date and time', location: 'location', capacity: 'capacity' };
+        const changeSummary = changedFields.map(f => fieldLabels[f]).join(' and ');
+
         const membersToNotify = await User.find({ _id: { $in: meetup.members } });
         if (membersToNotify.length > 0) {
             await notifyAndPersist(membersToNotify, {
                 title: `Meetup Updated: ${meetup.name}`,
-                body: `The details for "${meetup.name}" have been updated. Tap to see what's new.`,
+                body: `The ${changeSummary} for "${meetup.name}" changed. Tap to see what's new.`,
                 data: { meetupId: meetup._id.toString(), type: 'meetup_updated' },
                 type: 'meetup-updated',
                 sender: requester._id,
                 meetup: meetup._id,
                 group: meetup.group._id,
+                meta: { changedFields },
             });
         }
     }

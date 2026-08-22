@@ -15,7 +15,7 @@ export const getNotifications = asyncHandler(async (req, res) => {
     const notifications = await Notification.find({ recipient: user._id })
         .populate('sender', 'firstName lastName profilePicture')
         .populate('group', 'name')
-        .populate('meetup', 'name')
+        .populate('meetup', 'name date time timezone location capacity')
         .populate('poll', 'prompt')
         .sort({ createdAt: -1 });
 

@@ -65,8 +65,8 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, on
 };
 
 const styles = StyleSheet.create({
-    modalContainer: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-    pickerModalContent: { backgroundColor: 'white', borderTopRightRadius: 20, borderTopLeftRadius: 20, padding: 16 },
+    modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', padding: 24 },
+    pickerModalContent: { alignSelf: 'center', backgroundColor: 'white', borderRadius: 20, padding: 16, overflow: 'hidden' },
     doneButton: { backgroundColor: '#4A90E2', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 10 },
     doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
 });

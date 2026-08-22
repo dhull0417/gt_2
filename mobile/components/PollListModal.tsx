@@ -22,18 +22,28 @@ interface PollListModalProps {
     groupId: string;
     currentUserId: string;
     canManage: boolean;
+    // When set, the modal opens straight into that poll's vote/results screen
+    // instead of the list — used by callers that already know which poll they
+    // want (e.g. the group chat's next-event bar).
+    initialPollId?: string;
 }
 
 const voterIds = (option: PollOption): string[] =>
     option.voters.map(v => (typeof v === 'string' ? v : v._id));
 
-const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage }: PollListModalProps) => {
+const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, initialPollId }: PollListModalProps) => {
     const { data: polls, isLoading } = useGetPolls(groupId);
     const { mutateAsync: votePoll, isPending: isVoting } = useVotePoll();
     const { mutateAsync: cancelPoll, isPending: isCancelling } = useCancelPoll();
 
     const [selectedPollId, setSelectedPollId] = useState<string | null>(null);
     const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
+
+    // Re-sync to the caller's requested poll (or back to the list) each time the
+    // modal opens, rather than persisting whatever was selected last time.
+    useEffect(() => {
+        if (visible) setSelectedPollId(initialPollId ?? null);
+    }, [visible, initialPollId]);
 
     const selectedPoll = polls?.find(p => p._id === selectedPollId) || null;
 

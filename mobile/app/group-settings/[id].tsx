@@ -29,7 +29,7 @@ import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import LocationSearchPanel from '@/components/LocationSearchPanel';
+import LocationSearchModal from '@/components/LocationSearchModal';
 
 // Mirrors the Max Attendees validation on the group-creation Schedule screen and
 // the Add Meetup wizard so all three "attendee limit" entry points agree on what's valid.
@@ -88,7 +88,6 @@ const GroupSettings = () => {
   const canSaveCapacity = capacityMode !== "limited" || (tempCapacity !== "" && !capacityError);
 
   const [isEditingLocation, setIsEditingLocation] = useState(false);
-  const [isSavingLocation, setIsSavingLocation] = useState(false);
 
   // --- State for Moderator Management ---
   const [isEditingMods, setIsEditingMods] = useState(false);
@@ -375,15 +374,15 @@ const GroupSettings = () => {
     }
   };
 
+  // Closes the popup immediately when called (matching the other 3 Set Location
+  // popups, which are just local-state updates with no network round-trip) —
+  // the save itself happens in the background; a failure surfaces via Alert
+  // after the fact rather than blocking the popup open until it resolves.
   const handleSaveLocation = async (locationText: string) => {
     if (!id) return;
     const trimmedLoc = locationText.trim();
-    if (trimmedLoc === group?.defaultLocation) {
-        setIsEditingLocation(false);
-        return;
-    }
+    if (trimmedLoc === group?.defaultLocation) return;
 
-    setIsSavingLocation(true);
     try {
         await groupApi.updateGroup(api, { groupId: id, defaultLocation: trimmedLoc });
         await Promise.all([
@@ -391,12 +390,9 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
-        setIsEditingLocation(false);
         Alert.alert("Success", "Default location and future meetups updated.");
     } catch (error: any) {
         Alert.alert("Error", error.response?.data?.error || "Failed to update location.");
-    } finally {
-        setIsSavingLocation(false);
     }
   };
 
@@ -552,7 +548,7 @@ const GroupSettings = () => {
                     <Feather name={option.icon as any} size={20} color={option.color} />
                   </View>
                 )}
-                <View>
+                <View style={{ flexShrink: 1 }}>
                   <Text style={[styles.optionLabel, option.destructive && styles.destructiveLabel]}>
                     {option.label}
                   </Text>
@@ -760,23 +756,13 @@ const GroupSettings = () => {
       </Modal>
 
       {/* Edit Location Modal */}
-      <Modal visible={isEditingLocation} transparent={false} animationType="slide" onRequestClose={() => setIsEditingLocation(false)}>
-        <View style={[styles.fullModalContainer, { paddingTop: insets.top }]}>
-            <Text style={styles.modalSubtitleLeft}>Updates location for all associated meetups.</Text>
-            {isSavingLocation ? (
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                    <ActivityIndicator size="small" color="#4A90E2" />
-                </View>
-            ) : (
-                <LocationSearchPanel
-                    initialValue={group?.defaultLocation || ""}
-                    placeholder="e.g. Starbucks or Zoom link..."
-                    onDone={(text) => handleSaveLocation(text)}
-                    onCancel={() => setIsEditingLocation(false)}
-                />
-            )}
-        </View>
-      </Modal>
+      <LocationSearchModal
+        visible={isEditingLocation}
+        initialValue={group?.defaultLocation || ""}
+        placeholder="e.g. Starbucks or Zoom link..."
+        onDone={(text) => { setIsEditingLocation(false); handleSaveLocation(text); }}
+        onCancel={() => setIsEditingLocation(false)}
+      />
 
       {/* Edit Moderators Modal */}
       <Modal
@@ -901,7 +887,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   optionsContainer: { padding: 16 },
   optionButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: 'white', borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F3F4F6', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
-  optionLeft: { flexDirection: 'row', alignItems: 'center' },
+  optionLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
   iconContainer: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
   optionLabel: { fontSize: 16, fontWeight: '700', color: '#374151' },
   optionSubLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '500', marginTop: 2 },

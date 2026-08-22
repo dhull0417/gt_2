@@ -1,11 +1,30 @@
 import React, { useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
 import { useApiClient, placesApi, PlaceSuggestion, PlaceDetails } from '@/utils/api';
 
 const DEBOUNCE_MS = 300;
 const MIN_QUERY_LENGTH = 3;
+
+// For a business/venue result, Google returns the venue name (details.name) separately
+// from the street address. Plain address results often just repeat the address as the
+// "name" too, so only treat it as a real venue name when it's not already part of the
+// address — that's also what decides whether the bold name label renders at all.
+const getVenueName = (details?: PlaceDetails): string | null => {
+  const name = details?.name?.trim();
+  const address = details?.address?.trim();
+  if (!name || !address) return null;
+  if (address.toLowerCase().includes(name.toLowerCase())) return null;
+  return name;
+};
+
+const buildDisplayText = (details: PlaceDetails, fallback: string): string => {
+  const venueName = getVenueName(details);
+  const address = details.address?.trim();
+  if (!address) return venueName || fallback;
+  return venueName ? `${venueName}, ${address}` : address;
+};
 
 interface LocationSearchPanelProps {
   initialValue: string;
@@ -22,10 +41,17 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
+  // Tracks the exact query a search actually completed for, so "No matches" only
+  // shows once a real search has come back empty for the current text — not on
+  // initial open (before any search has run) and not right after picking a
+  // suggestion (which also leaves the suggestion list empty).
+  const [searchedQuery, setSearchedQuery] = useState<string | null>(null);
 
   const sessionTokenRef = useRef(Crypto.randomUUID());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
+
+  const venueName = getVenueName(resolvedPlace);
 
   const handleChangeText = (value: string) => {
     setText(value);
@@ -36,6 +62,7 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
     if (value.trim().length < MIN_QUERY_LENGTH) {
       setSuggestions([]);
       setIsLoading(false);
+      setSearchedQuery(null);
       return;
     }
 
@@ -46,6 +73,7 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
         const results = await placesApi.autocomplete(api, value.trim(), sessionTokenRef.current);
         if (thisRequestId !== requestIdRef.current) return; // a newer keystroke superseded this request
         setSuggestions(results);
+        setSearchedQuery(value.trim());
       } catch {
         if (thisRequestId !== requestIdRef.current) return;
         setSuggestions([]);
@@ -62,12 +90,14 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
       setText(details.address || suggestion.mainText);
       setResolvedPlace(details);
       setSuggestions([]);
+      setSearchedQuery(null);
     } catch {
       // Fall back to the suggestion's plain text if the details lookup fails —
       // the field still gets a reasonable value instead of appearing broken.
       setText(suggestion.mainText);
       setResolvedPlace(undefined);
       setSuggestions([]);
+      setSearchedQuery(null);
     } finally {
       setIsResolving(false);
       sessionTokenRef.current = Crypto.randomUUID(); // start a fresh billing session for any further searching
@@ -80,19 +110,32 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
         <TouchableOpacity onPress={onCancel} style={styles.backButton} activeOpacity={0.7}>
           <Feather name="arrow-left" size={22} color="#374151" />
         </TouchableOpacity>
-        <TextInput
-          style={styles.input}
-          placeholder={placeholder}
-          placeholderTextColor="#C4C9D4"
-          value={text}
-          onChangeText={handleChangeText}
-          autoFocus
-          selectTextOnFocus
-        />
-        {(isLoading || isResolving) && <ActivityIndicator size="small" color="#9CA3AF" style={{ marginRight: 12 }} />}
-        <TouchableOpacity onPress={() => onDone(text, resolvedPlace)} activeOpacity={0.7}>
+        <Text style={styles.headerTitle}>Set Location</Text>
+        <TouchableOpacity
+          onPress={() => onDone(resolvedPlace ? buildDisplayText(resolvedPlace, text) : text, resolvedPlace)}
+          style={styles.doneButton}
+          activeOpacity={0.7}
+        >
             <Text style={styles.doneText}>Done</Text>
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.inputBox}>
+        <FontAwesome5 name="search-location" solid size={18} color="#4A90E2" style={styles.inputIcon} />
+        <View style={{ flex: 1 }}>
+          {!!venueName && <Text style={styles.venueName}>{venueName}</Text>}
+          <TextInput
+            style={styles.input}
+            placeholder={placeholder}
+            placeholderTextColor="#C4C9D4"
+            value={text}
+            onChangeText={handleChangeText}
+            autoFocus
+            selectTextOnFocus
+            multiline
+          />
+        </View>
+        {(isLoading || isResolving) && <ActivityIndicator size="small" color="#9CA3AF" style={styles.inputSpinner} />}
       </View>
 
       <FlatList
@@ -111,7 +154,7 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
         ListEmptyComponent={
           isLoading ? (
             <View style={styles.centerState}><ActivityIndicator color="#9CA3AF" /></View>
-          ) : text.trim().length >= MIN_QUERY_LENGTH ? (
+          ) : (searchedQuery !== null && searchedQuery === text.trim()) ? (
             <View style={styles.centerState}><Text style={styles.emptyText}>No matches for "{text.trim()}"</Text></View>
           ) : null
         }
@@ -124,14 +167,28 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  backButton: { padding: 6, marginRight: 4 },
-  input: { flex: 1, fontSize: 16, color: '#111827', paddingVertical: 6, paddingHorizontal: 8 },
-  doneText: { color: '#4A90E2', fontWeight: '800', fontSize: 15, paddingHorizontal: 4 },
+  backButton: { padding: 8 },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', color: '#111827' },
+  doneButton: { padding: 8 },
+  doneText: { color: '#4A90E2', fontWeight: '800', fontSize: 15 },
+  inputBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  inputIcon: { marginRight: 12, marginTop: 3 },
+  inputSpinner: { marginLeft: 8, marginTop: 3 },
+  venueName: { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 2 },
+  input: { fontSize: 16, color: '#111827', minHeight: 24, padding: 0 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

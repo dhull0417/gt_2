@@ -1,8 +1,39 @@
 import { Expo } from 'expo-server-sdk';
 import User from '../models/user.model.js';
 import Notification from '../models/notification.model.js';
+import Meetup from '../models/meetup.model.js';
 
 const expo = new Expo();
+
+/**
+ * A group-muted user should still hear about meetups further out, just not
+ * the very next one — otherwise muting the chat to skip one noisy event
+ * would silently swallow updates for everything after it too. "Next" is
+ * whichever scheduled meetup in the group starts soonest; we check that by
+ * startsAt rather than trusting the caller's own status, since this runs
+ * after cancellations/updates have already been saved.
+ */
+const isNextUpcomingMeetup = async (groupId, meetupId) => {
+  if (!groupId || !meetupId) return false;
+
+  const meetup = await Meetup.findById(meetupId, 'startsAt').lean();
+  if (!meetup || !meetup.startsAt) return false;
+
+  const earlierExists = await Meetup.exists({
+    group: groupId,
+    _id: { $ne: meetupId },
+    status: 'scheduled',
+    startsAt: { $lt: meetup.startsAt },
+  });
+
+  return !earlierExists;
+};
+
+const isGroupMuted = (user, groupId) => {
+  const groupIdStr = groupId.toString();
+  return (user.mutedGroups || []).some(id => id.toString() === groupIdStr)
+    || (user.mutedUntilNextMeetup || []).some(id => id.toString() === groupIdStr);
+};
 
 /**
  * sendPushNotifications
@@ -92,8 +123,19 @@ export const notifyUsers = async (users, { title, body, data }) => {
  * unlike notifyUsers, it is not filtered down to users with a push token,
  * since users without a token should still get the in-app record.
  */
-export const notifyAndPersist = async (users, { title, body, data, type, sender, group, meetup, poll }) => {
-  await notifyUsers(users, { title, body, data });
+export const notifyAndPersist = async (users, { title, body, data, type, sender, group, meetup, poll, meta }) => {
+  // Group-muted members still get the in-app Notification record below, but
+  // skip the push itself when this event is about the group's next upcoming
+  // meetup — that's the one event a chat mute is meant to quiet.
+  let pushRecipients = users;
+  if (group && meetup && users?.length > 0) {
+    const isNext = await isNextUpcomingMeetup(group, meetup);
+    if (isNext) {
+      pushRecipients = users.filter(user => !isGroupMuted(user, group));
+    }
+  }
+
+  await notifyUsers(pushRecipients, { title, body, data });
 
   if (!type || !users || users.length === 0) return;
 
@@ -104,6 +146,7 @@ export const notifyAndPersist = async (users, { title, body, data, type, sender,
     group,
     meetup,
     poll,
+    meta,
     read: false,
   }));
 

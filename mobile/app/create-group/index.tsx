@@ -17,6 +17,7 @@ import {
     Animated,
     Modal,
 } from "react-native";
+import { BlurView } from "expo-blur";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@clerk/expo";
@@ -28,7 +29,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCreateGroup } from "../../hooks/useCreateGroup";
 import NativeTimePicker, { timeStringToDate } from "../../components/NativeTimePicker";
 import LocationField from "../../components/LocationField";
-import LocationSearchPanel from "../../components/LocationSearchPanel";
+import LocationSearchModal from "../../components/LocationSearchModal";
 import { Frequency, DayTime, useApiClient, groupApi } from "../../utils/api";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -79,8 +80,6 @@ interface WeekdayRow {
     time: string;
     startDate: string | null;
     showTimePicker: boolean;
-    showDayPicker: boolean;
-    showStartDatePicker: boolean;
 }
 
 interface MonthlyDateEntry {
@@ -184,7 +183,7 @@ const defaultSchedule = (): ScheduleData => ({
     showDailySameTimePicker: false,
     dailyRows: DAYS_OF_WEEK.map(dw => ({
         id: uid(), day: dw.value, time: "05:00 PM",
-        startDate: null, showTimePicker: false, showDayPicker: false, showStartDatePicker: false,
+        startDate: null, showTimePicker: false,
     })),
     weekdayRows: [],
     monthlyMode: null,
@@ -200,8 +199,8 @@ const defaultSchedule = (): ScheduleData => ({
 
 // ─── Inline Calendar ──────────────────────────────────────────────────────────
 
-const InlineCalendar = ({ value, onChange, minDate }: {
-    value: string; onChange: (iso: string) => void; minDate?: string;
+const InlineCalendar = ({ value, onChange, minDate, maxDate, bare, large }: {
+    value: string; onChange: (iso: string) => void; minDate?: string; maxDate?: string; bare?: boolean; large?: boolean;
 }) => {
     const [month, setMonth] = useState(
         value ? DateTime.fromISO(value).startOf("month") : DateTime.now().startOf("month")
@@ -221,37 +220,43 @@ const InlineCalendar = ({ value, onChange, minDate }: {
         return chunks;
     }, [month]);
     const minDT = minDate ? DateTime.fromISO(minDate) : DateTime.now().startOf("day");
+    const maxDT = maxDate ? DateTime.fromISO(maxDate) : null;
+    const canGoNext = !maxDT || month.plus({ months: 1 }).startOf("month") <= maxDT.startOf("month");
     return (
-        <View style={cal.container}>
-            <View style={cal.nav}>
-                <TouchableOpacity onPress={() => setMonth(m => m.minus({ months: 1 }))} style={cal.navBtn}>
-                    <Feather name="chevron-left" size={18} color="#4A90E2" />
+        <View style={bare ? cal.containerBare : cal.container}>
+            <View style={[cal.nav, large && cal.navLarge]}>
+                <TouchableOpacity onPress={() => setMonth(m => m.minus({ months: 1 }))} style={[cal.navBtn, large && cal.navBtnLarge]}>
+                    <Feather name="chevron-left" size={large ? 22 : 18} color="#4A90E2" />
                 </TouchableOpacity>
-                <Text style={cal.monthLabel}>{month.toFormat("MMMM yyyy")}</Text>
-                <TouchableOpacity onPress={() => setMonth(m => m.plus({ months: 1 }))} style={cal.navBtn}>
-                    <Feather name="chevron-right" size={18} color="#4A90E2" />
+                <Text style={[cal.monthLabel, large && cal.monthLabelLarge]}>{month.toFormat("MMMM yyyy")}</Text>
+                <TouchableOpacity
+                    onPress={() => canGoNext && setMonth(m => m.plus({ months: 1 }))}
+                    disabled={!canGoNext}
+                    style={[cal.navBtn, large && cal.navBtnLarge, !canGoNext && cal.navBtnDisabled]}
+                >
+                    <Feather name="chevron-right" size={large ? 22 : 18} color={canGoNext ? "#4A90E2" : "#C4C9D4"} />
                 </TouchableOpacity>
             </View>
-            <View style={cal.weekRow}>
+            <View style={[cal.weekRow, large && cal.weekRowLarge]}>
                 {["S","M","T","W","T","F","S"].map((d, i) => (
-                    <Text key={i} style={cal.dayHeader}>{d}</Text>
+                    <Text key={i} style={[cal.dayHeader, large && cal.dayHeaderLarge]}>{d}</Text>
                 ))}
             </View>
             {weeks.map((week, wi) => (
                 <View key={wi} style={cal.weekRow}>
                     {week.map((day, i) => {
-                        if (!day) return <View key={`e-${wi}-${i}`} style={cal.cell} />;
+                        if (!day) return <View key={`e-${wi}-${i}`} style={[cal.cell, large && cal.cellLarge]} />;
                         const iso = day.toISODate()!;
                         const selected = iso === value;
-                        const disabled = day < minDT;
+                        const disabled = day < minDT || (maxDT != null && day > maxDT);
                         return (
                             <TouchableOpacity
                                 key={iso}
-                                style={[cal.cell, selected && cal.cellSelected, disabled && cal.cellDisabled]}
+                                style={[cal.cell, large && cal.cellLarge, selected && cal.cellSelected, disabled && cal.cellDisabled]}
                                 onPress={() => !disabled && onChange(iso)}
                                 disabled={disabled}
                             >
-                                <Text style={[cal.cellText, selected && cal.cellTextSelected, disabled && cal.cellTextDisabled]}>
+                                <Text style={[cal.cellText, large && cal.cellTextLarge, selected && cal.cellTextSelected, disabled && cal.cellTextDisabled]}>
                                     {day.day}
                                 </Text>
                             </TouchableOpacity>
@@ -270,6 +275,64 @@ const TimeButton = ({ time, onPress, active }: { time: string; onPress: () => vo
         <Feather name="clock" size={12} color={active ? "#fff" : "#4A90E2"} style={{ marginRight: 4 }} />
         <Text style={[s.timeBtnText, active && s.timeBtnTextActive]}>{time}</Text>
     </TouchableOpacity>
+);
+
+// ─── DayPickerModal ───────────────────────────────────────────────────────────
+// Same blurred-popup treatment as the location search takeover — picking a day
+// happens in a focused overlay instead of an inline list expanding the page,
+// so choosing a weekday doesn't compete with the rest of the form for attention.
+
+const DayPickerModal = ({ visible, selectedDay, onSelect, onCancel }: {
+    visible: boolean; selectedDay: number | null; onSelect: (day: number) => void; onCancel: () => void;
+}) => (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+        <View style={s.dayPickerPopupWrap}>
+            <View style={s.dayPickerPopupCard}>
+                <View style={s.dayPickerPopupHeader}>
+                    <Text style={s.dayPickerPopupTitle}>Select Day</Text>
+                    <TouchableOpacity onPress={onCancel} style={{ padding: 4 }} activeOpacity={0.7}>
+                        <Feather name="x" size={20} color="#9CA3AF" />
+                    </TouchableOpacity>
+                </View>
+                {DAYS_OF_WEEK.map(dw => (
+                    <TouchableOpacity
+                        key={dw.value}
+                        style={[s.dayOption, selectedDay === dw.value && s.dayOptionActive]}
+                        onPress={() => onSelect(dw.value)}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={[s.dayOptionText, selectedDay === dw.value && s.dayOptionTextActive]}>{dw.label}</Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+        </View>
+    </Modal>
+);
+
+// ─── CalendarPickerModal ────────────────────────────────────────────────────────
+// Same popup treatment for the biweekly "First Occurrence" date — was an inline
+// calendar expanding the page, now a focused overlay like the day picker above.
+
+const CalendarPickerModal = ({ visible, value, minDate, maxDate, onChange, onCancel }: {
+    visible: boolean; value: string; minDate?: string; maxDate?: string; onChange: (iso: string) => void; onCancel: () => void;
+}) => (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+        <View style={s.dayPickerPopupWrap}>
+            <View style={s.calendarPopupCard}>
+                <View style={s.dayPickerPopupHeader}>
+                    <Text style={s.dayPickerPopupTitle}>First Occurrence</Text>
+                    <TouchableOpacity onPress={onCancel} style={{ padding: 4 }} activeOpacity={0.7}>
+                        <Feather name="x" size={20} color="#9CA3AF" />
+                    </TouchableOpacity>
+                </View>
+                <View style={{ padding: 8 }}>
+                    {visible && <InlineCalendar value={value} onChange={onChange} minDate={minDate} maxDate={maxDate} bare large />}
+                </View>
+            </View>
+        </View>
+    </Modal>
 );
 
 // ─── ToggleSwitch ─────────────────────────────────────────────────────────────
@@ -461,6 +524,8 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
 }) => {
     const [d, setD] = useState<ScheduleData>(initialData ?? defaultSchedule());
     const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
+    const [dayPickerRowId, setDayPickerRowId] = useState<string | null>(null);
+    const [calendarPickerRowId, setCalendarPickerRowId] = useState<string | null>(null);
 
     const upd = useCallback((patch: Partial<ScheduleData>) => {
         animate();
@@ -469,6 +534,8 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
 
     const selectFreq = (freq: Frequency) => {
         animate();
+        setDayPickerRowId(null);
+        setCalendarPickerRowId(null);
         setD(prev => ({
             ...prev,
             frequency: freq,
@@ -487,14 +554,16 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
     // ── Weekday rows ──────────────────────────────────────────────────────────
     const addWeekdayRow = () => {
         animate();
+        const newId = uid();
         setD(prev => ({
             ...prev,
             weekdayRows: [...prev.weekdayRows, {
-                id: uid(), day: null, time: "05:00 PM",
+                id: newId, day: null, time: "05:00 PM",
                 startDate: DateTime.now().toISODate()!,
-                showTimePicker: false, showDayPicker: true, showStartDatePicker: false,
+                showTimePicker: false,
             }],
         }));
+        setDayPickerRowId(newId);
     };
 
     const updWeekdayRow = (id: string, patch: Partial<WeekdayRow>) => {
@@ -508,6 +577,8 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
     const removeWeekdayRow = (id: string) => {
         animate();
         setD(prev => ({ ...prev, weekdayRows: prev.weekdayRows.filter(r => r.id !== id) }));
+        setDayPickerRowId(prev => (prev === id ? null : prev));
+        setCalendarPickerRowId(prev => (prev === id ? null : prev));
     };
 
     // ── Monthly dates ─────────────────────────────────────────────────────────
@@ -591,7 +662,7 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
             snapshot: {
                 dailySameTime: d.dailySameTime,
                 dailySharedTime: d.dailySharedTime,
-                weekdayRows: d.weekdayRows.map(r => ({ ...r, showTimePicker: false, showDayPicker: false, showStartDatePicker: false })),
+                weekdayRows: d.weekdayRows.map(r => ({ ...r, showTimePicker: false })),
                 monthlyMode: d.monthlyMode,
                 monthlyDates: d.monthlyDates.map(e => ({ ...e, expanded: false, showTimePicker: false })),
                 ordinalEntries: d.ordinalEntries.map(e => ({ ...e, expanded: false, showTimePicker: false })),
@@ -738,7 +809,7 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                 <View key={row.id} style={{ marginBottom: 14 }}>
                     <View style={s.dayRow}>
                         <TouchableOpacity style={s.dayPickerTrigger}
-                            onPress={() => updWeekdayRow(row.id, { showDayPicker: !row.showDayPicker, showTimePicker: false, showStartDatePicker: false })}>
+                            onPress={() => { updWeekdayRow(row.id, { showTimePicker: false }); setDayPickerRowId(row.id); }}>
                             <Text style={row.day !== null ? s.dayPickerText : s.dayPickerPlaceholder}>
                                 {row.day !== null ? DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label : "Select day"}
                             </Text>
@@ -746,24 +817,12 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                         </TouchableOpacity>
                         {row.day !== null && (
                             <TimeButton time={row.time} active={row.showTimePicker}
-                                onPress={() => updWeekdayRow(row.id, { showTimePicker: !row.showTimePicker, showDayPicker: false, showStartDatePicker: false })} />
+                                onPress={() => updWeekdayRow(row.id, { showTimePicker: !row.showTimePicker })} />
                         )}
                         <TouchableOpacity onPress={() => removeWeekdayRow(row.id)} style={{ marginLeft: 8 }}>
                             <Feather name="trash-2" size={16} color="#F87171" />
                         </TouchableOpacity>
                     </View>
-
-                    {row.showDayPicker && (
-                        <View style={s.inlineDayPicker}>
-                            {DAYS_OF_WEEK.map(dw => (
-                                <TouchableOpacity key={dw.value}
-                                    style={[s.dayOption, row.day === dw.value && s.dayOptionActive]}
-                                    onPress={() => updWeekdayRow(row.id, { day: dw.value, showDayPicker: false, showTimePicker: true })}>
-                                    <Text style={[s.dayOptionText, row.day === dw.value && s.dayOptionTextActive]}>{dw.label}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
 
                     {row.showTimePicker && (
                         <NativeTimePicker value={row.time}
@@ -773,19 +832,14 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
 
                     {isBiweekly && row.day !== null && (
                         <View style={{ marginTop: 8 }}>
+                            <Text style={s.startDateLabel}>First Occurrence</Text>
                             <TouchableOpacity style={s.dateFieldRow}
-                                onPress={() => updWeekdayRow(row.id, { showStartDatePicker: !row.showStartDatePicker, showTimePicker: false, showDayPicker: false })}>
+                                onPress={() => setCalendarPickerRowId(row.id)}>
                                 <Feather name="calendar" size={14} color="#4A90E2" style={{ marginRight: 6 }} />
                                 <Text style={s.dateFieldText}>
                                     {row.startDate ? DateTime.fromISO(row.startDate).toLocaleString(DateTime.DATE_MED) : "Set first occurrence date"}
                                 </Text>
-                                <Feather name={row.showStartDatePicker ? "chevron-up" : "chevron-down"} size={14} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
-                            {row.showStartDatePicker && (
-                                <InlineCalendar value={row.startDate || DateTime.now().toISODate()!}
-                                    onChange={iso => updWeekdayRow(row.id, { startDate: iso, showStartDatePicker: false })}
-                                    minDate={DateTime.now().toISODate()!} />
-                            )}
                         </View>
                     )}
                 </View>
@@ -794,6 +848,28 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                 <Feather name="plus-circle" size={16} color="#4A90E2" style={{ marginRight: 6 }} />
                 <Text style={s.addRowBtnText}>Add day</Text>
             </TouchableOpacity>
+
+            <DayPickerModal
+                visible={dayPickerRowId !== null}
+                selectedDay={d.weekdayRows.find(r => r.id === dayPickerRowId)?.day ?? null}
+                onSelect={(day) => {
+                    if (dayPickerRowId) updWeekdayRow(dayPickerRowId, { day, showTimePicker: true });
+                    setDayPickerRowId(null);
+                }}
+                onCancel={() => setDayPickerRowId(null)}
+            />
+
+            <CalendarPickerModal
+                visible={calendarPickerRowId !== null}
+                value={d.weekdayRows.find(r => r.id === calendarPickerRowId)?.startDate || DateTime.now().toISODate()!}
+                minDate={DateTime.now().toISODate()!}
+                maxDate={DateTime.now().plus({ months: 4 }).toISODate()!}
+                onChange={(iso) => {
+                    if (calendarPickerRowId) updWeekdayRow(calendarPickerRowId, { startDate: iso });
+                    setCalendarPickerRowId(null);
+                }}
+                onCancel={() => setCalendarPickerRowId(null)}
+            />
         </View>
     );
 
@@ -1059,7 +1135,8 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                     {d.showStartDatePicker && (
                         <InlineCalendar value={d.startDate}
                             onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
-                            minDate={DateTime.now().toISODate()!} />
+                            minDate={DateTime.now().toISODate()!}
+                            maxDate={DateTime.now().plus({ months: 4 }).toISODate()!} />
                     )}
 
                     {/* Timezone */}
@@ -1287,16 +1364,13 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                 </TouchableOpacity>
             </View>
 
-            <Modal visible={isLocationSearchOpen} animationType="slide" onRequestClose={() => setIsLocationSearchOpen(false)}>
-                <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['top', 'bottom']}>
-                    <LocationSearchPanel
-                        initialValue={d.location}
-                        placeholder="e.g. 123 Main St or zoom.us/j/..."
-                        onDone={(text) => { upd({ location: text }); setIsLocationSearchOpen(false); }}
-                        onCancel={() => setIsLocationSearchOpen(false)}
-                    />
-                </SafeAreaView>
-            </Modal>
+            <LocationSearchModal
+                visible={isLocationSearchOpen}
+                initialValue={d.location}
+                placeholder="e.g. 123 Main St or zoom.us/j/..."
+                onDone={(text) => { upd({ location: text }); setIsLocationSearchOpen(false); }}
+                onCancel={() => setIsLocationSearchOpen(false)}
+            />
         </View>
     );
 };
@@ -1605,6 +1679,7 @@ const s = StyleSheet.create({
     sectionTitle: { fontSize: 16, fontWeight: "900", color: "#111827", letterSpacing: -0.2 },
     dateFieldRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 13, marginBottom: 4 },
     dateFieldText: { fontSize: 15, color: "#1F2937", fontWeight: "600" },
+    startDateLabel: { fontSize: 11, fontWeight: "700", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
     expandBox: { backgroundColor: "#F0F7FF", borderRadius: 14, borderWidth: 1.5, borderColor: "#BFDBFE", padding: 14, marginTop: 8 },
     expandBoxTitle: { fontSize: 12, fontWeight: "900", color: "#1D4ED8", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
     boolRow: { flexDirection: "row", gap: 10 },
@@ -1630,6 +1705,31 @@ const s = StyleSheet.create({
     dayOptionActive: { backgroundColor: "#EEF6FF" },
     dayOptionText: { fontSize: 15, color: "#374151" },
     dayOptionTextActive: { color: "#4A90E2", fontWeight: "700" },
+    dayPickerPopupWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
+    dayPickerPopupCard: {
+        width: "85%",
+        borderRadius: 24,
+        backgroundColor: "#fff",
+        overflow: "hidden",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.25,
+        shadowRadius: 24,
+        elevation: 10,
+    },
+    dayPickerPopupHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+    dayPickerPopupTitle: { fontSize: 16, fontWeight: "800", color: "#111827" },
+    calendarPopupCard: {
+        width: "94%",
+        borderRadius: 24,
+        backgroundColor: "#fff",
+        overflow: "hidden",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.25,
+        shadowRadius: 24,
+        elevation: 10,
+    },
     addRowBtn: { flexDirection: "row", alignItems: "center", paddingVertical: 10, marginTop: 4 },
     addRowBtnText: { fontSize: 14, fontWeight: "700", color: "#4A90E2" },
     dateGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
@@ -1687,15 +1787,24 @@ const s = StyleSheet.create({
 
 const cal = StyleSheet.create({
     container: { backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", padding: 12, marginTop: 6, marginBottom: 4 },
+    containerBare: { padding: 14 },
     nav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+    navLarge: { marginBottom: 16 },
     navBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
+    navBtnLarge: { width: 42, height: 42, borderRadius: 21 },
+    navBtnDisabled: { backgroundColor: "#F3F4F6" },
     monthLabel: { fontSize: 15, fontWeight: "800", color: "#111827" },
+    monthLabelLarge: { fontSize: 20 },
     weekRow: { flexDirection: "row" },
+    weekRowLarge: { marginBottom: 4 },
     dayHeader: { width: `${100 / 7}%`, textAlign: "center", fontSize: 11, fontWeight: "800", color: "#9CA3AF", marginBottom: 4 },
+    dayHeaderLarge: { fontSize: 14, marginBottom: 10 },
     cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: "center", justifyContent: "center" },
+    cellLarge: { paddingVertical: 4 },
     cellSelected: { backgroundColor: "#4A90E2", borderRadius: 100 },
     cellDisabled: { opacity: 0.3 },
     cellText: { fontSize: 14, color: "#374151" },
+    cellTextLarge: { fontSize: 18 },
     cellTextSelected: { color: "#fff", fontWeight: "800" },
     cellTextDisabled: { color: "#D1D5DB" },
 });
