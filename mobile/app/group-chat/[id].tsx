@@ -36,6 +36,7 @@ import { ChatDayBubble } from '@/components/ChatDayBubble';
 import { ChatImageViewer } from '@/components/ChatImageViewer';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { GroupCalendarButton } from '@/components/GroupCalendarButton';
+import { promptForNotificationPermission } from '@/hooks/usePushNotifications';
 import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
 import type { ChatMessage, PendingImage } from '@/types/chat';
 
@@ -50,7 +51,7 @@ const REACTIONS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
 const GroupChatScreen = () => {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, promptNotifications } = useLocalSearchParams<{ id: string; promptNotifications?: string }>();
   const [chatHeaderHeight, setChatHeaderHeight] = useState(0);
 
   const insets = useSafeAreaInsets();
@@ -58,6 +59,14 @@ const GroupChatScreen = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
   const sectionListRef = useRef<SectionList<ChatMessage, ChatDaySection>>(null);
+
+  // Landed here right after joining this group (see join/[token]'s goToChat) —
+  // ask once, then drop the param so revisiting this chat doesn't ask again.
+  useEffect(() => {
+    if (promptNotifications !== '1') return;
+    promptForNotificationPermission(api);
+    router.setParams({ promptNotifications: undefined });
+  }, [promptNotifications]);
 
   // Tapping into a chat clears its unread dot on the groups list.
   useEffect(() => {

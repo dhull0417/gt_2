@@ -331,8 +331,10 @@ export interface PlaceDetails {
 }
 
 export const placesApi = {
-  autocomplete: async (api: AxiosInstance, input: string, sessionToken: string): Promise<PlaceSuggestion[]> => {
-    const response = await api.get<PlaceSuggestion[]>("/api/places/autocomplete", { params: { input, sessionToken } });
+  autocomplete: async (api: AxiosInstance, input: string, sessionToken: string, coords?: { lat: number; lng: number }): Promise<PlaceSuggestion[]> => {
+    const response = await api.get<PlaceSuggestion[]>("/api/places/autocomplete", {
+      params: { input, sessionToken, lat: coords?.lat, lng: coords?.lng },
+    });
     return response.data;
   },
   getDetails: async (api: AxiosInstance, placeId: string, sessionToken: string): Promise<PlaceDetails> => {

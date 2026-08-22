@@ -6,11 +6,21 @@ const DETAILS_FIELD_MASK = "id,formattedAddress,location,displayName";
 
 // Search-as-you-type suggestions for a partial address/venue name.
 // sessionToken bundles this with the terminating getPlaceDetails call for session-based billing.
+// Nudges results toward the searcher without excluding anything farther away
+// (e.g. an out-of-town venue or a Zoom link typed as free text).
+const LOCATION_BIAS_RADIUS_METERS = 20000;
+
 export const getPlacesAutocomplete = asyncHandler(async (req, res) => {
-    const { input, sessionToken } = req.query;
+    const { input, sessionToken, lat, lng } = req.query;
     if (!input || !sessionToken) {
         return res.status(400).json({ error: "input and sessionToken are required." });
     }
+
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
+    const locationBias = Number.isFinite(latitude) && Number.isFinite(longitude)
+        ? { circle: { center: { latitude, longitude }, radius: LOCATION_BIAS_RADIUS_METERS } }
+        : undefined;
 
     const response = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
         method: "POST",
@@ -19,7 +29,7 @@ export const getPlacesAutocomplete = asyncHandler(async (req, res) => {
             "X-Goog-Api-Key": ENV.GOOGLE_PLACES_API_KEY,
             "X-Goog-FieldMask": AUTOCOMPLETE_FIELD_MASK,
         },
-        body: JSON.stringify({ input, sessionToken }),
+        body: JSON.stringify({ input, sessionToken, ...(locationBias && { locationBias }) }),
     });
 
     if (!response.ok) {

@@ -29,6 +29,7 @@
         "NSContactsUsageDescription": "GroupThat needs access to your contacts to let you invite friends to your groups.",
         "NSCalendarsUsageDescription": "GroupThat needs access to your calendar to add meetup events.",
         "NSCalendarsFullAccessUsageDescription": "GroupThat needs access to your calendar to add meetup events.",
+        "NSLocationWhenInUseUsageDescription": "GroupThat uses your location to show nearby places first when you search for an address.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "runtimeVersion": {
@@ -52,7 +53,8 @@
         "RECEIVE_BOOT_COMPLETED",
         "READ_CONTACTS",
         "READ_CALENDAR",
-        "WRITE_CALENDAR"
+        "WRITE_CALENDAR",
+        "ACCESS_COARSE_LOCATION"
       ],
       "runtimeVersion": {
         "policy": "fingerprint"
@@ -119,7 +121,8 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

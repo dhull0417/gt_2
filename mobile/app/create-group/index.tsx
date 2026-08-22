@@ -1614,7 +1614,7 @@ const CreateGroupScreen = () => {
     if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("schedule"); }} onClose={handleClose} /></SafeAreaView>;
     if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen initialData={schedule} onNext={data => { setSchedule(data); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedule(null); setStep("review"); }} /></SafeAreaView>;
     if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} groupImage={groupImage} members={[]} schedule={schedule} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
-    return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} groupName={groupName} onDone={() => router.replace("/(tabs)/groups")} /></SafeAreaView>;
+    return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} groupName={groupName} onDone={() => router.replace({ pathname: "/(tabs)/groups", params: { promptNotifications: "1" } })} /></SafeAreaView>;
 };
 
 export default CreateGroupScreen;

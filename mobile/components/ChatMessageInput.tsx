@@ -3,7 +3,7 @@ import { View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator,
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@clerk/expo';
-import { uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
+import { ensurePhotoLibraryPermission, uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
 import type { PendingImage } from '@/types/chat';
 
 interface Props {
@@ -22,11 +22,8 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   const [attachMenuVisible, setAttachMenuVisible] = useState(false);
 
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo library access to send images.');
-      return;
-    }
+    const hasPermission = await ensurePhotoLibraryPermission();
+    if (!hasPermission) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],

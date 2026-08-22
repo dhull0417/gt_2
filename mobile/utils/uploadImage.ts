@@ -1,4 +1,4 @@
-import { Platform } from "react-native";
+import { Alert, Linking, Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { getSupabaseClient } from "./supabase";
@@ -53,6 +53,42 @@ async function processAndUpload(
 }
 
 /**
+ * Ensure photo library access, requesting it if we haven't yet.
+ *
+ * If the OS has already permanently denied us (canAskAgain is false — this
+ * happens after the user explicitly answers once on iOS, or picks "don't ask
+ * again" on Android), it can't be re-prompted natively, so we offer a direct
+ * jump to Settings instead of a dead-end message.
+ */
+export async function ensurePhotoLibraryPermission(): Promise<boolean> {
+  const current = await ImagePicker.getMediaLibraryPermissionsAsync();
+  if (current.status === "granted") return true;
+
+  if (current.canAskAgain) {
+    const requested = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (requested.status === "granted") return true;
+    if (!requested.canAskAgain) {
+      offerSettings();
+    }
+    return false;
+  }
+
+  offerSettings();
+  return false;
+}
+
+function offerSettings() {
+  Alert.alert(
+    "Photo access needed",
+    "Allow photo library access in Settings to add a picture.",
+    [
+      { text: "Cancel", style: "cancel" },
+      { text: "Open Settings", onPress: () => Linking.openSettings() },
+    ]
+  );
+}
+
+/**
  * Open the image picker and return a local URI without uploading.
  *
  * On iOS this uses the native crop/zoom editor (allowsEditing), which works well.
@@ -61,6 +97,9 @@ async function processAndUpload(
  * (ImageCropperHost, mounted at the app root) instead.
  */
 export async function pickImageUri(): Promise<string | null> {
+  const hasPermission = await ensurePhotoLibraryPermission();
+  if (!hasPermission) return null;
+
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],
     quality: 1,

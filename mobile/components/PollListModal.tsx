@@ -109,22 +109,30 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                 <ScrollView showsVerticalScrollIndicator={false}>
                     {polls.map(poll => {
                         const hasVoted = poll.options.some(opt => voterIds(opt).includes(currentUserId));
+                        const isActive = poll.status === 'active';
                         return (
-                            <TouchableOpacity key={poll._id} style={styles.pollRow} onPress={() => openPoll(poll)}>
+                            <TouchableOpacity key={poll._id} style={styles.pollRow} onPress={() => openPoll(poll)} activeOpacity={0.7}>
+                                <View style={[styles.pollIconChip, isActive ? styles.pollIconChipActive : styles.pollIconChipEnded]}>
+                                    <Feather name="bar-chart-2" size={18} color={isActive ? '#4A90E2' : '#9CA3AF'} />
+                                </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text
-                                        style={[styles.pollRowPrompt, poll.status !== 'active' && styles.pollRowPromptExpired]}
-                                        numberOfLines={2}
-                                    >
+                                    <Text style={styles.pollRowPrompt} numberOfLines={2}>
                                         {poll.prompt}
                                     </Text>
-                                    <Text style={[styles.pollRowMeta, poll.status !== 'active' && styles.pollRowMetaExpired]}>
-                                        {poll.status === 'active'
-                                            ? `Active · Expires ${DateTime.fromISO(poll.expiresAt).toFormat('MMM d, h:mm a')}`
-                                            : `Expired ${DateTime.fromISO(poll.expiresAt).toFormat('MMM d, h:mm a')}`}
-                                    </Text>
+                                    <View style={styles.pollRowMetaRow}>
+                                        {isActive && <View style={styles.activeDot} />}
+                                        <Text style={styles.pollRowMeta}>
+                                            {isActive
+                                                ? `Expires ${DateTime.fromISO(poll.expiresAt).toFormat('MMM d, h:mm a')}`
+                                                : `Ended ${DateTime.fromISO(poll.expiresAt).toFormat('MMM d, h:mm a')}`}
+                                        </Text>
+                                    </View>
                                 </View>
-                                {poll.status === 'active' && !hasVoted && <View style={styles.unansweredDot} />}
+                                {isActive && !hasVoted && (
+                                    <View style={styles.newBadge}>
+                                        <Text style={styles.newBadgeText}>New</Text>
+                                    </View>
+                                )}
                                 <Feather name="chevron-right" size={18} color="#9CA3AF" />
                             </TouchableOpacity>
                         );
@@ -146,29 +154,48 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                     <TouchableOpacity onPress={backToList}>
                         <Feather name="chevron-left" size={24} color="#374151" />
                     </TouchableOpacity>
-                    <Text style={styles.modalHeaderTitle}>{isExpired ? 'Complete' : 'Vote'}</Text>
+                    <Text style={styles.modalHeaderTitle}>{isExpired ? 'Results' : 'Vote'}</Text>
                     <TouchableOpacity onPress={onClose}>
                         <Feather name="x" size={24} color="#374151" />
                     </TouchableOpacity>
                 </View>
 
                 <ScrollView showsVerticalScrollIndicator={false}>
+                    <View style={styles.detailStatusRow}>
+                        <View style={[styles.detailIconChip, isExpired ? styles.pollIconChipEnded : styles.pollIconChipActive]}>
+                            <Feather name={isExpired ? 'check-circle' : 'bar-chart-2'} size={16} color={isExpired ? '#9CA3AF' : '#4A90E2'} />
+                        </View>
+                        <Text style={styles.detailStatusText}>
+                            {isExpired
+                                ? `Ended ${DateTime.fromISO(selectedPoll.expiresAt).toFormat('MMM d, h:mm a')}`
+                                : `Expires ${DateTime.fromISO(selectedPoll.expiresAt).toFormat('MMM d, h:mm a')}`}
+                        </Text>
+                    </View>
+
                     <Text style={styles.detailPrompt}>{selectedPoll.prompt}</Text>
 
                     {selectedPoll.options.map(option => {
                         const count = voterIds(option).length;
                         const isSelected = selectedOptionIds.includes(option._id);
                         const isWinner = isExpired && maxVotes > 0 && count === maxVotes;
+                        const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
 
                         if (isExpired) {
                             return (
                                 <View key={option._id} style={[styles.resultRow, isWinner && styles.resultRowWinner]}>
-                                    <Text style={[styles.resultText, isWinner && styles.resultTextWinner]}>
-                                        {option.text}
-                                    </Text>
-                                    <Text style={[styles.resultCount, isWinner && styles.resultTextWinner]}>
-                                        {count}
-                                    </Text>
+                                    <View style={[styles.resultFill, { width: `${pct}%` }, isWinner && styles.resultFillWinner]} />
+                                    <View style={styles.resultRowContent}>
+                                        <View style={styles.resultTextRow}>
+                                            {isWinner && <Feather name="award" size={14} color="#4A90E2" style={{ marginRight: 6 }} />}
+                                            <Text style={[styles.resultText, isWinner && styles.resultTextWinner]} numberOfLines={2}>
+                                                {option.text}
+                                            </Text>
+                                        </View>
+                                        <View style={{ alignItems: 'flex-end' }}>
+                                            <Text style={[styles.resultCount, isWinner && styles.resultTextWinner]}>{count}</Text>
+                                            <Text style={[styles.resultPct, isWinner && styles.resultPctWinner]}>{pct}%</Text>
+                                        </View>
+                                    </View>
                                 </View>
                             );
                         }
@@ -176,8 +203,9 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                         return (
                             <TouchableOpacity
                                 key={option._id}
-                                style={styles.optionRow}
+                                style={[styles.optionRow, isSelected && styles.optionRowSelected]}
                                 onPress={() => toggleOption(selectedPoll, option._id)}
+                                activeOpacity={0.7}
                             >
                                 <Feather
                                     name={
@@ -188,18 +216,21 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                                     size={20}
                                     color={isSelected ? '#4A90E2' : '#9CA3AF'}
                                 />
-                                <Text style={styles.optionText}>{option.text}</Text>
+                                <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{option.text}</Text>
                                 <Text style={styles.optionCount}>{count}</Text>
                             </TouchableOpacity>
                         );
                     })}
 
                     {isExpired && (
-                        <Text style={styles.totalVotesText}>{totalVotes} total vote{totalVotes === 1 ? '' : 's'}</Text>
+                        <View style={styles.totalVotesPill}>
+                            <Feather name="users" size={12} color="#6B7280" />
+                            <Text style={styles.totalVotesText}>{totalVotes} total vote{totalVotes === 1 ? '' : 's'}</Text>
+                        </View>
                     )}
 
                     {canManage && !isExpired && (
-                        <TouchableOpacity onPress={() => handleCancelPoll(selectedPoll)} disabled={isCancelling}>
+                        <TouchableOpacity onPress={() => handleCancelPoll(selectedPoll)} disabled={isCancelling} style={styles.cancelPollBtn} activeOpacity={0.7}>
                             <Text style={styles.cancelPollText}>Cancel Poll</Text>
                         </TouchableOpacity>
                     )}
@@ -228,48 +259,76 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
 };
 
 const styles = StyleSheet.create({
-    modalContent: { flex: 1, backgroundColor: 'white', padding: 24 },
+    modalContent: { flex: 1, backgroundColor: '#F9FAFB', padding: 24 },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-    modalHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827' },
+    modalHeaderTitle: { fontSize: 18, fontWeight: '900', color: '#111827' },
     emptyText: { textAlign: 'center', color: '#9CA3AF', marginTop: 40, fontSize: 15 },
 
     pollRow: {
-        flexDirection: 'row', alignItems: 'center', gap: 10,
-        backgroundColor: '#F9FAFB', borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB',
-        padding: 16, marginBottom: 10,
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#F3F4F6',
+        padding: 14, marginBottom: 10,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
     },
-    pollRowPrompt: { fontSize: 15, fontWeight: '700', color: '#111827' },
-    pollRowPromptExpired: { color: '#EF4444' },
-    pollRowMeta: { fontSize: 12, color: '#9CA3AF', marginTop: 4 },
-    pollRowMetaExpired: { color: '#EF4444' },
-    unansweredDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' },
+    pollIconChip: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+    pollIconChipActive: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
+    pollIconChipEnded: { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' },
+    pollRowPrompt: { fontSize: 15, fontWeight: '800', color: '#111827' },
+    pollRowMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5 },
+    activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4A90E2', marginRight: 6 },
+    pollRowMeta: { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
+    newBadge: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
+    newBadgeText: { color: '#4A90E2', fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
 
-    detailPrompt: { fontSize: 20, fontWeight: '900', color: '#111827', marginBottom: 20 },
+    detailStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+    detailIconChip: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+    detailStatusText: { fontSize: 12, fontWeight: '800', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5 },
+    detailPrompt: { fontSize: 22, fontWeight: '900', color: '#111827', marginBottom: 20, letterSpacing: -0.3 },
 
     optionRow: {
         flexDirection: 'row', alignItems: 'center', gap: 12,
-        backgroundColor: '#F9FAFB', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB',
+        backgroundColor: '#fff', borderRadius: 14, borderWidth: 1.5, borderColor: '#E5E7EB',
         paddingVertical: 14, paddingHorizontal: 16, marginBottom: 10,
     },
-    optionText: { fontSize: 15, color: '#374151', flex: 1 },
+    optionRowSelected: { borderColor: '#4A90E2', backgroundColor: '#EEF6FF' },
+    optionText: { fontSize: 15, color: '#374151', fontWeight: '600', flex: 1 },
+    optionTextSelected: { color: '#1F2937', fontWeight: '700' },
     optionCount: { fontSize: 15, color: '#9CA3AF', fontWeight: '700', marginLeft: 12 },
 
     resultRow: {
-        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-        backgroundColor: '#F9FAFB', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB',
-        paddingVertical: 14, paddingHorizontal: 16, marginBottom: 10,
+        borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB',
+        backgroundColor: '#F9FAFB', marginBottom: 10, overflow: 'hidden', position: 'relative',
     },
-    resultRowWinner: { borderColor: '#4A90E2', borderWidth: 2, backgroundColor: '#F5F9FF' },
-    resultText: { fontSize: 15, color: '#374151', flex: 1 },
-    resultCount: { fontSize: 15, color: '#374151', fontWeight: '700', marginLeft: 12 },
-    resultTextWinner: { color: '#4A90E2', fontWeight: '900' },
-    totalVotesText: { textAlign: 'center', color: '#9CA3AF', fontSize: 12, marginTop: 8, marginBottom: 20 },
+    resultRowWinner: { borderColor: '#4A90E2', borderWidth: 2 },
+    resultFill: { position: 'absolute', top: 0, left: 0, bottom: 0, backgroundColor: '#EFF6FF' },
+    resultFillWinner: { backgroundColor: '#DBEAFE' },
+    resultRowContent: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingVertical: 14, paddingHorizontal: 16,
+    },
+    resultTextRow: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 12 },
+    resultText: { fontSize: 15, color: '#374151', fontWeight: '600', flexShrink: 1 },
+    resultCount: { fontSize: 15, color: '#374151', fontWeight: '900' },
+    resultPct: { fontSize: 11, color: '#9CA3AF', fontWeight: '700', marginTop: 1 },
+    resultPctWinner: { color: '#4A90E2' },
+    resultTextWinner: { color: '#1D4ED8', fontWeight: '900' },
 
-    cancelPollText: { textAlign: 'center', color: '#EF4444', fontWeight: '700', fontSize: 14, marginTop: 12, marginBottom: 20 },
+    totalVotesPill: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+        alignSelf: 'center', backgroundColor: '#F3F4F6', borderRadius: 100,
+        paddingHorizontal: 12, paddingVertical: 6, marginTop: 10, marginBottom: 20,
+    },
+    totalVotesText: { color: '#6B7280', fontSize: 12, fontWeight: '700' },
 
-    submitBtn: { backgroundColor: '#4A90E2', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 12 },
+    cancelPollBtn: {
+        height: 48, borderRadius: 14, borderWidth: 2, borderColor: '#EF4444', backgroundColor: '#FEF2F2',
+        alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+    },
+    cancelPollText: { color: '#EF4444', fontWeight: '900', fontSize: 12, textTransform: 'uppercase' },
+
+    submitBtn: { backgroundColor: '#4A90E2', padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 12 },
     submitBtnDisabled: { backgroundColor: '#C7D2FE' },
-    submitBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+    submitBtnText: { color: 'white', fontWeight: '800', fontSize: 16 },
 });
 
 export default PollListModal;

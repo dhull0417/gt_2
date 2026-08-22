@@ -13,11 +13,12 @@ import * as SecureStore from 'expo-secure-store';
 import * as Clipboard from 'expo-clipboard';
 import { User, useApiClient, userApi } from '@/utils/api';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 import { ImageCropperHost } from '@/components/ImageCropperHost';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { WelcomeModal } from '@/components/WelcomeModal';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -117,13 +118,20 @@ const AuthLayout = () => {
 
   usePushNotifications(isSignedIn, isSuccess);
 
+  // Shows the first-group welcome modal exactly once, right as a brand new
+  // user's profile-setup completes (detected as a profileIncomplete
+  // true -> false transition, rather than e.g. an empty-groups check, so it
+  // doesn't reappear for existing users who simply haven't made a group yet).
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const wasProfileIncomplete = useRef<boolean | null>(null);
+
   // === ROUTING LOGIC ===
   useEffect(() => {
     if (!isLoaded || (isSignedIn && !currentUserSettled)) return;
 
     const inTabsGroup = segments[0] === '(tabs)';
     const inAuthGroup = segments[0] === '(auth)';
-    
+
     // Allowed routes list to ensure the user isn't redirected to the dashboard during configuration flows
     const inAllowedModalGroup = [
       'profile-setup',
@@ -146,6 +154,10 @@ const AuthLayout = () => {
       // !currentUser (no Mongo user yet) always routes through profile-setup first,
       // since its Save button is what triggers syncUser and creates the record.
       const profileIncomplete = !currentUser || (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()));
+      if (wasProfileIncomplete.current === true && !profileIncomplete) {
+        setShowWelcomeModal(true);
+      }
+      wasProfileIncomplete.current = profileIncomplete;
       if (profileIncomplete && segments[0] !== 'profile-setup') {
         router.replace('/profile-setup');
       } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
@@ -180,6 +192,7 @@ const AuthLayout = () => {
   return (
     <View style={{ flex: 1 }}>
       <OfflineBanner />
+      <WelcomeModal visible={showWelcomeModal} onClose={() => setShowWelcomeModal(false)} />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />

@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
+import * as Location from 'expo-location';
 import { useApiClient, placesApi, PlaceSuggestion, PlaceDetails } from '@/utils/api';
 
 const DEBOUNCE_MS = 300;
@@ -46,12 +47,53 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
   // initial open (before any search has run) and not right after picking a
   // suggestion (which also leaves the suggestion list empty).
   const [searchedQuery, setSearchedQuery] = useState<string | null>(null);
+  // Only shown pre-decision (permission status 'undetermined') — once the user grants
+  // or denies, this stays hidden for the rest of the session so we never nag.
+  const [showLocationPrompt, setShowLocationPrompt] = useState(false);
 
   const sessionTokenRef = useRef(Crypto.randomUUID());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
+  const coordsRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const venueName = getVenueName(resolvedPlace);
+
+  const fetchCoords = async () => {
+    try {
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+      coordsRef.current = { lat: position.coords.latitude, lng: position.coords.longitude };
+    } catch {
+      // Bias is a nice-to-have — leave coordsRef null and search continues unbiased.
+    }
+  };
+
+  useEffect(() => {
+    Location.getForegroundPermissionsAsync()
+      .then(({ status }) => {
+        if (status === Location.PermissionStatus.GRANTED) {
+          fetchCoords();
+        } else if (status === Location.PermissionStatus.UNDETERMINED) {
+          setShowLocationPrompt(true);
+        }
+      })
+      .catch(() => {
+        // Location bias is a nice-to-have — e.g. the native module isn't in the
+        // installed build yet (needs a fresh dev-client build after adding
+        // expo-location). Search still works fine without it.
+      });
+  }, []);
+
+  const handleEnableLocation = async () => {
+    setShowLocationPrompt(false);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === Location.PermissionStatus.GRANTED) {
+        fetchCoords();
+      }
+    } catch {
+      // Same nice-to-have fallback as above.
+    }
+  };
 
   const handleChangeText = (value: string) => {
     setText(value);
@@ -70,7 +112,7 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
     debounceRef.current = setTimeout(async () => {
       const thisRequestId = ++requestIdRef.current;
       try {
-        const results = await placesApi.autocomplete(api, value.trim(), sessionTokenRef.current);
+        const results = await placesApi.autocomplete(api, value.trim(), sessionTokenRef.current, coordsRef.current ?? undefined);
         if (thisRequestId !== requestIdRef.current) return; // a newer keystroke superseded this request
         setSuggestions(results);
         setSearchedQuery(value.trim());
@@ -138,6 +180,19 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
         {(isLoading || isResolving) && <ActivityIndicator size="small" color="#9CA3AF" style={styles.inputSpinner} />}
       </View>
 
+      {showLocationPrompt && (
+        <View style={styles.locationPrompt}>
+          <Feather name="map-pin" size={14} color="#4A90E2" style={{ marginRight: 8 }} />
+          <Text style={styles.locationPromptText}>Use your location to see nearby places first</Text>
+          <TouchableOpacity onPress={handleEnableLocation} activeOpacity={0.7}>
+            <Text style={styles.locationPromptAction}>Enable</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowLocationPrompt(false)} activeOpacity={0.7} style={{ marginLeft: 14 }}>
+            <Text style={styles.locationPromptDismiss}>Not now</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <FlatList
         data={suggestions}
         keyExtractor={item => item.placeId}
@@ -189,6 +244,18 @@ const styles = StyleSheet.create({
   inputSpinner: { marginLeft: 8, marginTop: 3 },
   venueName: { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 2 },
   input: { fontSize: 16, color: '#111827', minHeight: 24, padding: 0 },
+  locationPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#F0F6FE',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  locationPromptText: { flex: 1, fontSize: 12.5, color: '#374151' },
+  locationPromptAction: { fontSize: 13, fontWeight: '800', color: '#4A90E2' },
+  locationPromptDismiss: { fontSize: 13, color: '#9CA3AF' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
