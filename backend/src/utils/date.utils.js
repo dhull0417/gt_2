@@ -1,6 +1,35 @@
 import { DateTime } from "luxon";
 
-const parseLeadTime = (timeStr) => {
+// How far ahead of "now" the recurring-meetup pipeline is kept filled, per
+// frequency. Occurrences are naturally spaced by frequency, so the resulting
+// occurrence count falls out of the window automatically (e.g. a 364-day
+// window yields ~52 weekly or ~26 biweekly occurrences with no separate
+// count logic needed).
+export const getGenerationWindowDays = (frequency) => {
+  switch (frequency) {
+    case 'daily':    return 93;   // ~3 months
+    case 'weekly':   return 364;  // 52 weeks
+    case 'biweekly': return 364;  // same 1-year horizon as weekly -> ~26 occurrences
+    case 'monthly':  return 730;  // ~2 years
+    case 'ordinal':  return 730;  // same as monthly
+    default:         return 30;
+  }
+};
+
+// Staged "you haven't RSVP'd yet" reminders, keyed by how far ahead of
+// startsAt each stage fires. Longer-cycle frequencies get more, earlier
+// stages since members plan further ahead for them. The final 30-minutes-out
+// ping is handled separately by notifyMeetupReminder (goes to everyone
+// except `out`, not just the undecided) and isn't part of this list.
+export const RSVP_REMINDER_STAGES = {
+  daily:    [{ key: '4d', offsetHours: 96 }, { key: '24h', offsetHours: 24 }, { key: '6h', offsetHours: 6 }],
+  weekly:   [{ key: '7d', offsetHours: 168 }, { key: '3d', offsetHours: 72 }, { key: '24h', offsetHours: 24 }, { key: '6h', offsetHours: 6 }],
+  biweekly: [{ key: '7d', offsetHours: 168 }, { key: '3d', offsetHours: 72 }, { key: '24h', offsetHours: 24 }, { key: '6h', offsetHours: 6 }],
+  monthly:  [{ key: '14d', offsetHours: 336 }, { key: '7d', offsetHours: 168 }, { key: '3d', offsetHours: 72 }, { key: '24h', offsetHours: 24 }, { key: '6h', offsetHours: 6 }],
+  ordinal:  [{ key: '14d', offsetHours: 336 }, { key: '7d', offsetHours: 168 }, { key: '3d', offsetHours: 72 }, { key: '24h', offsetHours: 24 }, { key: '6h', offsetHours: 6 }],
+};
+
+export const parseTimeString = (timeStr) => {
   if (!timeStr) return { hours: 9, minutes: 0 };
   const [time, modifier] = timeStr.split(' ');
   let [hours, minutes] = time.split(':').map(Number);
@@ -12,7 +41,7 @@ const parseLeadTime = (timeStr) => {
 // Returns the UTC datetime when the next ungenerated meetup for a given
 // routine/dtEntry should be created, based on the last anchor date processed.
 export const computeNextGenerationAt = (group, lastAnchorDate, routine, dtEntry) => {
-  const { hours: leadH, minutes: leadM } = parseLeadTime(group.generationLeadTime || "09:00 AM");
+  const { hours: leadH, minutes: leadM } = parseTimeString(group.generationLeadTime || "09:00 AM");
   const anchor = lastAnchorDate || new Date();
 
   const nextOccurrence = calculateNextMeetupDate(

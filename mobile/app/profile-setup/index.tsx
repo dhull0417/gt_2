@@ -1,22 +1,30 @@
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useUpdateProfile } from '@/hooks/useUpdateProfile';
-import { useUserSync } from '@/hooks/useUserSync';
 import { useUser } from '@clerk/expo';
+import { useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
+import * as SecureStore from 'expo-secure-store';
+import { useApiClient, userApi } from '@/utils/api';
+import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 
 const ProfileSetupScreen = () => {
     const { user: clerkUser } = useUser();
+    const router = useRouter();
+    const api = useApiClient();
+    const queryClient = useQueryClient();
     const [firstName, setFirstName] = useState(clerkUser?.firstName ?? '');
     const [lastName, setLastName] = useState(clerkUser?.lastName ?? '');
     const [zipCode, setZipCode] = useState('');
-    const { mutate: syncUser, isPending: isSyncing } = useUserSync();
-    const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
+    const [isSaving, setIsSaving] = useState(false);
 
-    const isPending = isSyncing || isUpdating;
     const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
 
-    const handleSaveProfile = () => {
+    // Plain awaited calls, same shape as the dashboard's "One quick thing" zip
+    // modal (app/(tabs)/index.tsx) — not a useMutation(). A per-call mutate()
+    // onSuccess doesn't reliably fire once router.replace unmounts this screen
+    // (see useUpdateProfile's history).
+    const handleSaveProfile = async () => {
         if (!isAppleUser && (!firstName.trim() || !lastName.trim())) {
             Alert.alert('Missing Information', 'Please fill out all fields.');
             return;
@@ -31,11 +39,32 @@ const ProfileSetupScreen = () => {
         const profileData = isAppleUser
             ? { ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) }
             : { firstName, lastName, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) };
-        // Ensure the MongoDB user exists before updating profile.
-        // onSettled fires whether sync succeeded or failed, so we always attempt the update.
-        syncUser(undefined, {
-            onSettled: () => updateProfile(profileData),
-        });
+
+        setIsSaving(true);
+        try {
+            // Ensure the MongoDB user exists before updating profile — idempotent,
+            // syncUser just returns the existing user if one's already there.
+            await userApi.syncUser(api, { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' });
+            const { data } = await userApi.updateProfile(api, profileData);
+            if (data?.user) {
+                queryClient.setQueryData(['currentUser'], data.user);
+            } else {
+                queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+            }
+
+            const pendingToken = await SecureStore.getItemAsync(PENDING_INVITE_KEY);
+            if (pendingToken) {
+                await SecureStore.deleteItemAsync(PENDING_INVITE_KEY);
+                router.replace({ pathname: '/join/[token]', params: { token: pendingToken } });
+            } else {
+                router.replace('/(tabs)');
+            }
+        } catch (error: any) {
+            const errorMessage = error.response?.data?.error || 'Failed to update profile.';
+            Alert.alert('Error', errorMessage);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
@@ -84,10 +113,10 @@ const ProfileSetupScreen = () => {
 
                     <TouchableOpacity
                         onPress={handleSaveProfile}
-                        disabled={isPending}
-                        className={`w-full py-4 rounded-lg items-center shadow ${isPending ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
+                        disabled={isSaving}
+                        className={`w-full py-4 rounded-lg items-center shadow ${isSaving ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
                     >
-                        {isPending ? (
+                        {isSaving ? (
                             <ActivityIndicator color="#fff" />
                         ) : (
                             <Text className="text-white text-lg font-bold">Save & Continue</Text>

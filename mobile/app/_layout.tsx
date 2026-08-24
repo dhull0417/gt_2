@@ -95,6 +95,7 @@ const AuthLayout = () => {
   const queryClient = useQueryClient();
 
   const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
+  const inTabsGroup = segments[0] === '(tabs)';
 
   useUserSync();
 
@@ -121,23 +122,32 @@ const AuthLayout = () => {
 
   usePushNotifications(isSignedIn, isSuccess);
 
-  // Shows once profile-setup is done, driven entirely by the persisted
-  // hasSeenWelcome flag on the user record — not by any client-side timing
-  // or "just signed up" detection, so it works the same for every sign-in
-  // method and survives app reloads mid-flow.
-  const profileComplete = !!currentUser && (isAppleUser || (!!currentUser.firstName?.trim() && !!currentUser.lastName?.trim()));
-  const showWelcomeModal = profileComplete && !currentUser?.hasSeenWelcome;
+  // Single source of truth: show whenever the signed-in user's own record
+  // says they haven't seen it yet, once they've actually landed in (tabs) —
+  // true for every sign-in method alike, since it no longer depends on which
+  // screen happened to set it off (profile-setup's Save vs. the dashboard's
+  // zip-code card used to race each other and could bury one popup under
+  // the other). Deliberately not backed by a local useState flag: AuthLayout
+  // stays mounted across sign-out/sign-in, so a plain "dismissed" boolean
+  // would leak from whoever dismissed it last into the next signed-in user's
+  // session. Closing writes straight into the currentUser query cache instead,
+  // which sign-out already clears (see useSignout's queryClient.clear()).
+  const showWelcomeModal = !!currentUser && !currentUser.hasSeenWelcome && inTabsGroup;
 
   const markWelcomeSeen = useMutation({
     mutationFn: () => userApi.updateProfile(api, { hasSeenWelcome: true }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['currentUser'] }),
   });
 
+  const closeWelcomeModal = () => {
+    queryClient.setQueryData<User>(['currentUser'], (old) => old ? { ...old, hasSeenWelcome: true } : old);
+    markWelcomeSeen.mutate();
+  };
+
   // === ROUTING LOGIC ===
   useEffect(() => {
     if (!isLoaded || (isSignedIn && !currentUserSettled)) return;
 
-    const inTabsGroup = segments[0] === '(tabs)';
     const inAuthGroup = segments[0] === '(auth)';
 
     // Allowed routes list to ensure the user isn't redirected to the dashboard during configuration flows
@@ -195,7 +205,7 @@ const AuthLayout = () => {
   return (
     <View style={{ flex: 1 }}>
       <OfflineBanner />
-      <WelcomeModal visible={showWelcomeModal} onClose={() => markWelcomeSeen.mutate()} />
+      <WelcomeModal visible={showWelcomeModal} onClose={closeWelcomeModal} />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />

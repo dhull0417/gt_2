@@ -28,6 +28,53 @@ const hashGroupColor = (groupId: string): string => {
   return GROUP_BORDER_COLORS[hash];
 };
 
+// How many of each recurring series show in "Upcoming Meetups" before the
+// rest fall back to the group calendar button. Daily/weekly/biweekly cap by
+// count; monthly/ordinal cap by a rolling date window instead since a single
+// "2 months worth" cutoff reads more naturally than a raw occurrence count.
+// One-off meetups (frequency null) are never capped.
+const TAB_CAP_COUNT: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
+  daily: 14, weekly: 8, biweekly: 8,
+};
+const TAB_CAP_DAYS: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
+  monthly: 60, ordinal: 60,
+};
+
+// Buckets by (group, frequency) series so a user in a daily group and a
+// weekly group each get their own cap, then merges back into one date-sorted list.
+const capMeetupsByFrequency = (list: Meetup[]): Meetup[] => {
+  const now = Date.now();
+  const buckets = new Map<string, Meetup[]>();
+  const uncapped: Meetup[] = [];
+
+  list.forEach(m => {
+    if (!m.frequency) { uncapped.push(m); return; }
+    const key = `${m.group._id}|${m.frequency}`;
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(m);
+    buckets.set(key, bucket);
+  });
+
+  const capped: Meetup[] = [...uncapped];
+  buckets.forEach((bucketMeetups, key) => {
+    const frequency = key.split('|')[1] as NonNullable<Meetup['frequency']>;
+    const sorted = [...bucketMeetups].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const count = TAB_CAP_COUNT[frequency];
+    const days = TAB_CAP_DAYS[frequency];
+
+    if (count != null) {
+      capped.push(...sorted.slice(0, count));
+    } else if (days != null) {
+      const cutoff = now + days * 24 * 60 * 60 * 1000;
+      capped.push(...sorted.filter(m => new Date(m.date).getTime() <= cutoff));
+    } else {
+      capped.push(...sorted);
+    }
+  });
+
+  return capped.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+};
+
 // --- Components ---
 
 const RemovableCard = ({
@@ -162,16 +209,19 @@ const DashboardScreen = () => {
     };
     if (!meetups) return groups;
 
+    const upcomingCandidates: Meetup[] = [];
+
     meetups.forEach(meetup => {
       if (hiddenGroupIds.has(meetup.group._id)) return;
       const isPast = new Date(meetup.date) < new Date();
       if (meetup.status === 'expired' || isPast) {
         groups['Past Week'].push(meetup);
       } else {
-        groups['Upcoming'].push(meetup);
+        upcomingCandidates.push(meetup);
       }
     });
 
+    groups['Upcoming'] = capMeetupsByFrequency(upcomingCandidates);
     groups['Past Week'].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return groups;
@@ -414,7 +464,7 @@ const DashboardScreen = () => {
       </Modal>
 
       <Modal
-        visible={!!currentUser && !currentUser.zipCode && !zipCardDismissed}
+        visible={!!currentUser && !!currentUser.hasSeenWelcome && !currentUser.zipCode && !zipCardDismissed}
         animationType="fade"
         transparent
         onRequestClose={() => setZipCardDismissed(true)}

@@ -18,7 +18,7 @@ export const GroupCalendarButton = ({ groupId, isDM }: GroupCalendarButtonProps)
   return (
     <>
       <TouchableOpacity onPress={() => setModalVisible(true)} style={styles.iconButton}>
-        <Feather name="calendar" size={18} color="#4A90E2" />
+        <Feather name="calendar" size={18} color="#D97706" />
       </TouchableOpacity>
 
       <GroupMeetupsModal
@@ -38,7 +38,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    backgroundColor: '#EEF2FF',
-    borderColor: '#C7D2FE',
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
   },
 });

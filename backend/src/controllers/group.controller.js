@@ -7,34 +7,15 @@ import InviteToken from "../models/inviteToken.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
-import { calculateNextMeetupDate, computeNextGenerationAt } from "../utils/date.utils.js";
+import { calculateNextMeetupDate } from "../utils/date.utils.js";
+import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
-import { DateTime } from "luxon";
 
 // --- Helpers ---
-
-const parseTimeString = (timeStr) => {
-    if (!timeStr) return { hours: 9, minutes: 0 };
-    const [time, modifier] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-    if (modifier === 'PM' && hours < 12) hours += 12;
-    if (modifier === 'AM' && hours === 12) hours = 0;
-    return { hours, minutes };
-};
 
 // Distinguishes "field omitted" (use fallback) from "field explicitly cleared to
 // unrestricted" (keep null) — a bare Number(null) would otherwise coerce to 0.
 const numOrNull = (v, fallback) => v === undefined ? fallback : (v === null ? null : Number(v));
-
-const getVisibilityDays = (frequency) => {
-  switch (frequency) {
-    case 'daily':    return 3;
-    case 'weekly':   return 7;
-    case 'biweekly': return 14;
-    case 'monthly':  return 31;
-    default:         return 14;
-  }
-};
 
 /**
  * HELPER: canManageGroup
@@ -136,106 +117,9 @@ export const createGroup = asyncHandler(async (req, res) => {
 
   // Initial Generation with Window Filling
   if (newGroup.schedule && newGroup.schedule.routines) {
-    try{
-        const groupToUse = newGroup;
-          const timezoneToUse = timezone;
-
-          const now = DateTime.now().setZone(timezoneToUse);
-          const kickoffDate = groupToUse.schedule.startDate
-              ? DateTime.fromJSDate(groupToUse.schedule.startDate, { zone: 'utc' })
-                  .setZone(timezoneToUse, { keepLocalTime: true })
-                  .startOf('day')
-                  .toJSDate()
-              : now.startOf('day').toJSDate();
-
-          const windowEndDT = now.plus({ days: 30 }).endOf('day');
-          let earliestNextTrigger = null;
-
-          for (const routine of groupToUse.schedule.routines) {
-              for (const dtEntry of routine.dayTimes) {
-                  let currentAnchor = null;
-                  let fillingWindow = true;
-                  let loopSafety = 0;
-
-                  while (fillingWindow && loopSafety < 100) {
-                      const nextDate = calculateNextMeetupDate(
-                          routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
-                          dtEntry.time,
-                          timezoneToUse,
-                          routine.frequency,
-                          currentAnchor,
-                          routine.frequency === 'ordinal' ? routine.rules?.[0] : null
-                      );
-
-                      if (nextDate < kickoffDate) {
-                          currentAnchor = nextDate;
-                          loopSafety++;
-                          continue;
-                      }
-
-                      const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(timezoneToUse);
-
-                      if (nextMeetupDT > windowEndDT) {
-                          fillingWindow = false;
-                          break;
-                      }
-
-                      const alreadyExists = await Meetup.findOne({
-                          group: groupToUse._id,
-                          date: nextDate,
-                          time: dtEntry.time
-                      });
-
-                      if (!alreadyExists) {
-                          const { hours, minutes } = parseTimeString(groupToUse.generationLeadTime || "09:00 AM");
-
-                          const visibilityDT = nextMeetupDT
-                              .minus({ days: getVisibilityDays(routine.frequency) })
-                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-                          const rsvpOpenDate = groupToUse.generationLeadDays != null
-                              ? nextMeetupDT.minus({ days: groupToUse.generationLeadDays }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate()
-                              : null;
-
-                          const { hours: closeH, minutes: closeM } = parseTimeString(groupToUse.generationDeadlineTime || "09:00 AM");
-                          const rsvpCloseDate = groupToUse.generationDeadlineDays != null
-                              ? nextMeetupDT.minus({ days: groupToUse.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
-                              : null;
-
-                          await Meetup.create({
-                              group: groupToUse._id,
-                              name: groupToUse.name,
-                              date: nextDate,
-                              time: dtEntry.time,
-                              timezone: timezoneToUse,
-                              location: groupToUse.defaultLocation,
-                              members: uniqueMemberIds,
-                              undecided: uniqueMemberIds,
-                              capacity: groupToUse.defaultCapacity,
-                              isOverride: false,
-                              startsAt: nextDate,
-                              visibilityDate: visibilityDT.toJSDate(),
-                              rsvpOpenDate,
-                              rsvpCloseDate
-                          });
-                      }
-
-                      currentAnchor = nextDate;
-                      loopSafety++;
-                  }
-
-                  const trigger = computeNextGenerationAt(groupToUse, currentAnchor, routine, dtEntry);
-                  if (!earliestNextTrigger || trigger < earliestNextTrigger) {
-                      earliestNextTrigger = trigger;
-                  }
-              }
-          }
-
-          if (earliestNextTrigger) {
-              newGroup.nextGenerationAt = earliestNextTrigger;
-              await newGroup.save();
-          }
-      } catch (err) { console.error("Initial Gen Error:", err); }
+    try {
+      await generateMeetupsForGroup(newGroup);
+    } catch (err) { console.error("Initial Gen Error:", err); }
   }
 
   res.status(201).json({ group: newGroup, message: "Created successfully." });
@@ -293,104 +177,10 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
 
     if (group.schedule && group.schedule.routines) {
         try {
-          const now = DateTime.now().setZone(group.timezone);
-          const kickoffDate = group.schedule.startDate
-              ? DateTime.fromJSDate(group.schedule.startDate, { zone: 'utc' })
-                  .setZone(group.timezone, { keepLocalTime: true })
-                  .startOf('day')
-                  .toJSDate()
-              : now.startOf('day').toJSDate();
-
-          const windowEndDT = now.plus({ days: 30 }).endOf('day');
-          let earliestNextTrigger = null;
-
-          for (const routine of group.schedule.routines) {
-              for (const dtEntry of routine.dayTimes) {
-                  let currentAnchor = null;
-                  let fillingWindow = true;
-                  let loopSafety = 0;
-
-                  while (fillingWindow && loopSafety < 100) {
-                      const nextDate = calculateNextMeetupDate(
-                          routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
-                          dtEntry.time,
-                          group.timezone,
-                          routine.frequency,
-                          currentAnchor,
-                          routine.frequency === 'ordinal' ? routine.rules?.[0] : null
-                      );
-
-                      if (nextDate < kickoffDate) {
-                          currentAnchor = nextDate;
-                          loopSafety++;
-                          continue;
-                      }
-
-                      const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(group.timezone);
-
-                      if (nextMeetupDT > windowEndDT) {
-                          fillingWindow = false;
-                          break;
-                      }
-
-                      const alreadyExists = await Meetup.findOne({
-                          group: group._id,
-                          date: nextDate,
-                          time: dtEntry.time
-                      });
-
-                      if (!alreadyExists) {
-                          const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
-
-                          const visibilityDT = nextMeetupDT
-                              .minus({ days: getVisibilityDays(routine.frequency) })
-                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-                          const rsvpOpenDate = group.generationLeadDays != null
-                              ? nextMeetupDT.minus({ days: group.generationLeadDays }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate()
-                              : null;
-
-                          const { hours: closeH, minutes: closeM } = parseTimeString(group.generationDeadlineTime || "09:00 AM");
-                          const rsvpCloseDate = group.generationDeadlineDays != null
-                              ? nextMeetupDT.minus({ days: group.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
-                              : null;
-
-                          await Meetup.create({
-                              group: group._id,
-                              name: group.name,
-                              date: nextDate,
-                              time: dtEntry.time,
-                              timezone: group.timezone,
-                              location: group.defaultLocation,
-                              members: group.members,
-                              undecided: group.members,
-                              capacity: group.defaultCapacity,
-                              isOverride: false,
-                              startsAt: nextDate,
-                              visibilityDate: visibilityDT.toJSDate(),
-                              rsvpOpenDate,
-                              rsvpCloseDate
-                          });
-                      }
-
-                      currentAnchor = nextDate;
-                      loopSafety++;
-                  }
-
-                  const trigger = computeNextGenerationAt(group, currentAnchor, routine, dtEntry);
-                  if (!earliestNextTrigger || trigger < earliestNextTrigger) {
-                      earliestNextTrigger = trigger;
-                  }
-              }
-          }
-
-          if (earliestNextTrigger) {
-              group.nextGenerationAt = earliestNextTrigger;
-              await group.save();
-          }
-      } catch (err) {
-          console.error("Update Gen Error:", err);
-      }
+            await generateMeetupsForGroup(group);
+        } catch (err) {
+            console.error("Update Gen Error:", err);
+        }
     }
 
     res.status(200).json({ message: "Schedule updated.", group });

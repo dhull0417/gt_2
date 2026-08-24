@@ -112,7 +112,7 @@ export interface Meetup {
   in: (User | string)[];
   out: (User | string)[];
   waitlist: (User | string)[];
-  visibilityDate?: string;
+  frequency?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'ordinal' | null;
   rsvpOpenDate?: string;
   rsvpCloseDate?: string;
   guests?: { userId: string; count: number }[];

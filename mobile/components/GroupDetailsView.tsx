@@ -15,8 +15,6 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
 import { useRouter } from 'expo-router';
-import AddMeetupWizard from './AddMeetupWizard';
-import CreatePollModal from './CreatePollModal';
 import { GroupAvatar } from './GroupAvatar';
 import { useQuery } from '@tanstack/react-query';
 import { getDMDisplayName } from '@/utils/groupDisplay';
@@ -79,11 +77,7 @@ export const GroupDetailsView = ({
     onMemberPress,
 }: GroupDetailsViewProps) => {
     
-    // --- Wizard Visibility State ---
-    const [wizardVisible, setWizardVisible] = useState(false);
-    const [pollModalVisible, setPollModalVisible] = useState(false);
     const [detailsExpanded, setDetailsExpanded] = useState(false);
-    const [actionsExpanded, setActionsExpanded] = useState(false);
     const router = useRouter();
     const api = useApiClient();
     const { mutate: leaveGroup, isPending: isLeaving } = useLeaveGroup();
@@ -194,11 +188,6 @@ export const GroupDetailsView = ({
         setDetailsExpanded(v => !v);
     };
 
-    const toggleActions = () => {
-        animate();
-        setActionsExpanded(v => !v);
-    };
-
     return (
         <View style={styles.container}>
             {/* 0. Group Photo Header */}
@@ -206,6 +195,14 @@ export const GroupDetailsView = ({
                 <GroupAvatar name={headerName} imageUrl={groupDetails.image} size={140} borderRadius={32} />
                 <Text style={styles.groupHeaderName}>{headerName}</Text>
             </View>
+
+            {/* Invite Friends — hidden for DMs */}
+            {!isDM && (
+                <TouchableOpacity onPress={handleInvitePress} style={styles.inviteButton} activeOpacity={0.7}>
+                    <Feather name="user-plus" size={16} color="#0D9488" />
+                    <Text style={styles.inviteButtonText}>Invite Friends</Text>
+                </TouchableOpacity>
+            )}
 
             {/* 1. Details — collapsible, hidden for DMs */}
             {!isDM && <View style={styles.card}>
@@ -222,7 +219,7 @@ export const GroupDetailsView = ({
                 {detailsExpanded && (
                     <View style={styles.collapsibleBody}>
                         {/* Detailed Schedule Section */}
-                        <View style={styles.infoRowTop}>
+                        <View style={groupDetails.schedule?.routines && groupDetails.schedule.routines.length > 0 ? styles.infoRowTop : styles.infoRow}>
                             <View style={[styles.iconWrap, styles.iconWrapBlue]}>
                                 <Feather name="calendar" size={16} color="#4A90E2" />
                             </View>
@@ -237,7 +234,7 @@ export const GroupDetailsView = ({
                                         </View>
                                     ))
                                 ) : (
-                                    <Text style={styles.infoText}>No schedule defined</Text>
+                                    <Text style={[styles.scheduleDetailText, { fontSize: 16, marginBottom: 0 }]}>No schedule defined</Text>
                                 )}
                             </View>
                         </View>
@@ -282,44 +279,7 @@ export const GroupDetailsView = ({
                 )}
             </View>}
 
-            {/* 2. Actions — collapsible, hidden for DMs */}
-            {!isDM && <View style={styles.card}>
-                <TouchableOpacity style={styles.collapsibleHeader} onPress={toggleActions} activeOpacity={0.7}>
-                    <View style={styles.collapsibleHeaderLeft}>
-                        <View style={[styles.iconWrap, styles.iconWrapSmall, styles.iconWrapTeal]}>
-                            <Feather name="zap" size={14} color="#0D9488" />
-                        </View>
-                        <Text style={styles.cardTitle}>Actions</Text>
-                    </View>
-                    <Feather name={actionsExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#9CA3AF" />
-                </TouchableOpacity>
-
-                {actionsExpanded && (
-                    <View style={[styles.collapsibleBody, styles.managerActionsRow]}>
-                        {canManage && (
-                            <TouchableOpacity onPress={() => setWizardVisible(true)} style={[styles.actionPill, styles.actionPillBlue]} activeOpacity={0.7}>
-                                <Feather name="plus" size={16} color="#4A90E2" />
-                                <Text style={[styles.actionPillText, { color: '#4A90E2' }]}>Add Meetup</Text>
-                            </TouchableOpacity>
-                        )}
-
-                        {canManage && (
-                            <TouchableOpacity onPress={() => setPollModalVisible(true)} style={[styles.actionPill, styles.actionPillPurple]} activeOpacity={0.7}>
-                                <Feather name="bar-chart-2" size={16} color="#7C3AED" />
-                                <Text style={[styles.actionPillText, { color: '#7C3AED' }]}>Create Poll</Text>
-                            </TouchableOpacity>
-                        )}
-
-                        {/* Invite Friends Action - Visible to all members */}
-                        <TouchableOpacity onPress={handleInvitePress} style={[styles.actionPill, styles.actionPillTeal]} activeOpacity={0.7}>
-                            <Feather name="user-plus" size={16} color="#0D9488" />
-                            <Text style={[styles.actionPillText, { color: '#0D9488' }]}>Invite Friends</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-            </View>}
-
-            {/* 3. Member List — split into Owner/Moderators and Members, always expanded */}
+            {/* 2. Member List — split into Owner/Moderators and Members, always expanded */}
             {(() => {
                 const isStaff = (member: User) => {
                     const isMemberOwner = member._id === groupDetails.owner;
@@ -418,20 +378,6 @@ export const GroupDetailsView = ({
                     </TouchableOpacity>
                 </View>
             )}
-            {/* --- Add Meetup Wizard Modal --- */}
-            <AddMeetupWizard
-                visible={wizardVisible}
-                onClose={() => setWizardVisible(false)}
-                groupDetails={groupDetails}
-            />
-
-            {/* --- Create Poll Modal --- */}
-            <CreatePollModal
-                visible={pollModalVisible}
-                onClose={() => setPollModalVisible(false)}
-                groupId={groupDetails._id}
-                timezone={groupDetails.timezone}
-            />
         </View>
     );
 };
@@ -458,13 +404,8 @@ const styles = StyleSheet.create({
     iconWrapGreen: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
     iconWrapPurple: { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
     iconWrapAmber: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
-    iconWrapTeal: { backgroundColor: '#F0FDFA', borderColor: '#99F6E4' },
-    managerActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 0 },
-    actionPill: { flexGrow: 1, flexBasis: '46%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 14, borderWidth: 1 },
-    actionPillBlue: { backgroundColor: '#EEF6FF', borderColor: '#BFDBFE' },
-    actionPillPurple: { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
-    actionPillTeal: { backgroundColor: '#F0FDFA', borderColor: '#99F6E4' },
-    actionPillText: { marginLeft: 8, fontWeight: 'bold', fontSize: 13 },
+    inviteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14, borderWidth: 1, backgroundColor: '#F0FDFA', borderColor: '#99F6E4', marginBottom: 12 },
+    inviteButtonText: { marginLeft: 8, fontWeight: 'bold', fontSize: 14, color: '#0D9488' },
     sectionHeaderWrap: { marginBottom: 16 },
     sectionTitle: { fontSize: 15, fontWeight: '900', color: '#4A90E2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
     sectionHeaderLine: { height: 3, borderRadius: 2, backgroundColor: '#4A90E2', opacity: 0.85 },

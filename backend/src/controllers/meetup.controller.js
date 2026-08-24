@@ -6,32 +6,10 @@ import Notification from "../models/notification.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { DateTime } from "luxon";
-import { calculateNextMeetupDate, computeNextGenerationAt } from "../utils/date.utils.js";
+import { parseTimeString } from "../utils/date.utils.js";
+import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
 import { canManageGroup, canManageMember } from "./group.controller.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
-
-/**
- * HELPER: parseTimeString
- * Converts "07:00 PM" into { hours: 19, minutes: 0 }
- */
-const parseTimeString = (timeStr) => {
-    if (!timeStr) return { hours: 9, minutes: 0 };
-    const [time, modifier] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-    if (modifier === 'PM' && hours < 12) hours += 12;
-    if (modifier === 'AM' && hours === 12) hours = 0;
-    return { hours, minutes };
-};
-
-const getVisibilityDays = (frequency) => {
-  switch (frequency) {
-    case 'daily':    return 3;
-    case 'weekly':   return 7;
-    case 'biweekly': return 14;
-    case 'monthly':  return 31;
-    default:         return 14;
-  }
-};
 
 /**
  * @desc    Get all meetups for the current user
@@ -44,14 +22,11 @@ export const getMeetups = asyncHandler(async (req, res) => {
 
     const now = new Date();
 
-    const visibilityFilter = {
-        members: user._id,
-        $or: [
-            { date: { $lt: now } },             // past meetups always show
-            { isOverride: true },               // one-offs are immediately visible
-            { visibilityDate: { $lte: now } },  // scheduled meetups within the window
-        ]
-    };
+    // Every meetup generated for a member is visible — the meetup tab caps how
+    // many of each recurring series it displays (see the mobile dashboard), and
+    // the group calendar shows everything, so there's no separate server-side
+    // visibility window to apply here.
+    const memberFilter = { members: user._id };
 
     const { since } = req.query;
 
@@ -65,11 +40,11 @@ export const getMeetups = asyncHandler(async (req, res) => {
         }
 
         const [changed, validIds] = await Promise.all([
-            Meetup.find({ ...visibilityFilter, updatedAt: { $gte: sinceDate } })
+            Meetup.find({ ...memberFilter, updatedAt: { $gte: sinceDate } })
                 .populate('group', 'name image owner moderators timezone defaultLocation visibilityLeadDays')
                 .populate('members', 'firstName lastName profilePicture clerkId')
                 .sort({ date: 1 }),
-            Meetup.find(visibilityFilter).distinct('_id'),
+            Meetup.find(memberFilter).distinct('_id'),
         ]);
 
         return res.status(200).json({
@@ -79,7 +54,7 @@ export const getMeetups = asyncHandler(async (req, res) => {
         });
     }
 
-    const meetups = await Meetup.find(visibilityFilter)
+    const meetups = await Meetup.find(memberFilter)
         .populate('group', 'name image owner moderators timezone defaultLocation visibilityLeadDays')
         .populate('members', 'firstName lastName profilePicture clerkId')
         .sort({ date: 1 });
@@ -346,12 +321,38 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     // Recompute startsAt whenever date or time changes
     if (date || time) {
         const { hours: sH, minutes: sM } = parseTimeString(meetup.time);
-        meetup.startsAt = DateTime.fromJSDate(new Date(meetup.date))
+        const startsAtDT = DateTime.fromJSDate(new Date(meetup.date))
             .setZone(groupTimezone)
-            .set({ hour: sH, minute: sM, second: 0, millisecond: 0 })
-            .toJSDate();
+            .set({ hour: sH, minute: sM, second: 0, millisecond: 0 });
+        meetup.startsAt = startsAtDT.toJSDate();
+
+        // rsvpOpenDate/rsvpCloseDate are anchored to the old startsAt — recompute
+        // them the same way generation does, or a meetup whose deadline had
+        // already passed stays permanently un-RSVP-able after being moved to a
+        // future date.
+        const group = meetup.group;
+        const { hours: leadH, minutes: leadM } = parseTimeString(group.generationLeadTime || "09:00 AM");
+        const newRsvpOpenDate = group.generationLeadDays != null
+            ? startsAtDT.minus({ days: group.generationLeadDays }).set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 }).toJSDate()
+            : null;
+
+        const { hours: closeH, minutes: closeM } = parseTimeString(group.generationDeadlineTime || "09:00 AM");
+        const newRsvpCloseDate = group.generationDeadlineDays != null
+            ? startsAtDT.minus({ days: group.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
+            : null;
+
+        meetup.rsvpOpenDate = newRsvpOpenDate;
+        meetup.rsvpCloseDate = newRsvpCloseDate;
+        // Already open (no gate, or the new open date has already passed) needs
+        // no further "RSVPs are open" ping; a future open date re-arms one.
+        meetup.rsvpNotified = !newRsvpOpenDate || newRsvpOpenDate <= new Date();
+
+        // Staged RSVP reminders are keyed off startsAt — a reschedule should
+        // re-arm them relative to the new time rather than staying silent for
+        // whatever's left of the old schedule.
+        meetup.rsvpReminderStagesSent = [];
     }
-    
+
     meetup.isOverride = true;
     await meetup.save();
 
@@ -546,121 +547,26 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
     await Meetup.findByIdAndDelete(meetupId);
 
     // If we delete a currently-active recurring meetup, immediately re-fill the
-    // 30-day pipeline for every routine/dayTime on the group (rather than waiting
-    // for the next cron tick) so the gap left behind is backfilled right away.
+    // pipeline for every routine/dayTime on the group (rather than waiting for
+    // the next cron tick) so the gap left behind is backfilled right away.
     if (wasRecurring && parentGroup.schedule?.routines?.length) {
         try {
-            const timezone = parentGroup.timezone;
-            const now = DateTime.now().setZone(timezone);
-
-            const kickoffDate = parentGroup.schedule.startDate
-                ? DateTime.fromJSDate(parentGroup.schedule.startDate, { zone: 'utc' })
-                    .setZone(timezone, { keepLocalTime: true })
-                    .startOf('day')
-                    .toJSDate()
-                : now.startOf('day').toJSDate();
-
-            const windowEndDT = now.plus({ days: 30 }).endOf('day');
-            let earliestNextTrigger = null;
-
-            for (const routine of parentGroup.schedule.routines) {
-                for (const dtEntry of routine.dayTimes) {
-                    let currentAnchor = null;
-                    let fillingWindow = true;
-                    let loopSafety = 0;
-
-                    while (fillingWindow && loopSafety < 100) {
-                        loopSafety++;
-
-                        const nextDate = calculateNextMeetupDate(
-                            routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
-                            dtEntry.time,
-                            timezone,
-                            routine.frequency,
-                            currentAnchor,
-                            routine.frequency === 'ordinal' ? routine.rules?.[0] : null
-                        );
-
-                        if (nextDate < kickoffDate) {
-                            currentAnchor = nextDate;
-                            continue;
-                        }
-
-                        const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(timezone);
-
-                        if (nextMeetupDT > windowEndDT) {
-                            fillingWindow = false;
-                            break;
-                        }
-
-                        const alreadyExists = await Meetup.findOne({
+            await generateMeetupsForGroup(parentGroup, {
+                onMeetupCreated: async (newMeetup) => {
+                    const membersToNotify = await User.find({ _id: { $in: parentGroup.members } });
+                    if (membersToNotify.length > 0) {
+                        await notifyAndPersist(membersToNotify, {
+                            title: "New Meetup Scheduled",
+                            body: `A new meetup for "${parentGroup.name}" has been scheduled for ${new Date(newMeetup.date).toLocaleDateString('en-US', { timeZone: parentGroup.timezone })}.`,
+                            data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: parentGroup._id.toString() },
+                            type: 'meetup-created',
+                            sender: requester._id,
+                            meetup: newMeetup._id,
                             group: parentGroup._id,
-                            date: nextDate,
-                            time: dtEntry.time
                         });
-
-                        if (!alreadyExists) {
-                            const { hours, minutes } = parseTimeString(parentGroup.generationLeadTime || "09:00 AM");
-
-                            const visibilityDT = nextMeetupDT
-                                .minus({ days: getVisibilityDays(routine.frequency) })
-                                .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-                            const rsvpOpenDate = parentGroup.generationLeadDays != null
-                                ? nextMeetupDT.minus({ days: parentGroup.generationLeadDays }).set({ hour: hours, minute: minutes, second: 0, millisecond: 0 }).toJSDate()
-                                : null;
-
-                            const { hours: closeH, minutes: closeM } = parseTimeString(parentGroup.generationDeadlineTime || "09:00 AM");
-                            const rsvpCloseDate = parentGroup.generationDeadlineDays != null
-                                ? nextMeetupDT.minus({ days: parentGroup.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
-                                : null;
-
-                            const newMeetup = await Meetup.create({
-                                group: parentGroup._id,
-                                name: parentGroup.name,
-                                date: nextDate,
-                                time: dtEntry.time,
-                                timezone,
-                                location: parentGroup.defaultLocation,
-                                members: parentGroup.members,
-                                undecided: parentGroup.members,
-                                isOverride: false,
-                                capacity: parentGroup.defaultCapacity,
-                                startsAt: nextDate,
-                                visibilityDate: visibilityDT.toJSDate(),
-                                rsvpOpenDate,
-                                rsvpCloseDate
-                            });
-
-                            // Notify users about the newly created recurring meetup
-                            const membersToNotify = await User.find({ _id: { $in: parentGroup.members } });
-                            if (membersToNotify.length > 0) {
-                                await notifyAndPersist(membersToNotify, {
-                                    title: "New Meetup Scheduled",
-                                    body: `A new meetup for "${parentGroup.name}" has been scheduled for ${new Date(nextDate).toLocaleDateString('en-US', { timeZone: timezone })}.`,
-                                    data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: parentGroup._id.toString() },
-                                    type: 'meetup-created',
-                                    sender: requester._id,
-                                    meetup: newMeetup._id,
-                                    group: parentGroup._id,
-                                });
-                            }
-                        }
-
-                        currentAnchor = nextDate;
                     }
-
-                    const trigger = computeNextGenerationAt(parentGroup, currentAnchor, routine, dtEntry);
-                    if (!earliestNextTrigger || trigger < earliestNextTrigger) {
-                        earliestNextTrigger = trigger;
-                    }
-                }
-            }
-
-            if (earliestNextTrigger) {
-                parentGroup.nextGenerationAt = earliestNextTrigger;
-                await parentGroup.save();
-            }
+                },
+            });
         } catch (regenError) {
             console.error("Failed to regenerate meetups after deletion:", regenError);
         }

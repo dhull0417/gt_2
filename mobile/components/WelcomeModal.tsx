@@ -13,10 +13,9 @@ interface WelcomeModalProps {
   onClose: () => void;
 }
 
-// Shown once, before profile-setup, for a brand new sign-up — see the
-// hasOfferedWelcome gate in app/_layout.tsx. Its only action is "onClose": it
-// doesn't navigate anywhere itself, since profile-setup (mandatory) is next
-// either way.
+// Shown once a signed-in user with hasSeenWelcome === false lands in (tabs)
+// — see the derived showWelcomeModal in app/_layout.tsx. Its only action is
+// "onClose": it doesn't navigate anywhere itself.
 export function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
   const player = useVideoPlayer(WELCOME_VIDEO, (p) => {
     p.loop = true;
