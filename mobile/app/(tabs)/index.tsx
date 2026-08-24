@@ -28,16 +28,11 @@ const hashGroupColor = (groupId: string): string => {
   return GROUP_BORDER_COLORS[hash];
 };
 
-// How many of each recurring series show in "Upcoming Meetups" before the
-// rest fall back to the group calendar button. Daily/weekly/biweekly cap by
-// count; monthly/ordinal cap by a rolling date window instead since a single
-// "2 months worth" cutoff reads more naturally than a raw occurrence count.
-// One-off meetups (frequency null) are never capped.
-const TAB_CAP_COUNT: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
-  daily: 7, weekly: 8, biweekly: 8,
-};
+// How far out each recurring series shows in "Upcoming Meetups" before the
+// rest fall back to the group calendar button. One-off meetups (frequency
+// null) are never capped.
 const TAB_CAP_DAYS: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
-  monthly: 60, ordinal: 60,
+  daily: 7, weekly: 15, biweekly: 15, monthly: 35, ordinal: 35,
 };
 
 // Buckets by (group, frequency) series so a user in a daily group and a
@@ -59,12 +54,9 @@ const capMeetupsByFrequency = (list: Meetup[]): Meetup[] => {
   buckets.forEach((bucketMeetups, key) => {
     const frequency = key.split('|')[1] as NonNullable<Meetup['frequency']>;
     const sorted = [...bucketMeetups].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    const count = TAB_CAP_COUNT[frequency];
     const days = TAB_CAP_DAYS[frequency];
 
-    if (count != null) {
-      capped.push(...sorted.slice(0, count));
-    } else if (days != null) {
+    if (days != null) {
       const cutoff = now + days * 24 * 60 * 60 * 1000;
       capped.push(...sorted.filter(m => new Date(m.date).getTime() <= cutoff));
     } else {
@@ -365,7 +357,7 @@ const DashboardScreen = () => {
             </View>
 
             <View className="pb-10">
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 }}>
                 <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', letterSpacing: -1 }}>
                   Upcoming Meetups
                 </Text>
@@ -380,6 +372,22 @@ const DashboardScreen = () => {
                     )}
                   </TouchableOpacity>
                 )}
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, marginBottom: 8, gap: 6 }}>
+                <Text style={{ fontSize: 13, color: '#9CA3AF', fontWeight: '500' }}>
+                  Tap
+                </Text>
+                <View style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  alignItems: 'center', justifyContent: 'center',
+                  borderWidth: 1, backgroundColor: '#FFFBEB', borderColor: '#FDE68A',
+                }}>
+                  <Feather name="calendar" size={18} color="#D97706" />
+                </View>
+                <Text style={{ fontSize: 13, color: '#9CA3AF', fontWeight: '500' }}>
+                  in your Group Chat to see more meetups!
+                </Text>
               </View>
 
               {filterOpen && uniqueGroups.length > 1 && (
