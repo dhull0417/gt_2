@@ -34,7 +34,7 @@ const hashGroupColor = (groupId: string): string => {
 // "2 months worth" cutoff reads more naturally than a raw occurrence count.
 // One-off meetups (frequency null) are never capped.
 const TAB_CAP_COUNT: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
-  daily: 14, weekly: 8, biweekly: 8,
+  daily: 7, weekly: 8, biweekly: 8,
 };
 const TAB_CAP_DAYS: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
   monthly: 60, ordinal: 60,

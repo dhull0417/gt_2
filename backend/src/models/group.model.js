@@ -9,6 +9,10 @@ const dayTimeSchema = new mongoose.Schema({
   day: { type: Number, required: false },   // 0-6 for weekdays (Weekly/Biweekly/Daily)
   date: { type: Number, required: false },  // 1-31 for monthly dates
   time: { type: String, required: true },   // e.g., "06:00 PM"
+  // Biweekly-only: the chosen first occurrence for this specific day, so two
+  // days in the same routine can be phase-offset from each other (e.g.
+  // Tuesdays starting one week, Fridays starting the next).
+  startDate: { type: Date, required: false },
 }, { _id: false });
 
 /**

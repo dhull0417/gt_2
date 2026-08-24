@@ -22,6 +22,7 @@ export interface DayTime {
   day?: number;    // Used for daily/weekly/biweekly/ordinal
   date?: number;   // Used for monthly
   time: string;
+  startDate?: string; // Biweekly-only: chosen first occurrence for this specific day
 }
 
 /**

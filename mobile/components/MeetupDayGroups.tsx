@@ -12,7 +12,18 @@ export const splitByDay = (list: Meetup[]): DayGroup[] => {
         const key = new Date(meetup.date).toLocaleDateString('en-CA', { timeZone: meetup.timezone });
         let group = groups.find(g => g.key === key);
         if (!group) {
-            const label = new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone });
+            // key is already YYYY-MM-DD (en-CA), so its first 4 chars are the
+            // meetup's year in its own timezone — reuse it instead of a second
+            // Date computation. Only show the year when it isn't the current one,
+            // so far-future recurring instances (now generated months/years out)
+            // don't get mistaken for the nearer occurrence they resemble.
+            const meetupYear = Number(key.slice(0, 4));
+            const currentYear = new Date().getFullYear();
+            const label = new Date(meetup.date).toLocaleDateString(undefined, {
+                weekday: 'short', month: 'short', day: 'numeric',
+                year: meetupYear !== currentYear ? 'numeric' : undefined,
+                timeZone: meetup.timezone,
+            });
             group = { key, label, items: [] };
             groups.push(group);
         }

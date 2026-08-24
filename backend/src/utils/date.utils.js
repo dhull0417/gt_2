@@ -40,7 +40,7 @@ export const parseTimeString = (timeStr) => {
 
 // Returns the UTC datetime when the next ungenerated meetup for a given
 // routine/dtEntry should be created, based on the last anchor date processed.
-export const computeNextGenerationAt = (group, lastAnchorDate, routine, dtEntry) => {
+export const computeNextGenerationAt = (group, lastAnchorDate, routine, dtEntry, ordinalRule = null) => {
   const { hours: leadH, minutes: leadM } = parseTimeString(group.generationLeadTime || "09:00 AM");
   const anchor = lastAnchorDate || new Date();
 
@@ -50,7 +50,7 @@ export const computeNextGenerationAt = (group, lastAnchorDate, routine, dtEntry)
     group.timezone,
     routine.frequency,
     anchor,
-    routine.frequency === 'ordinal' ? routine.rules?.[0] : null
+    routine.frequency === 'ordinal' ? ordinalRule : null
   );
 
   return DateTime.fromJSDate(nextOccurrence)
@@ -102,8 +102,12 @@ export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fr
       meetupDate = meetupDate.plus({ days: 7 }); // Always 7 days to next same weekday
     }
 
-    // For biweekly, add another week on top
-    if (frequency === 'biweekly') {
+    // For biweekly, add another week on top — but only when continuing an
+    // already-established occurrence (fromDate given). On the very first,
+    // anchor-less bootstrap call (fromDate null), the weekday just found
+    // above IS the correct first occurrence; bumping it here would skip an
+    // entire cycle and shift every later occurrence a full week late.
+    if (frequency === 'biweekly' && fromDate) {
       meetupDate = meetupDate.plus({ weeks: 1 });
     }
 

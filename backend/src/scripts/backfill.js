@@ -89,7 +89,10 @@ async function backfill() {
     let earliestNextTrigger = null;
 
     for (const routine of group.schedule.routines) {
-      for (const dtEntry of routine.dayTimes) {
+      for (let dtIndex = 0; dtIndex < routine.dayTimes.length; dtIndex++) {
+        const dtEntry = routine.dayTimes[dtIndex];
+        const ordinalRule = routine.frequency === 'ordinal' ? routine.rules?.[dtIndex] : null;
+
         // Use the latest future meetup as the anchor so we generate the one AFTER it
         const latestFuture = await Meetup.findOne(
           { group: group._id, startsAt: { $gte: now } },
@@ -97,7 +100,7 @@ async function backfill() {
         ).sort({ startsAt: -1 });
 
         const anchor = latestFuture ? latestFuture.date : null;
-        const trigger = computeNextGenerationAt(group, anchor, routine, dtEntry);
+        const trigger = computeNextGenerationAt(group, anchor, routine, dtEntry, ordinalRule);
 
         if (!earliestNextTrigger || trigger < earliestNextTrigger) {
           earliestNextTrigger = trigger;

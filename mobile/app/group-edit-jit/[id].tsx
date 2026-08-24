@@ -26,15 +26,6 @@ const timeToMinutes = (time: string): number => {
     return t.getHours() * 60 + t.getMinutes();
 };
 
-// ─── TimeButton ───────────────────────────────────────────────────────────────
-
-const TimeButton = ({ time, onPress, active }: { time: string; onPress: () => void; active: boolean }) => (
-    <TouchableOpacity onPress={onPress} style={[s.timeBtn, active && s.timeBtnActive]}>
-        <Feather name="clock" size={12} color={active ? "#fff" : "#4A90E2"} style={{ marginRight: 4 }} />
-        <Text style={[s.timeBtnText, active && s.timeBtnTextActive]}>{time}</Text>
-    </TouchableOpacity>
-);
-
 // ─── ToggleSwitch ─────────────────────────────────────────────────────────────
 
 const ToggleSwitch = ({ value, onValueChange, activeColor = "#4A90E2" }: {
@@ -226,25 +217,31 @@ const EditJitScreen = () => {
                                     }} />
                                 </View>
                                 {leadEnabled && (
-                                    <View style={[s.leadRow, { marginTop: 10 }]}>
-                                        <TouchableOpacity onPress={() => {
-                                            const nextLeadDays = Math.max(deadlineEnabled ? deadlineDays : 0, leadDays - 1);
-                                            setLeadDays(nextLeadDays);
-                                            if (deadlineEnabled && nextLeadDays === deadlineDays && timeToMinutes(leadTime) > timeToMinutes(deadlineTime)) {
-                                                setLeadTime(deadlineTime);
-                                            }
-                                        }} style={s.stepperBtn}>
-                                            <Feather name="minus" size={18} color="#4A90E2" />
-                                        </TouchableOpacity>
-                                        <View style={s.leadCenter}>
-                                            <Text style={s.leadVal}>{leadDays}</Text>
-                                            <Text style={s.leadSub}>days before</Text>
+                                    <View style={{ marginTop: 10 }}>
+                                        <View style={s.leadRow}>
+                                            <TouchableOpacity onPress={() => {
+                                                const nextLeadDays = Math.max(deadlineEnabled ? deadlineDays : 0, leadDays - 1);
+                                                setLeadDays(nextLeadDays);
+                                                if (deadlineEnabled && nextLeadDays === deadlineDays && timeToMinutes(leadTime) > timeToMinutes(deadlineTime)) {
+                                                    setLeadTime(deadlineTime);
+                                                }
+                                            }} style={s.stepperBtn}>
+                                                <Feather name="minus" size={18} color="#4A90E2" />
+                                            </TouchableOpacity>
+                                            <View style={s.leadCenter}>
+                                                <Text style={s.leadVal}>{leadDays}</Text>
+                                                <Text style={s.leadSub}>days before</Text>
+                                            </View>
+                                            <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={s.stepperBtn}>
+                                                <Feather name="plus" size={18} color="#4A90E2" />
+                                            </TouchableOpacity>
                                         </View>
-                                        <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={s.stepperBtn}>
-                                            <Feather name="plus" size={18} color="#4A90E2" />
+                                        <Text style={s.fieldLabel}>Time</Text>
+                                        <TouchableOpacity style={s.dateFieldRow} onPress={openLeadTimePicker}>
+                                            <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                                            <Text style={s.dateFieldText}>{leadTime}</Text>
+                                            <Feather name={showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                                         </TouchableOpacity>
-                                        <TimeButton time={leadTime} active={showLeadTimePicker}
-                                            onPress={openLeadTimePicker} />
                                     </View>
                                 )}
                             </View>
@@ -262,25 +259,31 @@ const EditJitScreen = () => {
                                     }} />
                                 </View>
                                 {deadlineEnabled && (
-                                    <View style={[s.leadRow, { marginTop: 10 }]}>
-                                        <TouchableOpacity onPress={() => setDeadlineDays(Math.max(0, deadlineDays - 1))} style={s.stepperBtn}>
-                                            <Feather name="minus" size={18} color="#4A90E2" />
-                                        </TouchableOpacity>
-                                        <View style={s.leadCenter}>
-                                            <Text style={s.leadVal}>{deadlineDays}</Text>
-                                            <Text style={s.leadSub}>days before</Text>
+                                    <View style={{ marginTop: 10 }}>
+                                        <View style={s.leadRow}>
+                                            <TouchableOpacity onPress={() => setDeadlineDays(Math.max(0, deadlineDays - 1))} style={s.stepperBtn}>
+                                                <Feather name="minus" size={18} color="#4A90E2" />
+                                            </TouchableOpacity>
+                                            <View style={s.leadCenter}>
+                                                <Text style={s.leadVal}>{deadlineDays}</Text>
+                                                <Text style={s.leadSub}>days before</Text>
+                                            </View>
+                                            <TouchableOpacity onPress={() => {
+                                                const nextDeadlineDays = leadEnabled ? Math.min(leadDays, deadlineDays + 1) : deadlineDays + 1;
+                                                setDeadlineDays(nextDeadlineDays);
+                                                if (leadEnabled && nextDeadlineDays === leadDays && timeToMinutes(deadlineTime) < timeToMinutes(leadTime)) {
+                                                    setDeadlineTime(leadTime);
+                                                }
+                                            }} style={s.stepperBtn}>
+                                                <Feather name="plus" size={18} color="#4A90E2" />
+                                            </TouchableOpacity>
                                         </View>
-                                        <TouchableOpacity onPress={() => {
-                                            const nextDeadlineDays = leadEnabled ? Math.min(leadDays, deadlineDays + 1) : deadlineDays + 1;
-                                            setDeadlineDays(nextDeadlineDays);
-                                            if (leadEnabled && nextDeadlineDays === leadDays && timeToMinutes(deadlineTime) < timeToMinutes(leadTime)) {
-                                                setDeadlineTime(leadTime);
-                                            }
-                                        }} style={s.stepperBtn}>
-                                            <Feather name="plus" size={18} color="#4A90E2" />
+                                        <Text style={s.fieldLabel}>Time</Text>
+                                        <TouchableOpacity style={s.dateFieldRow} onPress={openDeadlineTimePicker}>
+                                            <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                                            <Text style={s.dateFieldText}>{deadlineTime}</Text>
+                                            <Feather name={showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                                         </TouchableOpacity>
-                                        <TimeButton time={deadlineTime} active={showDeadlineTimePicker}
-                                            onPress={openDeadlineTimePicker} />
                                     </View>
                                 )}
                             </View>
@@ -365,8 +368,6 @@ const s = StyleSheet.create({
     leadCenter: { alignItems: "center", minWidth: 60 },
     leadVal: { fontSize: 22, fontWeight: "900", color: "#111827" },
     leadSub: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase" },
-    timeBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5, borderColor: "#93C5FD", backgroundColor: "#EFF6FF" },
-    timeBtnActive: { backgroundColor: "#4A90E2", borderColor: "#4A90E2" },
-    timeBtnText: { fontSize: 12, fontWeight: "700", color: "#4A90E2" },
-    timeBtnTextActive: { color: "#fff" },
+    dateFieldRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 13, marginBottom: 4 },
+    dateFieldText: { fontSize: 15, color: "#374151", fontWeight: "500" },
 });

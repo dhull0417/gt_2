@@ -16,7 +16,7 @@ import {
     Linking,
     Dimensions
 } from 'react-native';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import VideoServiceIcon from './VideoServiceIcon';
 import { detectVideoService, isHttpUrl } from '../utils/videoLinks';
 import Animated, {
@@ -696,7 +696,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             style={[styles.actionBtn, styles.moreActionBtn]}
                             activeOpacity={0.7}
                         >
-                            <Feather name="more-horizontal" size={20} color="#4A90E2" />
+                            <Ionicons name="ellipsis-horizontal-circle-outline" size={22} color="#4A90E2" />
                         </TouchableOpacity>
                         {!isReadOnly && !isRsvpLocked && !isRsvpDeadlinePassed && hasRsvpResponse && (
                             <TouchableOpacity

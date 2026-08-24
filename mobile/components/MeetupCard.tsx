@@ -9,8 +9,15 @@ import { RsvpBreather } from '@/components/RsvpBreather';
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
 const formatDate = (dateString: string, timezone: string) => {
-    const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: timezone };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+    const date = new Date(dateString);
+    const dateYear = Number(date.toLocaleDateString('en-CA', { timeZone: timezone }).slice(0, 4));
+    const currentYear = new Date().getFullYear();
+    const options: Intl.DateTimeFormatOptions = {
+        weekday: 'long', month: 'long', day: 'numeric',
+        year: dateYear !== currentYear ? 'numeric' : undefined,
+        timeZone: timezone,
+    };
+    return date.toLocaleDateString(undefined, options);
 };
 
 const RsvpCounts = ({ meetup }: { meetup: Meetup }) => {

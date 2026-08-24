@@ -84,11 +84,13 @@ const formatSingleRoutine = (routine: Routine & { days?: number[] }): string => 
     return `Monthly on the ${formattedDates[0]}`;
   }
 
-  // Handle Ordinal (e.g., 2nd Wednesday)
+  // Handle Ordinal (e.g., 2nd Wednesday, possibly combined with others like Last Sunday)
   if (frequency === 'ordinal' && rules && rules.length > 0) {
-    const rule = rules[0];
-    if (rule.type === 'byDay') {
-        return `${rule.occurrence} ${dayNames[rule.day!]}`;
+    const labels = rules
+      .filter(rule => rule.type === 'byDay')
+      .map(rule => `${rule.occurrence} ${dayNames[rule.day!]}`);
+    if (labels.length > 0) {
+      return labels.join(" & ");
     }
   }
 
