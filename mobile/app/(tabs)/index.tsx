@@ -156,15 +156,29 @@ const DashboardScreen = () => {
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
+  // Meetups that would actually appear in the "Upcoming" section below, after the same
+  // capMeetupsByFrequency cap (e.g. only the next 8 weekly occurrences per group are shown).
+  // Used to keep "Are you in?" from prompting about a meetup the user can't see there.
+  const upcomingVisibleMeetupIds = useMemo(() => {
+    if (!meetups) return new Set<string>();
+    const candidates = meetups.filter(meetup => {
+      const isPast = new Date(meetup.date) < new Date();
+      return meetup.status === 'scheduled' && !isPast;
+    });
+    return new Set(capMeetupsByFrequency(candidates).map(m => m._id));
+  }, [meetups]);
+
   const allUndecidedMeetups = useMemo(() => {
     if (!meetups || !currentUser) return [];
     return meetups.filter(meetup => {
       const isPast = new Date(meetup.date) < new Date();
       const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
       const isRsvpDeadlinePassed = meetup.rsvpCloseDate ? new Date(meetup.rsvpCloseDate) < new Date() : false;
-      return meetup.status === 'scheduled' && !isPast && !isRsvpLocked && !isRsvpDeadlinePassed && meetup.undecided.includes(currentUser._id);
+      return meetup.status === 'scheduled' && !isPast && !isRsvpLocked && !isRsvpDeadlinePassed
+        && meetup.undecided.includes(currentUser._id)
+        && upcomingVisibleMeetupIds.has(meetup._id);
     });
-  }, [meetups, currentUser]);
+  }, [meetups, currentUser, upcomingVisibleMeetupIds]);
 
   const visibleUndecidedMeetups = useMemo(() => {
     return allUndecidedMeetups
