@@ -1,10 +1,15 @@
 import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { useUser } from '@clerk/expo';
+import { useRouter } from 'expo-router';
 import { useChangePassword } from '@/hooks/useChangePassword';
 
 const ChangePasswordScreen = () => {
+    const { user, isLoaded } = useUser();
+    const router = useRouter();
+
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -14,6 +19,12 @@ const ChangePasswordScreen = () => {
     const [isConfirmVisible, setConfirmVisible] = useState(false);
 
     const { mutate: changePassword, isPending } = useChangePassword();
+
+    useEffect(() => {
+        if (isLoaded && user && !user.passwordEnabled) {
+            router.replace('/account');
+        }
+    }, [isLoaded, user]);
 
     const handleSave = () => {
         if (!currentPassword || !newPassword) {
@@ -26,6 +37,14 @@ const ChangePasswordScreen = () => {
         }
         changePassword({ currentPassword, newPassword });
     };
+
+    if (!isLoaded || !user?.passwordEnabled) {
+        return (
+            <SafeAreaView className="flex-1 bg-gray-100 items-center justify-center">
+                <ActivityIndicator color="#4A90E2" />
+            </SafeAreaView>
+        );
+    }
 
     return (
         <SafeAreaView className="flex-1 bg-gray-100">
@@ -43,6 +62,7 @@ const ChangePasswordScreen = () => {
                                 placeholder="Enter your current password"
                                 placeholderTextColor="#9CA3AF"
                                 secureTextEntry={!isCurrentVisible}
+                                textContentType="oneTimeCode"
                                 style={styles.textInput}
                             />
                             <TouchableOpacity onPress={() => setCurrentVisible(!isCurrentVisible)}>
@@ -59,6 +79,7 @@ const ChangePasswordScreen = () => {
                                 placeholder="Enter your new password"
                                 placeholderTextColor="#9CA3AF"
                                 secureTextEntry={!isNewVisible}
+                                textContentType="oneTimeCode"
                                 style={styles.textInput}
                             />
                             <TouchableOpacity onPress={() => setNewVisible(!isNewVisible)}>
@@ -75,6 +96,7 @@ const ChangePasswordScreen = () => {
                                 placeholder="Confirm your new password"
                                 placeholderTextColor="#9CA3AF"
                                 secureTextEntry={!isConfirmVisible}
+                                textContentType="oneTimeCode"
                                 style={styles.textInput}
                             />
                             <TouchableOpacity onPress={() => setConfirmVisible(!isConfirmVisible)}>

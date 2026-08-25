@@ -20,9 +20,13 @@ import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { Meetup, User, useApiClient, userApi } from '@/utils/api';
+import { useGetPolls } from '@/hooks/useGetPolls';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
+import AddMeetupWizard from '@/components/AddMeetupWizard';
+import CreatePollModal from '@/components/CreatePollModal';
+import PollListModal from '@/components/PollListModal';
 import { getDMDisplayName } from '@/utils/groupDisplay';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { useMessages } from '@/hooks/useMessages';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
@@ -31,7 +35,12 @@ import { ChatMessageInput } from '@/components/ChatMessageInput';
 import { ChatDayBubble } from '@/components/ChatDayBubble';
 import { ChatImageViewer } from '@/components/ChatImageViewer';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import { GroupPollButton } from '@/components/GroupPollButton';
+import { GroupCalendarButton } from '@/components/GroupCalendarButton';
+import {
+  promptForNotificationPermission,
+  promptForNotificationPermissionOnFirstChatOpen,
+  markNotificationPromptShown,
+} from '@/hooks/usePushNotifications';
 import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
 import type { ChatMessage, PendingImage } from '@/types/chat';
 
@@ -46,7 +55,7 @@ const REACTIONS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
 const GroupChatScreen = () => {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, promptNotifications } = useLocalSearchParams<{ id: string; promptNotifications?: string }>();
   const [chatHeaderHeight, setChatHeaderHeight] = useState(0);
 
   const insets = useSafeAreaInsets();
@@ -54,6 +63,24 @@ const GroupChatScreen = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
   const sectionListRef = useRef<SectionList<ChatMessage, ChatDaySection>>(null);
+
+  // Landed here right after joining this group (see join/[token]'s goToChat) —
+  // ask once, then drop the param so revisiting this chat doesn't ask again.
+  // Also counts as this user's first-ever chat open, so mark that trigger
+  // consumed too rather than asking again moments later on a different chat.
+  useEffect(() => {
+    if (promptNotifications !== '1') return;
+    promptForNotificationPermission(api);
+    router.setParams({ promptNotifications: undefined });
+    markNotificationPromptShown('firstChatOpen');
+  }, [promptNotifications]);
+
+  // Independent of the above — covers the user's first-ever chat open when it
+  // didn't happen to be right after a join (e.g. opening their own new group's chat).
+  useEffect(() => {
+    if (promptNotifications === '1') return;
+    promptForNotificationPermissionOnFirstChatOpen(api);
+  }, []);
 
   // Tapping into a chat clears its unread dot on the groups list.
   useEffect(() => {
@@ -156,6 +183,8 @@ const GroupChatScreen = () => {
     return upcoming[0] ?? null;
   }, [allMeetups, id]);
   const [nextMeetupModalVisible, setNextMeetupModalVisible] = useState(false);
+  const [meetupWizardVisible, setMeetupWizardVisible] = useState(false);
+  const [createPollVisible, setCreatePollVisible] = useState(false);
   const nextMeetupLabel = nextMeetup
     ? new Date(nextMeetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: nextMeetup.timezone })
     : null;
@@ -167,13 +196,47 @@ const GroupChatScreen = () => {
     const isIn = nextMeetup.in?.some(u => getUserId(u) === currentUser._id) || false;
     const isWaitlisted = nextMeetup.waitlist?.some(u => getUserId(u) === currentUser._id) || false;
     const isRsvpLocked = nextMeetup.rsvpOpenDate ? new Date(nextMeetup.rsvpOpenDate) > new Date() : false;
-    return { isIn, isOut, isWaitlisted, isRsvpLocked };
+    const isRsvpDeadlinePassed = nextMeetup.rsvpCloseDate ? new Date(nextMeetup.rsvpCloseDate) < new Date() : false;
+    return { isIn, isOut, isWaitlisted, isRsvpLocked, isRsvpDeadlinePassed };
   }, [nextMeetup, currentUser]);
   const nextMeetupBarColor = useMemo(() => {
     if (!nextMeetupRsvpStatus) return '#EEF6FF';
     const { isOut, isIn, isWaitlisted } = nextMeetupRsvpStatus;
     return isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
   }, [nextMeetupRsvpStatus]);
+
+  // Right side of the next-event bar: whichever polls are currently open for
+  // this group, so the bar can surface them alongside (or instead of) the
+  // next meetup without needing the header poll button.
+  const { data: polls } = useGetPolls(!isDM ? id : undefined);
+  const activePolls = useMemo(() => (polls ?? []).filter(p => p.status === 'active'), [polls]);
+  const hasUnansweredActivePoll = useMemo(() => {
+    if (!currentUser) return false;
+    return activePolls.some(poll =>
+      !poll.options.some(opt => opt.voters.some(v => (typeof v === 'string' ? v : v._id) === currentUser._id))
+    );
+  }, [activePolls, currentUser]);
+  const [pollSelectorVisible, setPollSelectorVisible] = useState(false);
+  const [selectedPollId, setSelectedPollId] = useState<string | null>(null);
+  const [pollVoteModalVisible, setPollVoteModalVisible] = useState(false);
+
+  // A single active poll opens straight to its vote screen; with more than one,
+  // the user first picks which poll from a small selector popup.
+  const handlePollBarPress = () => {
+    if (activePolls.length === 0) return;
+    if (activePolls.length === 1) {
+      setSelectedPollId(activePolls[0]._id);
+      setPollVoteModalVisible(true);
+    } else {
+      setPollSelectorVisible(true);
+    }
+  };
+
+  const handleSelectActivePoll = (pollId: string) => {
+    setSelectedPollId(pollId);
+    setPollSelectorVisible(false);
+    setPollVoteModalVisible(true);
+  };
 
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -362,12 +425,7 @@ const GroupChatScreen = () => {
 
         <View className="flex-row items-center" style={{ gap: 8 }}>
           {id && currentUser && (
-            <GroupPollButton
-              groupId={id}
-              currentUserId={currentUser._id}
-              canManage={canManageGroup}
-              isDM={isDM}
-            />
+            <GroupCalendarButton groupId={id} isDM={isDM} />
           )}
 
           <TouchableOpacity
@@ -443,33 +501,69 @@ const GroupChatScreen = () => {
             </View>
           )}
 
-          {nextMeetup && nextMeetupLabel && (
-            <TouchableOpacity
-              onPress={() => setNextMeetupModalVisible(true)}
-              style={[chatStyles.nextEventBar, { backgroundColor: nextMeetupBarColor }]}
-              activeOpacity={0.7}
-            >
-              <Feather name="calendar" size={15} color="#4A90E2" />
-              <Text style={chatStyles.nextEventText}>Next Meetup: {nextMeetupLabel}</Text>
-              {nextMeetupRsvpStatus && (
-                nextMeetupRsvpStatus.isIn || nextMeetupRsvpStatus.isOut ? (
-                  <Text style={[chatStyles.nextEventStatusText, { color: nextMeetupRsvpStatus.isIn ? '#4FD1C5' : '#FF7A6E' }]}>
-                    {nextMeetupRsvpStatus.isIn ? 'IN' : 'OUT'}
+          {((nextMeetup && nextMeetupLabel) || activePolls.length > 0) && (
+            <View style={chatStyles.nextEventBarRow}>
+              {nextMeetup && nextMeetupLabel && (
+                <TouchableOpacity
+                  onPress={() => setNextMeetupModalVisible(true)}
+                  style={[
+                    chatStyles.nextEventBarHalf,
+                    { backgroundColor: nextMeetupBarColor },
+                    activePolls.length > 0 && chatStyles.nextEventBarHalfDivider,
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  {activePolls.length === 0 && <Feather name="calendar" size={15} color="#4A90E2" />}
+                  <Text style={chatStyles.nextEventText} numberOfLines={1}>
+                    {activePolls.length > 0 ? 'Next Meetup' : `Next Meetup: ${nextMeetupLabel}`}
                   </Text>
-                ) : nextMeetupRsvpStatus.isRsvpLocked ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                    <Feather name="clock" size={13} color="#9CA3AF" />
-                    <Feather name="lock" size={13} color="#9CA3AF" />
-                  </View>
-                ) : (
-                  <Feather name="unlock" size={13} color="#F59E0B" />
-                )
+                  {nextMeetupRsvpStatus && (
+                    nextMeetupRsvpStatus.isIn || nextMeetupRsvpStatus.isOut ? (
+                      <Text style={[chatStyles.nextEventStatusText, { color: nextMeetupRsvpStatus.isIn ? '#4FD1C5' : '#FF7A6E' }]}>
+                        {nextMeetupRsvpStatus.isIn ? 'IN' : 'OUT'}
+                      </Text>
+                    ) : nextMeetupRsvpStatus.isRsvpLocked ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        <Feather name="clock" size={13} color="#9CA3AF" />
+                        <Feather name="lock" size={13} color="#9CA3AF" />
+                      </View>
+                    ) : nextMeetupRsvpStatus.isRsvpDeadlinePassed ? (
+                      <Feather name="lock" size={13} color="#9CA3AF" />
+                    ) : (
+                      <Ionicons name="mail-open-outline" size={16} color="#F59E0B" />
+                    )
+                  )}
+                  {activePolls.length === 0 && <Feather name="chevron-right" size={13} color="#93C5FD" />}
+                </TouchableOpacity>
               )}
-              <Feather name="chevron-right" size={13} color="#93C5FD" />
-            </TouchableOpacity>
+
+              {activePolls.length > 0 && (
+                <TouchableOpacity
+                  onPress={handlePollBarPress}
+                  style={[chatStyles.nextEventBarHalf, chatStyles.pollBarHalf]}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="bar-chart-2" size={15} color="#7C3AED" />
+                  <Text style={chatStyles.pollBarText} numberOfLines={1}>
+                    {activePolls.length > 1 ? 'Active Polls' : 'Active Poll'}
+                  </Text>
+                  {hasUnansweredActivePoll ? (
+                    <Ionicons name="mail-open-outline" size={16} color="#F59E0B" />
+                  ) : (
+                    <Feather name="check-circle" size={15} color="#4FD1C5" />
+                  )}
+                  <Feather name="chevron-right" size={13} color="#C4B5FD" />
+                </TouchableOpacity>
+              )}
+            </View>
           )}
 
-          <ChatMessageInput onSend={handleSend} onTyping={handleTyping} />
+          <ChatMessageInput
+            onSend={handleSend}
+            onTyping={handleTyping}
+            onCreateEvent={canManageGroup && !isDM ? () => setMeetupWizardVisible(true) : undefined}
+            onCreatePoll={canManageGroup && !isDM ? () => setCreatePollVisible(true) : undefined}
+          />
         </KeyboardAvoidingView>
 
         {!chatContentReady && (
@@ -586,6 +680,55 @@ const GroupChatScreen = () => {
         <MeetupDetailModal meetup={nextMeetup} onClose={() => setNextMeetupModalVisible(false)} />
       </Modal>
 
+      {/* Poll picker — only shown when the bar's poll side is tapped with more than one active poll */}
+      <Modal visible={pollSelectorVisible} transparent animationType="fade" onRequestClose={() => setPollSelectorVisible(false)}>
+        <Pressable style={chatStyles.overlay} onPress={() => setPollSelectorVisible(false)}>
+          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 16 }}>Active Polls</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {activePolls.map(poll => {
+                const hasVoted = !!currentUser && poll.options.some(opt =>
+                  opt.voters.some(v => (typeof v === 'string' ? v : v._id) === currentUser._id)
+                );
+                return (
+                  <TouchableOpacity key={poll._id} style={chatStyles.pollSelectorRow} onPress={() => handleSelectActivePoll(poll._id)}>
+                    <Text style={chatStyles.pollSelectorPrompt} numberOfLines={2}>{poll.prompt}</Text>
+                    {!hasVoted && <View style={chatStyles.pollSelectorDot} />}
+                    <Feather name="chevron-right" size={16} color="#9CA3AF" />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <PollListModal
+        visible={pollVoteModalVisible}
+        onClose={() => setPollVoteModalVisible(false)}
+        groupId={id ?? ''}
+        currentUserId={currentUser?._id ?? ''}
+        canManage={canManageGroup}
+        initialPollId={selectedPollId ?? undefined}
+      />
+
+      {groupDetails && (
+        <AddMeetupWizard
+          visible={meetupWizardVisible}
+          onClose={() => setMeetupWizardVisible(false)}
+          groupDetails={groupDetails}
+        />
+      )}
+
+      {groupDetails && (
+        <CreatePollModal
+          visible={createPollVisible}
+          onClose={() => setCreatePollVisible(false)}
+          groupId={groupDetails._id}
+          timezone={groupDetails.timezone}
+        />
+      )}
+
       {/* Mute options */}
       <Modal visible={muteOptionsVisible} transparent animationType="fade" onRequestClose={() => setMuteOptionsVisible(false)}>
         <Pressable style={chatStyles.overlay} onPress={() => setMuteOptionsVisible(false)}>
@@ -672,9 +815,16 @@ const chatStyles = StyleSheet.create({
   actionRow: { paddingVertical: 16, paddingHorizontal: 20 },
   actionLabel: { fontSize: 16, color: '#111827', fontWeight: '600' },
   detailPanel: { backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 360, maxHeight: '70%', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
-  nextEventBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#EEF6FF', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#DBEAFE', paddingVertical: 6 },
+  nextEventBarRow: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#DBEAFE' },
+  nextEventBarHalf: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 8 },
+  nextEventBarHalfDivider: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: 'rgba(17,24,39,0.08)' },
   nextEventText: { fontSize: 15, fontWeight: '400', color: '#111827' },
   nextEventStatusText: { fontSize: 13, fontWeight: '900', letterSpacing: 1 },
+  pollBarHalf: { backgroundColor: '#F5F3FF' },
+  pollBarText: { fontSize: 15, fontWeight: '400', color: '#111827' },
+  pollSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F3F4F6' },
+  pollSelectorPrompt: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
+  pollSelectorDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' },
   replyPreview: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E7EB', paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
   replyPreviewBody: { flex: 1, borderLeftWidth: 3, borderLeftColor: '#4A90E2', paddingLeft: 8 },
   replyPreviewLabel: { fontSize: 12, fontWeight: '700', color: '#4A90E2', marginBottom: 1 },

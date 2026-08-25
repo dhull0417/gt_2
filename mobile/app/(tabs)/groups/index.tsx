@@ -4,10 +4,10 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { Group, User, useApiClient, userApi } from '@/utils/api';
 import { getDMDisplayName } from '@/utils/groupDisplay';
@@ -16,11 +16,21 @@ import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { TAB_BAR_HEIGHT } from '@/utils/layout';
+import { promptForNotificationPermission } from '@/hooks/usePushNotifications';
 
 const GroupScreen = () => {
   const api = useApiClient();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { promptNotifications } = useLocalSearchParams<{ promptNotifications?: string }>();
+
+  // Landed here right after creating a group (see create-group's onDone) — ask
+  // once, then drop the param so revisiting this tab doesn't ask again.
+  useEffect(() => {
+    if (promptNotifications !== '1') return;
+    promptForNotificationPermission(api);
+    router.setParams({ promptNotifications: undefined });
+  }, [promptNotifications]);
 
   const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups } = useGetGroups();
 

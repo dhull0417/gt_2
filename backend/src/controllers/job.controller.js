@@ -3,28 +3,9 @@ import Meetup from "../models/meetup.model.js";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import Poll from "../models/poll.model.js";
-import { DateTime } from "luxon";
-import { calculateNextMeetupDate, computeNextGenerationAt } from "../utils/date.utils.js";
-import { notifyUsers } from "../utils/push.notifications.js";
-
-const parseTimeString = (timeStr) => {
-  if (!timeStr) return { hours: 9, minutes: 0 };
-  const [time, modifier] = timeStr.split(' ');
-  let [hours, minutes] = time.split(':').map(Number);
-  if (modifier === 'PM' && hours < 12) hours += 12;
-  if (modifier === 'AM' && hours === 12) hours = 0;
-  return { hours, minutes };
-};
-
-const getVisibilityDays = (frequency) => {
-  switch (frequency) {
-    case 'daily':    return 3;
-    case 'weekly':   return 7;
-    case 'biweekly': return 14;
-    case 'monthly':  return 31;
-    default:         return 14;
-  }
-};
+import { RSVP_REMINDER_STAGES } from "../utils/date.utils.js";
+import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
+import { notifyAndPersist } from "../utils/push.notifications.js";
 
 /**
  * @desc    Generate meetups for groups whose nextGenerationAt is now due.
@@ -32,10 +13,10 @@ const getVisibilityDays = (frequency) => {
  * @route   POST /api/jobs/regenerate-meetups
  */
 export const regenerateMeetups = asyncHandler(async (req, res) => {
-  const now = DateTime.now();
+  const now = new Date();
 
   const groups = await Group.find({
-    nextGenerationAt: { $lte: now.toJSDate() }
+    nextGenerationAt: { $lte: now }
   });
 
   if (groups.length === 0) {
@@ -46,104 +27,8 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
 
   try {
     for (const group of groups) {
-      const timezone = group.timezone;
-      if (!group.schedule?.routines?.length) continue;
-
-      const kickoffDate = group.schedule.startDate
-        ? DateTime.fromJSDate(group.schedule.startDate, { zone: 'utc' })
-            .setZone(timezone, { keepLocalTime: true })
-            .startOf('day')
-            .toJSDate()
-        : now.setZone(timezone).startOf('day').toJSDate();
-
-      const windowEndDT = now.setZone(timezone).plus({ days: 30 }).endOf('day');
-
-      let earliestNextTrigger = null;
-
-      for (const routine of group.schedule.routines) {
-        for (const dtEntry of routine.dayTimes) {
-          let currentAnchor = null;
-          let fillingWindow = true;
-          let safetyCounter = 0;
-
-          while (fillingWindow && safetyCounter < 100) {
-            safetyCounter++;
-
-            const nextDate = calculateNextMeetupDate(
-              routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
-              dtEntry.time,
-              timezone,
-              routine.frequency,
-              currentAnchor,
-              routine.frequency === 'ordinal' ? routine.rules?.[0] : null
-            );
-
-            const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(timezone);
-
-            if (nextDate < kickoffDate) {
-              currentAnchor = nextDate;
-              safetyCounter++;
-              continue;
-            }
-
-            if (nextMeetupDT > windowEndDT) {
-              fillingWindow = false;
-              break;
-            }
-
-            const alreadyExists = await Meetup.findOne({
-              group: group._id,
-              date: nextDate,
-              time: dtEntry.time
-            });
-
-            if (!alreadyExists) {
-              console.log(`[Regenerate] Creating: ${group.name} | ${nextMeetupDT.toISODate()}`);
-
-              const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
-
-              const visibilityDT = nextMeetupDT
-                .minus({ days: getVisibilityDays(routine.frequency) })
-                .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-              const rsvpDT = nextMeetupDT
-                .minus({ days: group.generationLeadDays || 1 })
-                .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-              await Meetup.create({
-                group: group._id,
-                name: group.name,
-                date: nextDate,
-                time: dtEntry.time,
-                timezone,
-                location: group.defaultLocation || "",
-                members: group.members,
-                undecided: group.members,
-                capacity: group.defaultCapacity || 0,
-                isOverride: false,
-                startsAt: nextDate,
-                visibilityDate: visibilityDT.toJSDate(),
-                rsvpOpenDate: rsvpDT.toJSDate()
-              });
-
-              generatedCount++;
-            }
-
-            currentAnchor = nextDate;
-          }
-
-          // Compute the trigger for the next occurrence beyond the window
-          const trigger = computeNextGenerationAt(group, currentAnchor, routine, dtEntry);
-          if (!earliestNextTrigger || trigger < earliestNextTrigger) {
-            earliestNextTrigger = trigger;
-          }
-        }
-      }
-
-      if (earliestNextTrigger) {
-        group.nextGenerationAt = earliestNextTrigger;
-        await group.save();
-      }
+      const { generatedCount: count } = await generateMeetupsForGroup(group);
+      generatedCount += count;
     }
   } catch (err) {
     console.error('[Regenerate] Error:', err);
@@ -227,10 +112,13 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
     });
     const members = await User.find({ _id: { $in: meetup.members } });
     if (members.length > 0) {
-      await notifyUsers(members, {
+      await notifyAndPersist(members, {
         title: "RSVPs Are Open!",
         body: `You can now RSVP to "${meetup.name}" on ${dateStr}.`,
         data: { meetupId: meetup._id.toString(), type: 'rsvp_open', groupId: meetup.group.toString() },
+        type: 'meetup-rsvp-open',
+        meetup: meetup._id,
+        group: meetup.group,
       });
     }
   }
@@ -270,15 +158,127 @@ export const notifyMeetupReminder = asyncHandler(async (req, res) => {
     });
 
     if (recipients.length > 0) {
-      await notifyUsers(recipients, {
+      await notifyAndPersist(recipients, {
         title: "⏰ 30 Minutes!",
         body: `"${meetup.name}" kicks off at ${meetup.time} — start heading over!`,
         data: { meetupId: meetup._id.toString(), type: 'meetup_reminder', groupId: meetup.group.toString() },
+        type: 'meetup-starting-soon',
+        meetup: meetup._id,
+        group: meetup.group,
       });
     }
   }
 
   res.status(200).json({ message: `Reminded for ${toNotify.length} meetup(s).` });
+});
+
+// Reminder copy per stage key, shared between frequencies that behave
+// identically (biweekly mirrors weekly; ordinal mirrors monthly).
+const DAILY_REMINDER_COPY = {
+  '4d':  (name) => `Don't forget to RSVP for "${name}"!`,
+  '24h': (name) => `Tomorrow's the day — RSVP for "${name}" when you get a sec.`,
+  '6h':  (name) => `Starting in a few hours — grab your spot for "${name}"!`,
+};
+const WEEKLY_REMINDER_COPY = {
+  '7d':  (name) => `"${name}" is coming up next week — RSVP whenever you're ready.`,
+  '3d':  (name) => `3 days until "${name}" — let us know if you're in!`,
+  '24h': (name) => `Tomorrow's the day — RSVP for "${name}".`,
+  '6h':  (name) => `"${name}" starts in a few hours — RSVP if you can make it!`,
+};
+const MONTHLY_REMINDER_COPY = {
+  '14d': (name) => `Mark your calendar — "${name}" is two weeks out. RSVP whenever works.`,
+  '7d':  (name) => `One week until "${name}" — RSVP when you get a chance.`,
+  '3d':  (name) => `3 days until "${name}" — let us know if you're in!`,
+  '24h': (name) => `Tomorrow's the day — RSVP for "${name}".`,
+  '6h':  (name) => `"${name}" starts in a few hours — RSVP if you can make it!`,
+};
+const RSVP_REMINDER_COPY = {
+  daily: DAILY_REMINDER_COPY,
+  weekly: WEEKLY_REMINDER_COPY,
+  biweekly: WEEKLY_REMINDER_COPY,
+  monthly: MONTHLY_REMINDER_COPY,
+  ordinal: MONTHLY_REMINDER_COPY,
+};
+
+/**
+ * @desc    Staged "you haven't RSVP'd yet" reminders leading up to a meetup,
+ *          scaled by recurrence frequency (see RSVP_REMINDER_STAGES). Only
+ *          targets members still in `undecided`, and only once RSVP is open
+ *          (rsvpOpenDate null or already passed) — a meetup with a later
+ *          open date simply skips whichever stages would've fallen before
+ *          it; notifyRsvpOpen's own ping covers the moment it opens.
+ *          If the job was down long enough that multiple stages are overdue
+ *          at once, only the most imminent one is sent — the skipped,
+ *          longer-lead stages are marked sent without notifying, so they
+ *          don't fire belatedly out of order.
+ * @route   POST /api/jobs/notify-rsvp-reminder-stages
+ */
+// No meetup can have a due-but-unsent stage further out than the longest
+// configured offset, so bounding the query on it keeps the scan proportional
+// to what's actually imminent instead of every future recurring meetup.
+const MAX_STAGE_OFFSET_HOURS = Math.max(
+  ...Object.values(RSVP_REMINDER_STAGES).flat().map(s => s.offsetHours)
+);
+
+export const notifyRsvpReminderStages = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const horizon = new Date(now.getTime() + MAX_STAGE_OFFSET_HOURS * 60 * 60 * 1000);
+
+  const toCheck = await Meetup.find({
+    status: 'scheduled',
+    startsAt: { $gt: now, $lte: horizon },
+    frequency: { $ne: null },
+    'undecided.0': { $exists: true },
+  });
+
+  let notifiedCount = 0;
+
+  for (const meetup of toCheck) {
+    if (meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > now) continue;
+    // RSVP is closed but the event hasn't happened yet — nothing left to remind about.
+    if (meetup.rsvpCloseDate && new Date(meetup.rsvpCloseDate) <= now) continue;
+
+    const stages = RSVP_REMINDER_STAGES[meetup.frequency];
+    if (!stages) continue;
+
+    const sentSet = new Set(meetup.rsvpReminderStagesSent);
+    const hoursUntilStart = (new Date(meetup.startsAt) - now) / (1000 * 60 * 60);
+    const sortedAsc = [...stages].sort((a, b) => a.offsetHours - b.offsetHours);
+
+    const dueStage = sortedAsc.find(s => hoursUntilStart <= s.offsetHours && !sentSet.has(s.key));
+    if (!dueStage) continue;
+
+    const stagesToMark = sortedAsc
+      .filter(s => s.offsetHours >= dueStage.offsetHours && !sentSet.has(s.key))
+      .map(s => s.key);
+    await Meetup.updateOne(
+      { _id: meetup._id },
+      { $addToSet: { rsvpReminderStagesSent: { $each: stagesToMark } } }
+    );
+
+    const recipients = await User.find({
+      _id: { $in: meetup.undecided },
+      expoPushToken: { $exists: true, $ne: null },
+      mutedGroups: { $ne: meetup.group },
+      mutedUntilNextMeetup: { $ne: meetup.group },
+    });
+
+    if (recipients.length > 0) {
+      const buildBody = RSVP_REMINDER_COPY[meetup.frequency]?.[dueStage.key];
+      await notifyAndPersist(recipients, {
+        title: "RSVP Reminder",
+        body: buildBody ? buildBody(meetup.name) : `Don't forget to RSVP for "${meetup.name}"!`,
+        data: { meetupId: meetup._id.toString(), type: 'meetup_rsvp_reminder', groupId: meetup.group.toString() },
+        type: 'meetup-rsvp-reminder',
+        meta: { stage: dueStage.key },
+        meetup: meetup._id,
+        group: meetup.group,
+      });
+      notifiedCount++;
+    }
+  }
+
+  res.status(200).json({ message: `Sent stage reminders for ${notifiedCount} meetup(s).` });
 });
 
 /**
@@ -313,10 +313,13 @@ export const expirePolls = asyncHandler(async (req, res) => {
 
     const members = await User.find({ _id: { $in: poll.group?.members || [] } });
     if (members.length > 0) {
-      await notifyUsers(members, {
+      await notifyAndPersist(members, {
         title: "Poll Closed",
         body,
         data: { pollId: poll._id.toString(), groupId: poll.group._id.toString(), type: 'poll_expired' },
+        type: 'poll-closed',
+        poll: poll._id,
+        group: poll.group._id,
       });
     }
   }

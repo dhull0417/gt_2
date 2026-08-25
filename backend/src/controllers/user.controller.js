@@ -123,7 +123,19 @@ export const searchUsers = asyncHandler(async (req, res) => {
 export const updateProfile = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
 
-  const user = await User.findOneAndUpdate({ clerkId: userId }, req.body, { new: true });
+  if (req.body.zipCode !== undefined && !/^\d{5}$/.test(req.body.zipCode)) {
+    return res.status(400).json({ error: "Zip code must be exactly 5 digits." });
+  }
+
+  let user;
+  try {
+    user = await User.findOneAndUpdate({ clerkId: userId }, req.body, { new: true, runValidators: true });
+  } catch (err) {
+    if (err.code === 11000 && err.keyPattern?.email) {
+      return res.status(409).json({ error: "That email address is already in use by another account." });
+    }
+    throw err;
+  }
   if (!user) return res.status(404).json({ error: "User not found" });
 
   res.status(200).json({ user });
@@ -146,6 +158,7 @@ export const syncUser = asyncHandler(async (req, res) => {
   const userData = {
     clerkId: userId,
     email: clerkUser.emailAddresses[0]?.emailAddress,
+    phoneNumber: clerkUser.phoneNumbers[0]?.phoneNumber,
     firstName: bodyFirstName || clerkUser.firstName || "",
     lastName: bodyLastName || clerkUser.lastName || "",
     profilePicture: clerkUser.imageUrl || "",

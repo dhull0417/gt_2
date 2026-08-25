@@ -7,30 +7,15 @@ import InviteToken from "../models/inviteToken.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
-import { calculateNextMeetupDate, computeNextGenerationAt } from "../utils/date.utils.js";
-import { notifyUsers } from "../utils/push.notifications.js";
-import { DateTime } from "luxon";
+import { calculateNextMeetupDate } from "../utils/date.utils.js";
+import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
+import { notifyAndPersist } from "../utils/push.notifications.js";
 
 // --- Helpers ---
 
-const parseTimeString = (timeStr) => {
-    if (!timeStr) return { hours: 9, minutes: 0 };
-    const [time, modifier] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-    if (modifier === 'PM' && hours < 12) hours += 12;
-    if (modifier === 'AM' && hours === 12) hours = 0;
-    return { hours, minutes };
-};
-
-const getVisibilityDays = (frequency) => {
-  switch (frequency) {
-    case 'daily':    return 3;
-    case 'weekly':   return 7;
-    case 'biweekly': return 14;
-    case 'monthly':  return 31;
-    default:         return 14;
-  }
-};
+// Distinguishes "field omitted" (use fallback) from "field explicitly cleared to
+// unrestricted" (keep null) — a bare Number(null) would otherwise coerce to 0.
+const numOrNull = (v, fallback) => v === undefined ? fallback : (v === null ? null : Number(v));
 
 /**
  * HELPER: canManageGroup
@@ -41,6 +26,19 @@ export const canManageGroup = (userId, group) => {
     const isOwner = group.owner.toString() === userId.toString();
     const isMod = group.moderators?.some(id => id.toString() === userId.toString());
     return isOwner || isMod;
+};
+
+/**
+ * HELPER: canManageMember
+ * Owner can manage anyone. A moderator can manage regular members only —
+ * not the owner, and not another moderator.
+ */
+export const canManageMember = (requesterId, targetUserId, group) => {
+    if (!canManageGroup(requesterId, group)) return false;
+    if (group.owner.toString() === requesterId.toString()) return true;
+    const targetIsOwner = group.owner.toString() === targetUserId.toString();
+    const targetIsMod = group.moderators?.some(id => id.toString() === targetUserId.toString());
+    return !targetIsOwner && !targetIsMod;
 };
 
 /**
@@ -58,7 +56,9 @@ export const createGroup = asyncHandler(async (req, res) => {
     defaultCapacity,
     defaultLocation,
     generationLeadDays,
-    generationLeadTime
+    generationLeadTime,
+    generationDeadlineDays,
+    generationDeadlineTime
   } = req.body;
   
   if (!name || !timezone) {
@@ -84,8 +84,10 @@ export const createGroup = asyncHandler(async (req, res) => {
       members: uniqueMemberIds,
       defaultCapacity: defaultCapacity || 0,
       defaultLocation: defaultLocation || "",
-      generationLeadDays: generationLeadDays !== undefined ? Number(generationLeadDays) : 1,
+      generationLeadDays: numOrNull(generationLeadDays, 1),
       generationLeadTime: generationLeadTime || "09:00 AM",
+      generationDeadlineDays: numOrNull(generationDeadlineDays, null),
+      generationDeadlineTime: generationDeadlineTime || "09:00 AM",
       moderators: []
   };
   
@@ -101,116 +103,23 @@ export const createGroup = asyncHandler(async (req, res) => {
   if (newlyAddedUserIds.length > 0) {
       const newlyAddedUsers = await User.find({ _id: { $in: newlyAddedUserIds } });
       if (newlyAddedUsers.length > 0) {
-          await notifyUsers(newlyAddedUsers, {
+          await notifyAndPersist(newlyAddedUsers, {
               title: "You've been added to a group!",
               body: `${owner.firstName} ${owner.lastName} added you to the group "${newGroup.name}".`,
-              data: { groupId: newGroup._id.toString(), type: 'group_added' }
+              data: { groupId: newGroup._id.toString(), type: 'group_added' },
+              type: 'group-added',
+              sender: owner._id,
+              group: newGroup._id,
           });
-          const notificationDocs = newlyAddedUsers.map(member => ({
-              recipient: member._id, sender: owner._id, type: 'group-added',
-              group: newGroup._id, read: false, status: 'read'
-          }));
-          await Notification.insertMany(notificationDocs);
       }
   }
   // --- END NOTIFICATION LOGIC ---
 
   // Initial Generation with Window Filling
   if (newGroup.schedule && newGroup.schedule.routines) {
-    try{
-        const groupToUse = newGroup;
-          const timezoneToUse = timezone;
-
-          const now = DateTime.now().setZone(timezoneToUse);
-          const kickoffDate = groupToUse.schedule.startDate
-              ? DateTime.fromJSDate(groupToUse.schedule.startDate, { zone: 'utc' })
-                  .setZone(timezoneToUse, { keepLocalTime: true })
-                  .startOf('day')
-                  .toJSDate()
-              : now.startOf('day').toJSDate();
-
-          const windowEndDT = now.plus({ days: 30 }).endOf('day');
-          let earliestNextTrigger = null;
-
-          for (const routine of groupToUse.schedule.routines) {
-              for (const dtEntry of routine.dayTimes) {
-                  let currentAnchor = null;
-                  let fillingWindow = true;
-                  let loopSafety = 0;
-
-                  while (fillingWindow && loopSafety < 100) {
-                      const nextDate = calculateNextMeetupDate(
-                          routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
-                          dtEntry.time,
-                          timezoneToUse,
-                          routine.frequency,
-                          currentAnchor,
-                          routine.frequency === 'ordinal' ? routine.rules?.[0] : null
-                      );
-
-                      if (nextDate < kickoffDate) {
-                          currentAnchor = nextDate;
-                          loopSafety++;
-                          continue;
-                      }
-
-                      const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(timezoneToUse);
-
-                      if (nextMeetupDT > windowEndDT) {
-                          fillingWindow = false;
-                          break;
-                      }
-
-                      const alreadyExists = await Meetup.findOne({
-                          group: groupToUse._id,
-                          date: nextDate,
-                          time: dtEntry.time
-                      });
-
-                      if (!alreadyExists) {
-                          const { hours, minutes } = parseTimeString(groupToUse.generationLeadTime || "09:00 AM");
-
-                          const visibilityDT = nextMeetupDT
-                              .minus({ days: getVisibilityDays(routine.frequency) })
-                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-                          const rsvpDT = nextMeetupDT
-                              .minus({ days: groupToUse.generationLeadDays || 1 })
-                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-                          await Meetup.create({
-                              group: groupToUse._id,
-                              name: groupToUse.name,
-                              date: nextDate,
-                              time: dtEntry.time,
-                              timezone: timezoneToUse,
-                              location: groupToUse.defaultLocation,
-                              members: uniqueMemberIds,
-                              undecided: uniqueMemberIds,
-                              capacity: groupToUse.defaultCapacity,
-                              isOverride: false,
-                              startsAt: nextDate,
-                              visibilityDate: visibilityDT.toJSDate(),
-                              rsvpOpenDate: rsvpDT.toJSDate()
-                          });
-                      }
-
-                      currentAnchor = nextDate;
-                      loopSafety++;
-                  }
-
-                  const trigger = computeNextGenerationAt(groupToUse, currentAnchor, routine, dtEntry);
-                  if (!earliestNextTrigger || trigger < earliestNextTrigger) {
-                      earliestNextTrigger = trigger;
-                  }
-              }
-          }
-
-          if (earliestNextTrigger) {
-              newGroup.nextGenerationAt = earliestNextTrigger;
-              await newGroup.save();
-          }
-      } catch (err) { console.error("Initial Gen Error:", err); }
+    try {
+      await generateMeetupsForGroup(newGroup);
+    } catch (err) { console.error("Initial Gen Error:", err); }
   }
 
   res.status(201).json({ group: newGroup, message: "Created successfully." });
@@ -236,8 +145,25 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     
     if (timezone) group.timezone = timezone;
     if (defaultCapacity !== undefined) group.defaultCapacity = Number(defaultCapacity);
-    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
-    
+    if (defaultLocation !== undefined) {
+        group.defaultLocation = defaultLocation;
+        if (defaultLocation) {
+            // Sync all auto-generated meetups to the new location, plus any
+            // meetup (including manually-overridden ones) that has no location
+            // of its own yet — overrides with a location already set are left alone.
+            await Meetup.updateMany(
+                {
+                    group: group._id,
+                    $or: [
+                        { isOverride: false },
+                        { location: { $in: ["", null] } },
+                    ],
+                },
+                { $set: { location: defaultLocation } }
+            );
+        }
+    }
+
     await group.save();
 
     const today = new Date();
@@ -251,98 +177,10 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
 
     if (group.schedule && group.schedule.routines) {
         try {
-          const now = DateTime.now().setZone(group.timezone);
-          const kickoffDate = group.schedule.startDate
-              ? DateTime.fromJSDate(group.schedule.startDate, { zone: 'utc' })
-                  .setZone(group.timezone, { keepLocalTime: true })
-                  .startOf('day')
-                  .toJSDate()
-              : now.startOf('day').toJSDate();
-
-          const windowEndDT = now.plus({ days: 30 }).endOf('day');
-          let earliestNextTrigger = null;
-
-          for (const routine of group.schedule.routines) {
-              for (const dtEntry of routine.dayTimes) {
-                  let currentAnchor = null;
-                  let fillingWindow = true;
-                  let loopSafety = 0;
-
-                  while (fillingWindow && loopSafety < 100) {
-                      const nextDate = calculateNextMeetupDate(
-                          routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
-                          dtEntry.time,
-                          group.timezone,
-                          routine.frequency,
-                          currentAnchor,
-                          routine.frequency === 'ordinal' ? routine.rules?.[0] : null
-                      );
-
-                      if (nextDate < kickoffDate) {
-                          currentAnchor = nextDate;
-                          loopSafety++;
-                          continue;
-                      }
-
-                      const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(group.timezone);
-
-                      if (nextMeetupDT > windowEndDT) {
-                          fillingWindow = false;
-                          break;
-                      }
-
-                      const alreadyExists = await Meetup.findOne({
-                          group: group._id,
-                          date: nextDate,
-                          time: dtEntry.time
-                      });
-
-                      if (!alreadyExists) {
-                          const { hours, minutes } = parseTimeString(group.generationLeadTime || "09:00 AM");
-
-                          const visibilityDT = nextMeetupDT
-                              .minus({ days: getVisibilityDays(routine.frequency) })
-                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-                          const rsvpDT = nextMeetupDT
-                              .minus({ days: group.generationLeadDays || 1 })
-                              .set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
-
-                          await Meetup.create({
-                              group: group._id,
-                              name: group.name,
-                              date: nextDate,
-                              time: dtEntry.time,
-                              timezone: group.timezone,
-                              location: group.defaultLocation,
-                              members: group.members,
-                              undecided: group.members,
-                              capacity: group.defaultCapacity,
-                              isOverride: false,
-                              startsAt: nextDate,
-                              visibilityDate: visibilityDT.toJSDate(),
-                              rsvpOpenDate: rsvpDT.toJSDate()
-                          });
-                      }
-
-                      currentAnchor = nextDate;
-                      loopSafety++;
-                  }
-
-                  const trigger = computeNextGenerationAt(group, currentAnchor, routine, dtEntry);
-                  if (!earliestNextTrigger || trigger < earliestNextTrigger) {
-                      earliestNextTrigger = trigger;
-                  }
-              }
-          }
-
-          if (earliestNextTrigger) {
-              group.nextGenerationAt = earliestNextTrigger;
-              await group.save();
-          }
-      } catch (err) {
-          console.error("Update Gen Error:", err);
-      }
+            await generateMeetupsForGroup(group);
+        } catch (err) {
+            console.error("Update Gen Error:", err);
+        }
     }
 
     res.status(200).json({ message: "Schedule updated.", group });
@@ -361,6 +199,8 @@ export const updateGroup = asyncHandler(async (req, res) => {
         defaultLocation,
         generationLeadDays,
         generationLeadTime,
+        generationDeadlineDays,
+        generationDeadlineTime,
         defaultCapacity
     } = req.body;
 
@@ -385,10 +225,13 @@ export const updateGroup = asyncHandler(async (req, res) => {
         // --- NOTIFICATION LOGIC ---
         const membersToNotify = await User.find({ _id: { $in: group.members } });
         if (membersToNotify.length > 0) {
-            await notifyUsers(membersToNotify, {
+            await notifyAndPersist(membersToNotify, {
                 title: "Group Name Changed",
                 body: `The group "${oldName}" is now named "${group.name}".`,
-                data: { groupId: group._id.toString(), type: 'group_updated' }
+                data: { groupId: group._id.toString(), type: 'group_updated' },
+                type: 'group-updated',
+                sender: requester._id,
+                group: group._id,
             });
         }
     }
@@ -396,13 +239,32 @@ export const updateGroup = asyncHandler(async (req, res) => {
 
     if (image !== undefined) group.image = image;
     if (meetupsToDisplay) group.meetupsToDisplay = parseInt(meetupsToDisplay);
-    if (generationLeadDays !== undefined) group.generationLeadDays = Number(generationLeadDays);
+    if (generationLeadDays !== undefined) group.generationLeadDays = numOrNull(generationLeadDays, null);
     if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
+    if (generationDeadlineDays !== undefined) group.generationDeadlineDays = numOrNull(generationDeadlineDays, null);
+    if (generationDeadlineTime !== undefined) group.generationDeadlineTime = generationDeadlineTime;
     if (defaultCapacity !== undefined) {
         group.defaultCapacity = Number(defaultCapacity);
         await Meetup.updateMany({ group: groupId, isOverride: false }, { $set: { capacity: Number(defaultCapacity) } });
     }
-    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
+    if (defaultLocation !== undefined) {
+        group.defaultLocation = defaultLocation;
+        if (defaultLocation) {
+            // Sync all auto-generated meetups to the new location, plus any
+            // meetup (including manually-overridden ones) that has no location
+            // of its own yet — overrides with a location already set are left alone.
+            await Meetup.updateMany(
+                {
+                    group: groupId,
+                    $or: [
+                        { isOverride: false },
+                        { location: { $in: ["", null] } },
+                    ],
+                },
+                { $set: { location: defaultLocation } }
+            );
+        }
+    }
 
     const updatedGroup = await group.save();
     res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully." });
@@ -462,7 +324,31 @@ export const getGroups = asyncHandler(async (req, res) => {
     const user = await User.findOne({ clerkId }).lean();
     if (!user) return res.status(404).json({ error: "User not found." });
 
-    const groups = await Group.find({ members: user._id }).lean();
+    const filter = { members: user._id };
+    const { since } = req.query;
+
+    // Delta sync: the client already has a cached copy and only wants what
+    // changed since its last sync, plus the current set of valid ids so it
+    // can drop anything (left group, deleted group) that's no longer visible.
+    if (since) {
+        const sinceDate = new Date(since);
+        if (isNaN(sinceDate.getTime())) {
+            return res.status(400).json({ error: "Invalid 'since' timestamp." });
+        }
+
+        const [changed, validIds] = await Promise.all([
+            Group.find({ ...filter, updatedAt: { $gte: sinceDate } }).lean(),
+            Group.find(filter).distinct('_id'),
+        ]);
+
+        return res.status(200).json({
+            changed,
+            validIds: validIds.map((id) => id.toString()),
+            syncedAt: new Date().toISOString(),
+        });
+    }
+
+    const groups = await Group.find(filter).lean();
     res.status(200).json(groups);
 });
 
@@ -507,18 +393,13 @@ export const addMember = asyncHandler(async (req, res) => {
         { group: group._id, date: { $gte: today } }, 
         { $addToSet: { members: userToAdd._id, undecided: userToAdd._id } }
     );
-    await notifyUsers([userToAdd], { 
-        title: "Added to Group", 
-        body: `${requester.firstName} added you to "${group.name}".`, 
-        data: { groupId: group._id.toString(), type: 'group-added' } 
-    });
-    // Create an in-app notification as well
-    await Notification.create({
-        recipient: userToAdd._id,
-        sender: requester._id,
+    await notifyAndPersist([userToAdd], {
+        title: "Added to Group",
+        body: `${requester.firstName} added you to "${group.name}".`,
+        data: { groupId: group._id.toString(), type: 'group-added' },
         type: 'group-added',
+        sender: requester._id,
         group: group._id,
-        read: false
     });
   } catch (err) { console.error(err); }
   
@@ -541,11 +422,13 @@ export const inviteUser = asyncHandler(async (req, res) => {
     const existingInvite = await Notification.findOne({ recipient: userToInvite._id, group: group._id, type: 'group-invite', status: 'pending' });
     if (existingInvite) return res.status(400).json({ error: "Invite already pending." });
 
-    await Notification.create({ recipient: userToInvite._id, sender: requester._id, type: 'group-invite', group: group._id });
-    await notifyUsers([userToInvite], { 
-        title: "Group Invitation", 
-        body: `${requester.firstName} invited you to join "${group.name}".`, 
-        data: { groupId: group._id.toString(), type: 'group-invite' } 
+    await notifyAndPersist([userToInvite], {
+        title: "Group Invitation",
+        body: `${requester.firstName} invited you to join "${group.name}".`,
+        data: { groupId: group._id.toString(), type: 'group-invite' },
+        type: 'group-invite',
+        sender: requester._id,
+        group: group._id,
     });
     res.status(200).json({ message: "Invitation sent." });
 });
@@ -603,10 +486,14 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
     // --- NOTIFICATION LOGIC ---
     const membersToNotify = await User.find({ _id: { $in: group.members } });
     if (membersToNotify.length > 0) {
-        await notifyUsers(membersToNotify, {
+        await notifyAndPersist(membersToNotify, {
             title: "New Meetup Scheduled",
             body: `A new meetup, "${newMeetup.name}", has been scheduled for your group "${group.name}".`,
-            data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: group._id.toString() }
+            data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: group._id.toString() },
+            type: 'meetup-created',
+            sender: requester._id,
+            meetup: newMeetup._id,
+            group: group._id,
         });
     }
 
@@ -696,17 +583,13 @@ export const redeemInviteToken = asyncHandler(async (req, res) => {
     const owner = await User.findById(group.owner);
     if (owner && owner._id.toString() !== user._id.toString()) {
         try {
-            await notifyUsers([owner], {
+            await notifyAndPersist([owner], {
                 title: "New Member",
                 body: `${user.firstName} joined "${group.name}" via invite link.`,
-                data: { groupId: group._id.toString(), type: 'group-added' }
-            });
-            await Notification.create({
-                recipient: owner._id,
-                sender: user._id,
+                data: { groupId: group._id.toString(), type: 'group-added' },
                 type: 'group-added',
+                sender: user._id,
                 group: group._id,
-                read: false
             });
         } catch (err) { console.error(err); }
     }

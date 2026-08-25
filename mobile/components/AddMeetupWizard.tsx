@@ -11,9 +11,12 @@ import {
     ScrollView
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { GroupDetails, groupApi, useApiClient } from '@/utils/api';
 import { DateTime } from 'luxon';
-import TimePicker from './TimePicker';
+import NativeTimePicker from './NativeTimePicker';
+import LocationField from './LocationField';
+import LocationSearchModal from './LocationSearchModal';
 import { useQueryClient } from '@tanstack/react-query';
 
 interface AddMeetupWizardProps {
@@ -64,6 +67,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
         groupDetails.defaultCapacity ? String(groupDetails.defaultCapacity) : ""
     );
     const [meetupLocation, setMeetupLocation] = useState(groupDetails.defaultLocation || "");
+    const [isLocationSearchActive, setIsLocationSearchActive] = useState(false);
 
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [showTZPicker, setShowTZPicker] = useState(false);
@@ -136,7 +140,11 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
             presentationStyle="pageSheet"
             onRequestClose={resetAndClose}
         >
-            <View style={s.screen}>
+            {/* presentationStyle="pageSheet" is iOS-only — Android renders this modal
+                truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
+                header sits under the status bar there. SafeAreaView is a no-op on iOS's
+                inset pageSheet, same as MeetupDetailModal's own top-level wrapper. */}
+            <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
                 <View style={s.screenHeader}>
                     <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>
                         <Feather name="x" size={24} color="#6B7280" />
@@ -205,11 +213,6 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
                         <Text style={s.dateFieldText}>{meetupTime}</Text>
                         <Feather name={showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
-                    {showTimePicker && (
-                        <View style={s.inlinePickerBox}>
-                            <TimePicker onTimeChange={setMeetupTime} initialValue={meetupTime} />
-                        </View>
-                    )}
 
                     {/* Timezone */}
                     <Text style={s.fieldLabel}>Timezone</Text>
@@ -270,16 +273,12 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
 
                     {/* Location */}
                     <Text style={s.fieldLabel}>Location or link</Text>
-                    <View style={s.inputRow}>
-                        <Feather name="map-pin" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
-                        <TextInput
-                            style={s.inlineInput}
-                            placeholder="e.g. Starbucks or Zoom link..."
-                            placeholderTextColor="#C4C9D4"
-                            value={meetupLocation}
-                            onChangeText={setMeetupLocation}
-                        />
-                    </View>
+                    <LocationField
+                        variant="wizard"
+                        placeholder="e.g. Starbucks or Zoom link..."
+                        value={meetupLocation}
+                        onPress={() => setIsLocationSearchActive(true)}
+                    />
                 </ScrollView>
 
                 <View style={s.screenFooter}>
@@ -295,7 +294,23 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
                         )}
                     </TouchableOpacity>
                 </View>
-            </View>
+
+                <LocationSearchModal
+                    visible={isLocationSearchActive}
+                    initialValue={meetupLocation}
+                    placeholder="e.g. Starbucks or Zoom link..."
+                    onDone={(text) => { setMeetupLocation(text); setIsLocationSearchActive(false); }}
+                    onCancel={() => setIsLocationSearchActive(false)}
+                    asOverlay
+                />
+
+                {/* Rendered as a sibling of the ScrollView (not a descendant) — same rule as
+                    LocationSearchModal above: an absoluteFillObject overlay mounted inside a
+                    ScrollView only fills the scrollable content, not the screen. */}
+                {showTimePicker && (
+                    <NativeTimePicker value={meetupTime} onChange={setMeetupTime} onClose={() => setShowTimePicker(false)} asOverlay />
+                )}
+            </SafeAreaView>
         </Modal>
     );
 };
@@ -310,7 +325,6 @@ const s = StyleSheet.create({
     fieldLabel: { fontSize: 11, fontWeight: "800", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, marginTop: 16 },
     dateFieldRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 13, marginBottom: 4 },
     dateFieldText: { fontSize: 15, color: "#374151", fontWeight: "500" },
-    inlinePickerBox: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 8, width: "100%", marginTop: 8 },
     inlineDayPicker: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", marginTop: 6, overflow: "hidden" },
     dayOption: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
     dayOptionActive: { backgroundColor: "#EEF6FF" },

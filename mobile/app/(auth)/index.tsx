@@ -13,7 +13,7 @@ export default function Index() {
   const router = useRouter();
 
   const handleOpenPrivacyPolicy = () => {
-    Linking.openURL("https://dhull0417.github.io/groupthat-testing/").catch((err) => 
+    Linking.openURL("https://groupthatapp.com/privacy-policy/").catch((err) =>
       console.error("Couldn't load page", err)
     );
   };
