@@ -10,6 +10,7 @@ import {
     ScrollView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { DateTime } from 'luxon';
 import NativeTimePicker from './NativeTimePicker';
@@ -186,7 +187,11 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={resetAndClose}>
-            <View style={s.screen}>
+            {/* presentationStyle="pageSheet" is iOS-only — Android renders this modal
+                truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
+                header sits under the status bar there. SafeAreaView is a no-op on iOS's
+                inset pageSheet, same as MeetupDetailModal's own top-level wrapper. */}
+            <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
                 <View style={s.screenHeader}>
                     <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>
                         <Feather name="x" size={24} color="#6B7280" />
@@ -333,9 +338,10 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                         value={expiryTime ?? '09:00 PM'}
                         onChange={t => setExpiryTime(t)}
                         onClose={() => setShowTimePopup(false)}
+                        asOverlay
                     />
                 )}
-            </View>
+            </SafeAreaView>
         </Modal>
     );
 };

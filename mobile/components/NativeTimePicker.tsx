@@ -44,12 +44,17 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, on
     useEffect(() => { setTemp(timeStringToDate(value)); }, []);
 
     const handleChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-        const currentDate = selectedDate || temp;
         if (Platform.OS === 'android') {
+            // The dialog closing on a real pick (event.type 'set') is the confirm step;
+            // a dismiss (back button / tap outside) must not commit a value.
             onClose();
-            onChange(dateToTimeString(currentDate));
-        } else {
-            setTemp(currentDate);
+            if (event.type === 'set' && selectedDate) {
+                onChange(dateToTimeString(selectedDate));
+            }
+            return;
+        }
+        if (selectedDate) {
+            setTemp(selectedDate);
         }
     };
 

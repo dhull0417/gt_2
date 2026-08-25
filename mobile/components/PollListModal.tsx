@@ -10,6 +10,7 @@ import {
     Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateTime } from 'luxon';
 import { Poll, PollOption } from '@/utils/api';
 import { useGetPolls } from '@/hooks/useGetPolls';
@@ -251,9 +252,13 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-            <View style={styles.modalContent}>
+            {/* presentationStyle="pageSheet" is iOS-only — Android renders this modal
+                truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
+                header sits under the status bar there. SafeAreaView is a no-op on iOS's
+                inset pageSheet, same as MeetupDetailModal's own top-level wrapper. */}
+            <SafeAreaView style={styles.modalContent} edges={['top', 'bottom']}>
                 {selectedPoll ? renderDetail() : renderList()}
-            </View>
+            </SafeAreaView>
         </Modal>
     );
 };

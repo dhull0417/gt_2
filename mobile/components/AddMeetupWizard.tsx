@@ -11,6 +11,7 @@ import {
     ScrollView
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { GroupDetails, groupApi, useApiClient } from '@/utils/api';
 import { DateTime } from 'luxon';
 import NativeTimePicker from './NativeTimePicker';
@@ -139,7 +140,11 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
             presentationStyle="pageSheet"
             onRequestClose={resetAndClose}
         >
-            <View style={s.screen}>
+            {/* presentationStyle="pageSheet" is iOS-only — Android renders this modal
+                truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
+                header sits under the status bar there. SafeAreaView is a no-op on iOS's
+                inset pageSheet, same as MeetupDetailModal's own top-level wrapper. */}
+            <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
                 <View style={s.screenHeader}>
                     <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>
                         <Feather name="x" size={24} color="#6B7280" />
@@ -208,9 +213,6 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
                         <Text style={s.dateFieldText}>{meetupTime}</Text>
                         <Feather name={showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
-                    {showTimePicker && (
-                        <NativeTimePicker value={meetupTime} onChange={setMeetupTime} onClose={() => setShowTimePicker(false)} />
-                    )}
 
                     {/* Timezone */}
                     <Text style={s.fieldLabel}>Timezone</Text>
@@ -301,7 +303,14 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
                     onCancel={() => setIsLocationSearchActive(false)}
                     asOverlay
                 />
-            </View>
+
+                {/* Rendered as a sibling of the ScrollView (not a descendant) — same rule as
+                    LocationSearchModal above: an absoluteFillObject overlay mounted inside a
+                    ScrollView only fills the scrollable content, not the screen. */}
+                {showTimePicker && (
+                    <NativeTimePicker value={meetupTime} onChange={setMeetupTime} onClose={() => setShowTimePicker(false)} asOverlay />
+                )}
+            </SafeAreaView>
         </Modal>
     );
 };

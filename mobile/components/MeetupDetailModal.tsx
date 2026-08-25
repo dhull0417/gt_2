@@ -534,12 +534,21 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     };
 
     const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-        const currentDate = selectedDate || tempDate;
         if (Platform.OS === 'android') {
+            // Android's picker is a system dialog, not an inline spinner — there's no
+            // separate "Done" button, so the dialog closing on a real pick (event.type
+            // 'set') IS the confirm step. Dismissing it (back button / tap outside)
+            // fires 'dismissed' with no selectedDate — falling back to `tempDate` here
+            // used to silently revert a date the user had already picked, since
+            // `tempDate` only ever tracks the original meetup date on this branch.
             setShowDatePicker(false);
-            setNewDate(currentDate);
-        } else {
-            setTempDate(currentDate);
+            if (event.type === 'set' && selectedDate) {
+                setNewDate(selectedDate);
+            }
+            return;
+        }
+        if (selectedDate) {
+            setTempDate(selectedDate);
         }
     };
 

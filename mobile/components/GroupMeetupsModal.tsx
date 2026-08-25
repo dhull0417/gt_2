@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ActivityIndicator, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Meetup, User, useApiClient, userApi } from '@/utils/api';
@@ -44,7 +45,11 @@ const GroupMeetupsModal = ({ visible, onClose, groupId }: GroupMeetupsModalProps
             {selectedMeetup ? (
                 <MeetupDetailModal meetup={selectedMeetup} onClose={() => setSelectedMeetup(null)} />
             ) : (
-                <View style={styles.modalContent}>
+                // presentationStyle="pageSheet" is iOS-only — Android renders this modal
+                // truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
+                // header sits under the status bar there. SafeAreaView is a no-op on
+                // iOS's inset pageSheet, same as MeetupDetailModal's own wrapper.
+                <SafeAreaView style={styles.modalContent} edges={['top', 'bottom']}>
                     <View style={styles.modalHeader}>
                         <View style={{ width: 24 }} />
                         <Text style={styles.modalHeaderTitle}>Upcoming Meetups</Text>
@@ -77,7 +82,7 @@ const GroupMeetupsModal = ({ visible, onClose, groupId }: GroupMeetupsModalProps
                             ))}
                         </ScrollView>
                     )}
-                </View>
+                </SafeAreaView>
             )}
         </Modal>
     );

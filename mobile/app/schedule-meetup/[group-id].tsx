@@ -31,7 +31,16 @@ const ScheduleMeetupScreen = () => {
 
     const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
         if (Platform.OS === 'android') {
+            // Android's picker is a system dialog, not an inline spinner — there's no
+            // separate "Done" button, so the dialog closing on a real pick (event.type
+            // 'set') IS the confirm step. Dismissing it (back button / tap outside)
+            // fires 'dismissed' with no selectedDate and must leave `date` untouched.
             setShowDatePicker(false);
+            if (event.type === 'set' && selectedDate) {
+                setDate(selectedDate);
+                setTempDate(selectedDate);
+            }
+            return;
         }
         if (selectedDate) {
             setTempDate(selectedDate);
