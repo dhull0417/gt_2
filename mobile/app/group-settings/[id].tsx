@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
-  FlatList
+  FlatList,
+  Animated,
+  Easing
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@clerk/expo';
@@ -27,6 +29,7 @@ import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import LocationSearchModal from '@/components/LocationSearchModal';
 
 // Mirrors the Max Attendees validation on the group-creation Schedule screen and
 // the Add Meetup wizard so all three "attendee limit" entry points agree on what's valid.
@@ -69,6 +72,12 @@ const GroupSettings = () => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
   const [isSavingName, setIsSavingName] = useState(false);
+  const [isCelebratingName, setIsCelebratingName] = useState(false);
+  const [celebrationName, setCelebrationName] = useState("");
+  const letterAnimsRef = useRef<Animated.Value[]>([]);
+  const nameFlyAnim = useRef(new Animated.Value(0)).current;
+  const heartRiseAnim = useRef(new Animated.Value(0)).current;
+  const heartPopScale = useRef(new Animated.Value(1)).current;
 
   const [isEditingCapacity, setIsEditingCapacity] = useState(false);
   const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
@@ -79,8 +88,6 @@ const GroupSettings = () => {
   const canSaveCapacity = capacityMode !== "limited" || (tempCapacity !== "" && !capacityError);
 
   const [isEditingLocation, setIsEditingLocation] = useState(false);
-  const [tempLocation, setTempLocation] = useState("");
-  const [isSavingLocation, setIsSavingLocation] = useState(false);
 
   // --- State for Moderator Management ---
   const [isEditingMods, setIsEditingMods] = useState(false);
@@ -121,6 +128,15 @@ const GroupSettings = () => {
     return labels[freq] ?? 'No schedule set';
   }, [group?.schedule]);
 
+  const rsvpSettingsLabel = useMemo((): string => {
+    const leadDays = group?.generationLeadDays;
+    const deadlineDays = group?.generationDeadlineDays;
+    const opensPart = leadDays != null ? `Opens ${leadDays} day${leadDays !== 1 ? 's' : ''} before at ${group?.generationLeadTime || '—'}` : null;
+    const deadlinePart = deadlineDays != null ? `Deadline ${deadlineDays} day${deadlineDays !== 1 ? 's' : ''} before at ${group?.generationDeadlineTime || '—'}` : null;
+    if (!opensPart && !deadlinePart) return 'RSVPs open anytime';
+    return [opensPart, deadlinePart].filter(Boolean).join(' · ');
+  }, [group?.generationLeadDays, group?.generationLeadTime, group?.generationDeadlineDays, group?.generationDeadlineTime]);
+
   // --- ACCESS CONTROL GUARD ---
   useEffect(() => {
     if (!isLoadingGroup && !isLoadingUser && group && currentUser) {
@@ -138,7 +154,7 @@ const GroupSettings = () => {
     { id: 'image', label: 'Edit Group Photo', icon: 'camera', color: '#4A90E2', bg: '#EFF6FF' },
     { id: 'name', label: 'Edit Group Name', icon: 'type', color: '#3B82F6', bg: '#EFF6FF' },
     { id: 'schedule', label: 'Edit Schedule & Times', icon: 'calendar', color: '#6366F1', bg: '#EEF2FF' },
-    { id: 'jit', label: 'Edit RSVP Lead Time', icon: 'bell', color: '#F59E0B', bg: '#FFFBEB' },
+    { id: 'jit', label: 'Edit RSVP Settings', icon: 'bell', color: '#F59E0B', bg: '#FFFBEB' },
     { id: 'capacity', label: 'Edit Attendee Limit', icon: 'users', color: '#A855F7', bg: '#F5F3FF' },
     { id: 'location', label: 'Edit Location', icon: 'map-pin', color: '#10B981', bg: '#ECFDF5' },
     { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: '#ECFEFF' },
@@ -165,7 +181,6 @@ const GroupSettings = () => {
         break;
       }
       case 'location':
-        setTempLocation(group?.defaultLocation || "");
         setIsEditingLocation(true);
         break;
       case 'mods':
@@ -194,14 +209,49 @@ const GroupSettings = () => {
     }
   };
 
+  const imageModalRotation = useRef(new Animated.Value(0)).current;
+
   const handleOpenImageModal = () => {
     setPreviewUri(null);
     setIsImageModalVisible(true);
+    imageModalRotation.setValue(0);
+    Animated.sequence([
+      Animated.timing(imageModalRotation, { toValue: -6, duration: 90, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(imageModalRotation, { toValue: 5, duration: 110, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(imageModalRotation, { toValue: -3, duration: 100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(imageModalRotation, { toValue: 1.5, duration: 100, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(imageModalRotation, { toValue: 0, duration: 100, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+    ]).start();
   };
+
+  const imageModalRotateStyle = {
+    transform: [
+      {
+        rotate: imageModalRotation.interpolate({
+          inputRange: [-6, 6],
+          outputRange: ['-6deg', '6deg'],
+        }),
+      },
+    ],
+  };
+
+  const avatarPopScale = useRef(new Animated.Value(1)).current;
 
   const handlePickNewImage = async () => {
     const uri = await pickImageUri();
-    if (uri) setPreviewUri(uri);
+    if (uri) {
+      setPreviewUri(uri);
+      avatarPopScale.setValue(1);
+      Animated.sequence([
+        Animated.delay(200),
+        Animated.timing(avatarPopScale, { toValue: 1.18, duration: 2000, easing: Easing.out(Easing.exp), useNativeDriver: true }),
+        Animated.timing(avatarPopScale, { toValue: 1, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(avatarPopScale, { toValue: 1.04, duration: 70, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(avatarPopScale, { toValue: 0.98, duration: 70, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(avatarPopScale, { toValue: 1.01, duration: 60, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(avatarPopScale, { toValue: 1, duration: 60, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      ]).start();
+    }
   };
 
   const handleConfirmImage = async () => {
@@ -239,6 +289,43 @@ const GroupSettings = () => {
     }
   };
 
+  const playNameCelebration = (name: string) => {
+    letterAnimsRef.current = name.split('').map(() => new Animated.Value(0));
+    nameFlyAnim.setValue(0);
+    heartRiseAnim.setValue(0);
+    heartPopScale.setValue(1);
+    setCelebrationName(name);
+    setIsCelebratingName(true);
+
+    const waveAnimations = letterAnimsRef.current.map((letterAnim, i) =>
+      Animated.sequence([
+        Animated.delay(i * 45),
+        Animated.timing(letterAnim, { toValue: 1, duration: 180, easing: Easing.out(Easing.quad), useNativeDriver: false }),
+        Animated.timing(letterAnim, { toValue: 0, duration: 180, easing: Easing.in(Easing.quad), useNativeDriver: false }),
+      ])
+    );
+
+    Animated.sequence([
+      Animated.parallel(waveAnimations),
+      Animated.parallel([
+        Animated.timing(nameFlyAnim, { toValue: -260, duration: 450, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+        Animated.sequence([
+          Animated.timing(heartRiseAnim, { toValue: 1, duration: 450, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 1.18, duration: 500, easing: Easing.out(Easing.exp), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 1, duration: 50, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 1.04, duration: 18, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 0.98, duration: 18, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 1.01, duration: 15, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(heartPopScale, { toValue: 1, duration: 15, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        ]),
+      ]),
+    ]).start(() => {
+      setIsEditingName(false);
+      setIsCelebratingName(false);
+      setCelebrationName("");
+    });
+  };
+
   const handleSaveName = async () => {
     if (!id || !tempName.trim()) return;
     if (tempName === group?.name) {
@@ -254,7 +341,7 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
-        setIsEditingName(false);
+        playNameCelebration(tempName.trim());
     } catch (error: any) {
         Alert.alert("Error", error.response?.data?.error || "Failed to update group name.");
     } finally {
@@ -287,15 +374,15 @@ const GroupSettings = () => {
     }
   };
 
-  const handleSaveLocation = async () => {
+  // Closes the popup immediately when called (matching the other 3 Set Location
+  // popups, which are just local-state updates with no network round-trip) —
+  // the save itself happens in the background; a failure surfaces via Alert
+  // after the fact rather than blocking the popup open until it resolves.
+  const handleSaveLocation = async (locationText: string) => {
     if (!id) return;
-    const trimmedLoc = tempLocation.trim();
-    if (trimmedLoc === group?.defaultLocation) {
-        setIsEditingLocation(false);
-        return;
-    }
+    const trimmedLoc = locationText.trim();
+    if (trimmedLoc === group?.defaultLocation) return;
 
-    setIsSavingLocation(true);
     try {
         await groupApi.updateGroup(api, { groupId: id, defaultLocation: trimmedLoc });
         await Promise.all([
@@ -303,12 +390,9 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
-        setIsEditingLocation(false);
         Alert.alert("Success", "Default location and future meetups updated.");
     } catch (error: any) {
         Alert.alert("Error", error.response?.data?.error || "Failed to update location.");
-    } finally {
-        setIsSavingLocation(false);
     }
   };
 
@@ -464,7 +548,7 @@ const GroupSettings = () => {
                     <Feather name={option.icon as any} size={20} color={option.color} />
                   </View>
                 )}
-                <View>
+                <View style={{ flexShrink: 1 }}>
                   <Text style={[styles.optionLabel, option.destructive && styles.destructiveLabel]}>
                     {option.label}
                   </Text>
@@ -485,7 +569,7 @@ const GroupSettings = () => {
                   )}
                   {option.id === 'jit' && (
                     <Text style={styles.optionSubLabel}>
-                      {(group?.generationLeadDays ?? 0)} day{(group?.generationLeadDays ?? 0) !== 1 ? 's' : ''} before at {group?.generationLeadTime || '—'}
+                      {rsvpSettingsLabel}
                     </Text>
                   )}
                   {option.id === 'location' && (
@@ -526,38 +610,48 @@ const GroupSettings = () => {
       <Modal
         visible={isImageModalVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setIsImageModalVisible(false)}
       >
-        <Pressable style={styles.bottomSheetOverlay} onPress={() => setIsImageModalVisible(false)}>
-          <Pressable onPress={() => {}} style={styles.imageModalSheet}>
-            <View style={styles.imageModalHandle} />
-            <Text style={styles.modalTitle}>Group Photo</Text>
+        <Pressable style={styles.modalOverlay} onPress={() => setIsImageModalVisible(false)}>
+          <Animated.View style={imageModalRotateStyle}>
+            <Pressable onPress={() => {}} style={[styles.modalContent, styles.imageModalContent]}>
+              <Text style={styles.modalTitle}>Group Photo</Text>
 
-            <TouchableOpacity onPress={handlePickNewImage} disabled={isConfirmingImage} style={styles.imageModalAvatarWrap}>
-              <GroupAvatar
-                name={group?.name ?? ''}
-                imageUrl={previewUri ?? group?.image}
-                size={120}
-                borderRadius={28}
-              />
-              <View style={styles.imageModalCameraBadge}>
-                <Feather name="camera" size={16} color="#fff" />
-              </View>
-            </TouchableOpacity>
-
-            {previewUri && (
-              <TouchableOpacity
-                style={styles.confirmBtn}
-                onPress={handleConfirmImage}
-                disabled={isConfirmingImage}
-              >
-                {isConfirmingImage
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={styles.confirmBtnText}>Confirm</Text>}
+              <TouchableOpacity onPress={handlePickNewImage} disabled={isConfirmingImage} style={styles.imageModalAvatarWrap}>
+                <Animated.View style={{ transform: [{ scale: avatarPopScale }] }}>
+                  <GroupAvatar
+                    name={group?.name ?? ''}
+                    imageUrl={previewUri ?? group?.image}
+                    size={120}
+                    borderRadius={28}
+                  />
+                  <View style={styles.imageModalCameraBadge}>
+                    <Feather name="camera" size={16} color="#fff" />
+                  </View>
+                </Animated.View>
               </TouchableOpacity>
-            )}
-          </Pressable>
+
+              {previewUri ? (
+                <TouchableOpacity
+                  style={styles.confirmBtn}
+                  onPress={handleConfirmImage}
+                  disabled={isConfirmingImage}
+                >
+                  {isConfirmingImage
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={styles.confirmBtnText}>Confirm</Text>}
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.confirmBtn, styles.imageModalCancelBtn]}
+                  onPress={() => setIsImageModalVisible(false)}
+                >
+                  <Text style={styles.modalBtnTextCancel}>Cancel</Text>
+                </TouchableOpacity>
+              )}
+            </Pressable>
+          </Animated.View>
         </Pressable>
       </Modal>
 
@@ -565,14 +659,52 @@ const GroupSettings = () => {
       <Modal visible={isEditingName} transparent animationType="fade" onRequestClose={() => setIsEditingName(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Edit Group Name</Text>
-                <TextInput style={styles.modalInput} value={tempName} onChangeText={setTempName} placeholder="Enter group name" autoFocus maxLength={50} selectTextOnFocus />
-                <View style={styles.modalButtons}>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingName(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveName} disabled={isSavingName || !tempName.trim()}>
-                        {isSavingName ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
-                    </TouchableOpacity>
-                </View>
+                {isCelebratingName ? (
+                    <View style={styles.nameCelebrationStage}>
+                        <Animated.View
+                            style={[
+                                styles.nameCelebrationHeart,
+                                {
+                                    transform: [
+                                        { translateY: heartRiseAnim.interpolate({ inputRange: [0, 1], outputRange: [150, 0] }) },
+                                        { scale: heartPopScale },
+                                    ],
+                                },
+                            ]}
+                        >
+                            <Text style={styles.nameCelebrationHeartText}>❤️</Text>
+                        </Animated.View>
+                        <Animated.View style={[styles.nameCelebrationNameRow, { transform: [{ translateY: nameFlyAnim }] }]}>
+                            {celebrationName.split('').map((char, i) => (
+                                <Animated.Text
+                                    key={`${char}-${i}`}
+                                    style={[
+                                        styles.nameCelebrationLetter,
+                                        {
+                                            transform: [{
+                                                translateY: letterAnimsRef.current[i]?.interpolate({ inputRange: [0, 1], outputRange: [0, -14] }) ?? 0,
+                                            }],
+                                            color: letterAnimsRef.current[i]?.interpolate({ inputRange: [0, 1], outputRange: ['#111827', '#4FD1C5'] }) ?? '#111827',
+                                        },
+                                    ]}
+                                >
+                                    {char === ' ' ? ' ' : char}
+                                </Animated.Text>
+                            ))}
+                        </Animated.View>
+                    </View>
+                ) : (
+                    <>
+                        <Text style={styles.modalTitle}>Edit Group Name</Text>
+                        <TextInput style={styles.modalInput} value={tempName} onChangeText={setTempName} placeholder="Enter group name" autoFocus maxLength={50} selectTextOnFocus />
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingName(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
+                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveName} disabled={isSavingName || !tempName.trim()}>
+                                {isSavingName ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                )}
             </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -624,21 +756,13 @@ const GroupSettings = () => {
       </Modal>
 
       {/* Edit Location Modal */}
-      <Modal visible={isEditingLocation} transparent animationType="fade" onRequestClose={() => setIsEditingLocation(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Default Location</Text>
-                <Text style={styles.modalSubtitle}>Updates location for all associated meetups.</Text>
-                <TextInput style={styles.modalInput} value={tempLocation} onChangeText={setTempLocation} placeholder="e.g. Starbucks or Zoom link..." autoFocus selectTextOnFocus />
-                <View style={styles.modalButtons}>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingLocation(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveLocation} disabled={isSavingLocation}>
-                        {isSavingLocation ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <LocationSearchModal
+        visible={isEditingLocation}
+        initialValue={group?.defaultLocation || ""}
+        placeholder="e.g. Starbucks or Zoom link..."
+        onDone={(text) => { setIsEditingLocation(false); handleSaveLocation(text); }}
+        onCancel={() => setIsEditingLocation(false)}
+      />
 
       {/* Edit Moderators Modal */}
       <Modal
@@ -763,7 +887,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   optionsContainer: { padding: 16 },
   optionButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: 'white', borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F3F4F6', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
-  optionLeft: { flexDirection: 'row', alignItems: 'center' },
+  optionLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
   iconContainer: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
   optionLabel: { fontSize: 16, fontWeight: '700', color: '#374151' },
   optionSubLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '500', marginTop: 2 },
@@ -771,7 +895,6 @@ const styles = StyleSheet.create({
   footer: { padding: 32, alignItems: 'center' },
   footerText: { fontSize: 12, color: '#9CA3AF', textAlign: 'center', fontWeight: '500', lineHeight: 18 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  bottomSheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalContent: { width: '100%', backgroundColor: 'white', borderRadius: 24, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
   modalTitle: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 4, textAlign: 'center' },
   modalSubtitle: { fontSize: 14, color: '#6B7280', marginBottom: 16, textAlign: 'center', fontWeight: '500' },
@@ -783,6 +906,11 @@ const styles = StyleSheet.create({
   modalBtnDisabled: { backgroundColor: '#A7E4DE' },
   modalBtnTextCancel: { fontSize: 16, fontWeight: '700', color: '#4B5563' },
   modalBtnTextSave: { fontSize: 16, fontWeight: '700', color: 'white' },
+  nameCelebrationStage: { width: '100%', height: 220, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  nameCelebrationHeart: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  nameCelebrationHeartText: { fontSize: 56 },
+  nameCelebrationNameRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', paddingHorizontal: 16 },
+  nameCelebrationLetter: { fontSize: 30, fontWeight: '800', color: '#111827' },
   boolRow: { flexDirection: 'row', gap: 10 },
   boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', backgroundColor: '#fff' },
   boolBtnActive: { borderColor: '#4A90E2', backgroundColor: '#EEF6FF' },
@@ -809,12 +937,12 @@ const styles = StyleSheet.create({
   textWhite70: { color: 'rgba(255,255,255,0.7)' },
   checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
   checkboxActive: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: 'white' },
-  imageModalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingTop: 12, paddingBottom: 48, alignItems: 'center' },
-  imageModalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginBottom: 20 },
+  imageModalContent: { width: 300, height: 300, alignItems: 'center', justifyContent: 'center' },
   imageModalAvatarWrap: { position: 'relative', marginTop: 8 },
   imageModalCameraBadge: { position: 'absolute', bottom: 2, right: 2, backgroundColor: '#4A90E2', borderRadius: 16, padding: 6, borderWidth: 2, borderColor: '#fff' },
   confirmBtn: { marginTop: 28, alignSelf: 'stretch', backgroundColor: '#4A90E2', borderRadius: 14, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   confirmBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  imageModalCancelBtn: { backgroundColor: '#F3F4F6' },
 });
 
 export default GroupSettings;

@@ -22,6 +22,7 @@ export interface DayTime {
   day?: number;    // Used for daily/weekly/biweekly/ordinal
   date?: number;   // Used for monthly
   time: string;
+  startDate?: string; // Biweekly-only: chosen first occurrence for this specific day
 }
 
 /**
@@ -55,6 +56,7 @@ export interface User {
   mutedUntilNextMeetup: string[];
   lastReadAt?: Record<string, string>;
   zipCode?: string;
+  hasSeenWelcome?: boolean;
   createdAt?: string;
 }
 
@@ -74,12 +76,15 @@ export interface Group {
   owner: string;
   timezone: string;
   defaultLocation: string;
-  generationLeadDays: number;
+  generationLeadDays: number | null;
   generationLeadTime: string;
+  generationDeadlineDays: number | null;
+  generationDeadlineTime: string;
   lastMessage?: LastMessage | null;
   moderators?: (User | string)[];
   isDM?: boolean;
   dmParticipants?: { userId: string; name: string }[];
+  updatedAt: string;
 }
 
 export interface GroupDetails extends Group {
@@ -108,9 +113,20 @@ export interface Meetup {
   in: (User | string)[];
   out: (User | string)[];
   waitlist: (User | string)[];
-  visibilityDate?: string;
+  frequency?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'ordinal' | null;
   rsvpOpenDate?: string;
+  rsvpCloseDate?: string;
   guests?: { userId: string; count: number }[];
+  updatedAt: string;
+}
+
+// Response shape from the `?since=` delta-sync variant of a list endpoint:
+// only what changed, plus every currently-valid id so the client can drop
+// anything that's dropped out of view (left group, deleted meetup, etc).
+interface SyncResponse<T> {
+  changed: T[];
+  validIds: string[];
+  syncedAt: string;
 }
 
 export interface PollOption {
@@ -135,14 +151,25 @@ export interface Poll {
   createdAt: string;
 }
 
+export type NotificationType =
+  | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-updated'
+  | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion'
+  | 'meetup-rsvp-admin-in' | 'meetup-rsvp-admin-out'
+  | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled'
+  | 'meetup-rsvp-reminder' | 'meetup-rsvp-open' | 'meetup-starting-soon'
+  | 'poll-created' | 'poll-closed';
+
 export interface Notification {
   _id: string;
   recipient: string;
-  sender: User;
-  type: 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added';
-  group: Group;
+  sender?: User;
+  type: NotificationType;
+  group?: Group;
+  meetup?: { _id: string; name: string; date?: string; time?: string; timezone?: string; location?: string; capacity?: number };
+  poll?: { _id: string; prompt: string };
   status: 'pending' | 'accepted' | 'declined' | 'read';
   read: boolean;
+  meta?: { changedFields?: ('schedule' | 'location' | 'capacity')[] };
   createdAt: string;
 }
 
@@ -155,8 +182,10 @@ interface CreateGroupPayload {
   members?: string[];
   defaultCapacity?: number;
   defaultLocation?: string;
-  generationLeadDays: number;
+  generationLeadDays: number | null;
   generationLeadTime: string;
+  generationDeadlineDays: number | null;
+  generationDeadlineTime: string;
 }
 
 interface UpdateGroupPayload extends Partial<Omit<CreateGroupPayload, 'groupId'>> {
@@ -218,6 +247,7 @@ interface UpdateModeratorsPayload {
 interface RsvpMeetupPayload {
   meetupId: string;
   status: 'in' | 'out';
+  targetUserId?: string;
 }
 
 interface CreatePollPayload {
@@ -289,6 +319,32 @@ export const userApi = {
   },
 };
 
+export interface PlaceSuggestion {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+}
+
+export interface PlaceDetails {
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  name: string;
+}
+
+export const placesApi = {
+  autocomplete: async (api: AxiosInstance, input: string, sessionToken: string, coords?: { lat: number; lng: number }): Promise<PlaceSuggestion[]> => {
+    const response = await api.get<PlaceSuggestion[]>("/api/places/autocomplete", {
+      params: { input, sessionToken, lat: coords?.lat, lng: coords?.lng },
+    });
+    return response.data;
+  },
+  getDetails: async (api: AxiosInstance, placeId: string, sessionToken: string): Promise<PlaceDetails> => {
+    const response = await api.get<PlaceDetails>("/api/places/details", { params: { placeId, sessionToken } });
+    return response.data;
+  },
+};
+
 export const groupApi = {
   createGroup: async (api: AxiosInstance, payload: CreateGroupPayload): Promise<CreateGroupResponse> => {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);
@@ -308,6 +364,10 @@ export const groupApi = {
   },
   getGroups: async (api: AxiosInstance): Promise<Group[]> => {
     const response = await api.get<Group[]>("/api/groups");
+    return response.data;
+  },
+  getGroupsSince: async (api: AxiosInstance, since: string): Promise<SyncResponse<Group>> => {
+    const response = await api.get<SyncResponse<Group>>("/api/groups", { params: { since } });
     return response.data;
   },
   addMember: async (api: AxiosInstance, { groupId, userId }: AddMemberPayload): Promise<{ message: string }> => {
@@ -361,8 +421,12 @@ export const meetupApi = {
     const response = await api.get<Meetup[]>('/api/meetups');
     return response.data;
   },
-  handleRsvp: async (api: AxiosInstance, { meetupId, status }: RsvpMeetupPayload): Promise<{ meetup: Meetup }> => {
-    const response = await api.post<{ meetup: Meetup }>(`/api/meetups/${meetupId}/rsvp`, { status });
+  getMeetupsSince: async (api: AxiosInstance, since: string): Promise<SyncResponse<Meetup>> => {
+    const response = await api.get<SyncResponse<Meetup>>('/api/meetups', { params: { since } });
+    return response.data;
+  },
+  handleRsvp: async (api: AxiosInstance, { meetupId, status, targetUserId }: RsvpMeetupPayload): Promise<{ meetup: Meetup }> => {
+    const response = await api.post<{ meetup: Meetup }>(`/api/meetups/${meetupId}/rsvp`, { status, targetUserId });
     return response.data;
   },
   updateMeetup: async (api: AxiosInstance, { meetupId, ...details }: UpdateMeetupPayload): Promise<{ meetup: Meetup }> => {

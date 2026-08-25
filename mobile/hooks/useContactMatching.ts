@@ -21,20 +21,12 @@ function normalizePhone(raw: string): string {
 export function useContactMatching() {
   const api = useApiClient();
   const [permissionStatus, setPermissionStatus] = useState<Contacts.PermissionStatus | null>(null);
-  const [rawContacts, setRawContacts] = useState<Contacts.Contact[]>([]);
+  const [rawContacts, setRawContacts] = useState<Contacts.ExistingContact[]>([]);
 
-  useEffect(() => {
-    (async () => {
-      const { status } = await Contacts.requestPermissionsAsync();
-      setPermissionStatus(status);
-      if (status !== Contacts.PermissionStatus.GRANTED) return;
-
-      const { data } = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.Name, Contacts.Fields.Emails, Contacts.Fields.PhoneNumbers],
-      });
-      setRawContacts(data);
-    })();
-  }, []);
+  // Contact matching is disabled for now (feature paused, coming back later) —
+  // intentionally not requesting Contacts permission. Restore the body below
+  // (request -> fetch -> setRawContacts) to re-enable.
+  useEffect(() => {}, []);
 
   const emails: string[] = [];
   const phoneNumbers: string[] = [];

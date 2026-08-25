@@ -38,7 +38,6 @@ const HomeScreen = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const [deleteLoading, setDeleteLoading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [calendarModalVisible, setCalendarModalVisible] = useState(false);
   const [calendarUrl, setCalendarUrl] = useState<string | null>(null);
@@ -118,44 +117,6 @@ const HomeScreen = () => {
     } catch (error: any) {
       Alert.alert('Error Checking', error.message);
     }
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to permanently delete your account? This cannot be undone.\n\nAll your data, messages, and any groups you own will be deleted or transferred.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Account',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              'Final Confirmation',
-              'This will permanently delete your account from GroupThat. There is no way to recover it.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Yes, Delete My Account',
-                  style: 'destructive',
-                  onPress: async () => {
-                    setDeleteLoading(true);
-                    try {
-                      await userApi.deleteAccount(api);
-                      await signOut();
-                    } catch {
-                      Alert.alert('Error', 'Something went wrong while deleting your account. Please try again.');
-                    } finally {
-                      setDeleteLoading(false);
-                    }
-                  },
-                },
-              ]
-            );
-          },
-        },
-      ]
-    );
   };
 
   const handleOpenCalendarSync = async () => {
@@ -304,25 +265,13 @@ const HomeScreen = () => {
                   </TouchableOpacity>
                 ))}
 
-                <Text style={[styles.sectionLabel, { marginTop: 28 }]}>Session</Text>
                 <TouchableOpacity
                     onPress={() => { queryClient.clear(); signOut(); }}
-                    style={styles.signOutBtn}
+                    style={[styles.signOutBtn, { marginTop: 28 }]}
                     activeOpacity={0.85}
                 >
                     <Feather name="log-out" size={18} color="white" />
                     <Text style={styles.signOutText}>Sign Out</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    onPress={handleDeleteAccount}
-                    disabled={deleteLoading}
-                    style={styles.deleteBtn}
-                    activeOpacity={0.7}
-                >
-                    {deleteLoading
-                      ? <ActivityIndicator size="small" color="#EF4444" />
-                      : <Text style={styles.deleteText}>Delete Account</Text>}
                 </TouchableOpacity>
             </View>
           </>
@@ -495,22 +444,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '800',
-  },
-  deleteBtn: {
-    height: 50,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#EF4444',
-    backgroundColor: '#FEF2F2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-  },
-  deleteText: {
-    color: '#EF4444',
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    fontSize: 12,
   },
 });
 

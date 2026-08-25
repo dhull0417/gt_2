@@ -29,6 +29,10 @@ const userSchema = new mongoose.Schema(
             type: String,
             default: '',
         },
+        hasSeenWelcome: {
+            type: Boolean,
+            default: false,
+        },
         profilePicture: {
             type: String,
             default: "",

@@ -8,13 +8,12 @@ import { Meetup, User, useApiClient, userApi, meetupApi } from '@/utils/api';
 import { useFocusEffect, useRouter, useLocalSearchParams, Link } from 'expo-router';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
-import { GroupAvatar } from '@/components/GroupAvatar';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import { RsvpBreather } from '@/components/RsvpBreather';
 import { TAB_BAR_HEIGHT } from '@/utils/layout';
-import ReanimatedAnimated from 'react-native-reanimated';
+import { MeetupCard } from '@/components/MeetupCard';
+import { DayHeader, splitByDay } from '@/components/MeetupDayGroups';
 
 type GroupedMeetups = {
   'Upcoming': Meetup[];
@@ -29,332 +28,46 @@ const hashGroupColor = (groupId: string): string => {
   return GROUP_BORDER_COLORS[hash];
 };
 
-// --- Helper Functions ---
-const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
-
-const formatDate = (dateString: string, timezone: string) => {
-    const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: timezone };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+// How far out each recurring series shows in "Upcoming Meetups" before the
+// rest fall back to the group calendar button. One-off meetups (frequency
+// null) are never capped.
+const TAB_CAP_DAYS: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
+  daily: 7, weekly: 15, biweekly: 15, monthly: 35, ordinal: 35,
 };
 
-// Clusters a (date-ordered) meetup list into per-day buckets, so the date can be shown once above
-// every meetup that falls on it instead of repeated on each card.
-type DayGroup = { key: string; label: string; items: Meetup[] };
-const splitByDay = (list: Meetup[]): DayGroup[] => {
-    const groups: DayGroup[] = [];
-    list.forEach(meetup => {
-        const key = new Date(meetup.date).toLocaleDateString('en-CA', { timeZone: meetup.timezone });
-        let group = groups.find(g => g.key === key);
-        if (!group) {
-            const label = new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone });
-            group = { key, label, items: [] };
-            groups.push(group);
-        }
-        group.items.push(meetup);
-    });
-    return groups;
+// Buckets by (group, frequency) series so a user in a daily group and a
+// weekly group each get their own cap, then merges back into one date-sorted list.
+const capMeetupsByFrequency = (list: Meetup[]): Meetup[] => {
+  const now = Date.now();
+  const buckets = new Map<string, Meetup[]>();
+  const uncapped: Meetup[] = [];
+
+  list.forEach(m => {
+    if (!m.frequency) { uncapped.push(m); return; }
+    const key = `${m.group._id}|${m.frequency}`;
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(m);
+    buckets.set(key, bucket);
+  });
+
+  const capped: Meetup[] = [...uncapped];
+  buckets.forEach((bucketMeetups, key) => {
+    const frequency = key.split('|')[1] as NonNullable<Meetup['frequency']>;
+    const sorted = [...bucketMeetups].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const days = TAB_CAP_DAYS[frequency];
+
+    if (days != null) {
+      const cutoff = now + days * 24 * 60 * 60 * 1000;
+      capped.push(...sorted.filter(m => new Date(m.date).getTime() <= cutoff));
+    } else {
+      capped.push(...sorted);
+    }
+  });
+
+  return capped.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 };
 
 // --- Components ---
-
-const DayHeader = ({ label }: { label: string }) => (
-    <Text style={{ fontSize: 16, fontWeight: '800', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 8, marginTop: 28, marginBottom: 6, textAlign: 'center' }}>
-        {label}
-    </Text>
-);
-
-const RsvpCounts = ({ meetup }: { meetup: Meetup }) => {
-    const totalGuests = (meetup.guests || []).reduce((sum, g) => sum + (g.count || 0), 0);
-    return (
-        <View className="flex-row items-center mt-3 flex-wrap">
-            <View className="flex-row items-center mr-4">
-                <View className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: '#4FD1C5' }} />
-                <Text className="text-gray-600 font-medium">
-                    {meetup.in.length + totalGuests}{meetup.capacity > 0 ? `/${meetup.capacity}` : ''} In
-                </Text>
-            </View>
-
-            <View className="flex-row items-center mr-4">
-                <View className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: '#FF7A6E' }} />
-                <Text className="text-gray-600 font-medium">{meetup.out.length} Out</Text>
-            </View>
-        </View>
-    );
-};
-
-const MeetupCard = ({
-  meetup,
-  onPress,
-  showRsvpButtons,
-  onRsvp,
-  isRsvping,
-  currentUser,
-}: {
-  meetup: Meetup;
-  onPress: () => void;
-  showRsvpButtons: boolean;
-  onRsvp: (status: 'in' | 'out', guestCount?: number, mute?: boolean) => void;
-  isRsvping: boolean;
-  currentUser: User | undefined;
-}) => {
-  const [guestExpanded, setGuestExpanded] = useState(false);
-  const [localGuestCount, setLocalGuestCount] = useState(() => {
-    const entry = meetup.guests?.find(g => g.userId === currentUser?.clerkId);
-    return entry?.count ?? 0;
-  });
-
-  useEffect(() => {
-    if (!guestExpanded) {
-      const entry = meetup.guests?.find(g => g.userId === currentUser?.clerkId);
-      setLocalGuestCount(entry?.count ?? 0);
-    }
-  }, [meetup.guests, currentUser?.clerkId, guestExpanded]);
-
-  const isCancelled = meetup.status === 'cancelled';
-  const isPast = new Date(meetup.date) < new Date();
-  const isExpired = meetup.status === 'expired' || isPast;
-  const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
-
-  const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
-  const isWaitlisted = currentUser ? meetup.waitlist.some(u => getUserId(u) === currentUser._id) : false;
-  const isIn = currentUser ? meetup.in.some(u => getUserId(u) === currentUser._id) : false;
-  const isOut = currentUser ? meetup.out.some(u => getUserId(u) === currentUser._id) : false;
-  const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
-  const outUnselected = !isOut;
-  const isUndecided = inUnselected && outUnselected;
-
-  const isReadOnly = isCancelled || isExpired;
-
-  // Faint RSVP-status tint to match the detail modal: amber until the user
-  // responds, then green ("in"/waitlisted) or red ("out").
-  const rsvpBackgroundColor = isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
-
-  return (
-    <View
-      className={`p-5 my-2 rounded-2xl shadow-sm border relative ${
-        isCancelled ? 'bg-red-50/30 border-red-100 opacity-80' :
-        isExpired ? 'bg-gray-100 border-gray-200' : 'border-gray-200'
-      }`}
-      style={{
-        ...(isExpired && !isCancelled ? { opacity: 0.75 } : {}),
-        ...(!isReadOnly ? { backgroundColor: rsvpBackgroundColor } : {}),
-      }}
-    >
-      <TouchableOpacity onPress={onPress} style={{ flexDirection: 'row' }}>
-        <View style={{ marginRight: 12 }}>
-          <GroupAvatar name={meetup.group.name} imageUrl={meetup.group.image} size={44} />
-        </View>
-        <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 }}>
-          {meetup.time}
-        </Text>
-
-        <View className="flex-row justify-between items-start" style={{ marginTop: 4 }}>
-          <View className="flex-1 pr-6">
-            <Text
-              style={{
-                fontSize: 20,
-                fontWeight: 'bold',
-                color: isReadOnly ? '#9CA3AF' : '#4FD1C5',
-                textDecorationLine: isCancelled ? 'line-through' : 'none'
-              }}
-            >
-              {meetup.name}
-            </Text>
-            {isCancelled && (
-              <View className="bg-red-100 self-start px-2 py-0.5 rounded-md mt-1">
-                <Text className="text-red-600 text-[10px] font-black uppercase">Cancelled</Text>
-              </View>
-            )}
-            {isExpired && !isCancelled && (
-              <View className="bg-gray-300 self-start px-2 py-0.5 rounded-md mt-1">
-                <Text className="text-gray-700 text-[10px] font-black uppercase">Past Event</Text>
-              </View>
-            )}
-          </View>
-          {!isReadOnly && (
-            isIn || isOut ? (
-              <Text style={{ fontSize: 13, fontWeight: '900', letterSpacing: 1, color: isIn ? '#4FD1C5' : '#FF7A6E' }}>
-                {isIn ? 'IN' : 'OUT'}
-              </Text>
-            ) : isRsvpLocked ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Feather name="clock" size={16} color="#9CA3AF" />
-                <Feather name="lock" size={16} color="#9CA3AF" />
-              </View>
-            ) : (
-              <Feather name="unlock" size={16} color="#F59E0B" />
-            )
-          )}
-        </View>
-
-        {!isReadOnly && <RsvpCounts meetup={meetup} />}
-
-        <View className="flex-row mt-2">
-            {isFull && !isReadOnly && !isIn && (
-                <View className="bg-orange-100 px-2 py-1 rounded-lg mr-2 border border-orange-200">
-                    <Text className="text-orange-600 text-[10px] font-black">FULL</Text>
-                </View>
-            )}
-            {isWaitlisted && (
-                <View className="bg-blue-100 px-2 py-1 rounded-lg border border-blue-200">
-                    <Text className="text-blue-600 text-[10px] font-black uppercase">Waitlisted</Text>
-                </View>
-            )}
-        </View>
-
-        {isExpired && !isCancelled && (
-          <View className="mt-3 pt-3 border-t border-gray-200 flex-row items-center">
-            <Feather name="info" size={12} color="#9CA3AF" />
-            <Text className="text-[#9CA3AF] text-[11px] font-bold uppercase ml-1.5 tracking-tight">
-              View History & Details
-            </Text>
-          </View>
-        )}
-        </View>
-      </TouchableOpacity>
-
-      {showRsvpButtons && !isReadOnly && (
-        <View className="mt-4 pt-4 border-t border-gray-100">
-          {isRsvpLocked ? (
-            <View className="bg-gray-100 py-3 rounded-xl items-center border border-gray-200">
-              <View className="flex-row items-center">
-                <Feather name="lock" size={14} color="#6B7280" className="mr-2" />
-                <Text className="text-gray-600 font-bold text-sm ml-1.5">
-                  RSVPs open on {formatDate(meetup.rsvpOpenDate!, meetup.timezone)}
-                </Text>
-              </View>
-            </View>
-          ) : (
-            <>
-              <RsvpBreather active={isUndecided}>
-                {({ boxStyle, inTextStyle, outTextStyle }) => (
-                  <View style={{ flexDirection: 'row', gap: 12 }}>
-                    {/* Split I'm In button: left 70% = RSVP in, right 30% = open guest counter */}
-                    <View style={{
-                      flex: 1, borderRadius: 12, overflow: 'hidden', height: 48,
-                      backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : isIn ? '#4FD1C5' : 'white',
-                    }}>
-                      <ReanimatedAnimated.View style={[{
-                        flex: 1, flexDirection: 'row', borderRadius: 12,
-                        borderWidth: inUnselected ? 1.5 : 0,
-                        borderColor: '#4FD1C5',
-                      }, boxStyle]}>
-                        <TouchableOpacity
-                          onPress={() => { setGuestExpanded(false); onRsvp('in', 0); }}
-                          disabled={isRsvping}
-                          style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <ReanimatedAnimated.Text style={[{ color: inUnselected ? '#4FD1C5' : 'white', fontWeight: 'bold', fontSize: 16 }, inTextStyle]}>
-                            {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
-                          </ReanimatedAnimated.Text>
-                        </TouchableOpacity>
-                        <View style={{ width: 1, backgroundColor: inUnselected ? '#D1FAE5' : 'rgba(255,255,255,0.35)' }} />
-                        <TouchableOpacity
-                          onPress={() => { setLocalGuestCount(0); setGuestExpanded(v => !v); }}
-                          disabled={isRsvping}
-                          style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          {guestExpanded
-                            ? <Feather name="x" size={18} color={inUnselected ? '#4FD1C5' : 'white'} />
-                            : <MaterialIcons name="group-add" size={20} color={inUnselected ? '#4FD1C5' : 'white'} />
-                          }
-                        </TouchableOpacity>
-                      </ReanimatedAnimated.View>
-                    </View>
-                    {/* Split I'm Out button: left 70% = RSVP out, right 30% = RSVP out + mute group */}
-                    <View style={{
-                      flex: 1, borderRadius: 12, overflow: 'hidden', height: 48,
-                      backgroundColor: isOut ? '#FF7A6E' : 'white',
-                    }}>
-                      <ReanimatedAnimated.View style={[{
-                        flex: 1, flexDirection: 'row', borderRadius: 12,
-                        borderWidth: outUnselected ? 1.5 : 0,
-                        borderColor: '#FF7A6E',
-                      }, boxStyle]}>
-                        <TouchableOpacity
-                          onPress={() => { setGuestExpanded(false); onRsvp('out'); }}
-                          disabled={isRsvping}
-                          style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <ReanimatedAnimated.Text style={[{ color: outUnselected ? '#FF7A6E' : 'white', fontWeight: 'bold', fontSize: 16 }, outTextStyle]}>I'm Out</ReanimatedAnimated.Text>
-                        </TouchableOpacity>
-                        <View style={{ width: 1, backgroundColor: outUnselected ? '#FFE4E1' : 'rgba(255,255,255,0.35)' }} />
-                        <TouchableOpacity
-                          onPress={() => { setGuestExpanded(false); onRsvp('out', 0, true); }}
-                          disabled={isRsvping}
-                          style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <Feather name="bell-off" size={18} color={outUnselected ? '#FF7A6E' : 'white'} />
-                        </TouchableOpacity>
-                      </ReanimatedAnimated.View>
-                    </View>
-                  </View>
-                )}
-              </RsvpBreather>
-
-              {/* Inline guest counter — expands below buttons when + is tapped */}
-              {guestExpanded && (
-                <View style={{ alignItems: 'center', marginTop: 10 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Add Guests?</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-                  <TouchableOpacity
-                    onPress={() => setLocalGuestCount(c => Math.max(0, c - 1))}
-                    disabled={localGuestCount === 0}
-                    style={{
-                      width: 36, height: 36, borderRadius: 18,
-                      backgroundColor: localGuestCount === 0 ? '#F9FAFB' : '#EEF6FF',
-                      borderWidth: 1.5,
-                      borderColor: localGuestCount === 0 ? '#E5E7EB' : '#93C5FD',
-                      alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <Feather name="minus" size={16} color={localGuestCount === 0 ? '#D1D5DB' : '#4A90E2'} />
-                  </TouchableOpacity>
-
-                  <Text style={{ fontSize: 24, fontWeight: '900', color: '#111827', minWidth: 28, textAlign: 'center' }}>
-                    {localGuestCount}
-                  </Text>
-
-                  <TouchableOpacity
-                    onPress={() => setLocalGuestCount(c => c + 1)}
-                    style={{
-                      width: 36, height: 36, borderRadius: 18,
-                      backgroundColor: '#EEF6FF',
-                      borderWidth: 1.5, borderColor: '#93C5FD',
-                      alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <Feather name="plus" size={16} color="#4A90E2" />
-                  </TouchableOpacity>
-
-                  {/* Confirm */}
-                  <TouchableOpacity
-                    onPress={() => { setGuestExpanded(false); onRsvp('in', localGuestCount); }}
-                    disabled={isRsvping}
-                    style={{
-                      width: 36, height: 36, borderRadius: 18,
-                      backgroundColor: '#4FD1C5',
-                      borderWidth: 1.5, borderColor: '#3FABA1',
-                      alignItems: 'center', justifyContent: 'center',
-                      marginLeft: 6,
-                    }}
-                  >
-                    {isRsvping
-                      ? <ActivityIndicator size="small" color="white" />
-                      : <Feather name="check" size={18} color="white" />
-                    }
-                  </TouchableOpacity>
-                </View>
-                </View>
-              )}
-            </>
-          )}
-        </View>
-      )}
-    </View>
-  );
-};
 
 const RemovableCard = ({
   isRemoving,
@@ -420,6 +133,32 @@ const DashboardScreen = () => {
   const [zipCardDismissed, setZipCardDismissed] = useState(false);
   const [isSavingZip, setIsSavingZip] = useState(false);
   const [zipCodeError, setZipCodeError] = useState('');
+  const [readyForZipModal, setReadyForZipModal] = useState(false);
+  const sawWelcomeModal = useRef(false);
+
+  // The welcome modal (app/_layout.tsx) and this zip-code modal are two separate
+  // native <Modal> instances that both key off currentUser.hasSeenWelcome, so
+  // tapping "Let's go" flips one closed and the other open in the very same tick.
+  // On Android that leaves the welcome modal's Dialog window stuck on screen
+  // (it never finishes tearing down before the zip modal's window takes over),
+  // so it lingers behind and stops responding to its own close. Wait a beat
+  // after hasSeenWelcome flips true before letting the zip modal appear, but
+  // only when we actually saw the welcome modal transition — a returning user
+  // who already has hasSeenWelcome === true on load shouldn't see any delay.
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!currentUser.hasSeenWelcome) {
+      sawWelcomeModal.current = true;
+      setReadyForZipModal(false);
+      return;
+    }
+    if (sawWelcomeModal.current) {
+      sawWelcomeModal.current = false;
+      const timer = setTimeout(() => setReadyForZipModal(true), 400);
+      return () => clearTimeout(timer);
+    }
+    setReadyForZipModal(true);
+  }, [currentUser?.hasSeenWelcome]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -435,14 +174,29 @@ const DashboardScreen = () => {
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
+  // Meetups that would actually appear in the "Upcoming" section below, after the same
+  // capMeetupsByFrequency cap (e.g. only the next 8 weekly occurrences per group are shown).
+  // Used to keep "Are you in?" from prompting about a meetup the user can't see there.
+  const upcomingVisibleMeetupIds = useMemo(() => {
+    if (!meetups) return new Set<string>();
+    const candidates = meetups.filter(meetup => {
+      const isPast = new Date(meetup.date) < new Date();
+      return meetup.status === 'scheduled' && !isPast;
+    });
+    return new Set(capMeetupsByFrequency(candidates).map(m => m._id));
+  }, [meetups]);
+
   const allUndecidedMeetups = useMemo(() => {
     if (!meetups || !currentUser) return [];
     return meetups.filter(meetup => {
       const isPast = new Date(meetup.date) < new Date();
       const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
-      return meetup.status === 'scheduled' && !isPast && !isRsvpLocked && meetup.undecided.includes(currentUser._id);
+      const isRsvpDeadlinePassed = meetup.rsvpCloseDate ? new Date(meetup.rsvpCloseDate) < new Date() : false;
+      return meetup.status === 'scheduled' && !isPast && !isRsvpLocked && !isRsvpDeadlinePassed
+        && meetup.undecided.includes(currentUser._id)
+        && upcomingVisibleMeetupIds.has(meetup._id);
     });
-  }, [meetups, currentUser]);
+  }, [meetups, currentUser, upcomingVisibleMeetupIds]);
 
   const visibleUndecidedMeetups = useMemo(() => {
     return allUndecidedMeetups
@@ -487,16 +241,19 @@ const DashboardScreen = () => {
     };
     if (!meetups) return groups;
 
+    const upcomingCandidates: Meetup[] = [];
+
     meetups.forEach(meetup => {
       if (hiddenGroupIds.has(meetup.group._id)) return;
       const isPast = new Date(meetup.date) < new Date();
       if (meetup.status === 'expired' || isPast) {
         groups['Past Week'].push(meetup);
       } else {
-        groups['Upcoming'].push(meetup);
+        upcomingCandidates.push(meetup);
       }
     });
 
+    groups['Upcoming'] = capMeetupsByFrequency(upcomingCandidates);
     groups['Past Week'].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return groups;
@@ -546,6 +303,10 @@ const DashboardScreen = () => {
     const trimmed = zipCodeInput.trim();
     if (!trimmed) {
       setZipCodeError('Please enter a zip code.');
+      return;
+    }
+    if (!/^\d{5}$/.test(trimmed)) {
+      setZipCodeError('Zip code must be 5 digits.');
       return;
     }
     setZipCodeError('');
@@ -622,7 +383,7 @@ const DashboardScreen = () => {
             </View>
 
             <View className="pb-10">
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 }}>
                 <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', letterSpacing: -1 }}>
                   Upcoming Meetups
                 </Text>
@@ -637,6 +398,22 @@ const DashboardScreen = () => {
                     )}
                   </TouchableOpacity>
                 )}
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, marginBottom: 8, gap: 6 }}>
+                <Text style={{ fontSize: 13, color: '#9CA3AF', fontWeight: '500' }}>
+                  Tap
+                </Text>
+                <View style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  alignItems: 'center', justifyContent: 'center',
+                  borderWidth: 1, backgroundColor: '#FFFBEB', borderColor: '#FDE68A',
+                }}>
+                  <Feather name="calendar" size={18} color="#D97706" />
+                </View>
+                <Text style={{ fontSize: 13, color: '#9CA3AF', fontWeight: '500' }}>
+                  in your Group Chat to see more meetups!
+                </Text>
               </View>
 
               {filterOpen && uniqueGroups.length > 1 && (
@@ -735,7 +512,7 @@ const DashboardScreen = () => {
       </Modal>
 
       <Modal
-        visible={!!currentUser && !currentUser.zipCode && !zipCardDismissed}
+        visible={!!currentUser && !!currentUser.hasSeenWelcome && readyForZipModal && !currentUser.zipCode && !zipCardDismissed}
         animationType="fade"
         transparent
         onRequestClose={() => setZipCardDismissed(true)}
@@ -750,11 +527,11 @@ const DashboardScreen = () => {
             </Text>
             <TextInput
               value={zipCodeInput}
-              onChangeText={text => { setZipCodeInput(text); setZipCodeError(''); }}
+              onChangeText={text => { setZipCodeInput(text.replace(/\D/g, '').slice(0, 5)); setZipCodeError(''); }}
               placeholder="Zip Code"
               placeholderTextColor="#9CA3AF"
               keyboardType="numeric"
-              maxLength={10}
+              maxLength={5}
               style={{
                 backgroundColor: '#F9FAFB', borderWidth: 1,
                 borderColor: zipCodeError ? '#EF4444' : '#E5E7EB',

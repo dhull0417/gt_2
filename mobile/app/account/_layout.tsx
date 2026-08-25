@@ -38,6 +38,13 @@ const AccountLayout = () => {
                     presentation: 'modal',
                 }}
             />
+            <Stack.Screen
+                name="delete-account"
+                options={{
+                    headerTitle: 'Delete Account',
+                    presentation: 'modal',
+                }}
+            />
         </Stack>
     );
 };

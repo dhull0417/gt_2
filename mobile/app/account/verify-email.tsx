@@ -1,16 +1,45 @@
 import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useApiClient, userApi } from '@/utils/api';
+
+const RESEND_COOLDOWN_SECONDS = 30;
 
 const VerifyNewEmailScreen = () => {
     const { user } = useUser();
     const router = useRouter();
+    const api = useApiClient();
     const { emailId } = useLocalSearchParams<{ emailId: string }>();
+    const pendingEmail = user?.emailAddresses.find(e => e.id === emailId)?.emailAddress;
 
     const [code, setCode] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [resendLoading, setResendLoading] = useState(false);
+    const [resendCooldown, setResendCooldown] = useState(RESEND_COOLDOWN_SECONDS);
+
+    useEffect(() => {
+        if (resendCooldown <= 0) return;
+        const timer = setInterval(() => setResendCooldown(s => s - 1), 1000);
+        return () => clearInterval(timer);
+    }, [resendCooldown]);
+
+    const onResendPress = async () => {
+        if (!user || !emailId) return;
+        const emailAddressToVerify = user.emailAddresses.find(e => e.id === emailId);
+        if (!emailAddressToVerify) return;
+
+        setResendLoading(true);
+        try {
+            await emailAddressToVerify.prepareVerification({ strategy: 'email_code' });
+            setResendCooldown(RESEND_COOLDOWN_SECONDS);
+        } catch (err: any) {
+            Alert.alert('Error', err.errors?.[0]?.longMessage || 'Could not resend the code. Please try again.');
+        } finally {
+            setResendLoading(false);
+        }
+    };
 
     const onVerifyPress = async () => {
         if (!user || !emailId) return;
@@ -25,7 +54,17 @@ const VerifyNewEmailScreen = () => {
             // 1. Attempt to verify the code
             await emailAddressToVerify.attemptVerification({ code });
 
-            // 2. Set the newly verified email as the user's primary
+            // 2. Make sure Mongo can accept the new email (it must be unique
+            // there too) before touching Clerk's primary email, so the two
+            // stores never end up disagreeing.
+            try {
+                await userApi.updateProfile(api, { email: emailAddressToVerify.emailAddress });
+            } catch (mongoErr: any) {
+                Alert.alert('Error', mongoErr.response?.data?.error || 'Could not update your email. Please try again.');
+                return;
+            }
+
+            // 3. Now that Mongo accepted it, set it as the user's primary email in Clerk
             await user.update({ primaryEmailAddressId: emailAddressToVerify.id });
 
             Alert.alert("Success", "Your email address has been updated.");
@@ -50,8 +89,11 @@ const VerifyNewEmailScreen = () => {
                 <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }} className="p-6">
                     <Text style={styles.title}>Check your new email</Text>
                     <Text style={styles.subtitle}>
-                        We've sent a verification code to your new email address.
+                        We've sent a verification code to{pendingEmail ? ':' : ' your new email address.'}
                     </Text>
+                    {pendingEmail && (
+                        <Text style={styles.pendingEmail}>{pendingEmail}</Text>
+                    )}
                     <TextInput
                         value={code}
                         onChangeText={setCode}
@@ -70,6 +112,20 @@ const VerifyNewEmailScreen = () => {
                             ? <ActivityIndicator color="white" />
                             : <Text style={styles.saveBtnText}>Verify and Save</Text>}
                     </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={onResendPress}
+                        disabled={resendLoading || resendCooldown > 0}
+                        style={styles.resendBtn}
+                        activeOpacity={0.7}
+                    >
+                        {resendLoading
+                            ? <ActivityIndicator color="#4A90E2" />
+                            : (
+                                <Text style={[styles.resendText, resendCooldown > 0 && styles.resendTextDisabled]}>
+                                    {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend Code'}
+                                </Text>
+                            )}
+                    </TouchableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -78,10 +134,14 @@ const VerifyNewEmailScreen = () => {
 
 const styles = StyleSheet.create({
     title: { fontSize: 22, fontWeight: '900', color: '#111827', letterSpacing: -0.5, textAlign: 'center' },
-    subtitle: { fontSize: 15, color: '#6B7280', textAlign: 'center', marginTop: 8, marginBottom: 28, lineHeight: 21 },
+    subtitle: { fontSize: 15, color: '#6B7280', textAlign: 'center', marginTop: 8, marginBottom: 4, lineHeight: 21 },
+    pendingEmail: { fontSize: 16, fontWeight: '800', color: '#1F2937', textAlign: 'center', marginBottom: 28 },
     input: { width: '100%', backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14, paddingHorizontal: 16, height: 56, fontSize: 18, color: '#1F2937', textAlign: 'center', letterSpacing: 4 },
     saveBtn: { width: '100%', height: 54, borderRadius: 16, backgroundColor: '#4A90E2', alignItems: 'center', justifyContent: 'center', marginTop: 28 },
     saveBtnText: { color: 'white', fontSize: 16, fontWeight: '800' },
+    resendBtn: { height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+    resendText: { color: '#4A90E2', fontSize: 14, fontWeight: '700' },
+    resendTextDisabled: { color: '#9CA3AF' },
 });
 
 export default VerifyNewEmailScreen;

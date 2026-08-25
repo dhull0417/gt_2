@@ -8,4 +8,5 @@ export const ENV = {
     MONGO_URI:process.env.MONGO_URI,
     CLERK_PUBLISHABLE_KEY:process.env.CLERK_PUBLISHABLE_KEY,
     ARCJET_KEY:process.env.ARCJET_KEY,
+    GOOGLE_PLACES_API_KEY:process.env.GOOGLE_PLACES_API_KEY,
 };

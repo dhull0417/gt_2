@@ -19,7 +19,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
 import { useApiClient, GroupDetails, Frequency, DayTime, Routine } from "../../utils/api";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
-import TimePicker from "../../components/TimePicker";
+import NativeTimePicker from "../../components/NativeTimePicker";
+import OptionPickerModal from "../../components/OptionPickerModal";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -35,6 +36,18 @@ const DAYS_OF_WEEK = [
     { label: "Thursday",  short: "Thu", value: 4 },
     { label: "Friday",    short: "Fri", value: 5 },
     { label: "Saturday",  short: "Sat", value: 6 },
+];
+
+// One accent per weekday so a list of day rows/cards reads at a glance instead
+// of requiring the user to read each label to tell days apart.
+const DAY_COLORS: { bg: string; fg: string }[] = [
+    { bg: "#FEE2E2", fg: "#DC2626" }, // Sunday
+    { bg: "#DBEAFE", fg: "#2563EB" }, // Monday
+    { bg: "#EDE9FE", fg: "#7C3AED" }, // Tuesday
+    { bg: "#D1FAE5", fg: "#059669" }, // Wednesday
+    { bg: "#FEF3C7", fg: "#D97706" }, // Thursday
+    { bg: "#FCE7F3", fg: "#DB2777" }, // Friday
+    { bg: "#CFFAFE", fg: "#0891B2" }, // Saturday
 ];
 
 const ORDINAL_OCCURRENCES = ["1st", "2nd", "3rd", "4th", "5th", "Last"];
@@ -85,6 +98,8 @@ interface OrdinalEntry {
     time: string;
     expanded: boolean;
     showTimePicker: boolean;
+    showOccurrencePicker: boolean;
+    showDayOfWeekPicker: boolean;
 }
 
 interface BuiltRoutine {
@@ -175,7 +190,7 @@ const buildSchedulePayload = (d: ScheduleData) => {
             : d.dailyRows.map(r => ({ day: r.day!, time: r.time }));
         routines = [{ frequency: "daily", dayTimes }];
     } else if (d.frequency === "weekly" || d.frequency === "biweekly") {
-        routines = [{ frequency: d.frequency, dayTimes: d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time })) }];
+        routines = [{ frequency: d.frequency, dayTimes: d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time, ...(r.startDate ? { startDate: r.startDate } : {}) })) }];
     } else if (d.frequency === "monthly") {
         if (d.monthlyMode === "date") {
             routines = [{ frequency: "monthly", dayTimes: d.monthlyDates.map(e => ({ date: e.date, time: e.time })) }];
@@ -219,7 +234,8 @@ const apiRoutineToBuiltRoutine = (r: Routine): BuiltRoutine => {
     } else if (r.frequency === "weekly" || r.frequency === "biweekly") {
         snapshot = {
             weekdayRows: r.dayTimes.map(dt => ({
-                id: uid(), day: dt.day ?? null, time: dt.time, startDate: null,
+                id: uid(), day: dt.day ?? null, time: dt.time,
+                startDate: dt.startDate ? DateTime.fromISO(dt.startDate as unknown as string).toISODate() : null,
                 showTimePicker: false, showDayPicker: false, showStartDatePicker: false,
             })),
         };
@@ -236,6 +252,7 @@ const apiRoutineToBuiltRoutine = (r: Routine): BuiltRoutine => {
             ordinalEntries: (r.rules || []).map((rule, i) => ({
                 id: uid(), occurrence: rule.occurrence || "1st", day: rule.day ?? 1,
                 time: r.dayTimes[i]?.time || "05:00 PM", expanded: false, showTimePicker: false,
+                showOccurrencePicker: false, showDayOfWeekPicker: false,
             })),
         };
     }
@@ -302,7 +319,7 @@ const scheduleFromGroup = (group: GroupDetails): ScheduleData => {
             ...base, timezone: tz, startDate, frequency: inferredFreq,
             weekdayRows: routines[0].dayTimes.map(dt => ({
                 id: uid(), day: dt.day ?? null, time: dt.time,
-                startDate: DateTime.now().toISODate()!,
+                startDate: dt.startDate ? DateTime.fromISO(dt.startDate as unknown as string).toISODate() : null,
                 showTimePicker: false, showDayPicker: false, showStartDatePicker: false,
             })),
         };
@@ -329,6 +346,7 @@ const scheduleFromGroup = (group: GroupDetails): ScheduleData => {
                 day: rule.day ?? 1,
                 time: routine.dayTimes[i]?.time || "05:00 PM",
                 expanded: false, showTimePicker: false,
+                showOccurrencePicker: false, showDayOfWeekPicker: false,
             })),
         };
     }
@@ -390,15 +408,6 @@ const InlineCalendar = ({ value, onChange, minDate }: {
         </View>
     );
 };
-
-// ─── TimeButton ───────────────────────────────────────────────────────────────
-
-const TimeButton = ({ time, onPress, active }: { time: string; onPress: () => void; active: boolean }) => (
-    <TouchableOpacity onPress={onPress} style={[s.timeBtn, active && s.timeBtnActive]}>
-        <Feather name="clock" size={12} color={active ? "#fff" : "#4A90E2"} style={{ marginRight: 4 }} />
-        <Text style={[s.timeBtnText, active && s.timeBtnTextActive]}>{time}</Text>
-    </TouchableOpacity>
-);
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -499,7 +508,7 @@ const EditScheduleScreen = () => {
         animate();
         setD(prev => ({
             ...prev,
-            ordinalEntries: [...prev.ordinalEntries, { id: uid(), occurrence: "1st", day: 1, time: "05:00 PM", expanded: true, showTimePicker: false }],
+            ordinalEntries: [...prev.ordinalEntries, { id: uid(), occurrence: "1st", day: 1, time: "05:00 PM", expanded: true, showTimePicker: false, showOccurrencePicker: false, showDayOfWeekPicker: false }],
         }));
     };
     const updOrdinal = (entryId: string, patch: Partial<OrdinalEntry>) => {
@@ -525,7 +534,7 @@ const EditScheduleScreen = () => {
                 ? DAYS_OF_WEEK.map(dw => ({ day: dw.value, time: d.dailySharedTime }))
                 : d.dailyRows.map(r => ({ day: r.day!, time: r.time }));
         } else if (freq === "weekly" || freq === "biweekly") {
-            dayTimes = d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time }));
+            dayTimes = d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time, ...(r.startDate ? { startDate: r.startDate } : {}) }));
         } else if (freq === "monthly") {
             if (d.monthlyMode === "date") {
                 dayTimes = d.monthlyDates.map(e => ({ date: e.date, time: e.time }));
@@ -548,7 +557,7 @@ const EditScheduleScreen = () => {
                 weekdayRows: d.weekdayRows.map(r => ({ ...r, showTimePicker: false, showDayPicker: false, showStartDatePicker: false })),
                 monthlyMode: d.monthlyMode,
                 monthlyDates: d.monthlyDates.map(e => ({ ...e, expanded: false, showTimePicker: false })),
-                ordinalEntries: d.ordinalEntries.map(e => ({ ...e, expanded: false, showTimePicker: false })),
+                ordinalEntries: d.ordinalEntries.map(e => ({ ...e, expanded: false, showTimePicker: false, showOccurrencePicker: false, showDayOfWeekPicker: false })),
             },
         };
     };
@@ -670,12 +679,16 @@ const EditScheduleScreen = () => {
 
             {d.dailySameTime === true && (
                 <View style={{ marginTop: 12 }}>
-                    <TimeButton time={d.dailySharedTime} active={d.showDailySameTimePicker}
-                        onPress={() => upd({ showDailySameTimePicker: !d.showDailySameTimePicker })} />
+                    <Text style={s.fieldLabel}>Time</Text>
+                    <TouchableOpacity style={s.dateFieldRow}
+                        onPress={() => upd({ showDailySameTimePicker: !d.showDailySameTimePicker })}>
+                        <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                        <Text style={s.dateFieldText}>{d.dailySharedTime}</Text>
+                        <Feather name={d.showDailySameTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                    </TouchableOpacity>
                     {d.showDailySameTimePicker && (
-                        <View style={s.inlinePickerBox}>
-                            <TimePicker initialValue={d.dailySharedTime} onTimeChange={t => upd({ dailySharedTime: t })} />
-                        </View>
+                        <NativeTimePicker value={d.dailySharedTime} onChange={t => upd({ dailySharedTime: t })}
+                            onClose={() => upd({ showDailySameTimePicker: false })} />
                     )}
                 </View>
             )}
@@ -684,26 +697,30 @@ const EditScheduleScreen = () => {
                 <View style={{ marginTop: 12, gap: 8 }}>
                     {d.dailyRows.map(row => (
                         <View key={row.id}>
-                            <View style={s.dayRow}>
-                                <Text style={s.dayRowLabel}>{DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label}</Text>
-                                <TimeButton time={row.time} active={row.showTimePicker}
-                                    onPress={() => setD(prev => ({
-                                        ...prev,
-                                        dailyRows: prev.dailyRows.map(r =>
-                                            r.id === row.id
-                                                ? { ...r, showTimePicker: !r.showTimePicker }
-                                                : { ...r, showTimePicker: false }
-                                        ),
-                                    }))} />
-                            </View>
+                            <Text style={s.dayRowLabel}>{DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label}</Text>
+                            <TouchableOpacity style={s.dateFieldRow}
+                                onPress={() => setD(prev => ({
+                                    ...prev,
+                                    dailyRows: prev.dailyRows.map(r =>
+                                        r.id === row.id
+                                            ? { ...r, showTimePicker: !r.showTimePicker }
+                                            : { ...r, showTimePicker: false }
+                                    ),
+                                }))}>
+                                <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                                <Text style={s.dateFieldText}>{row.time}</Text>
+                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                            </TouchableOpacity>
                             {row.showTimePicker && (
-                                <View style={s.inlinePickerBox}>
-                                    <TimePicker initialValue={row.time}
-                                        onTimeChange={t => setD(prev => ({
-                                            ...prev,
-                                            dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, time: t } : r),
-                                        }))} />
-                                </View>
+                                <NativeTimePicker value={row.time}
+                                    onChange={t => setD(prev => ({
+                                        ...prev,
+                                        dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, time: t } : r),
+                                    }))}
+                                    onClose={() => setD(prev => ({
+                                        ...prev,
+                                        dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, showTimePicker: false } : r),
+                                    }))} />
                             )}
                         </View>
                     ))}
@@ -716,50 +733,62 @@ const EditScheduleScreen = () => {
         <View style={s.expandBox}>
             <Text style={s.expandBoxTitle}>{isBiweekly ? "Bi-Weekly Options" : "Weekly Options"}</Text>
             {d.weekdayRows.map(row => (
-                <View key={row.id} style={{ marginBottom: 14 }}>
+                <View key={row.id} style={[s.dayCard, row.day !== null && { borderLeftColor: DAY_COLORS[row.day].fg }]}>
+                    {isBiweekly && <Text style={s.fieldLabel}>Day of Week</Text>}
                     <View style={s.dayRow}>
                         <TouchableOpacity style={s.dayPickerTrigger}
                             onPress={() => updWeekdayRow(row.id, { showDayPicker: !row.showDayPicker, showTimePicker: false, showStartDatePicker: false })}>
-                            <Text style={row.day !== null ? s.dayPickerText : s.dayPickerPlaceholder}>
-                                {row.day !== null ? DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label : "Select day"}
-                            </Text>
-                            <Feather name="chevron-down" size={14} color="#9CA3AF" />
+                            <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                                <View style={[s.dayBadge, { backgroundColor: row.day !== null ? DAY_COLORS[row.day].bg : "#F3F4F6" }]}>
+                                    {row.day !== null
+                                        ? <Text style={[s.dayBadgeText, { color: DAY_COLORS[row.day].fg }]}>{DAYS_OF_WEEK[row.day].short.slice(0, 2)}</Text>
+                                        : <Feather name="calendar" size={12} color="#9CA3AF" />}
+                                </View>
+                                <Text style={row.day !== null ? s.dayPickerText : s.dayPickerPlaceholder}>
+                                    {row.day !== null ? DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label : "Select day"}
+                                </Text>
+                            </View>
+                            <Feather name={row.showDayPicker ? "chevron-up" : "chevron-down"} size={14} color="#9CA3AF" />
                         </TouchableOpacity>
-                        {row.day !== null && (
-                            <TimeButton time={row.time} active={row.showTimePicker}
-                                onPress={() => updWeekdayRow(row.id, { showTimePicker: !row.showTimePicker, showDayPicker: false, showStartDatePicker: false })} />
-                        )}
                         <TouchableOpacity onPress={() => removeWeekdayRow(row.id)} style={{ marginLeft: 8 }}>
                             <Feather name="trash-2" size={16} color="#F87171" />
                         </TouchableOpacity>
                     </View>
 
                     {row.showDayPicker && (
-                        <View style={s.inlineDayPicker}>
-                            {DAYS_OF_WEEK.map(dw => (
-                                <TouchableOpacity key={dw.value}
-                                    style={[s.dayOption, row.day === dw.value && s.dayOptionActive]}
-                                    onPress={() => updWeekdayRow(row.id, { day: dw.value, showDayPicker: false, showTimePicker: true })}>
-                                    <Text style={[s.dayOptionText, row.day === dw.value && s.dayOptionTextActive]}>{dw.label}</Text>
-                                </TouchableOpacity>
-                            ))}
+                        <OptionPickerModal title="Day of week"
+                            options={DAYS_OF_WEEK.map(dw => ({ key: String(dw.value), label: dw.label }))}
+                            selectedKey={row.day !== null ? String(row.day) : ""}
+                            onSelect={key => updWeekdayRow(row.id, { day: Number(key), showDayPicker: false, showTimePicker: true })}
+                            onClose={() => updWeekdayRow(row.id, { showDayPicker: false })} />
+                    )}
+
+                    {row.day !== null && (
+                        <View style={{ marginTop: 8 }}>
+                            <Text style={s.fieldLabel}>Time</Text>
+                            <TouchableOpacity style={s.dateFieldRow}
+                                onPress={() => updWeekdayRow(row.id, { showTimePicker: !row.showTimePicker, showDayPicker: false, showStartDatePicker: false })}>
+                                <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                                <Text style={s.dateFieldText}>{row.time}</Text>
+                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                            </TouchableOpacity>
                         </View>
                     )}
 
                     {row.showTimePicker && (
-                        <View style={s.inlinePickerBox}>
-                            <TimePicker initialValue={row.time}
-                                onTimeChange={t => updWeekdayRow(row.id, { time: t })} />
-                        </View>
+                        <NativeTimePicker value={row.time}
+                            onChange={t => updWeekdayRow(row.id, { time: t })}
+                            onClose={() => updWeekdayRow(row.id, { showTimePicker: false })} />
                     )}
 
                     {isBiweekly && row.day !== null && (
                         <View style={{ marginTop: 8 }}>
+                            <Text style={s.fieldLabel}>Start Date</Text>
                             <TouchableOpacity style={s.dateFieldRow}
                                 onPress={() => updWeekdayRow(row.id, { showStartDatePicker: !row.showStartDatePicker, showTimePicker: false, showDayPicker: false })}>
                                 <Feather name="calendar" size={14} color="#4A90E2" style={{ marginRight: 6 }} />
                                 <Text style={s.dateFieldText}>
-                                    {row.startDate ? DateTime.fromISO(row.startDate).toLocaleString(DateTime.DATE_MED) : "Set first occurrence date"}
+                                    {row.startDate ? DateTime.fromISO(row.startDate).toLocaleString(DateTime.DATE_MED) : "Set start date"}
                                 </Text>
                                 <Feather name={row.showStartDatePicker ? "chevron-up" : "chevron-down"} size={14} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
@@ -807,19 +836,21 @@ const EditScheduleScreen = () => {
                             </TouchableOpacity>
                         ))}
                     </View>
-                    <View style={[s.dayRow, { marginTop: 10 }]}>
-                        <TimeButton time={entry.time} active={entry.showTimePicker}
-                            onPress={() => updMonthlyDate(entry.id, { showTimePicker: !entry.showTimePicker })} />
-                        <TouchableOpacity style={[s.doneBtn, { marginLeft: "auto" }]}
-                            onPress={() => updMonthlyDate(entry.id, { expanded: false, showTimePicker: false })}>
-                            <Text style={s.doneBtnText}>Done</Text>
-                        </TouchableOpacity>
-                    </View>
+                    <Text style={s.fieldLabel}>Time</Text>
+                    <TouchableOpacity style={s.dateFieldRow}
+                        onPress={() => updMonthlyDate(entry.id, { showTimePicker: !entry.showTimePicker })}>
+                        <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                        <Text style={s.dateFieldText}>{entry.time}</Text>
+                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10 }]}
+                        onPress={() => updMonthlyDate(entry.id, { expanded: false, showTimePicker: false })}>
+                        <Text style={s.doneBtnText}>Done</Text>
+                    </TouchableOpacity>
                     {entry.showTimePicker && (
-                        <View style={s.inlinePickerBox}>
-                            <TimePicker initialValue={entry.time}
-                                onTimeChange={t => updMonthlyDate(entry.id, { time: t })} />
-                        </View>
+                        <NativeTimePicker value={entry.time}
+                            onChange={t => updMonthlyDate(entry.id, { time: t })}
+                            onClose={() => updMonthlyDate(entry.id, { showTimePicker: false })} />
                     )}
                 </View>
             )}
@@ -843,41 +874,50 @@ const EditScheduleScreen = () => {
             ) : (
                 <View>
                     <View style={s.ordinalRow}>
-                        <Text style={s.fieldLabel}>Occurrence</Text>
+                        <Text style={s.fieldLabel}>Occurrence &amp; day</Text>
                         <TouchableOpacity onPress={() => removeOrdinal(entry.id)}>
                             <Feather name="trash-2" size={16} color="#F87171" />
                         </TouchableOpacity>
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                        {ORDINAL_OCCURRENCES.map(occ => (
-                            <TouchableOpacity key={occ} style={[s.ordinalChip, entry.occurrence === occ && s.ordinalChipActive]}
-                                onPress={() => updOrdinal(entry.id, { occurrence: occ })}>
-                                <Text style={[s.ordinalChipText, entry.occurrence === occ && s.ordinalChipTextActive]}>{occ}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
-                    <Text style={s.fieldLabel}>Day of week</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                        {DAYS_OF_WEEK.map(dw => (
-                            <TouchableOpacity key={dw.value} style={[s.ordinalChip, entry.day === dw.value && s.ordinalChipActive]}
-                                onPress={() => updOrdinal(entry.id, { day: dw.value })}>
-                                <Text style={[s.ordinalChipText, entry.day === dw.value && s.ordinalChipTextActive]}>{dw.short}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
-                    <View style={s.dayRow}>
-                        <TimeButton time={entry.time} active={entry.showTimePicker}
-                            onPress={() => updOrdinal(entry.id, { showTimePicker: !entry.showTimePicker })} />
-                        <TouchableOpacity style={[s.doneBtn, { marginLeft: "auto" }]}
-                            onPress={() => updOrdinal(entry.id, { expanded: false, showTimePicker: false })}>
-                            <Text style={s.doneBtnText}>Done</Text>
-                        </TouchableOpacity>
-                    </View>
+                    <TouchableOpacity style={s.dateFieldRow}
+                        onPress={() => updOrdinal(entry.id, { showOccurrencePicker: true, showDayOfWeekPicker: false, showTimePicker: false })}>
+                        <Text style={s.dateFieldText}>{entry.occurrence}</Text>
+                        <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={s.dateFieldRow}
+                        onPress={() => updOrdinal(entry.id, { showDayOfWeekPicker: true, showOccurrencePicker: false, showTimePicker: false })}>
+                        <Text style={s.dateFieldText}>{DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label}</Text>
+                        <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                    </TouchableOpacity>
+                    <Text style={s.fieldLabel}>Time</Text>
+                    <TouchableOpacity style={s.dateFieldRow}
+                        onPress={() => updOrdinal(entry.id, { showTimePicker: !entry.showTimePicker, showOccurrencePicker: false, showDayOfWeekPicker: false })}>
+                        <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                        <Text style={s.dateFieldText}>{entry.time}</Text>
+                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10 }]}
+                        onPress={() => updOrdinal(entry.id, { expanded: false, showTimePicker: false })}>
+                        <Text style={s.doneBtnText}>Done</Text>
+                    </TouchableOpacity>
                     {entry.showTimePicker && (
-                        <View style={s.inlinePickerBox}>
-                            <TimePicker initialValue={entry.time}
-                                onTimeChange={t => updOrdinal(entry.id, { time: t })} />
-                        </View>
+                        <NativeTimePicker value={entry.time}
+                            onChange={t => updOrdinal(entry.id, { time: t })}
+                            onClose={() => updOrdinal(entry.id, { showTimePicker: false })} />
+                    )}
+                    {entry.showOccurrencePicker && (
+                        <OptionPickerModal title="Occurrence"
+                            options={ORDINAL_OCCURRENCES.map(occ => ({ key: occ, label: occ }))}
+                            selectedKey={entry.occurrence}
+                            onSelect={occ => updOrdinal(entry.id, { occurrence: occ, showOccurrencePicker: false })}
+                            onClose={() => updOrdinal(entry.id, { showOccurrencePicker: false })} />
+                    )}
+                    {entry.showDayOfWeekPicker && (
+                        <OptionPickerModal title="Day of week"
+                            options={DAYS_OF_WEEK.map(dw => ({ key: String(dw.value), label: dw.label }))}
+                            selectedKey={String(entry.day)}
+                            onSelect={key => updOrdinal(entry.id, { day: Number(key), showDayOfWeekPicker: false })}
+                            onClose={() => updOrdinal(entry.id, { showDayOfWeekPicker: false })} />
                     )}
                 </View>
             )}
@@ -888,14 +928,32 @@ const EditScheduleScreen = () => {
         <View style={s.expandBox}>
             <Text style={s.expandBoxTitle}>Monthly Options</Text>
             <Text style={s.fieldLabel}>Recur by</Text>
-            <View style={s.boolRow}>
-                <TouchableOpacity style={[s.boolBtn, d.monthlyMode === "date" && s.boolBtnActive]}
+            <View style={s.monthlyModeList}>
+                <TouchableOpacity style={[s.monthlyModeCard, d.monthlyMode === "date" && s.monthlyModeCardActive]}
                     onPress={() => upd({ monthlyMode: "date" })}>
-                    <Text style={[s.boolBtnText, d.monthlyMode === "date" && s.boolBtnTextActive]}>Date number</Text>
+                    <View style={[s.monthlyModeRadio, d.monthlyMode === "date" && s.monthlyModeRadioActive]}>
+                        {d.monthlyMode === "date" && <View style={s.monthlyModeRadioDot} />}
+                    </View>
+                    <View style={[s.monthlyModeIcon, d.monthlyMode === "date" && s.monthlyModeIconActive]}>
+                        <Feather name="hash" size={16} color={d.monthlyMode === "date" ? "#fff" : "#9CA3AF"} />
+                    </View>
+                    <View style={s.monthlyModeCopy}>
+                        <Text style={[s.monthlyModeTitle, d.monthlyMode === "date" && s.monthlyModeTitleActive]}>Same date every month</Text>
+                        <Text style={s.monthlyModeExample}>e.g. the 15th</Text>
+                    </View>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.boolBtn, d.monthlyMode === "ordinal" && s.boolBtnActive]}
+                <TouchableOpacity style={[s.monthlyModeCard, d.monthlyMode === "ordinal" && s.monthlyModeCardActive]}
                     onPress={() => upd({ monthlyMode: "ordinal" })}>
-                    <Text style={[s.boolBtnText, d.monthlyMode === "ordinal" && s.boolBtnTextActive]}>Pattern</Text>
+                    <View style={[s.monthlyModeRadio, d.monthlyMode === "ordinal" && s.monthlyModeRadioActive]}>
+                        {d.monthlyMode === "ordinal" && <View style={s.monthlyModeRadioDot} />}
+                    </View>
+                    <View style={[s.monthlyModeIcon, d.monthlyMode === "ordinal" && s.monthlyModeIconActive]}>
+                        <Feather name="repeat" size={16} color={d.monthlyMode === "ordinal" ? "#fff" : "#9CA3AF"} />
+                    </View>
+                    <View style={s.monthlyModeCopy}>
+                        <Text style={[s.monthlyModeTitle, d.monthlyMode === "ordinal" && s.monthlyModeTitleActive]}>Same weekday every month</Text>
+                        <Text style={s.monthlyModeExample}>e.g. the 2nd Tuesday</Text>
+                    </View>
                 </TouchableOpacity>
             </View>
             {d.monthlyMode === "date" && (
@@ -1017,39 +1075,6 @@ const EditScheduleScreen = () => {
                 >
                     <Text style={s.screenSub}>Changes will delete future meetups and regenerate them from the new schedule.</Text>
 
-                    {/* Start Date */}
-                    <Text style={s.fieldLabel}>Start date</Text>
-                    <TouchableOpacity style={s.dateFieldRow}
-                        onPress={() => upd({ showStartDatePicker: !d.showStartDatePicker, showTZPicker: false, showFreqPicker: false })}>
-                        <Feather name="calendar" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <Text style={s.dateFieldText}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
-                        <Feather name={d.showStartDatePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
-                    {d.showStartDatePicker && (
-                        <InlineCalendar value={d.startDate}
-                            onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
-                            minDate={DateTime.now().toISODate()!} />
-                    )}
-
-                    {/* Timezone */}
-                    <Text style={s.fieldLabel}>Timezone</Text>
-                    <TouchableOpacity style={s.dateFieldRow}
-                        onPress={() => upd({ showTZPicker: !d.showTZPicker, showStartDatePicker: false, showFreqPicker: false })}>
-                        <Feather name="globe" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <Text style={s.dateFieldText}>{USA_TIMEZONES.find(t => t.value === d.timezone)?.label || d.timezone}</Text>
-                        <Feather name={d.showTZPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
-                    {d.showTZPicker && (
-                        <View style={s.inlineDayPicker}>
-                            {USA_TIMEZONES.map(tz => (
-                                <TouchableOpacity key={tz.value} style={[s.dayOption, d.timezone === tz.value && s.dayOptionActive]}
-                                    onPress={() => upd({ timezone: tz.value, showTZPicker: false })}>
-                                    <Text style={[s.dayOptionText, d.timezone === tz.value && s.dayOptionTextActive]}>{tz.label}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
-
                     {/* Frequency */}
                     <Text style={s.fieldLabel}>How often?</Text>
                     <TouchableOpacity style={s.dateFieldRow}
@@ -1076,6 +1101,43 @@ const EditScheduleScreen = () => {
                     {d.frequency === "biweekly" && renderWeekdayRows(true)}
                     {d.frequency === "monthly" && renderMonthlyOptions()}
                     {d.frequency === "custom" && renderCustomOptions()}
+
+                    {/* Start Date — hidden for biweekly, where each day already asks for its own start date */}
+                    {d.frequency !== "biweekly" && (
+                        <>
+                            <Text style={s.fieldLabel}>Start date</Text>
+                            <TouchableOpacity style={s.dateFieldRow}
+                                onPress={() => upd({ showStartDatePicker: !d.showStartDatePicker, showTZPicker: false, showFreqPicker: false })}>
+                                <Feather name="calendar" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                                <Text style={s.dateFieldText}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
+                                <Feather name={d.showStartDatePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                            </TouchableOpacity>
+                            {d.showStartDatePicker && (
+                                <InlineCalendar value={d.startDate}
+                                    onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
+                                    minDate={DateTime.now().toISODate()!} />
+                            )}
+                        </>
+                    )}
+
+                    {/* Timezone */}
+                    <Text style={s.fieldLabel}>Timezone</Text>
+                    <TouchableOpacity style={s.dateFieldRow}
+                        onPress={() => upd({ showTZPicker: !d.showTZPicker, showStartDatePicker: false, showFreqPicker: false })}>
+                        <Feather name="globe" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                        <Text style={s.dateFieldText}>{USA_TIMEZONES.find(t => t.value === d.timezone)?.label || d.timezone}</Text>
+                        <Feather name={d.showTZPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                    </TouchableOpacity>
+                    {d.showTZPicker && (
+                        <View style={s.inlineDayPicker}>
+                            {USA_TIMEZONES.map(tz => (
+                                <TouchableOpacity key={tz.value} style={[s.dayOption, d.timezone === tz.value && s.dayOptionActive]}
+                                    onPress={() => upd({ timezone: tz.value, showTZPicker: false })}>
+                                    <Text style={[s.dayOptionText, d.timezone === tz.value && s.dayOptionTextActive]}>{tz.label}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    )}
                 </ScrollView>
 
                 <View style={s.screenFooter}>
@@ -1128,13 +1190,24 @@ const s = StyleSheet.create({
     boolBtnActive: { borderColor: "#4A90E2", backgroundColor: "#EEF6FF" },
     boolBtnText: { fontSize: 14, fontWeight: "700", color: "#6B7280" },
     boolBtnTextActive: { color: "#4A90E2" },
+
+    monthlyModeList: { gap: 10 },
+    monthlyModeCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderWidth: 1.5, borderColor: "#E5E7EB", borderRadius: 12, padding: 12 },
+    monthlyModeCardActive: { borderColor: "#4A90E2", backgroundColor: "#EEF6FF" },
+    monthlyModeRadio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: "#D1D5DB", alignItems: "center", justifyContent: "center" },
+    monthlyModeRadioActive: { borderColor: "#4A90E2" },
+    monthlyModeRadioDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: "#4A90E2" },
+    monthlyModeIcon: { width: 30, height: 30, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: "#F3F4F6", marginHorizontal: 10 },
+    monthlyModeIconActive: { backgroundColor: "#4A90E2" },
+    monthlyModeCopy: { flex: 1 },
+    monthlyModeTitle: { fontSize: 14, fontWeight: "700", color: "#374151" },
+    monthlyModeTitleActive: { color: "#1D4ED8" },
+    monthlyModeExample: { fontSize: 12.5, color: "#9CA3AF", marginTop: 2 },
     dayRow: { flexDirection: "row", alignItems: "center" },
     dayRowLabel: { flex: 1, fontSize: 14, fontWeight: "700", color: "#374151" },
-    timeBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5, borderColor: "#93C5FD", backgroundColor: "#EFF6FF", marginLeft: "auto" },
-    timeBtnActive: { backgroundColor: "#4A90E2", borderColor: "#4A90E2" },
-    timeBtnText: { fontSize: 12, fontWeight: "700", color: "#4A90E2" },
-    timeBtnTextActive: { color: "#fff" },
-    inlinePickerBox: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 8, width: "100%", marginTop: 8 },
+    dayCard: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", borderLeftWidth: 4, borderLeftColor: "#E5E7EB", padding: 14, marginBottom: 10 },
+    dayBadge: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", marginRight: 10 },
+    dayBadgeText: { fontSize: 11, fontWeight: "800" },
     inlineDayPicker: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", marginTop: 6, overflow: "hidden" },
     dayPickerTrigger: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#fff", borderRadius: 10, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10 },
     dayPickerText: { fontSize: 14, fontWeight: "600", color: "#374151" },
@@ -1152,10 +1225,6 @@ const s = StyleSheet.create({
     dateBoxTextActive: { color: "#fff" },
     ordinalCard: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 14, marginBottom: 8 },
     ordinalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-    ordinalChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5, borderColor: "#E5E7EB", marginRight: 6, backgroundColor: "#fff" },
-    ordinalChipActive: { borderColor: "#4A90E2", backgroundColor: "#EEF6FF" },
-    ordinalChipText: { fontSize: 13, fontWeight: "700", color: "#6B7280" },
-    ordinalChipTextActive: { color: "#4A90E2" },
     collapsedRuleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     collapsedRuleText: { fontSize: 14, fontWeight: "700", color: "#1D4ED8", flex: 1 },
     collapsedRuleActions: { flexDirection: "row", alignItems: "center" },

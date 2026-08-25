@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSignIn, useSignUp } from '@clerk/expo';
 import { useRouter } from 'expo-router';
@@ -14,6 +14,7 @@ export default function PhoneLogin() {
   const [pendingVerification, setPendingVerification] = useState(false);
   const [isSigningUp, setIsSigningUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const phoneInputRef = useRef<TextInput>(null);
 
   // 1. Handle "Send Code"
   const onSendCodePress = async () => {
@@ -97,7 +98,10 @@ export default function PhoneLogin() {
     >
       {/* Header / Back Button */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={() => (pendingVerification ? setPendingVerification(false) : router.back())}
+          style={styles.backButton}
+        >
           <Feather name="arrow-left" size={24} color="#FF7A6E" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Phone Login</Text>
@@ -111,9 +115,15 @@ export default function PhoneLogin() {
             <Text style={styles.subLabel}>We'll send you a code to verify your account.</Text>
             
             <TextInput
+              ref={phoneInputRef}
               autoFocus
               value={phoneNumber}
               onChangeText={setPhoneNumber}
+              onFocus={() =>
+                phoneInputRef.current?.setNativeProps({
+                  selection: { start: phoneNumber.length, end: phoneNumber.length },
+                })
+              }
               placeholder="+1 555 555 5555"
               keyboardType="phone-pad"
               style={styles.input}

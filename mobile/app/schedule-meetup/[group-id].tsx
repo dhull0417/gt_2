@@ -3,9 +3,9 @@ import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { useCreateOneOffMeetup } from '@/hooks/useCreateOneOffMeetup';
-import TimePicker from '@/components/TimePicker';
+import NativeTimePicker from '@/components/NativeTimePicker';
 import { Picker } from '@react-native-picker/picker';
-import DateTimePicker, { DateTimePickerMeetup } from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Alert } from 'react-native';
 
 const usaTimezones = [
@@ -26,11 +26,21 @@ const ScheduleMeetupScreen = () => {
     const [tempDate, setTempDate] = useState(new Date());
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [meetTime, setMeetTime] = useState("05:00 PM");
+    const [showTimePicker, setShowTimePicker] = useState(false);
     const [timezone, setTimezone] = useState("America/Denver");
 
-    const onDateChange = (meetup: DateTimePickerMeetup, selectedDate?: Date) => {
+    const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
         if (Platform.OS === 'android') {
+            // Android's picker is a system dialog, not an inline spinner — there's no
+            // separate "Done" button, so the dialog closing on a real pick (event.type
+            // 'set') IS the confirm step. Dismissing it (back button / tap outside)
+            // fires 'dismissed' with no selectedDate and must leave `date` untouched.
             setShowDatePicker(false);
+            if (event.type === 'set' && selectedDate) {
+                setDate(selectedDate);
+                setTempDate(selectedDate);
+            }
+            return;
         }
         if (selectedDate) {
             setTempDate(selectedDate);
@@ -60,7 +70,12 @@ const ScheduleMeetupScreen = () => {
                     </TouchableOpacity>
                 </View>
                 
-                <TimePicker onTimeChange={setMeetTime} initialValue={meetTime} />
+                <View style={{ marginBottom: 24 }}>
+                    <Text style={styles.title}>Select Time</Text>
+                    <TouchableOpacity onPress={() => setShowTimePicker(true)} style={styles.dateButton}>
+                        <Text style={styles.dateButtonText}>{meetTime}</Text>
+                    </TouchableOpacity>
+                </View>
 
                 <View style={styles.timezoneContainer}>
                     <Text style={styles.title}>Select Timezone</Text>
@@ -115,6 +130,10 @@ const ScheduleMeetupScreen = () => {
                         onChange={onDateChange}
                     />
                 )
+            )}
+
+            {showTimePicker && (
+                <NativeTimePicker value={meetTime} onChange={setMeetTime} onClose={() => setShowTimePicker(false)} />
             )}
         </SafeAreaView>
     );

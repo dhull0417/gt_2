@@ -8,15 +8,7 @@ import { useMarkNotificationsAsRead } from '@/hooks/useMarkNotificationsAsRead';
 import { Notification, User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-
-// Extended type to handle new notification types until api.ts is updated
-type ExtendedNotification = Omit<Notification, 'type'> & {
-    type: 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion';
-    meetup?: {
-        _id: string;
-        name: string;
-    };
-};
+import { getNotificationIcon } from '@/utils/notificationIcons';
 
 // A simple time ago function for demonstration
 const timeAgo = (date: string) => {
@@ -34,27 +26,38 @@ const timeAgo = (date: string) => {
     return Math.floor(seconds) + "s ago";
 };
 
-const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { notification: ExtendedNotification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void }) => {
+const CHANGED_FIELD_LABELS: Record<string, string> = {
+    schedule: 'date and time',
+    location: 'location',
+    capacity: 'capacity',
+};
+
+// Turns ['schedule', 'location'] into "date and time and location"; falls
+// back to null when there's nothing to describe (e.g. older notifications
+// persisted before per-field change tracking existed).
+const describeChangedFields = (fields?: string[]) => {
+    if (!fields || fields.length === 0) return null;
+    const labels = fields.map(f => CHANGED_FIELD_LABELS[f] || f);
+    if (labels.length === 1) return labels[0];
+    if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+    return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
+};
+
+const formatMeetupDateTime = (meetup?: { date?: string; time?: string; timezone?: string }) => {
+    if (!meetup?.date) return null;
+    const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: meetup.timezone };
+    const dateStr = new Date(meetup.date).toLocaleDateString(undefined, options);
+    return meetup.time ? `${dateStr} at ${meetup.time}` : dateStr;
+};
+
+const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void }) => {
     const router = useRouter();
 
-    const getIcon = () => {
-        switch (notification.type) {
-            case 'group-invite': return { name: 'user-plus', color: '#3B82F6' };
-            case 'invite-accepted': return { name: 'check-circle', color: '#10B981' };
-            case 'invite-declined': return { name: 'x-circle', color: '#EF4444' };
-            case 'group-added': return { name: 'users', color: '#6366F1' };
-            case 'meetup-rsvp-in': return { name: 'log-in', color: '#4FD1C5' };
-            case 'meetup-rsvp-out': return { name: 'log-out', color: '#FF7A6E' };
-            case 'meetup-waitlist-join': return { name: 'clock', color: '#F59E0B' };
-            case 'waitlist-promotion': return { name: 'arrow-up-circle', color: '#A855F7' };
-            default: return { name: 'bell', color: '#6B7280' };
-        }
-    };
-
     const getMessage = () => {
-        const senderName = `${notification.sender.firstName} ${notification.sender.lastName}`;
+        const senderName = notification.sender ? `${notification.sender.firstName} ${notification.sender.lastName}` : '';
         const groupName = notification.group?.name;
         const meetupName = notification.meetup?.name;
+        const pollPrompt = notification.poll?.prompt;
 
         switch (notification.type) {
             case 'group-invite':
@@ -65,17 +68,42 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> declined your invitation to <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'group-added':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> added you to <Text style={styles.bold}>{groupName}</Text>.</Text>;
+            case 'group-updated':
+                return <Text style={styles.messageText}>The group <Text style={styles.bold}>{groupName}</Text> was renamed.</Text>;
             case 'meetup-rsvp-in':
-                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> is going to <Text style={styles.bold}>{meetupName || 'an meetup'}</Text>.</Text>;
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> is going to <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-rsvp-out':
-                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> is out for <Text style={styles.bold}>{meetupName || 'an meetup'}</Text>.</Text>;
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> is out for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'meetup-rsvp-admin-in':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> marked you as going to <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'meetup-rsvp-admin-out':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> marked you as not going to <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-waitlist-join':
-                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> joined the waitlist for <Text style={styles.bold}>{meetupName || 'an meetup'}</Text>.</Text>;
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> joined the waitlist for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'waitlist-promotion':
                 if (notification.recipient === currentUser._id) {
-                    return <Text style={styles.messageText}>You're in! A spot opened up for <Text style={styles.bold}>{meetupName || 'an meetup'}</Text>.</Text>;
+                    return <Text style={styles.messageText}>You're in! A spot opened up for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
                 }
-                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> was promoted to "in" for <Text style={styles.bold}>{meetupName || 'an meetup'}</Text>.</Text>;
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> was promoted to "in" for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'meetup-created':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> scheduled a new meetup{groupName ? <> for <Text style={styles.bold}>{groupName}</Text></> : null}.</Text>;
+            case 'meetup-updated': {
+                const changeSummary = describeChangedFields(notification.meta?.changedFields);
+                const when = formatMeetupDateTime(notification.meetup);
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> updated the {changeSummary || 'details'} for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>{when ? <>{' — '}<Text style={styles.bold}>{when}</Text></> : null}.</Text>;
+            }
+            case 'meetup-cancelled':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> cancelled <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'meetup-rsvp-reminder':
+                return <Text style={styles.messageText}>Don't forget to RSVP for <Text style={styles.bold}>{meetupName || 'the meetup'}</Text>!</Text>;
+            case 'meetup-rsvp-open':
+                return <Text style={styles.messageText}>RSVPs are now open for <Text style={styles.bold}>{meetupName || 'the meetup'}</Text>.</Text>;
+            case 'meetup-starting-soon':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{meetupName || 'Your meetup'}</Text> starts in 30 minutes!</Text>;
+            case 'poll-created':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> started a new poll{groupName ? <> in <Text style={styles.bold}>{groupName}</Text></> : null}{pollPrompt ? <>: "{pollPrompt}"</> : null}.</Text>;
+            case 'poll-closed':
+                return <Text style={styles.messageText}>The poll{pollPrompt ? <> "{pollPrompt}"</> : null} has closed.</Text>;
             default:
                 return <Text style={styles.messageText}>You have a new notification.</Text>;
         }
@@ -90,7 +118,7 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
         }
     };
 
-    const icon = getIcon();
+    const icon = getNotificationIcon(notification.type);
 
     return (
         <TouchableOpacity style={[styles.itemContainer, !notification.read && styles.unread]} onPress={handlePress} activeOpacity={0.7}>
@@ -157,7 +185,7 @@ const NotificationsScreen = () => {
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
             <FlatList
-                data={notifications as unknown as ExtendedNotification[]}
+                data={notifications}
                 renderItem={({ item }) => <NotificationItem notification={item} currentUser={currentUser} onAccept={handleAccept} onDecline={handleDecline} />}
                 keyExtractor={item => item._id}
                 contentContainerStyle={{ paddingVertical: 8 }}

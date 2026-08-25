@@ -26,7 +26,7 @@ import { useInviteUser } from '@/hooks/useInviteUser';
 import { GroupDetailsView } from '@/components/GroupDetailsView';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import { GroupPollButton } from '@/components/GroupPollButton';
+import { GroupCalendarButton } from '@/components/GroupCalendarButton';
 import { TAB_BAR_HEIGHT } from '@/utils/layout';
 
 const styles = StyleSheet.create({
@@ -161,12 +161,7 @@ const GroupDetailsScreen = () => {
 
         <View className="flex-row items-center" style={{ gap: 8 }}>
           {id && currentUser && (
-            <GroupPollButton
-              groupId={id}
-              currentUserId={currentUser._id}
-              canManage={canManageGroup}
-              isDM={isDM}
-            />
+            <GroupCalendarButton groupId={id} isDM={isDM} />
           )}
 
           {canManageGroup && (

@@ -15,6 +15,14 @@ const UpdateEmailScreen = () => {
         if (!user) return;
         setIsLoading(true);
         try {
+            // Step 0: Clean up any unverified email addresses left over from a
+            // previous attempt that was abandoned before the code was entered —
+            // otherwise Clerk rejects re-adding the same address as "taken".
+            const stale = user.emailAddresses.filter(
+                (e) => e.id !== user.primaryEmailAddressId && e.verification?.status !== 'verified'
+            );
+            await Promise.all(stale.map((e) => e.destroy()));
+
             // Step 1: Add the new email address to the user's account
             const newEmailAddress = await user.createEmailAddress({ email: newEmail });
 
