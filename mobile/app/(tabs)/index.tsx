@@ -133,6 +133,32 @@ const DashboardScreen = () => {
   const [zipCardDismissed, setZipCardDismissed] = useState(false);
   const [isSavingZip, setIsSavingZip] = useState(false);
   const [zipCodeError, setZipCodeError] = useState('');
+  const [readyForZipModal, setReadyForZipModal] = useState(false);
+  const sawWelcomeModal = useRef(false);
+
+  // The welcome modal (app/_layout.tsx) and this zip-code modal are two separate
+  // native <Modal> instances that both key off currentUser.hasSeenWelcome, so
+  // tapping "Let's go" flips one closed and the other open in the very same tick.
+  // On Android that leaves the welcome modal's Dialog window stuck on screen
+  // (it never finishes tearing down before the zip modal's window takes over),
+  // so it lingers behind and stops responding to its own close. Wait a beat
+  // after hasSeenWelcome flips true before letting the zip modal appear, but
+  // only when we actually saw the welcome modal transition — a returning user
+  // who already has hasSeenWelcome === true on load shouldn't see any delay.
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!currentUser.hasSeenWelcome) {
+      sawWelcomeModal.current = true;
+      setReadyForZipModal(false);
+      return;
+    }
+    if (sawWelcomeModal.current) {
+      sawWelcomeModal.current = false;
+      const timer = setTimeout(() => setReadyForZipModal(true), 400);
+      return () => clearTimeout(timer);
+    }
+    setReadyForZipModal(true);
+  }, [currentUser?.hasSeenWelcome]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -486,7 +512,7 @@ const DashboardScreen = () => {
       </Modal>
 
       <Modal
-        visible={!!currentUser && !!currentUser.hasSeenWelcome && !currentUser.zipCode && !zipCardDismissed}
+        visible={!!currentUser && !!currentUser.hasSeenWelcome && readyForZipModal && !currentUser.zipCode && !zipCardDismissed}
         animationType="fade"
         transparent
         onRequestClose={() => setZipCardDismissed(true)}

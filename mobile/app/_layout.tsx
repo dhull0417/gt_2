@@ -149,6 +149,10 @@ const AuthLayout = () => {
     if (!isLoaded || (isSignedIn && !currentUserSettled)) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    // Mid-OAuth-flow: Clerk hasn't flipped isSignedIn yet when this route mounts
+    // (see mobile/app/sso-callback.tsx), so don't bounce back to sign-in here —
+    // wait for isSignedIn to settle (or useSocialAuth's own error handling).
+    const inSsoCallback = segments[0] === 'sso-callback';
 
     // Allowed routes list to ensure the user isn't redirected to the dashboard during configuration flows
     const inAllowedModalGroup = [
@@ -176,7 +180,7 @@ const AuthLayout = () => {
       } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
         router.replace('/(tabs)');
       }
-    } else if (!isSignedIn && !inAuthGroup) {
+    } else if (!isSignedIn && !inAuthGroup && !inSsoCallback) {
       router.replace('/(auth)');
     }
   }, [isLoaded, isSignedIn, currentUser, currentUserSettled, segments, router, clerkUser]);

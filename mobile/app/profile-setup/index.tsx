@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
@@ -68,8 +68,12 @@ const ProfileSetupScreen = () => {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-gray-50 justify-center">
-            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <SafeAreaView className="flex-1 bg-gray-50">
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1">
+                <ScrollView
+                    contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
+                    keyboardShouldPersistTaps="handled"
+                >
                 <View className="p-8">
                     <Text className="text-3xl font-bold text-gray-800 text-center">Welcome!</Text>
                     <Text className="text-lg text-gray-600 text-center mt-2 mb-8">Let's set up your profile.</Text>
@@ -123,6 +127,7 @@ const ProfileSetupScreen = () => {
                         )}
                     </TouchableOpacity>
                 </View>
+                </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
