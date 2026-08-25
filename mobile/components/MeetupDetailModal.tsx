@@ -1157,9 +1157,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     <Feather name="clock" size={18} color="#4A90E2" />
                                     <Text style={styles.dateInputText}>{newTime}</Text>
                                 </TouchableOpacity>
-                                {showTimePicker && (
-                                    <NativeTimePicker value={newTime} onChange={setNewTime} onClose={() => setShowTimePicker(false)} />
-                                )}
 
                                 <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Location Override</Text>
                                 <LocationField
@@ -1213,41 +1210,41 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     onCancel={() => setIsLocationSearchActive(false)}
                     asOverlay
                 />
-            </Modal>
 
-            {/* --- THIS IS THE NEW MODAL FOR THE DATE PICKER --- */}
-            {showDatePicker && (
-                Platform.OS === 'ios' ? (
-                    <Modal
-                        animationType="slide"
-                        transparent={true}
-                        visible={showDatePicker}
-                        onRequestClose={() => setShowDatePicker(false)}
-                    >
-                        <View style={styles.datePickerOverlay}>
-                            <View style={styles.datePickerContent}>
-                                <DateTimePicker
-                                    value={tempDate}
-                                    mode="date"
-                                    display="spinner"
-                                    onChange={onDateChange}
-                                    textColor='black'
-                                />
-                                <TouchableOpacity onPress={confirmIosDate} style={styles.doneButton}>
-                                    <Text style={styles.doneButtonText}>Done</Text>
-                                </TouchableOpacity>
+                {/* Rendered inside this Modal's own tree (not as a sibling <Modal>) — RN
+                    doesn't reliably stack a second native Modal on top of one already open. */}
+                {showDatePicker && (
+                    Platform.OS === 'ios' ? (
+                        <View style={StyleSheet.absoluteFillObject}>
+                            <View style={styles.datePickerOverlay}>
+                                <View style={styles.datePickerContent}>
+                                    <DateTimePicker
+                                        value={tempDate}
+                                        mode="date"
+                                        display="spinner"
+                                        onChange={onDateChange}
+                                        textColor='black'
+                                    />
+                                    <TouchableOpacity onPress={confirmIosDate} style={styles.doneButton}>
+                                        <Text style={styles.doneButtonText}>Done</Text>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
                         </View>
-                    </Modal>
-                ) : (
-                    <DateTimePicker
-                        value={newDate} // Android picker can use the final state directly
-                        mode="date"
-                        display="default"
-                        onChange={onDateChange}
-                    />
-                )
-            )}
+                    ) : (
+                        <DateTimePicker
+                            value={newDate} // Android picker can use the final state directly
+                            mode="date"
+                            display="default"
+                            onChange={onDateChange}
+                        />
+                    )
+                )}
+
+                {showTimePicker && (
+                    <NativeTimePicker value={newTime} onChange={setNewTime} onClose={() => setShowTimePicker(false)} asOverlay />
+                )}
+            </Modal>
 
             <RsvpResponseOverlay />
         </SafeAreaView>

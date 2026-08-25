@@ -312,7 +312,6 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     }
 
     // Apply updates
-    meetup.date = newDate;
     meetup.time = newTime;
     meetup.timezone = groupTimezone; // Always enforce the group's timezone
     if (capacity !== undefined) meetup.capacity = capacity;
@@ -321,10 +320,15 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     // Recompute startsAt whenever date or time changes
     if (date || time) {
         const { hours: sH, minutes: sM } = parseTimeString(meetup.time);
-        const startsAtDT = DateTime.fromJSDate(new Date(meetup.date))
+        const startsAtDT = DateTime.fromJSDate(new Date(newDate))
             .setZone(groupTimezone)
             .set({ hour: sH, minute: sM, second: 0, millisecond: 0 });
         meetup.startsAt = startsAtDT.toJSDate();
+        // `date` must carry the same merged date+time instant as `startsAt` —
+        // every isPast/expiry check reads `date`, so leaving it as the raw
+        // `newDate` (which may still carry the old time-of-day) made a
+        // freshly-rescheduled future meetup look already-expired.
+        meetup.date = startsAtDT.toJSDate();
 
         // rsvpOpenDate/rsvpCloseDate are anchored to the old startsAt — recompute
         // them the same way generation does, or a meetup whose deadline had

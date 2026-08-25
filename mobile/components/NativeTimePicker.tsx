@@ -26,12 +26,19 @@ interface NativeTimePickerProps {
     value: string;
     onChange: (time: string) => void;
     onClose: () => void;
+    // React Native doesn't reliably stack a second native <Modal> on top of one
+    // that's already open. Pass this when rendering from inside a screen that's
+    // already presented as a Modal (e.g. MeetupDetailModal's edit modal) so this
+    // renders as a plain absolutely-positioned overlay instead. Callers must
+    // render this outside their own KeyboardAvoidingView (a sibling, not a
+    // descendant) — see LocationSearchModal for the same rule.
+    asOverlay?: boolean;
 }
 
 // Platform-native time picker: an inline spinner in a bottom sheet on iOS (with a
 // Done button to commit), or the system dialog on Android (which commits on pick).
 // Caller controls mount/unmount — render this only while its own "show picker" flag is true.
-const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, onClose }) => {
+const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, onClose, asOverlay }) => {
     const [temp, setTemp] = useState<Date>(() => timeStringToDate(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { setTemp(timeStringToDate(value)); }, []);
@@ -50,16 +57,24 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, on
         return <DateTimePicker value={temp} mode="time" display="default" onChange={handleChange} />;
     }
 
+    const content = (
+        <View style={styles.modalContainer}>
+            <View style={styles.pickerModalContent}>
+                <DateTimePicker value={temp} mode="time" display="spinner" onChange={handleChange} textColor="black" />
+                <TouchableOpacity onPress={() => { onChange(dateToTimeString(temp)); onClose(); }} style={styles.doneButton}>
+                    <Text style={styles.doneButtonText}>Done</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+
+    if (asOverlay) {
+        return <View style={StyleSheet.absoluteFillObject}>{content}</View>;
+    }
+
     return (
         <Modal animationType="slide" transparent visible onRequestClose={onClose}>
-            <View style={styles.modalContainer}>
-                <View style={styles.pickerModalContent}>
-                    <DateTimePicker value={temp} mode="time" display="spinner" onChange={handleChange} textColor="black" />
-                    <TouchableOpacity onPress={() => { onChange(dateToTimeString(temp)); onClose(); }} style={styles.doneButton}>
-                        <Text style={styles.doneButtonText}>Done</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
+            {content}
         </Modal>
     );
 };
