@@ -154,13 +154,16 @@ const GroupChatScreen = () => {
 
   const handleOpenDetails = () => {
     if (!id) return;
-    // Land on the Groups tab's list screen first so Group Details is pushed
-    // on top of it, not left as that nested stack's only screen. Both the
-    // default "tap the active tab to reset" behavior (Android) and iOS's
-    // native tab bar's own pop-to-root gesture only fire when there's an
-    // actual screen underneath to pop back to — jumping to Details directly
-    // from here (outside the Groups tab entirely) otherwise leaves nothing
-    // for a second tab tap to land on.
+    if (Platform.OS === 'ios') {
+      // iOS gets its own root-level copy of Group Details, entirely outside
+      // (tabs), so the native tab bar never shows there at all — see
+      // app/group-details/[id].tsx for why.
+      router.push({ pathname: '/group-details/[id]', params: { id } });
+      return;
+    }
+    // Android: land on the Groups tab's list screen first so Group Details is
+    // pushed on top of it, not left as that nested stack's only screen —
+    // otherwise tapping the tab a second time has nothing to reset back to.
     router.navigate('/(tabs)/groups');
     router.push({ pathname: '/groups/[id]', params: { id } });
   };

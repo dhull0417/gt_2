@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -111,10 +111,14 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
 
     const handlePress = () => {
         if (notification.group?._id) {
-            // See the matching comment in group-chat/[id].tsx's handleOpenDetails —
-            // landing on the list first keeps Group Details from being the Groups
-            // tab's only nested screen, which is what a second tap on the tab
-            // needs to reset back to it.
+            // See the matching branch in group-chat/[id].tsx's handleOpenDetails.
+            if (Platform.OS === 'ios') {
+                router.push({
+                    pathname: '/group-details/[id]',
+                    params: { id: notification.group._id }
+                });
+                return;
+            }
             router.navigate('/(tabs)/groups');
             router.push({
                 pathname: '/groups/[id]',

@@ -44,8 +44,11 @@ const ProfileSetupScreen = () => {
         try {
             // Ensure the MongoDB user exists before updating profile — idempotent,
             // syncUser just returns the existing user if one's already there.
-            await userApi.syncUser(api, { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' });
+            const syncRes = await userApi.syncUser(api, { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' });
+            // TEMP DEBUG — remove once the profile-setup redirect-loop bug is diagnosed.
+            console.log('[profile-setup] syncUser response', syncRes.data);
             const { data } = await userApi.updateProfile(api, profileData);
+            console.log('[profile-setup] updateProfile response', data);
             if (data?.user) {
                 queryClient.setQueryData(['currentUser'], data.user);
             } else {

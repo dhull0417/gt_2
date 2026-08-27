@@ -13,8 +13,12 @@ const AccountLayout = () => {
                 options={{
                     headerTitle: 'Update Account',
                     headerLeft: () => (
-                        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                            <Feather name="x" size={24} color="#374151" />
+                        <TouchableOpacity
+                            onPress={() => router.back()}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                            <Feather name="x" size={24} color="#374151" style={{ transform: [{ translateX: 2 }] }} />
                         </TouchableOpacity>
                     ),
                 }}

@@ -162,6 +162,7 @@ const AuthLayout = () => {
       'group-edit-jit',
       'group-settings',
       'group-chat',
+      'group-details',
       'meetup-edit',
       'schedule-meetup',
       'add-members',
@@ -175,7 +176,10 @@ const AuthLayout = () => {
       // !currentUser (no Mongo user yet) always routes through profile-setup first,
       // since its Save button is what triggers syncUser and creates the record.
       const profileIncomplete = !currentUser || (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()));
+      // TEMP DEBUG — remove once the profile-setup redirect-loop bug is diagnosed.
+      console.log('[routing]', { segment: segments[0], profileIncomplete, firstName: currentUser?.firstName, lastName: currentUser?.lastName, isAppleUser });
       if (profileIncomplete && segments[0] !== 'profile-setup') {
+        console.log('[routing] bouncing to /profile-setup');
         router.replace('/profile-setup');
       } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
         router.replace('/(tabs)');
@@ -219,6 +223,7 @@ const AuthLayout = () => {
         <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
         <Stack.Screen name="group-settings" options={{ headerShown: false }} />
         <Stack.Screen name="group-chat" options={{ headerShown: false }} />
+        <Stack.Screen name="group-details" options={{ headerShown: false }} />
         <Stack.Screen name="meetup-edit" options={{ headerShown: false }} />
         <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />
         <Stack.Screen name="add-members" options={{ headerShown: false }} />

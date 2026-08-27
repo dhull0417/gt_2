@@ -1,11 +1,10 @@
 # Videos
 
-## welcome-create-group.mp4
+## welcome-create-group-ios.mov / welcome-create-group-android.mov
 
-Screen recording shown in the new-user welcome modal ([WelcomeModal.tsx](../../components/WelcomeModal.tsx)), demonstrating how to create a first group.
+Screen recordings shown in the new-user welcome modal ([WelcomeModal.tsx](../../components/WelcomeModal.tsx)), demonstrating how to create a first group. Recorded separately per platform since the status bar/nav chrome differs; [WelcomeModal.tsx](../../components/WelcomeModal.tsx) picks the right one via `Platform.select`.
 
-- Format: mp4 (H.264)
+- Format: mov (H.264), no audio needed — the player is muted
 - Suggested length: 5-10s, looping
-- No audio needed — the player is muted
-- Suggested aspect ratio: 9:16 (portrait), matches the modal's video frame
-- Replace the placeholder file at this path with the real recording — same filename, no code changes needed.
+- Portrait, matching each device's native screen resolution
+- To update: replace the file at the matching path — same filename, no code changes needed, unless the new recording's resolution changes, in which case also update the `aspectRatio` in `styles.videoWrap` in [WelcomeModal.tsx](../../components/WelcomeModal.tsx).
