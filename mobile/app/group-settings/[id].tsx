@@ -131,8 +131,8 @@ const GroupSettings = () => {
   const rsvpSettingsLabel = useMemo((): string => {
     const leadDays = group?.generationLeadDays;
     const deadlineDays = group?.generationDeadlineDays;
-    const opensPart = leadDays != null ? `Opens ${leadDays} day${leadDays !== 1 ? 's' : ''} before at ${group?.generationLeadTime || '—'}` : null;
-    const deadlinePart = deadlineDays != null ? `Deadline ${deadlineDays} day${deadlineDays !== 1 ? 's' : ''} before at ${group?.generationDeadlineTime || '—'}` : null;
+    const opensPart = leadDays != null ? `Earliest ${leadDays} day${leadDays !== 1 ? 's' : ''} before at ${group?.generationLeadTime || '—'}` : null;
+    const deadlinePart = deadlineDays != null ? `Latest ${deadlineDays} day${deadlineDays !== 1 ? 's' : ''} before at ${group?.generationDeadlineTime || '—'}` : null;
     if (!opensPart && !deadlinePart) return 'RSVPs open anytime';
     return [opensPart, deadlinePart].filter(Boolean).join(' · ');
   }, [group?.generationLeadDays, group?.generationLeadTime, group?.generationDeadlineDays, group?.generationDeadlineTime]);

@@ -118,7 +118,10 @@ const GroupScreen = () => {
           )}
         </TouchableOpacity>
         <Text className="text-xl font-black text-gray-900">Groups</Text>
-        <TouchableOpacity onPress={() => router.push('/create-group')}>
+        <TouchableOpacity
+          onPress={() => router.push('/create-group')}
+          style={{ alignItems: 'center', justifyContent: 'center' }}
+        >
           <Feather name="plus-circle" size={26} color="#4A90E2" />
         </TouchableOpacity>
       </View>

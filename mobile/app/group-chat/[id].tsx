@@ -154,6 +154,14 @@ const GroupChatScreen = () => {
 
   const handleOpenDetails = () => {
     if (!id) return;
+    // Land on the Groups tab's list screen first so Group Details is pushed
+    // on top of it, not left as that nested stack's only screen. Both the
+    // default "tap the active tab to reset" behavior (Android) and iOS's
+    // native tab bar's own pop-to-root gesture only fire when there's an
+    // actual screen underneath to pop back to — jumping to Details directly
+    // from here (outside the Groups tab entirely) otherwise leaves nothing
+    // for a second tab tap to land on.
+    router.navigate('/(tabs)/groups');
     router.push({ pathname: '/groups/[id]', params: { id } });
   };
 
@@ -187,6 +195,9 @@ const GroupChatScreen = () => {
   const [createPollVisible, setCreatePollVisible] = useState(false);
   const nextMeetupLabel = nextMeetup
     ? new Date(nextMeetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: nextMeetup.timezone })
+    : null;
+  const nextMeetupDay = nextMeetup
+    ? new Date(nextMeetup.date).toLocaleDateString(undefined, { day: 'numeric', timeZone: nextMeetup.timezone })
     : null;
   // Mirrors the RSVP state MeetupDetailModal and the meetup card compute, so the bar
   // previews the same tint/status the card and modal already show.
@@ -435,11 +446,18 @@ const GroupChatScreen = () => {
               isMutedUntilNext ? styles.iconButtonMutedUntilNext : isCurrentlyMuted ? styles.iconButtonMuted : styles.iconButtonActive,
             ]}
           >
-            <Feather
-              name={isMutedUntilNext ? "clock" : isCurrentlyMuted ? "bell-off" : "bell"}
-              size={18}
-              color={isMutedUntilNext ? "#D97706" : isCurrentlyMuted ? "#EF4444" : "#10B981"}
-            />
+            {isMutedUntilNext ? (
+              <>
+                <Feather name="bell-off" size={18} color="#D97706" />
+                <Feather name="clock" size={10} color="#D97706" style={styles.mutedUntilNextClockIcon} />
+              </>
+            ) : (
+              <Feather
+                name={isCurrentlyMuted ? "bell-off" : "bell"}
+                size={18}
+                color={isCurrentlyMuted ? "#EF4444" : "#10B981"}
+              />
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -513,7 +531,11 @@ const GroupChatScreen = () => {
                   ]}
                   activeOpacity={0.7}
                 >
-                  {activePolls.length === 0 && <Feather name="calendar" size={15} color="#4A90E2" />}
+                  {activePolls.length === 0 && nextMeetupDay && (
+                    <View style={{ width: 20, height: 20, borderRadius: 7, backgroundColor: '#4A90E2', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>{nextMeetupDay}</Text>
+                    </View>
+                  )}
                   <Text style={chatStyles.nextEventText} numberOfLines={1}>
                     {activePolls.length > 0 ? 'Next Meetup' : `Next Meetup: ${nextMeetupLabel}`}
                   </Text>
@@ -794,6 +816,11 @@ const styles = StyleSheet.create({
   iconButtonMutedUntilNext: {
     backgroundColor: '#FFFBEB',
     borderColor: '#FDE68A',
+  },
+  mutedUntilNextClockIcon: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
   },
   iconButtonActive: {
     backgroundColor: '#F0FDF4',

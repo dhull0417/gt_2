@@ -7,6 +7,7 @@ import { promptForNotificationPermissionOnFirstRsvpIn } from "./usePushNotificat
 interface RsvpVariables {
   meetupId: string;
   status: 'in' | 'out';
+  skipResponsePopup?: boolean;
 }
 
 export const useRsvp = () => {
@@ -18,7 +19,7 @@ export const useRsvp = () => {
       meetupApi.handleRsvp(api, variables),
 
     onSuccess: (data, variables) => {
-      emitRsvpResponse(variables.status);
+      if (!variables.skipResponsePopup) emitRsvpResponse(variables.status);
       if (variables.status === 'in') promptForNotificationPermissionOnFirstRsvpIn(api);
       // Invalidate the main meetups query to refresh all data
       queryClient.invalidateQueries({ queryKey: ['meetups'] });

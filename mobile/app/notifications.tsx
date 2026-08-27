@@ -111,6 +111,11 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
 
     const handlePress = () => {
         if (notification.group?._id) {
+            // See the matching comment in group-chat/[id].tsx's handleOpenDetails —
+            // landing on the list first keeps Group Details from being the Groups
+            // tab's only nested screen, which is what a second tap on the tab
+            // needs to reset back to it.
+            router.navigate('/(tabs)/groups');
             router.push({
                 pathname: '/groups/[id]',
                 params: { id: notification.group._id }

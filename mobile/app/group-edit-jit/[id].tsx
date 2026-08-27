@@ -17,6 +17,7 @@ import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
 import { useApiClient, groupApi } from "../../utils/api";
 import NativeTimePicker, { timeStringToDate } from "@/components/NativeTimePicker";
+import InfoBubble from "@/components/InfoBubble";
 
 // RSVP opens and RSVP deadline are each "N days before, at time of day". When both
 // land on the same day-count, only the time of day keeps opens before the deadline,
@@ -206,7 +207,13 @@ const EditJitScreen = () => {
                         <View style={{ marginTop: 14, gap: 14 }}>
                             <View>
                                 <View style={s.toggleRow}>
-                                    <Text style={s.toggleRowLabel}>RSVP opens</Text>
+                                    <View style={s.toggleRowLabelWrap}>
+                                        <Text style={s.toggleRowLabel}>Earliest time to RSVP</Text>
+                                        <InfoBubble
+                                            title="Earliest time to RSVP"
+                                            description={"This sets the earliest time and day people can respond.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs as soon as the meetup is created."}
+                                        />
+                                    </View>
                                     <ToggleSwitch value={leadEnabled} onValueChange={(v) => {
                                         setLeadEnabled(v);
                                         const nextLeadDays = v && deadlineEnabled && leadDays < deadlineDays ? deadlineDays : leadDays;
@@ -248,7 +255,13 @@ const EditJitScreen = () => {
 
                             <View>
                                 <View style={s.toggleRow}>
-                                    <Text style={s.toggleRowLabel}>RSVP deadline</Text>
+                                    <View style={s.toggleRowLabelWrap}>
+                                        <Text style={s.toggleRowLabel}>Latest time to RSVP</Text>
+                                        <InfoBubble
+                                            title="Latest time to RSVP"
+                                            description={"This sets the cutoff for responding.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs right up until the meetup starts."}
+                                        />
+                                    </View>
                                     <ToggleSwitch value={deadlineEnabled} onValueChange={(v) => {
                                         setDeadlineEnabled(v);
                                         const nextDeadlineDays = v && leadEnabled && deadlineDays > leadDays ? leadDays : deadlineDays;
@@ -313,8 +326,8 @@ const EditJitScreen = () => {
                     const capped = deadlineEnabled && leadDays === deadlineDays && timeToMinutes(t) > timeToMinutes(deadlineTime);
                     if (capped) {
                         Alert.alert(
-                            "RSVP open time must happen before RSVP deadline",
-                            `• Both are ${leadDays} day${leadDays === 1 ? '' : 's'} before the meetup\n• Opens can't be later than ${deadlineTime}\n• Opens set to ${deadlineTime}`
+                            "Earliest RSVP time must be before the latest RSVP time",
+                            `• Both are ${leadDays} day${leadDays === 1 ? '' : 's'} before the meetup\n• Earliest time can't be later than ${deadlineTime}\n• Earliest time set to ${deadlineTime}`
                         );
                     }
                     setLeadTime(capped ? deadlineTime : t);
@@ -326,8 +339,8 @@ const EditJitScreen = () => {
                     const capped = leadEnabled && deadlineDays === leadDays && timeToMinutes(t) < timeToMinutes(leadTime);
                     if (capped) {
                         Alert.alert(
-                            "RSVP deadline must happen after RSVPs open",
-                            `• Both are ${deadlineDays} day${deadlineDays === 1 ? '' : 's'} before the meetup\n• Deadline can't be earlier than ${leadTime}\n• Deadline set to ${leadTime}`
+                            "Latest RSVP time must be after the earliest RSVP time",
+                            `• Both are ${deadlineDays} day${deadlineDays === 1 ? '' : 's'} before the meetup\n• Latest time can't be earlier than ${leadTime}\n• Latest time set to ${leadTime}`
                         );
                     }
                     setDeadlineTime(capped ? leadTime : t);
@@ -360,7 +373,8 @@ const s = StyleSheet.create({
     boolBtnText: { fontSize: 14, fontWeight: "700", color: "#6B7280" },
     boolBtnTextActive: { color: "#4A90E2" },
     toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151", flex: 1, marginRight: 12 },
+    toggleRowLabelWrap: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, marginRight: 12 },
+    toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151" },
     switchTrack: { width: 44, height: 26, borderRadius: 13, padding: 2, justifyContent: "center" },
     switchThumb: { position: "absolute", width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.25, shadowRadius: 2, elevation: 2 },
     leadRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10, gap: 8 },

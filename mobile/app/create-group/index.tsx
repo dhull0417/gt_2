@@ -31,6 +31,7 @@ import NativeTimePicker, { timeStringToDate } from "../../components/NativeTimeP
 import OptionPickerModal from "../../components/OptionPickerModal";
 import LocationField from "../../components/LocationField";
 import LocationSearchModal from "../../components/LocationSearchModal";
+import InfoBubble from "../../components/InfoBubble";
 import { Frequency, DayTime, useApiClient, groupApi } from "../../utils/api";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -1243,7 +1244,13 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                         <View style={{ marginTop: 14, gap: 14 }}>
                             <View>
                                 <View style={s.toggleRow}>
-                                    <Text style={s.toggleRowLabel}>RSVP opens</Text>
+                                    <View style={s.toggleRowLabelWrap}>
+                                        <Text style={s.toggleRowLabel}>Earliest time to RSVP</Text>
+                                        <InfoBubble
+                                            title="Earliest time to RSVP"
+                                            description={"This sets the earliest time and day people can respond.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs as soon as the meetup is created."}
+                                        />
+                                    </View>
                                     <ToggleSwitch value={d.leadEnabled} onValueChange={v => {
                                         const leadDays = v && d.deadlineEnabled && d.leadDays < d.deadlineDays ? d.deadlineDays : d.leadDays;
                                         const sameDayViolation = v && d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
@@ -1286,8 +1293,8 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                                         const capped = d.deadlineEnabled && d.leadDays === d.deadlineDays && timeToMinutes(t) > timeToMinutes(d.deadlineTime);
                                         if (capped) {
                                             Alert.alert(
-                                                "RSVP open time must happen before RSVP deadline",
-                                                `• Both are ${d.leadDays} day${d.leadDays === 1 ? '' : 's'} before the meetup\n• Opens can't be later than ${d.deadlineTime}\n• Opens set to ${d.deadlineTime}`
+                                                "Earliest RSVP time must be before the latest RSVP time",
+                                                `• Both are ${d.leadDays} day${d.leadDays === 1 ? '' : 's'} before the meetup\n• Earliest time can't be later than ${d.deadlineTime}\n• Earliest time set to ${d.deadlineTime}`
                                             );
                                         }
                                         upd({ leadTime: capped ? d.deadlineTime : t });
@@ -1298,7 +1305,13 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
 
                             <View>
                                 <View style={s.toggleRow}>
-                                    <Text style={s.toggleRowLabel}>RSVP deadline</Text>
+                                    <View style={s.toggleRowLabelWrap}>
+                                        <Text style={s.toggleRowLabel}>Latest time to RSVP</Text>
+                                        <InfoBubble
+                                            title="Latest time to RSVP"
+                                            description={"This sets the cutoff for responding.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs right up until the meetup starts."}
+                                        />
+                                    </View>
                                     <ToggleSwitch value={d.deadlineEnabled} onValueChange={v => {
                                         const deadlineDays = v && d.leadEnabled && d.deadlineDays > d.leadDays ? d.leadDays : d.deadlineDays;
                                         const sameDayViolation = v && d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
@@ -1341,8 +1354,8 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                                         const capped = d.leadEnabled && d.deadlineDays === d.leadDays && timeToMinutes(t) < timeToMinutes(d.leadTime);
                                         if (capped) {
                                             Alert.alert(
-                                                "RSVP deadline must happen after RSVPs open",
-                                                `• Both are ${d.deadlineDays} day${d.deadlineDays === 1 ? '' : 's'} before the meetup\n• Deadline can't be earlier than ${d.leadTime}\n• Deadline set to ${d.leadTime}`
+                                                "Latest RSVP time must be after the earliest RSVP time",
+                                                `• Both are ${d.deadlineDays} day${d.deadlineDays === 1 ? '' : 's'} before the meetup\n• Latest time can't be earlier than ${d.leadTime}\n• Latest time set to ${d.leadTime}`
                                             );
                                         }
                                         upd({ deadlineTime: capped ? d.leadTime : t });
@@ -1542,13 +1555,13 @@ const ReviewScreen = ({ groupName, groupImage, members, schedule, onConfirm, onB
                                     {schedule.leadEnabled && (
                                         <View style={s.reviewInlineRow}>
                                             <Feather name="unlock" size={13} color="#9CA3AF" />
-                                            <Text style={s.reviewInlineText}>RSVP opens {schedule.leadDays} days before at {schedule.leadTime}</Text>
+                                            <Text style={s.reviewInlineText}>Earliest time to RSVP: {schedule.leadDays} days before at {schedule.leadTime}</Text>
                                         </View>
                                     )}
                                     {schedule.deadlineEnabled && (
                                         <View style={s.reviewInlineRow}>
                                             <Feather name="lock" size={13} color="#9CA3AF" />
-                                            <Text style={s.reviewInlineText}>RSVP deadline {schedule.deadlineDays} days before at {schedule.deadlineTime}</Text>
+                                            <Text style={s.reviewInlineText}>Latest time to RSVP: {schedule.deadlineDays} days before at {schedule.deadlineTime}</Text>
                                         </View>
                                     )}
                                 </>
@@ -1749,7 +1762,8 @@ const s = StyleSheet.create({
     monthlyModeTitleActive: { color: "#1D4ED8" },
     monthlyModeExample: { fontSize: 12.5, color: "#9CA3AF", marginTop: 2 },
     toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151", flex: 1, marginRight: 12 },
+    toggleRowLabelWrap: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, marginRight: 12 },
+    toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151" },
     switchTrack: { width: 44, height: 26, borderRadius: 13, padding: 2, justifyContent: "center" },
     switchThumb: { position: "absolute", width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.25, shadowRadius: 2, elevation: 2 },
     dayRow: { flexDirection: "row", alignItems: "center" },

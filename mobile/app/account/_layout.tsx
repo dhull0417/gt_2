@@ -1,21 +1,35 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import React from 'react';
+import { Platform, TouchableOpacity } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
 const AccountLayout = () => {
+    const router = useRouter();
+
     return (
-        <Stack>
-            <Stack.Screen 
-                name="index" 
-                options={{ 
-                    headerShown: false, // Your change is preserved here
-                }} 
+        <Stack screenOptions={{ headerTitleAlign: 'center' }}>
+            <Stack.Screen
+                name="index"
+                options={{
+                    headerTitle: 'Update Account',
+                    headerLeft: () => (
+                        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                            <Feather name="x" size={24} color="#374151" />
+                        </TouchableOpacity>
+                    ),
+                }}
             />
-            <Stack.Screen 
-                name="update-name" 
-                options={{ 
+            <Stack.Screen
+                name="update-name"
+                options={{
                     headerTitle: 'Update Name',
-                    presentation: 'modal',
-                }} 
+                    // On iOS, a pushed screen's header shows a back button labeled
+                    // with the previous screen's title ("Update Account") alongside
+                    // this one's — too cramped next to "Update Name". Modal
+                    // presentation swaps that for a plain close affordance.
+                    // Android's back button has no title, so it doesn't need this.
+                    presentation: Platform.OS === 'ios' ? 'modal' : undefined,
+                }}
             />
             <Stack.Screen 
                 name="update-email" 

@@ -290,8 +290,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     ]);
     const undecidedUsers = (meetup.members || []).filter(m => !respondedIds.has(m._id));
 
-    const performRsvp = (status: 'in' | 'out') => {
-        rsvp({ meetupId: meetup._id, status }, {
+    const performRsvp = (status: 'in' | 'out', opts?: { skipResponsePopup?: boolean }) => {
+        rsvp({ meetupId: meetup._id, status, skipResponsePopup: opts?.skipResponsePopup }, {
             onSuccess: (data: any) => {
                 queryClient.invalidateQueries({ queryKey: ['meetups'] });
                 if (data.meetup) setMeetup(data.meetup);
@@ -321,33 +321,37 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
 
 
-    const handleRsvpAction = (status: 'in' | 'out') => {
+    const handleRsvpAction = (status: 'in' | 'out', opts?: { skipResponsePopup?: boolean }) => {
         if (isReadOnly || isRsvpLocked || isRsvpDeadlinePassed) return;
         if (status === 'out' && localGuestCount > 0) {
             Alert.alert(
                 'Remove Guests?',
                 'Remove your guests from this Meetup too?',
                 [
-                    { text: 'Keep Guests', onPress: () => performRsvp('out') },
+                    { text: 'Keep Guests', onPress: () => performRsvp('out', opts) },
                     {
                         text: 'Remove Guests',
                         style: 'destructive',
                         onPress: async () => {
                             await performSetGuests(0);
-                            performRsvp('out');
+                            performRsvp('out', opts);
                         },
                     },
                 ]
             );
             return;
         }
-        performRsvp(status);
+        performRsvp(status, opts);
     };
 
     const handleRsvpOutAndMute = () => {
         setGuestExpanded(false);
-        handleRsvpAction('out');
-        userApi.toggleGroupMute(api, meetup.group._id, 'untilNext').catch(() => {});
+        handleRsvpAction('out', { skipResponsePopup: true });
+        userApi.toggleGroupMute(api, meetup.group._id, 'untilNext')
+            .then(() => {
+                Alert.alert('RSVP recorded: Out', `The ${meetup.group.name} chat has been muted until the next meetup.`);
+            })
+            .catch(() => {});
     };
 
     const handleAddToCalendar = async () => {

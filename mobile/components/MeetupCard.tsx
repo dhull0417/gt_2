@@ -22,19 +22,29 @@ const formatDate = (dateString: string, timezone: string) => {
 
 const RsvpCounts = ({ meetup }: { meetup: Meetup }) => {
     const totalGuests = (meetup.guests || []).reduce((sum, g) => sum + (g.count || 0), 0);
+    const inCount = meetup.in.length + totalGuests;
+    const spotsLeft = meetup.capacity > 0 ? Math.max(meetup.capacity - inCount, 0) : null;
     return (
-        <View className="flex-row items-center mt-3 flex-wrap">
-            <View className="flex-row items-center mr-4">
-                <View className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: '#4FD1C5' }} />
-                <Text className="text-gray-600 font-medium">
-                    {meetup.in.length + totalGuests}{meetup.capacity > 0 ? `/${meetup.capacity}` : ''} In
-                </Text>
+        <View className="flex-row items-center justify-between mt-3 flex-wrap">
+            <View className="flex-row items-center flex-wrap">
+                <View className="flex-row items-center mr-4">
+                    <View className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: '#4FD1C5' }} />
+                    <Text className="text-gray-600 font-medium">
+                        {inCount} In
+                    </Text>
+                </View>
+
+                <View className="flex-row items-center mr-4">
+                    <View className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: '#FF7A6E' }} />
+                    <Text className="text-gray-600 font-medium">{meetup.out.length} Out</Text>
+                </View>
             </View>
 
-            <View className="flex-row items-center mr-4">
-                <View className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: '#FF7A6E' }} />
-                <Text className="text-gray-600 font-medium">{meetup.out.length} Out</Text>
-            </View>
+            {spotsLeft !== null && (
+                <Text className="text-gray-400" style={{ fontSize: 13, fontStyle: 'italic' }}>
+                    {spotsLeft} spots left
+                </Text>
+            )}
         </View>
     );
 };

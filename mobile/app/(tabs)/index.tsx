@@ -282,7 +282,7 @@ const DashboardScreen = () => {
 
   const handleDashboardRsvp = (meetup: Meetup, status: 'in' | 'out', guestCount = 0, mute = false) => {
     if (!currentUser) return;
-    rsvp({ meetupId: meetup._id, status }, {
+    rsvp({ meetupId: meetup._id, status, skipResponsePopup: mute }, {
       onSuccess: () => {
         if (status === 'in' && guestCount > 0) {
           meetupApi.setGuestCount(api, meetup._id, guestCount)
@@ -291,7 +291,7 @@ const DashboardScreen = () => {
         }
         if (mute) {
           userApi.toggleGroupMute(api, meetup.group._id, 'untilNext')
-            .then(() => showToast(`${meetup.group.name} chat has been muted until the next Meetup`))
+            .then(() => Alert.alert('RSVP recorded: Out', `The ${meetup.group.name} chat has been muted until the next meetup.`))
             .catch(() => {});
         }
         setRemovingId(meetup._id);

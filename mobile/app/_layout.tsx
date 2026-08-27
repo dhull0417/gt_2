@@ -214,7 +214,7 @@ const AuthLayout = () => {
         <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
-        <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: true, title: 'Update Account' }} />
+        <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
         <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
         <Stack.Screen name="group-settings" options={{ headerShown: false }} />
@@ -225,6 +225,7 @@ const AuthLayout = () => {
         <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />
         <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />
         <Stack.Screen name="join" options={{ headerShown: false }} />
+        <Stack.Screen name="sso-callback" options={{ headerShown: false }} />
       </Stack>
     </View>
   );

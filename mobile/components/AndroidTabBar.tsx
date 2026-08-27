@@ -17,7 +17,6 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-
 const ACTIVE_COLOR = '#4A90E2';
 const INACTIVE_COLOR = '#8E8E93';
 
@@ -105,8 +104,23 @@ export const AndroidTabBar = ({ state, descriptors, navigation }: BottomTabBarPr
 
         const onPress = () => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-          if (!isFocused && !event.defaultPrevented) {
+          if (event.defaultPrevented) return;
+
+          if (!isFocused) {
             navigation.navigate(route.name, route.params);
+            return;
+          }
+
+          // Already on this tab. The Groups tab hosts its own nested stack (list
+          // -> group details), and React Navigation's default "tabPress on an
+          // already-focused tab pops its nested stack" reset only fires when that
+          // stack already has the list screen sitting underneath the current one.
+          // Group Details can also be reached by pushing in from the chat screen's
+          // header, entirely outside this tab, which leaves it as the stack's only
+          // entry — so that default reset has nothing to pop to and no-ops. Send
+          // the tab back to its list screen explicitly so the tap always works.
+          if (route.name === 'groups') {
+            navigation.navigate('groups', { screen: 'index' });
           }
         };
 
