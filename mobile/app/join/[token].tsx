@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { useApiClient, groupApi } from '@/utils/api';
+import { broadcastGroupUpdate } from '@/utils/groupRealtime';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 
 export const PENDING_INVITE_KEY = 'GROUPTHAT_PENDING_INVITE';
@@ -14,7 +15,7 @@ type JoinState = 'loading' | 'success' | 'already_member' | 'error';
 
 const JoinGroupScreen = () => {
     const { token } = useLocalSearchParams<{ token: string }>();
-    const { isSignedIn } = useAuth();
+    const { isSignedIn, getToken } = useAuth();
     const router = useRouter();
     const api = useApiClient();
 
@@ -31,6 +32,7 @@ const JoinGroupScreen = () => {
                 setGroupId(groupId);
                 setGroupName(groupName);
                 setState(alreadyMember ? 'already_member' : 'success');
+                if (!alreadyMember) broadcastGroupUpdate(getToken, groupId);
             })
             .catch((err) => {
                 setErrorMessage(err?.response?.data?.error ?? 'Something went wrong. Please try again.');

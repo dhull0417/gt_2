@@ -27,6 +27,7 @@ import { User, Schedule, useApiClient, userApi, groupApi } from '@/utils/api';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
+import { broadcastGroupUpdate } from '@/utils/groupRealtime';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import LocationSearchModal from '@/components/LocationSearchModal';
@@ -407,11 +408,12 @@ const GroupSettings = () => {
     if (!id) return;
     setIsSavingMods(true);
     try {
-        await groupApi.updateModerators(api, { 
-            groupId: id, 
-            moderatorIds: selectedModIds 
+        await groupApi.updateModerators(api, {
+            groupId: id,
+            moderatorIds: selectedModIds
         });
         await queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+        broadcastGroupUpdate(getToken, id);
         setIsEditingMods(false);
         Alert.alert("Success", "Moderator list updated.");
     } catch (error: any) {
