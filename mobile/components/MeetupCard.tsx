@@ -96,8 +96,7 @@ export const MeetupCard = ({
 
   const isReadOnly = isCancelled || isExpired;
 
-  // Faint RSVP-status tint to match the detail modal: amber until the user
-  // responds, then green ("in"/waitlisted) or red ("out").
+  // Tint matches detail modal: amber until responded, green (in/waitlisted), red (out).
   const rsvpBackgroundColor = isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
 
   return (

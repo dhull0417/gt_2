@@ -24,8 +24,7 @@ const GroupScreen = () => {
   const insets = useSafeAreaInsets();
   const { promptNotifications } = useLocalSearchParams<{ promptNotifications?: string }>();
 
-  // Landed here right after creating a group (see create-group's onDone) — ask
-  // once, then drop the param so revisiting this tab doesn't ask again.
+  // Ask once after group creation, then drop the param so revisiting this tab doesn't re-ask
   useEffect(() => {
     if (promptNotifications !== '1') return;
     promptForNotificationPermission(api);

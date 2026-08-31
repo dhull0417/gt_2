@@ -13,7 +13,6 @@ const ScheduleMeetupLayout = () => {
                 options={{ 
                     headerTitle: 'Schedule One-Off Meetup',
                     presentation: 'modal',
-                    // --- ADDED: Custom header button ---
                     headerLeft: () => (
                         <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
                             <Feather name="x" size={24} color="#4A90E2" />

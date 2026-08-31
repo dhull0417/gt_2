@@ -1,7 +1,7 @@
 import asyncHandler from "express-async-handler";
 import crypto from "crypto";
 import { DateTime } from "luxon";
-import { getAuth } from "@clerk/express"; // <-- NEW: Import Clerk auth
+import { getAuth } from "@clerk/express";
 import User from "../models/user.model.js";
 import Meetup from "../models/meetup.model.js";
 
@@ -11,10 +11,9 @@ import Meetup from "../models/meetup.model.js";
  * @access  Private
  */
 export const getCalendarSyncUrl = asyncHandler(async (req, res) => {
-    // 👇 NEW: Use Clerk's getAuth to find the clerkId
     const { userId: clerkId } = getAuth(req);
 
-    // 👇 NEW: Search by clerkId, not req.user._id
+    // use clerkId, not req.user._id
     let user = await User.findOne({ clerkId });
 
     if (!user) {
@@ -102,7 +101,7 @@ export const getCalendarFeed = asyncHandler(async (req, res) => {
 
     icsContent.push('END:VCALENDAR');
 
-    // 4. Send the file back with the correct headers so calendars recognize it as an ICS feed
+    // 4. Send with ICS headers
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="groupthat_schedule.ics"');
     res.status(200).send(icsContent.join('\r\n'));

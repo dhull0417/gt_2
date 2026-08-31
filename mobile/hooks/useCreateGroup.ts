@@ -1,20 +1,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useApiClient, groupApi } from "../utils/api";
+import { useApiClient, groupApi, ScheduleInput } from "../utils/api";
 import { Alert } from "react-native";
 
 // Matches the full CreateGroupPayload in api.ts
 interface CreateGroupVariables {
     name: string;
+    image?: string;
     timezone: string;
     members?: string[];
     meetupsToDisplay: number;
     defaultCapacity?: number;
     defaultLocation?: string;
-    generationLeadDays: number | null;
-    generationLeadTime: string;
-    generationDeadlineDays: number | null;
-    generationDeadlineTime: string;
-    schedule?: any;
+    schedules?: ScheduleInput[];
 }
 
 export const useCreateGroup = () => {

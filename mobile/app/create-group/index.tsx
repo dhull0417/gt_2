@@ -50,8 +50,7 @@ const DAYS_OF_WEEK = [
     { label: "Saturday",  short: "Sat", value: 6 },
 ];
 
-// One accent per weekday so a list of day rows/cards reads at a glance instead
-// of requiring the user to read each label to tell days apart.
+// One accent color per weekday so day rows/cards are distinguishable at a glance
 const DAY_COLORS: { bg: string; fg: string }[] = [
     { bg: "#FEE2E2", fg: "#DC2626" }, // Sunday
     { bg: "#DBEAFE", fg: "#2563EB" }, // Monday
@@ -158,12 +157,9 @@ interface ScheduleData {
     maxAttendeesInput: string;
 }
 
-// Shared by the live inline error and the Continue-button gate so both agree on
-// what counts as valid. Empty input is treated as "not yet answered" (no error
-// shown) rather than invalid, so the field doesn't flash red before typing starts.
-// RSVP opens and RSVP deadline are each "N days before, at time of day". When both
-// land on the same day-count, only the time of day keeps opens before the deadline,
-// so the day-count comparison alone (leadDays >= deadlineDays) isn't sufficient.
+// Shared by the inline error and Continue-button gate. Empty input = "not yet answered", not
+// invalid, so the field doesn't flash red before typing. Time-of-day matters because RSVP open
+// and deadline can land on the same day-count — comparing leadDays >= deadlineDays isn't enough.
 const timeToMinutes = (time: string): number => {
     const t = timeStringToDate(time);
     return t.getHours() * 60 + t.getMinutes();
@@ -221,9 +217,8 @@ const InlineCalendar = ({ value, onChange, minDate, maxDate, bare, large }: {
     const [month, setMonth] = useState(
         value ? DateTime.fromISO(value).startOf("month") : DateTime.now().startOf("month")
     );
-    // Chunked into explicit 7-cell week rows rather than one flex-wrap grid — letting
-    // aspect-ratio cells wrap on their own leaves Yoga reserving a phantom trailing row
-    // of blank space whenever the day count isn't a clean multiple of 7.
+    // Chunked into 7-cell rows explicitly — flex-wrap leaves Yoga reserving a phantom
+    // blank trailing row whenever the day count isn't a multiple of 7.
     const weeks = useMemo(() => {
         const start = month.startOf("month");
         const firstDow = start.weekday === 7 ? 0 : start.weekday;
@@ -285,8 +280,7 @@ const InlineCalendar = ({ value, onChange, minDate, maxDate, bare, large }: {
 };
 
 // ─── CalendarPickerModal ────────────────────────────────────────────────────────
-// Same popup treatment for the biweekly "Start Date" date — was an inline
-// calendar expanding the page, now a focused overlay like the day picker above.
+// Biweekly "Start Date" as a focused overlay instead of an inline calendar expanding the page
 
 const CalendarPickerModal = ({ visible, value, minDate, maxDate, onChange, onCancel }: {
     visible: boolean; value: string; minDate?: string; maxDate?: string; onChange: (iso: string) => void; onCancel: () => void;
@@ -1436,10 +1430,11 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
 
 // ─── Build payload ────────────────────────────────────────────────────────────
 
+// Builds everything a named schedule needs except `name` (the caller supplies
+// that, since it depends on the group name entered on an earlier screen).
 const buildSchedulePayload = (d: ScheduleData) => {
-    if (!d.frequency) return {};
+    if (!d.frequency) return null;
     let routines: any[] = [];
-    let topFreq: Frequency = d.frequency;
 
     if (d.frequency === "custom") {
         routines = d.builtRoutines.map(r => ({ frequency: r.frequency, dayTimes: r.dayTimes, rules: r.rules }));
@@ -1452,17 +1447,15 @@ const buildSchedulePayload = (d: ScheduleData) => {
         routines = [{ frequency: d.frequency, dayTimes: d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time, ...(r.startDate ? { startDate: r.startDate } : {}) })) }];
     } else if (d.frequency === "monthly") {
     if (d.monthlyMode === "date") {
-        routines = [{ 
-            frequency: "monthly", 
-            dayTimes: d.monthlyDates.map(e => ({ date: e.date, time: e.time })) 
+        routines = [{
+            frequency: "monthly",
+            dayTimes: d.monthlyDates.map(e => ({ date: e.date, time: e.time }))
         }];
     } else if (d.monthlyMode === "ordinal") {
-        topFreq = "ordinal" as Frequency;
-        // Ensure rules are always included and non-empty
-        const rules = d.ordinalEntries.map(e => ({ 
-            type: "byDay", 
-            occurrence: e.occurrence ?? "1st",  // ← safety fallback
-            day: e.day ?? 1                      // ← safety fallback
+        const rules = d.ordinalEntries.map(e => ({
+            type: "byDay",
+            occurrence: e.occurrence ?? "1st",
+            day: e.day ?? 1
         }));
         routines = [{
             frequency: "ordinal",
@@ -1471,10 +1464,13 @@ const buildSchedulePayload = (d: ScheduleData) => {
         }];
     }
   }
+    if (!routines.length) return null;
+
     return {
-        schedule: { frequency: topFreq, startDate: d.startDate, routines },
-        timezone: d.timezone,
+        startDate: d.startDate,
+        routines,
         defaultLocation: d.location,
+        defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
         generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
         generationLeadTime: d.leadTime,
         generationDeadlineDays: d.rsvpRestricted && d.deadlineEnabled ? d.deadlineDays : null,
@@ -1646,7 +1642,7 @@ const CreateGroupScreen = () => {
     const handleClose = () => router.replace("/(tabs)/groups");
 
     const handleCreate = () => {
-        const schedulePayload = schedule?.frequency ? buildSchedulePayload(schedule) : {};
+        const routinePart = schedule?.frequency ? buildSchedulePayload(schedule) : null;
         const defaultCapacity = schedule?.maxAttendeesMode === "limited"
             ? parseInt(schedule.maxAttendeesInput, 10)
             : 0;
@@ -1654,14 +1650,12 @@ const CreateGroupScreen = () => {
             name: groupName,
             image: groupImage,
             meetupsToDisplay: 1,
-            generationLeadDays: null,
-            generationLeadTime: schedule?.leadTime ?? "09:00 AM",
-            generationDeadlineDays: null,
-            generationDeadlineTime: schedule?.deadlineTime ?? "09:00 AM",
             timezone: schedule?.timezone ?? "America/Denver",
             defaultLocation: schedule?.location ?? "",
             defaultCapacity,
-            ...schedulePayload,
+            // At most one schedule is created here — additional named schedules
+            // are added afterward from group settings.
+            schedules: routinePart ? [{ name: groupName, ...routinePart }] : [],
         };
         mutate(payload, {
             onSuccess: (data) => {
@@ -1728,8 +1722,7 @@ const s = StyleSheet.create({
     doneBtnText: { color: "#fff", fontWeight: "800", fontSize: 13 },
     fieldLabel: { fontSize: 11, fontWeight: "800", color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, marginTop: 16 },
     fieldLabelFirst: { marginTop: 0 },
-    // Schedule screen — groups related fields into clearly bounded cards so the long
-    // form reads as a handful of scannable chunks instead of one continuous list.
+    // Groups related fields into bounded cards so the long form reads as scannable chunks
     sectionCard: { backgroundColor: "#fff", borderRadius: 20, borderWidth: 1, borderColor: "#F3F4F6", padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
     sectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
     sectionIconChip: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
@@ -1813,9 +1806,7 @@ const s = StyleSheet.create({
     leadCenter: { alignItems: "center", minWidth: 60 },
     leadVal: { fontSize: 22, fontWeight: "900", color: "#111827" },
     leadSub: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase" },
-    // Review screen — mirrors MeetupDetailModal's palette, section-header, and
-    // detail-card conventions so the two "confirm before you commit" screens feel
-    // like the same app.
+    // Mirrors MeetupDetailModal's palette/section conventions for a consistent "confirm" feel
     reviewHero: { alignItems: "center", marginBottom: 24 },
     reviewHeroName: { fontSize: 22, fontWeight: "900", color: "#111827", letterSpacing: -0.4, textAlign: "center", marginTop: 12 },
     detailsCard: { backgroundColor: "#F9FAFB", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#F3F4F6", marginBottom: 24 },

@@ -11,9 +11,9 @@ const CreateGroupLayout = () => {
             <Stack.Screen 
                 name="index" 
                 options={{ 
-                    presentation: 'card', // This makes it a standard full-screen push
+                    presentation: 'card', // full-screen push
                 headerShown: false,
-                gestureEnabled: false, // This explicitly disables the swipe-back gesture
+                gestureEnabled: false, // disable swipe-back
                     headerLeft: () => (
                         <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
                             <Feather name="x" size={24} color="#4A90E2" />

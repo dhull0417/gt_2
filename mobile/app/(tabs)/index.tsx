@@ -28,15 +28,12 @@ const hashGroupColor = (groupId: string): string => {
   return GROUP_BORDER_COLORS[hash];
 };
 
-// How far out each recurring series shows in "Upcoming Meetups" before the
-// rest fall back to the group calendar button. One-off meetups (frequency
-// null) are never capped.
+// How far out each recurring series shows in "Upcoming Meetups"; one-off meetups are never capped
 const TAB_CAP_DAYS: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
   daily: 7, weekly: 15, biweekly: 15, monthly: 35, ordinal: 35,
 };
 
-// Buckets by (group, frequency) series so a user in a daily group and a
-// weekly group each get their own cap, then merges back into one date-sorted list.
+// Buckets by (group, frequency) so each series gets its own cap, then merges back sorted by date
 const capMeetupsByFrequency = (list: Meetup[]): Meetup[] => {
   const now = Date.now();
   const buckets = new Map<string, Meetup[]>();
@@ -44,7 +41,10 @@ const capMeetupsByFrequency = (list: Meetup[]): Meetup[] => {
 
   list.forEach(m => {
     if (!m.frequency) { uncapped.push(m); return; }
-    const key = `${m.group._id}|${m.frequency}`;
+    // Bucketed by (group, schedule, frequency) — including the schedule id keeps
+    // two same-frequency named schedules on one group (e.g. a biweekly dinner and
+    // a biweekly game night) from being merged into a single shared cap.
+    const key = `${m.group._id}|${m.schedule ?? 'none'}|${m.frequency}`;
     const bucket = buckets.get(key) ?? [];
     bucket.push(m);
     buckets.set(key, bucket);
@@ -52,7 +52,7 @@ const capMeetupsByFrequency = (list: Meetup[]): Meetup[] => {
 
   const capped: Meetup[] = [...uncapped];
   buckets.forEach((bucketMeetups, key) => {
-    const frequency = key.split('|')[1] as NonNullable<Meetup['frequency']>;
+    const frequency = key.split('|')[2] as NonNullable<Meetup['frequency']>;
     const sorted = [...bucketMeetups].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const days = TAB_CAP_DAYS[frequency];
 
@@ -136,15 +136,9 @@ const DashboardScreen = () => {
   const [readyForZipModal, setReadyForZipModal] = useState(false);
   const sawWelcomeModal = useRef(false);
 
-  // The welcome modal (app/_layout.tsx) and this zip-code modal are two separate
-  // native <Modal> instances that both key off currentUser.hasSeenWelcome, so
-  // tapping "Let's go" flips one closed and the other open in the very same tick.
-  // On Android that leaves the welcome modal's Dialog window stuck on screen
-  // (it never finishes tearing down before the zip modal's window takes over),
-  // so it lingers behind and stops responding to its own close. Wait a beat
-  // after hasSeenWelcome flips true before letting the zip modal appear, but
-  // only when we actually saw the welcome modal transition — a returning user
-  // who already has hasSeenWelcome === true on load shouldn't see any delay.
+  // Welcome modal and zip modal both key off hasSeenWelcome and would open in the same tick,
+  // which leaves Android's welcome Dialog window stuck on screen. Delay the zip modal briefly
+  // after the transition — but only if we actually saw it, so returning users get no delay.
   useEffect(() => {
     if (!currentUser) return;
     if (!currentUser.hasSeenWelcome) {
@@ -174,9 +168,7 @@ const DashboardScreen = () => {
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
-  // Meetups that would actually appear in the "Upcoming" section below, after the same
-  // capMeetupsByFrequency cap (e.g. only the next 8 weekly occurrences per group are shown).
-  // Used to keep "Are you in?" from prompting about a meetup the user can't see there.
+  // Meetups visible in "Upcoming" after capping — keeps "Are you in?" from prompting about ones the user can't see there
   const upcomingVisibleMeetupIds = useMemo(() => {
     if (!meetups) return new Set<string>();
     const candidates = meetups.filter(meetup => {

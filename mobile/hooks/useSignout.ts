@@ -15,10 +15,8 @@ export const useSignOut = () => {
                 onPress: async () => {
                     try {
                         await signOut();
-                        // currentUser (and everything else) is cached under keys that
-                        // aren't scoped per-account, so without this, signing into a
-                        // different account can keep serving the previous account's
-                        // cached data until staleTime lapses.
+                        // Cache keys aren't scoped per-account — clear so a new sign-in
+                        // doesn't serve the previous account's stale data.
                         queryClient.clear();
                     } catch (err) {
                         Alert.alert("Error", "Failed to sign out. Please try again.");

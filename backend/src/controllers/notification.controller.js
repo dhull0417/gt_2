@@ -19,23 +19,18 @@ export const getNotifications = asyncHandler(async (req, res) => {
         .populate('poll', 'prompt')
         .sort({ createdAt: -1 });
 
-    // Filter out notifications with broken references to prevent client-side crashes.
-    // This can happen if a group, meetup, poll, or sender is deleted but the notification
-    // remains. Sender is intentionally not required here — system-generated notifications
-    // (cron reminders, RSVP windows opening, poll closures) have no acting user.
+    // Drop notifications with broken refs (deleted group/meetup/poll) to avoid
+    // client crashes. Sender is optional — system notifications have none.
     const validNotifications = notifications.filter(notification => {
-        // Notifications tied to a group must have a valid group.
         const groupRequiredTypes = ['group-invite', 'invite-accepted', 'invite-declined', 'group-added', 'group-updated'];
         if (groupRequiredTypes.includes(notification.type) && !notification.group) {
             return false;
         }
 
-        // Meetup-related notifications must have a valid meetup.
         if (notification.meetup === null && notification.type.startsWith('meetup-')) {
             return false;
         }
 
-        // Poll-related notifications must have a valid poll.
         const pollRequiredTypes = ['poll-created', 'poll-closed'];
         if (pollRequiredTypes.includes(notification.type) && !notification.poll) {
             return false;
@@ -76,7 +71,6 @@ export const acceptInvite = asyncHandler(async (req, res) => {
         { $addToSet: { members: user._id, undecided: user._id } }
     );
 
-    // Update the original invitation
     notification.status = 'accepted';
     await notification.save();
 
@@ -111,7 +105,6 @@ export const declineInvite = asyncHandler(async (req, res) => {
     const group = await Group.findById(notification.group);
     if (!group) return res.status(404).json({ error: "Group not found." });
     
-    // Update the original invitation
     notification.status = 'declined';
     await notification.save();
     
@@ -129,19 +122,16 @@ export const declineInvite = asyncHandler(async (req, res) => {
 
 // Mark notifications as read
 export const markNotificationsAsRead = asyncHandler(async (req, res) => {
-    // 1. Get the logged-in user, just like in your other controllers
     const { userId: clerkId } = getAuth(req);
     const user = await User.findOne({ clerkId }).lean();
     if (!user) {
         return res.status(401).json({ error: "User not authenticated." });
     }
-  
-    // 2. Update all notifications for this user that are currently unread
+
     await Notification.updateMany(
-      { recipient: user._id, read: false }, // Find all unread notifications
-      { $set: { read: true } }              // Set them to read
+      { recipient: user._id, read: false },
+      { $set: { read: true } }
     );
-  
-    // 3. Send a success response
+
     res.status(200).json({ message: "Notifications marked as read" });
 });

@@ -1,4 +1,3 @@
-// app/(tabs)/_layout.tsx
 import React from 'react';
 import { Platform } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
@@ -12,18 +11,15 @@ const TabsLayout = () => {
 
   // Show nothing until Clerk is ready
   if (!isLoaded) {
-    return null; // or <></>
+    return null;
   }
 
-  // Optional: Redirect if not signed in (adjust as needed)
   if (!isSignedIn) {
     return <Redirect href="/(auth)" />;
   }
 
-  // Android's NativeTabs renders the real Material 3 NavigationBar, which draws a
-  // solid pill behind the selected icon and can't be animated from JS. Use a custom
-  // JS tab bar there instead so the selected icon can tint, grow, and breathe;
-  // iOS keeps the native SF Symbols tabs below.
+  // Android's NativeTabs draws a static Material 3 pill that can't be animated from JS,
+  // so use a custom tab bar there for the tint/grow effect; iOS keeps native tabs.
   if (Platform.OS === 'android') {
     return (
       <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <AndroidTabBar {...props} />}>

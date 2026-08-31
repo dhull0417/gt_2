@@ -22,17 +22,14 @@ export const getMeetups = asyncHandler(async (req, res) => {
 
     const now = new Date();
 
-    // Every meetup generated for a member is visible — the meetup tab caps how
-    // many of each recurring series it displays (see the mobile dashboard), and
-    // the group calendar shows everything, so there's no separate server-side
-    // visibility window to apply here.
+    // No server-side visibility window — the mobile dashboard caps how many of
+    // each series it shows; the group calendar shows everything.
     const memberFilter = { members: user._id };
 
     const { since } = req.query;
 
-    // Delta sync: the client already has a cached copy and only wants what
-    // changed since its last sync, plus the current set of valid ids so it
-    // can drop anything (left group, deleted meetup) that's no longer visible.
+    // Delta sync: returns what changed since last sync, plus valid ids so the
+    // client can drop entries that are no longer visible.
     if (since) {
         const sinceDate = new Date(since);
         if (isNaN(sinceDate.getTime())) {
@@ -78,9 +75,8 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         return res.status(400).json({ error: "Invalid RSVP status." });
     }
 
-    // Owner/moderator overriding another member's RSVP — permission-check up front
-    // and swap `user` to the target so the rest of the function (which only ever
-    // reads/writes `user`) applies to them instead of the requester.
+    // Admin override: after the permission check, swap `user` to the target so
+    // the rest of the function applies to them instead of the requester.
     let user = requester;
     let actingAdmin = null;
 
@@ -100,9 +96,8 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         actingAdmin = requester;
     }
 
-    // Concurrent RSVPs on the same meetup (e.g. several members racing for the
-    // last open spot) can lose Mongoose's optimistic-concurrency check. Retry
-    // with a fresh copy of the document rather than surfacing the conflict.
+    // Retry on version conflict — concurrent RSVPs racing for the last spot can
+    // trip Mongoose's optimistic-concurrency check.
     const MAX_RETRIES = 3;
     let meetup;
     let promotedUserId = null;
@@ -112,8 +107,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         meetup = await Meetup.findById(meetupId);
         if (!meetup) return res.status(404).json({ error: "Meetup not found." });
 
-        // Admin overrides bypass the open/deadline window — the point of a manual
-        // override is to finalize status regardless of the automatic window.
+        // Admin overrides bypass the open/deadline window by design.
         if (!actingAdmin && meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
             return res.status(400).json({ error: "RSVPs are not open yet." });
         }
@@ -122,15 +116,14 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             return res.status(400).json({ error: "The RSVP deadline has passed." });
         }
 
-        // Re-tapping the same RSVP button shouldn't re-notify the group. "In" covers
-        // both the 'in' and 'waitlist' arrays since both represent an 'in' request.
+        // Skip re-notifying on a repeat tap; "in" covers both in and waitlist.
         const wasIn = meetup.in.some(id => id.equals(user._id));
         const wasOut = meetup.out.some(id => id.equals(user._id));
         const wasWaitlisted = meetup.waitlist.some(id => id.equals(user._id));
         statusUnchanged = status === 'in' ? (wasIn || wasWaitlisted) : wasOut;
         if (statusUnchanged) break;
 
-        // Safely extract the user from all arrays first to prevent duplicates using Mongoose .pull()
+        // pull from all arrays first to avoid duplicates
         meetup.in.pull(user._id);
         meetup.out.pull(user._id);
         meetup.waitlist.pull(user._id);
@@ -166,8 +159,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         }
     }
 
-    // Notify the promoted waitlister only after the save actually succeeded,
-    // so a retried attempt can't double-send this.
+    // Notify only after save succeeds, so a retry can't double-send.
     if (!statusUnchanged && promotedUserId) {
         const nextUser = await User.findById(promotedUserId);
         if (nextUser) {
@@ -249,7 +241,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         });
     }
 
-    // Re-query with populations to return a fresh representation to the frontend hook
+    // re-fetch, fully populated, for the response
     const updatedMeetup = await Meetup.findById(meetupId)
         .populate('group', 'name owner moderators timezone defaultLocation')
         .populate('members', 'firstName lastName profilePicture clerkId');
@@ -324,36 +316,31 @@ export const updateMeetup = asyncHandler(async (req, res) => {
             .setZone(groupTimezone)
             .set({ hour: sH, minute: sM, second: 0, millisecond: 0 });
         meetup.startsAt = startsAtDT.toJSDate();
-        // `date` must carry the same merged date+time instant as `startsAt` —
-        // every isPast/expiry check reads `date`, so leaving it as the raw
-        // `newDate` (which may still carry the old time-of-day) made a
-        // freshly-rescheduled future meetup look already-expired.
+        // keep `date` in sync with `startsAt`: isPast/expiry checks read `date`,
+        // and the old time-of-day made reschedules look already-expired.
         meetup.date = startsAtDT.toJSDate();
 
-        // rsvpOpenDate/rsvpCloseDate are anchored to the old startsAt — recompute
-        // them the same way generation does, or a meetup whose deadline had
-        // already passed stays permanently un-RSVP-able after being moved to a
-        // future date.
-        const group = meetup.group;
-        const { hours: leadH, minutes: leadM } = parseTimeString(group.generationLeadTime || "09:00 AM");
-        const newRsvpOpenDate = group.generationLeadDays != null
-            ? startsAtDT.minus({ days: group.generationLeadDays }).set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 }).toJSDate()
+        // recompute rsvpOpenDate/CloseDate as generation does, or a past deadline
+        // stays stuck even after the meetup moves to a future date. Settings come from the meetup's own linked schedule now
+        // — a one-off meetup with no schedule keeps no RSVP gating at all.
+        const linkedSchedule = meetup.schedule ? meetup.group.schedules?.id(meetup.schedule) : null;
+        const { hours: leadH, minutes: leadM } = parseTimeString(linkedSchedule?.generationLeadTime || "09:00 AM");
+        const newRsvpOpenDate = linkedSchedule?.generationLeadDays != null
+            ? startsAtDT.minus({ days: linkedSchedule.generationLeadDays }).set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 }).toJSDate()
             : null;
 
-        const { hours: closeH, minutes: closeM } = parseTimeString(group.generationDeadlineTime || "09:00 AM");
-        const newRsvpCloseDate = group.generationDeadlineDays != null
-            ? startsAtDT.minus({ days: group.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
+        const { hours: closeH, minutes: closeM } = parseTimeString(linkedSchedule?.generationDeadlineTime || "09:00 AM");
+        const newRsvpCloseDate = linkedSchedule?.generationDeadlineDays != null
+            ? startsAtDT.minus({ days: linkedSchedule.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
             : null;
 
         meetup.rsvpOpenDate = newRsvpOpenDate;
         meetup.rsvpCloseDate = newRsvpCloseDate;
-        // Already open (no gate, or the new open date has already passed) needs
-        // no further "RSVPs are open" ping; a future open date re-arms one.
+        // mark already-open (no gate, or open date already past) to skip the ping;
+        // a future open date re-arms it.
         meetup.rsvpNotified = !newRsvpOpenDate || newRsvpOpenDate <= new Date();
 
-        // Staged RSVP reminders are keyed off startsAt — a reschedule should
-        // re-arm them relative to the new time rather than staying silent for
-        // whatever's left of the old schedule.
+        // clear reminder stages so a reschedule re-arms them off the new time.
         meetup.rsvpReminderStagesSent = [];
     }
 
@@ -366,8 +353,7 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     const locationChanged = location !== undefined && oldLocation !== meetup.location;
     const capacityChanged = capacity !== undefined && oldCapacity !== meetup.capacity;
 
-    // Recorded on the notification so the bell-icon list can say exactly what
-    // changed instead of a generic "details were updated".
+    // lets the bell-icon list say exactly what changed
     const changedFields = [
         ...(dateOrTimeChanged ? ['schedule'] : []),
         ...(locationChanged ? ['location'] : []),
@@ -393,7 +379,7 @@ export const updateMeetup = asyncHandler(async (req, res) => {
         }
     }
 
-    // Re-fetch the meetup after saving to ensure all paths are populated correctly for the response.
+    // re-fetch, fully populated, for the response
     const populatedMeetup = await Meetup.findById(meetup._id)
         .populate([
             { path: 'group', select: 'name owner moderators' },
@@ -453,9 +439,8 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Send an RSVP reminder push notification to undecided meetup members
- *          (Owner/Moderator Only). Pass a `userId` in the body to remind a single
- *          member, or omit it to remind everyone still undecided.
+ * @desc    Remind undecided members to RSVP (Owner/Moderator Only). Pass `userId`
+ *          to remind one member, or omit to remind everyone undecided.
  * @route   POST /api/meetups/:meetupId/remind
  */
 export const remindUndecided = asyncHandler(async (req, res) => {
@@ -484,8 +469,7 @@ export const remindUndecided = asyncHandler(async (req, res) => {
         return res.status(400).json({ error: "This event is closed for adjustments." });
     }
 
-    // Mirrors the "Undecided" derivation used on the meetup detail screen:
-    // any member who hasn't shown up in in/out/waitlist.
+    // mirrors the detail screen's Undecided logic: members not in in/out/waitlist
     const respondedIds = new Set([
         ...meetup.in.map(id => id.toString()),
         ...meetup.out.map(id => id.toString()),
@@ -526,8 +510,7 @@ export const remindUndecided = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Permanently delete an meetup (Owner/Moderator Only)
- * Refined for Project 6: Loops to fill all due recurring spots after deletion.
+ * @desc    Permanently delete a meetup (Owner/Moderator Only)
  */
 export const deleteMeetup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
@@ -550,10 +533,9 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
 
     await Meetup.findByIdAndDelete(meetupId);
 
-    // If we delete a currently-active recurring meetup, immediately re-fill the
-    // pipeline for every routine/dayTime on the group (rather than waiting for
-    // the next cron tick) so the gap left behind is backfilled right away.
-    if (wasRecurring && parentGroup.schedule?.routines?.length) {
+    // deleting an active recurring meetup backfills the pipeline immediately,
+    // instead of waiting for the next cron tick.
+    if (wasRecurring && parentGroup.schedules?.some(s => s.active !== false && s.routines?.length)) {
         try {
             await generateMeetupsForGroup(parentGroup, {
                 onMeetupCreated: async (newMeetup) => {

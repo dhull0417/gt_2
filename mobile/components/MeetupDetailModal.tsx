@@ -70,8 +70,7 @@ const PulsingWatermark = ({ label, style, baseOpacity, peakOpacity }: {
     );
 };
 
-// Repeat icon rendered as two color halves that spin together in a quick burst whenever
-// burstNonce changes (i.e. on tap).
+// Repeat icon split into two color halves that spin together in a burst on tap
 const InOutSwapIcon = ({ burstNonce }: { burstNonce: number }) => {
     const burst = useSharedValue(0);
     const isFirstRender = useRef(true);
@@ -114,11 +113,10 @@ interface MeetupDetailModalProps {
   onClose: () => void;
 }
 
-// Helper to safely extract user ID whether the array contains strings or populated objects
+// Extracts user ID whether the array holds strings or populated objects
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
-// Mirrors the Max Attendees validation on the group-creation Schedule screen, the
-// Add Meetup wizard, and group settings so every "attendee limit" entry point agrees.
+// Mirrors Max Attendees validation across create-group, AddMeetupWizard, and group settings.
 const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
     if (mode !== "limited" || input === "") return null;
     if (!/^\d+$/.test(input)) return "Numbers only, please.";
@@ -234,12 +232,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     ? new Date(meetup.rsvpCloseDate) < new Date()
     : false;
 
-    // RECOMMENDATION: This flag controls all "adjustment" UI
+    // Controls all "adjustment" UI
     const isReadOnly = isCancelled || isExpired;
     const canManage = (isOwner || isMod) && !isReadOnly;
 
-    // Owner can override anyone's RSVP; a moderator can override regular members only —
-    // not the owner, and not another moderator.
+    // Owner can override any RSVP; a moderator can override only regular members.
     const canManageTarget = (target: User): boolean =>
         canManage && target._id !== currentUser._id && (
             isOwner || (
@@ -261,22 +258,19 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const inFilled = !inUnselected || isUndecided;
     const outFilled = !outUnselected || isUndecided;
 
-    // Faint RSVP-status tint for the whole modal: amber until the user responds,
-    // then green ("in"/waitlisted) or red ("out") to match the RSVP button colors.
+    // Tint matches RSVP button colors: amber until responded, green (in/waitlisted), red (out).
     const modalBackgroundColor = isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
 
     const goingUsers = (meetup.members || []).filter(m => meetup.in?.some(u => getUserId(u) === m._id));
     const outUsers = (meetup.members || []).filter(m => meetup.out?.some(u => getUserId(u) === m._id));
 
-    // Guests stay attached to their host's clerkId even after the host RSVPs 'out'
-    // (the "Keep Guests" option). Since the host no longer appears in goingUsers,
-    // surface those guests as their own row instead of losing the attribution.
+    // Guests stay tied to host's clerkId even after the host RSVPs 'out' (Keep Guests).
+    // Host then drops from goingUsers, so surface guests as their own row.
     const orphanGuestEntries = (meetup.guests || []).filter(g => {
         if (!g.count) return false;
         return !goingUsers.some(user => (user as any).clerkId === g.userId);
     });
-    // Every user who brought guests gets its own tile (not just orphans),
-    // shown alongside their own tile in the "In" grid.
+    // Every user with guests gets its own tile (not just orphans), in the In grid.
     const allGuestEntries = (meetup.guests || []).filter(g => !!g.count);
     const totalGuestsForInTab = goingUsers.reduce((sum, user) => {
         const entry = (meetup.guests || []).find(g => g.userId === (user as any).clerkId);
@@ -423,9 +417,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const handleOpenLocation = (address: string) => {
         if (isHttpUrl(address)) {
-            // Meeting links (Zoom, Google Meet, Teams, etc.) are universal/app links —
-            // opening the plain https URL hands off to the native app if it's installed,
-            // and falls back to the mobile browser otherwise. No custom scheme needed.
+            // Meeting links are universal/app links; the https URL opens the native app if installed, else the browser.
             Linking.openURL(address.trim()).catch(() => {
                 Alert.alert('Error', 'Could not open this link.');
             });
@@ -539,12 +531,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
         if (Platform.OS === 'android') {
-            // Android's picker is a system dialog, not an inline spinner — there's no
-            // separate "Done" button, so the dialog closing on a real pick (event.type
-            // 'set') IS the confirm step. Dismissing it (back button / tap outside)
-            // fires 'dismissed' with no selectedDate — falling back to `tempDate` here
-            // used to silently revert a date the user had already picked, since
-            // `tempDate` only ever tracks the original meetup date on this branch.
+            // Android's dialog has no Done button; closing on a pick (event.type 'set') IS
+            // the confirm. A dismiss fires 'dismissed' with no selectedDate — don't fall back
+            // to tempDate here, it only tracks the original date on this branch.
             setShowDatePicker(false);
             if (event.type === 'set' && selectedDate) {
                 setNewDate(selectedDate);
@@ -676,7 +665,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 <View style={{ marginBottom: showRsvpSelector ? 32 : 14 }}>
-                    {/* Updated Banner Logic */}
                     {isCancelled && (
                         <View style={styles.cancelBanner}>
                             <Feather name="alert-triangle" size={18} color="#B91C1C" />
@@ -728,7 +716,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </View>
                 </View>
 
-                {/* Hide RSVP Actions if Read Only */}
                 {!isReadOnly && (
                     <Animated.View layout={LinearTransition.duration(300)} style={{ marginTop: showRsvpSelector ? 24 : 0, marginBottom: (isRsvpLocked || isRsvpDeadlinePassed || showRsvpSelector) ? 60 : 0 }}>
                         {isRsvpLocked ? (
@@ -931,7 +918,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     )}
                 </Animated.View>
 
-                {/* Hide Management section if Read Only */}
                 {canManage && (
                     <View style={styles.ownerSection}>
                         <TouchableOpacity onPress={handleCancelMeetup} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4A90E2', borderColor: '#4A90E2' }]}>
@@ -1224,8 +1210,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     asOverlay
                 />
 
-                {/* Rendered inside this Modal's own tree (not as a sibling <Modal>) — RN
-                    doesn't reliably stack a second native Modal on top of one already open. */}
+                {/* Rendered inside this Modal's tree, not a sibling — RN can't stack a second native Modal */}
                 {showDatePicker && (
                     Platform.OS === 'ios' ? (
                         <View style={StyleSheet.absoluteFillObject}>
@@ -1268,8 +1253,7 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: 'white' },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     closeButton: { padding: 4 },
-    // Fixed minHeight reserves room for the location line whether or not it's present, so the
-    // header's height — and thus where the ScrollView (and IN/OUT watermark) starts — never changes.
+    // Fixed minHeight reserves room for the location line so header height never shifts.
     headerTitleContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
     headerTitle: { fontSize: 14, fontWeight: '900', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
     headerLocationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, maxWidth: '100%', flexShrink: 1 },

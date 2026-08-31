@@ -47,10 +47,7 @@ const userSchema = new mongoose.Schema(
                 ref: "Group",
             },
         ],
-        /**
-         * Project 4: Mute Feature
-         * Array of Group IDs for which the user has disabled chat notifications.
-         */
+        // group ids where chat notifications are muted
         mutedGroups: [
             {
                 type: mongoose.Schema.Types.ObjectId,
@@ -63,24 +60,27 @@ const userSchema = new mongoose.Schema(
                 ref: "Group",
             },
         ],
-        /**
-         * Per-group "last read" timestamp, keyed by Group ID (as a string).
-         * A group's chat is unread when its lastMessage.createdAt is newer
-         * than the entry here (or there's no entry at all yet).
-         */
+        // per-group last-read timestamp (keyed by group id); unread when
+        // lastMessage.createdAt is newer than this (or missing)
         lastReadAt: {
             type: Map,
             of: Date,
             default: {},
         },
-        /**
-         * Project 4: Push Notifications
-         * Storing the unique Expo Push Token for this user's device
-         * to allow the backend to send real-time alerts.
-         */
+        // Expo push token for this device
         expoPushToken: {
             type: String,
             required: false,
+        },
+        // OS permission state per type, for granted-user counts.
+        // 'undetermined' = never asked or no record yet.
+        permissions: {
+            type: {
+                notifications: { type: String, enum: ['granted', 'denied', 'undetermined'], default: 'undetermined' },
+                location: { type: String, enum: ['granted', 'denied', 'undetermined'], default: 'undetermined' },
+                photoLibrary: { type: String, enum: ['granted', 'denied', 'undetermined'], default: 'undetermined' },
+            },
+            default: {},
         },
         calendarToken: {
             type: String,
@@ -88,7 +88,7 @@ const userSchema = new mongoose.Schema(
             unique: true,
             sparse: true,
             default: function() {
-                // Foolproof generator: Combines timestamp with random base36 strings
+                // timestamp + random base36 strings
                 return Date.now().toString(36) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
             }
         },

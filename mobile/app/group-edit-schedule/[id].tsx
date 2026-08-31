@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useRef } from "react";
 import {
     View,
     Text,
+    TextInput,
     TouchableOpacity,
     ScrollView,
     StyleSheet,
@@ -17,7 +18,7 @@ import { Feather } from "@expo/vector-icons";
 import { DateTime } from "luxon";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
-import { useApiClient, GroupDetails, Frequency, DayTime, Routine } from "../../utils/api";
+import { useApiClient, groupApi, GroupDetails, NamedSchedule, Frequency, DayTime, Routine } from "../../utils/api";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
 import NativeTimePicker from "../../components/NativeTimePicker";
 import OptionPickerModal from "../../components/OptionPickerModal";
@@ -38,8 +39,7 @@ const DAYS_OF_WEEK = [
     { label: "Saturday",  short: "Sat", value: 6 },
 ];
 
-// One accent per weekday so a list of day rows/cards reads at a glance instead
-// of requiring the user to read each label to tell days apart.
+// One accent color per weekday so day rows/cards are distinguishable at a glance
 const DAY_COLORS: { bg: string; fg: string }[] = [
     { bg: "#FEE2E2", fg: "#DC2626" }, // Sunday
     { bg: "#DBEAFE", fg: "#2563EB" }, // Monday
@@ -113,6 +113,9 @@ interface BuiltRoutine {
 }
 
 interface ScheduleData {
+    name: string;
+    location: string;
+    capacity: string; // blank/"0" = unlimited, mirrors the capacity input pattern used elsewhere
     startDate: string;
     timezone: string;
     frequency: Frequency | null;
@@ -134,6 +137,9 @@ interface ScheduleData {
 }
 
 const defaultSchedule = (): ScheduleData => ({
+    name: "",
+    location: "",
+    capacity: "",
     startDate: DateTime.now().toISODate()!,
     timezone: "America/Denver",
     frequency: null,
@@ -180,7 +186,6 @@ const buildLabel = (freq: Frequency, dayTimes: DayTime[], ordEntries?: OrdinalEn
 const buildSchedulePayload = (d: ScheduleData) => {
     if (!d.frequency) return null;
     let routines: any[] = [];
-    let topFreq: Frequency = d.frequency;
 
     if (d.frequency === "custom") {
         routines = d.builtRoutines.map(r => ({ frequency: r.frequency, dayTimes: r.dayTimes, rules: r.rules }));
@@ -195,7 +200,6 @@ const buildSchedulePayload = (d: ScheduleData) => {
         if (d.monthlyMode === "date") {
             routines = [{ frequency: "monthly", dayTimes: d.monthlyDates.map(e => ({ date: e.date, time: e.time })) }];
         } else if (d.monthlyMode === "ordinal") {
-            topFreq = "ordinal" as Frequency;
             const rules = d.ordinalEntries.map(e => ({
                 type: "byDay",
                 occurrence: e.occurrence ?? "1st",
@@ -210,7 +214,11 @@ const buildSchedulePayload = (d: ScheduleData) => {
     }
 
     return {
-        schedule: { frequency: topFreq, startDate: d.startDate, routines },
+        name: d.name.trim(),
+        startDate: d.startDate,
+        routines,
+        defaultLocation: d.location.trim(),
+        defaultCapacity: d.capacity.trim() ? parseInt(d.capacity, 10) : 0,
         timezone: d.timezone,
     };
 };
@@ -272,21 +280,30 @@ const apiRoutineToBuiltRoutine = (r: Routine): BuiltRoutine => {
     };
 };
 
-// ─── Convert GroupDetails → ScheduleData ─────────────────────────────────────
+// ─── Convert a named schedule (or none, for creation) → ScheduleData ─────────
 
-const scheduleFromGroup = (group: GroupDetails): ScheduleData => {
+const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSchedule | null): ScheduleData => {
     const base = defaultSchedule();
-    const sched = group.schedule;
     const tz = group.timezone || "America/Denver";
 
-    const routines = (sched?.routines ?? []) as Routine[];
-
-    // schedule.frequency is not persisted by the backend schema — infer it from routines
-    if (!routines.length) {
+    if (!sched) {
         return { ...base, timezone: tz };
     }
 
-    const startDate = sched?.startDate
+    const common = {
+        name: sched.name,
+        location: sched.defaultLocation || "",
+        capacity: sched.defaultCapacity ? String(sched.defaultCapacity) : "",
+    };
+
+    const routines = (sched.routines ?? []) as Routine[];
+
+    // schedule.frequency is not persisted by the backend schema — infer it from routines
+    if (!routines.length) {
+        return { ...base, ...common, timezone: tz };
+    }
+
+    const startDate = sched.startDate
         ? DateTime.fromISO(sched.startDate as unknown as string).toISODate() ?? DateTime.now().toISODate()!
         : DateTime.now().toISODate()!;
 
@@ -294,7 +311,7 @@ const scheduleFromGroup = (group: GroupDetails): ScheduleData => {
 
     if (inferredFreq === "custom") {
         return {
-            ...base, timezone: tz, startDate,
+            ...base, ...common, timezone: tz, startDate,
             frequency: "custom",
             builtRoutines: routines.map(apiRoutineToBuiltRoutine),
         };
@@ -304,7 +321,7 @@ const scheduleFromGroup = (group: GroupDetails): ScheduleData => {
         const dts = routines[0].dayTimes;
         const allSame = dts.length > 0 && dts.every(dt => dt.time === dts[0].time);
         return {
-            ...base, timezone: tz, startDate, frequency: "daily",
+            ...base, ...common, timezone: tz, startDate, frequency: "daily",
             dailySameTime: allSame,
             dailySharedTime: allSame ? (dts[0]?.time ?? "05:00 PM") : "05:00 PM",
             dailyRows: allSame ? base.dailyRows : DAYS_OF_WEEK.map(dw => {
@@ -316,7 +333,7 @@ const scheduleFromGroup = (group: GroupDetails): ScheduleData => {
 
     if ((inferredFreq === "weekly" || inferredFreq === "biweekly") && routines[0]) {
         return {
-            ...base, timezone: tz, startDate, frequency: inferredFreq,
+            ...base, ...common, timezone: tz, startDate, frequency: inferredFreq,
             weekdayRows: routines[0].dayTimes.map(dt => ({
                 id: uid(), day: dt.day ?? null, time: dt.time,
                 startDate: dt.startDate ? DateTime.fromISO(dt.startDate as unknown as string).toISODate() : null,
@@ -327,7 +344,7 @@ const scheduleFromGroup = (group: GroupDetails): ScheduleData => {
 
     if (inferredFreq === "monthly" && routines[0]) {
         return {
-            ...base, timezone: tz, startDate, frequency: "monthly",
+            ...base, ...common, timezone: tz, startDate, frequency: "monthly",
             monthlyMode: "date",
             monthlyDates: routines[0].dayTimes.map(dt => ({
                 id: uid(), date: dt.date ?? 1, time: dt.time, expanded: false, showTimePicker: false,
@@ -338,7 +355,7 @@ const scheduleFromGroup = (group: GroupDetails): ScheduleData => {
     if (inferredFreq === "ordinal" && routines[0]) {
         const routine = routines[0];
         return {
-            ...base, timezone: tz, startDate, frequency: "monthly",
+            ...base, ...common, timezone: tz, startDate, frequency: "monthly",
             monthlyMode: "ordinal",
             ordinalEntries: (routine.rules ?? []).map((rule, i) => ({
                 id: uid(),
@@ -351,7 +368,7 @@ const scheduleFromGroup = (group: GroupDetails): ScheduleData => {
         };
     }
 
-    return { ...base, timezone: tz, startDate };
+    return { ...base, ...common, timezone: tz, startDate };
 };
 
 // ─── InlineCalendar ───────────────────────────────────────────────────────────
@@ -412,28 +429,37 @@ const InlineCalendar = ({ value, onChange, minDate }: {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 const EditScheduleScreen = () => {
-    const { id } = useLocalSearchParams<{ id: string }>();
+    const { id, scheduleId: rawScheduleId } = useLocalSearchParams<{ id: string; scheduleId?: string }>();
+    // "new" (or no param at all) means creating a schedule rather than editing one.
+    const scheduleId = rawScheduleId && rawScheduleId !== "new" ? rawScheduleId : null;
+    const isNew = !scheduleId;
     const router = useRouter();
     const api = useApiClient();
     const queryClient = useQueryClient();
 
     const { data: group, isLoading } = useGetGroupDetails(id);
     const [isSaving, setIsSaving] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const targetSchedule = useMemo(
+        () => group?.schedules?.find(s => s._id === scheduleId) ?? null,
+        [group, scheduleId]
+    );
 
     // Initialized once when group data arrives
     const originalRef = useRef<ScheduleData | null>(null);
     const [d, setD] = useState<ScheduleData>(defaultSchedule());
     const initialized = useRef(false);
 
-    // Pre-populate from group data the first time it loads
+    // Pre-populate from the target schedule (or defaults, for a new one) the first time it loads
     React.useEffect(() => {
-        if (group && !initialized.current) {
+        if (group && !initialized.current && (isNew || targetSchedule)) {
             initialized.current = true;
-            const initial = scheduleFromGroup(group);
+            const initial = scheduleFromNamedSchedule(group, targetSchedule);
             originalRef.current = initial;
             setD(initial);
         }
-    }, [group]);
+    }, [group, targetSchedule, isNew]);
 
     const upd = useCallback((patch: Partial<ScheduleData>) => {
         animate();
@@ -617,6 +643,7 @@ const EditScheduleScreen = () => {
     // ── Validation ────────────────────────────────────────────────────────────
 
     const isScheduleValid = (): boolean => {
+        if (!d.name.trim()) return false;
         if (!d.frequency) return false;
         if (d.frequency === "daily") return d.dailySameTime !== null;
         if (d.frequency === "weekly" || d.frequency === "biweekly")
@@ -644,20 +671,57 @@ const EditScheduleScreen = () => {
         if (!payload || !id) return;
         setIsSaving(true);
         try {
-            await api.patch(`/api/groups/${id}/schedule`, payload);
+            if (isNew) {
+                await groupApi.createSchedule(api, id, payload);
+            } else {
+                await groupApi.updateSchedule(api, id, scheduleId!, payload);
+            }
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["groupDetails", id] }),
                 queryClient.invalidateQueries({ queryKey: ["meetups"] }),
                 queryClient.invalidateQueries({ queryKey: ["groups"] }),
             ]);
-            Alert.alert("Schedule updated", "Future meetups have been regenerated.", [
-                { text: "OK", onPress: () => router.navigate("/(tabs)/groups") },
-            ]);
+            Alert.alert(
+                isNew ? "Schedule created" : "Schedule updated",
+                isNew ? "Meetups will start generating shortly." : "Future meetups have been regenerated.",
+                [{ text: "OK", onPress: () => router.navigate("/(tabs)/groups") }]
+            );
         } catch (err: any) {
-            Alert.alert("Error", err?.response?.data?.error || "Failed to update schedule.");
+            Alert.alert("Error", err?.response?.data?.error || "Failed to save schedule.");
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const handleDelete = () => {
+        if (!id || !scheduleId) return;
+        Alert.alert(
+            "Remove Schedule",
+            `Remove "${d.name || "this schedule"}"? Its upcoming meetups will be cancelled — this can't be undone.`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Remove",
+                    style: "destructive",
+                    onPress: async () => {
+                        setIsDeleting(true);
+                        try {
+                            await groupApi.deleteSchedule(api, id, scheduleId);
+                            await Promise.all([
+                                queryClient.invalidateQueries({ queryKey: ["groupDetails", id] }),
+                                queryClient.invalidateQueries({ queryKey: ["meetups"] }),
+                                queryClient.invalidateQueries({ queryKey: ["groups"] }),
+                            ]);
+                            router.navigate("/(tabs)/groups");
+                        } catch (err: any) {
+                            Alert.alert("Error", err?.response?.data?.error || "Failed to remove schedule.");
+                        } finally {
+                            setIsDeleting(false);
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     // ── Sub-renderers ─────────────────────────────────────────────────────────
@@ -1063,7 +1127,7 @@ const EditScheduleScreen = () => {
                     <TouchableOpacity onPress={() => router.back()} style={s.iconBtn}>
                         <Feather name="arrow-left" size={24} color="#6B7280" />
                     </TouchableOpacity>
-                    <Text style={s.headerTitle}>Edit Schedule</Text>
+                    <Text style={s.headerTitle}>{isNew ? "New Schedule" : "Edit Schedule"}</Text>
                     <View style={{ width: 36 }} />
                 </View>
 
@@ -1073,7 +1137,52 @@ const EditScheduleScreen = () => {
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
                 >
-                    <Text style={s.screenSub}>Changes will delete future meetups and regenerate them from the new schedule.</Text>
+                    <Text style={s.screenSub}>
+                        {isNew
+                            ? "Give this schedule a name (e.g. \"Monthly Camping\") and set its recurrence — it shares this group's members and chat."
+                            : "Changes will delete future meetups and regenerate them from the updated schedule."}
+                    </Text>
+
+                    {/* Name */}
+                    <Text style={s.fieldLabel}>Schedule name</Text>
+                    <View style={s.dateFieldRow}>
+                        <Feather name="tag" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                        <TextInput
+                            style={s.textInputField}
+                            value={d.name}
+                            onChangeText={t => setD(prev => ({ ...prev, name: t }))}
+                            placeholder="e.g. Sunday Dinner"
+                            placeholderTextColor="#9CA3AF"
+                            maxLength={60}
+                        />
+                    </View>
+
+                    {/* Location */}
+                    <Text style={s.fieldLabel}>Default location</Text>
+                    <View style={s.dateFieldRow}>
+                        <Feather name="map-pin" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                        <TextInput
+                            style={s.textInputField}
+                            value={d.location}
+                            onChangeText={t => setD(prev => ({ ...prev, location: t }))}
+                            placeholder="Optional"
+                            placeholderTextColor="#9CA3AF"
+                        />
+                    </View>
+
+                    {/* Capacity */}
+                    <Text style={s.fieldLabel}>Attendee limit</Text>
+                    <View style={s.dateFieldRow}>
+                        <Feather name="users" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                        <TextInput
+                            style={s.textInputField}
+                            value={d.capacity}
+                            onChangeText={t => setD(prev => ({ ...prev, capacity: t.replace(/[^0-9]/g, "") }))}
+                            placeholder="Unlimited"
+                            placeholderTextColor="#9CA3AF"
+                            keyboardType="number-pad"
+                        />
+                    </View>
 
                     {/* Frequency */}
                     <Text style={s.fieldLabel}>How often?</Text>
@@ -1141,6 +1250,14 @@ const EditScheduleScreen = () => {
                 </ScrollView>
 
                 <View style={s.screenFooter}>
+                    {!isNew && (
+                        <TouchableOpacity style={s.deleteBtn} onPress={handleDelete} disabled={isDeleting}>
+                            {isDeleting
+                                ? <ActivityIndicator color="#EF4444" size="small" />
+                                : <Feather name="trash-2" size={18} color="#EF4444" />
+                            }
+                        </TouchableOpacity>
+                    )}
                     {!hasChanged && isScheduleValid() && (
                         <Text style={s.noChangeHint}>No changes yet</Text>
                     )}
@@ -1151,7 +1268,7 @@ const EditScheduleScreen = () => {
                     >
                         {isSaving
                             ? <ActivityIndicator color="#fff" size="small" />
-                            : <><Text style={s.primaryBtnText}>Save Changes</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>
+                            : <><Text style={s.primaryBtnText}>{isNew ? "Create Schedule" : "Save Changes"}</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>
                         }
                     </TouchableOpacity>
                 </View>
@@ -1172,7 +1289,9 @@ const s = StyleSheet.create({
     screenSub: { fontSize: 13, color: "#9CA3AF", marginBottom: 8, marginTop: 12, lineHeight: 18 },
     screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#F3F4F6", backgroundColor: "#fff", gap: 12 },
     noChangeHint: { fontSize: 13, color: "#9CA3AF", fontWeight: "600" },
+    deleteBtn: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: "#FECACA", marginRight: "auto" },
     iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+    textInputField: { flex: 1, fontSize: 15, color: "#374151", fontWeight: "500", padding: 0 },
     primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
     primaryBtnDisabled: { backgroundColor: "#93C5FD" },
     primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },

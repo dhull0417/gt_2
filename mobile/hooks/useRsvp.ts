@@ -21,7 +21,6 @@ export const useRsvp = () => {
     onSuccess: (data, variables) => {
       if (!variables.skipResponsePopup) emitRsvpResponse(variables.status);
       if (variables.status === 'in') promptForNotificationPermissionOnFirstRsvpIn(api);
-      // Invalidate the main meetups query to refresh all data
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
     },
     onError: (error: any) => {

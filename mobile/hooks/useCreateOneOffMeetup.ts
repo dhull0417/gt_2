@@ -21,9 +21,8 @@ export const useCreateOneOffMeetup = () => {
     
     onSuccess: () => {
       Alert.alert("Success", "One-off meetup has been scheduled!");
-      // Invalidate the meetups query to refresh the meetups list
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
-      router.back(); // Go back to the group detail screen
+      router.back();
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Failed to schedule meetup.";

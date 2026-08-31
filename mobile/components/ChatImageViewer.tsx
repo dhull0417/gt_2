@@ -22,9 +22,9 @@ export function ChatImageViewer({ visible, imageUrl, imageWidth, imageHeight, on
   const insets = useSafeAreaInsets();
   const viewerHeight = height * 0.85;
 
-  // The actual rendered image box inside the (letterboxed) container, so panning
-  // clamps to the image's real edges rather than the empty space around it.
-  // Falls back to the full container when a legacy message has no stored dimensions.
+  // Rendered image box within the letterboxed container, so panning clamps to
+  // the image edges, not the empty space. Falls back to full container if no
+  // stored dimensions (legacy messages).
   const imageAspect = imageWidth && imageHeight ? imageWidth / imageHeight : width / viewerHeight;
   const containerAspect = width / viewerHeight;
   const contentWidth = imageAspect > containerAspect ? width : viewerHeight * imageAspect;
@@ -53,8 +53,7 @@ export function ChatImageViewer({ visible, imageUrl, imageWidth, imageHeight, on
       const nextScale = Math.min(Math.max(savedScale.value * e.scale, MIN_SCALE), MAX_SCALE);
       scale.value = nextScale;
 
-      // Re-pull the pan back in bounds live as the image shrinks, instead of
-      // only correcting it once the gesture ends.
+      // Clamp pan back in bounds live as the image shrinks
       const maxX = Math.max(0, (contentWidth * nextScale - width) / 2);
       const maxY = Math.max(0, (contentHeight * nextScale - viewerHeight) / 2);
       translateX.value = Math.min(Math.max(translateX.value, -maxX), maxX);

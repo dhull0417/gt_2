@@ -42,7 +42,6 @@ interface GroupDetailsViewProps {
 
 const daysOfWeekFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-// Helper to get common timezone abbreviations
 const getTZAbbreviation = (timezone: string) => {
     switch (timezone) {
         case "America/New_York": return "ET";
@@ -52,18 +51,12 @@ const getTZAbbreviation = (timezone: string) => {
         case "America/Los_Angeles": return "PT";
         case "America/Anchorage": return "AKST";
         case "Pacific/Honolulu": return "HST";
-        default: 
-            return ""; // Fallback if not explicitly mapped
+        default:
+            return "";
     }
 };
 
-/**
- * GroupDetailsView
- * Displays specific schedule routines, member lists, and invitation tools.
- * Restored: JIT Schedule info and Share Invite Link functionality.
- * Added: Role labels (Owner/Moderator) in member list.
- * Fixed: Added explicit Timezone display to the Details card.
- */
+// Displays schedule, member list, and invite tools for a group
 export const GroupDetailsView = ({
     groupDetails,
     currentUser,
@@ -131,10 +124,10 @@ export const GroupDetailsView = ({
         );
     };
 
-    /**
-     * Helper to render meetup lines.
-     */
-    const renderScheduleLines = (frequency: string, dayTimes: any[]) => {
+    // `rules` is the specific routine's own ordinal rules — must be indexed by
+    // this dayTime's position, not always rules[0], since dayTimes/rules are
+    // parallel arrays for ordinal routines (dayTimes[1] pairs with rules[1], etc).
+    const renderScheduleLines = (frequency: string, dayTimes: any[], rules?: any[]) => {
         const groupTimezoneAbbr = getTZAbbreviation(groupDetails.timezone);
         const timeEntries = dayTimes && dayTimes.length > 0 ? dayTimes : [{ time: "Time TBD" }];
 
@@ -155,11 +148,10 @@ export const GroupDetailsView = ({
 
         return timeEntries.map((dt, dtIdx) => {
             let dayLabel = "";
-            if (frequency === 'ordinal' && groupDetails.schedule?.routines?.[0]?.rules?.[0]) {
-                const rules = groupDetails.schedule.routines[0].rules;
-                const ruleDay = rules![0].day;
+            if (frequency === 'ordinal' && rules?.[dtIdx]) {
+                const ruleDay = rules[dtIdx].day;
                 const dayName = typeof ruleDay === 'number' ? daysOfWeekFull[ruleDay] : "";
-                dayLabel = `${rules![0].occurrence} ${dayName}`;
+                dayLabel = `${rules[dtIdx].occurrence} ${dayName}`;
             } else if (typeof dt.date === 'number') {
                 const d = dt.date;
                 const sfx = d === 1 || d === 21 || d === 31 ? 'st' : 
@@ -218,63 +210,79 @@ export const GroupDetailsView = ({
 
                 {detailsExpanded && (
                     <View style={styles.collapsibleBody}>
-                        {/* Detailed Schedule Section */}
-                        <View style={groupDetails.schedule?.routines && groupDetails.schedule.routines.length > 0 ? styles.infoRowTop : styles.infoRow}>
-                            <View style={[styles.iconWrap, styles.iconWrapBlue]}>
-                                <Feather name="calendar" size={16} color="#4A90E2" />
-                            </View>
-                            <View style={styles.scheduleContent}>
-                                {groupDetails.schedule?.routines && groupDetails.schedule.routines.length > 0 ? (
-                                    groupDetails.schedule.routines.map((routine, rIdx) => (
-                                        <View key={rIdx} style={styles.routineBlock}>
-                                            <Text style={styles.frequencyLabel}>
-                                                {routine.frequency === 'biweekly' ? 'Every 2 Weeks' : routine.frequency.charAt(0).toUpperCase() + routine.frequency.slice(1)}
-                                            </Text>
-                                            {renderScheduleLines(routine.frequency, routine.dayTimes)}
+                        {(() => {
+                            const activeSchedules = (groupDetails.schedules ?? []).filter(sch => sch.active !== false);
+                            if (activeSchedules.length === 0) {
+                                return (
+                                    <View style={styles.infoRow}>
+                                        <View style={[styles.iconWrap, styles.iconWrapBlue]}>
+                                            <Feather name="calendar" size={16} color="#4A90E2" />
                                         </View>
-                                    ))
-                                ) : (
-                                    <Text style={[styles.scheduleDetailText, { fontSize: 16, marginBottom: 0 }]}>No schedule defined</Text>
-                                )}
-                            </View>
-                        </View>
+                                        <Text style={styles.infoText}>No schedule defined</Text>
+                                    </View>
+                                );
+                            }
 
-                        {/* Location Info */}
-                        <View style={styles.infoRow}>
-                            <View style={[styles.iconWrap, styles.iconWrapGreen]}>
-                                <Feather name="map-pin" size={16} color="#16A34A" />
-                            </View>
-                            <Text style={styles.infoText}>
-                                {groupDetails.defaultLocation || "No default location set"}
-                            </Text>
-                        </View>
+                            return activeSchedules.map((sch, schIdx) => (
+                                <View key={sch._id} style={[styles.scheduleBlock, schIdx === activeSchedules.length - 1 && { marginBottom: 0 }]}>
+                                    <Text style={styles.scheduleNameLabel}>{sch.name}</Text>
 
-                        {/* Capacity Limit */}
-                        <View style={styles.infoRow}>
-                            <View style={[styles.iconWrap, styles.iconWrapPurple]}>
-                                <Feather name="users" size={16} color="#7C3AED" />
-                            </View>
-                            <Text style={styles.infoText}>{groupDetails.defaultCapacity === 0 ? "Unlimited Attendees" : groupDetails.defaultCapacity}</Text>
-                        </View>
+                                    {/* Routines */}
+                                    <View style={styles.infoRowTop}>
+                                        <View style={[styles.iconWrap, styles.iconWrapBlue]}>
+                                            <Feather name="calendar" size={16} color="#4A90E2" />
+                                        </View>
+                                        <View style={styles.scheduleContent}>
+                                            {(sch.routines ?? []).map((routine, rIdx) => (
+                                                <View key={rIdx} style={styles.routineBlock}>
+                                                    <Text style={styles.frequencyLabel}>
+                                                        {routine.frequency === 'biweekly' ? 'Every 2 Weeks' : routine.frequency.charAt(0).toUpperCase() + routine.frequency.slice(1)}
+                                                    </Text>
+                                                    {renderScheduleLines(routine.frequency, routine.dayTimes, routine.rules)}
+                                                </View>
+                                            ))}
+                                        </View>
+                                    </View>
 
-                        {/* JIT Schedule Info */}
-                        <View style={[styles.infoRow, { marginBottom: 0 }]}>
-                            <View style={[styles.iconWrap, styles.iconWrapAmber]}>
-                                <Feather name="bell" size={16} color="#D97706" />
-                            </View>
-                            <Text style={styles.infoText}>
-                                {groupDetails.generationLeadDays == null && groupDetails.generationDeadlineDays == null
-                                    ? "RSVPs open anytime"
-                                    : [
-                                        groupDetails.generationLeadDays != null
-                                            ? `Opens ${groupDetails.generationLeadDays} day${groupDetails.generationLeadDays !== 1 ? 's' : ''} before @ ${groupDetails.generationLeadTime}`
-                                            : null,
-                                        groupDetails.generationDeadlineDays != null
-                                            ? `Deadline ${groupDetails.generationDeadlineDays} day${groupDetails.generationDeadlineDays !== 1 ? 's' : ''} before @ ${groupDetails.generationDeadlineTime}`
-                                            : null,
-                                    ].filter(Boolean).join(' · ')}
-                            </Text>
-                        </View>
+                                    {/* Location */}
+                                    <View style={styles.infoRow}>
+                                        <View style={[styles.iconWrap, styles.iconWrapGreen]}>
+                                            <Feather name="map-pin" size={16} color="#16A34A" />
+                                        </View>
+                                        <Text style={styles.infoText}>
+                                            {sch.defaultLocation || "No location set"}
+                                        </Text>
+                                    </View>
+
+                                    {/* Capacity */}
+                                    <View style={styles.infoRow}>
+                                        <View style={[styles.iconWrap, styles.iconWrapPurple]}>
+                                            <Feather name="users" size={16} color="#7C3AED" />
+                                        </View>
+                                        <Text style={styles.infoText}>{sch.defaultCapacity === 0 ? "Unlimited Attendees" : sch.defaultCapacity}</Text>
+                                    </View>
+
+                                    {/* RSVP window */}
+                                    <View style={[styles.infoRow, { marginBottom: 0 }]}>
+                                        <View style={[styles.iconWrap, styles.iconWrapAmber]}>
+                                            <Feather name="bell" size={16} color="#D97706" />
+                                        </View>
+                                        <Text style={styles.infoText}>
+                                            {sch.generationLeadDays == null && sch.generationDeadlineDays == null
+                                                ? "RSVPs open anytime"
+                                                : [
+                                                    sch.generationLeadDays != null
+                                                        ? `Opens ${sch.generationLeadDays} day${sch.generationLeadDays !== 1 ? 's' : ''} before @ ${sch.generationLeadTime}`
+                                                        : null,
+                                                    sch.generationDeadlineDays != null
+                                                        ? `Deadline ${sch.generationDeadlineDays} day${sch.generationDeadlineDays !== 1 ? 's' : ''} before @ ${sch.generationDeadlineTime}`
+                                                        : null,
+                                                ].filter(Boolean).join(' · ')}
+                                        </Text>
+                                    </View>
+                                </View>
+                            ));
+                        })()}
                     </View>
                 )}
             </View>}
@@ -394,6 +402,8 @@ const styles = StyleSheet.create({
     infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     infoRowTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
     infoText: { marginLeft: 12, fontSize: 16, fontWeight: '600', color: '#374151', flex: 1 },
+    scheduleBlock: { marginBottom: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+    scheduleNameLabel: { fontSize: 15, fontWeight: '900', color: '#111827', marginBottom: 10 },
     scheduleContent: { marginLeft: 12, flex: 1 },
     routineBlock: { marginBottom: 8 },
     frequencyLabel: { fontSize: 14, fontWeight: '800', color: '#4A90E2', marginBottom: 4, textTransform: 'capitalize' },

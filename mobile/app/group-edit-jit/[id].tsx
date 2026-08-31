@@ -19,9 +19,7 @@ import { useApiClient, groupApi } from "../../utils/api";
 import NativeTimePicker, { timeStringToDate } from "@/components/NativeTimePicker";
 import InfoBubble from "@/components/InfoBubble";
 
-// RSVP opens and RSVP deadline are each "N days before, at time of day". When both
-// land on the same day-count, only the time of day keeps opens before the deadline,
-// so the day-count comparison alone (leadDays >= deadlineDays) isn't sufficient.
+// Same day-count for open/deadline still needs a time-of-day check — leadDays >= deadlineDays alone isn't enough
 const timeToMinutes = (time: string): number => {
     const t = timeStringToDate(time);
     return t.getHours() * 60 + t.getMinutes();
@@ -65,12 +63,13 @@ interface RsvpSettings {
 }
 
 const EditJitScreen = () => {
-    const { id } = useLocalSearchParams<{ id: string }>();
+    const { id, scheduleId } = useLocalSearchParams<{ id: string; scheduleId: string }>();
     const router = useRouter();
     const api = useApiClient();
     const queryClient = useQueryClient();
 
     const { data: group, isLoading: loadingGroup } = useGetGroupDetails(id);
+    const schedule = group?.schedules?.find(s => s._id === scheduleId) ?? null;
 
     const [rsvpRestricted, setRsvpRestricted] = useState(true);
     const [leadEnabled, setLeadEnabled] = useState(true);
@@ -88,16 +87,16 @@ const EditJitScreen = () => {
     const initialized = useRef(false);
 
     useEffect(() => {
-        if (group && !initialized.current) {
+        if (schedule && !initialized.current) {
             initialized.current = true;
             const initial: RsvpSettings = {
-                rsvpRestricted: group.generationLeadDays != null || group.generationDeadlineDays != null,
-                leadEnabled: group.generationLeadDays != null,
-                leadDays: group.generationLeadDays ?? 5,
-                leadTime: group.generationLeadTime || "09:00 AM",
-                deadlineEnabled: group.generationDeadlineDays != null,
-                deadlineDays: group.generationDeadlineDays ?? 2,
-                deadlineTime: group.generationDeadlineTime || "09:00 AM",
+                rsvpRestricted: schedule.generationLeadDays != null || schedule.generationDeadlineDays != null,
+                leadEnabled: schedule.generationLeadDays != null,
+                leadDays: schedule.generationLeadDays ?? 5,
+                leadTime: schedule.generationLeadTime || "09:00 AM",
+                deadlineEnabled: schedule.generationDeadlineDays != null,
+                deadlineDays: schedule.generationDeadlineDays ?? 2,
+                deadlineTime: schedule.generationDeadlineTime || "09:00 AM",
             };
             originalRef.current = initial;
             setRsvpRestricted(initial.rsvpRestricted);
@@ -108,7 +107,7 @@ const EditJitScreen = () => {
             setDeadlineDays(initial.deadlineDays);
             setDeadlineTime(initial.deadlineTime);
         }
-    }, [group]);
+    }, [schedule]);
 
     const hasChanged = !!originalRef.current && (
         originalRef.current.rsvpRestricted !== rsvpRestricted ||
@@ -131,11 +130,10 @@ const EditJitScreen = () => {
     };
 
     const handleSave = async () => {
-        if (!id) return;
+        if (!id || !scheduleId) return;
         setIsSaving(true);
         try {
-            await groupApi.updateGroup(api, {
-                groupId: id,
+            await groupApi.updateSchedule(api, id, scheduleId, {
                 generationLeadDays: rsvpRestricted && leadEnabled ? leadDays : null,
                 generationLeadTime: leadTime,
                 generationDeadlineDays: rsvpRestricted && deadlineEnabled ? deadlineDays : null,
@@ -171,6 +169,19 @@ const EditJitScreen = () => {
         );
     }
 
+    if (!schedule) {
+        return (
+            <SafeAreaView style={s.safe}>
+                <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
+                    <Text style={s.screenSub}>This schedule couldn't be found. It may have been removed.</Text>
+                    <TouchableOpacity style={s.primaryBtn} onPress={() => router.back()}>
+                        <Text style={s.primaryBtnText}>Go back</Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
     // ── Render ────────────────────────────────────────────────────────────────
 
     return (
@@ -189,7 +200,7 @@ const EditJitScreen = () => {
                     contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
                     showsVerticalScrollIndicator={false}
                 >
-                    <Text style={s.screenSub}>Control when members can RSVP to meetups.</Text>
+                    <Text style={s.screenSub}>Control when members can RSVP to "{schedule.name}" meetups.</Text>
 
                     <Text style={s.fieldLabel}>Limit when people can RSVP?</Text>
                     <View style={s.boolRow}>

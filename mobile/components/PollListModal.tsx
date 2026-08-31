@@ -23,9 +23,7 @@ interface PollListModalProps {
     groupId: string;
     currentUserId: string;
     canManage: boolean;
-    // When set, the modal opens straight into that poll's vote/results screen
-    // instead of the list — used by callers that already know which poll they
-    // want (e.g. the group chat's next-event bar).
+    // Opens directly into that poll's vote/results screen (e.g. from chat's next-event bar).
     initialPollId?: string;
 }
 
@@ -40,8 +38,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
     const [selectedPollId, setSelectedPollId] = useState<string | null>(null);
     const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
 
-    // Re-sync to the caller's requested poll (or back to the list) each time the
-    // modal opens, rather than persisting whatever was selected last time.
+    // Reset to the caller's requested poll each time the modal opens, not the last selection.
     useEffect(() => {
         if (visible) setSelectedPollId(initialPollId ?? null);
     }, [visible, initialPollId]);
@@ -252,10 +249,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-            {/* presentationStyle="pageSheet" is iOS-only — Android renders this modal
-                truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
-                header sits under the status bar there. SafeAreaView is a no-op on iOS's
-                inset pageSheet, same as MeetupDetailModal's own top-level wrapper. */}
+            {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
             <SafeAreaView style={styles.modalContent} edges={['top', 'bottom']}>
                 {selectedPoll ? renderDetail() : renderList()}
             </SafeAreaView>

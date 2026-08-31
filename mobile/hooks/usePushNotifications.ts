@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApiClient } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
+import { reportPermissionStatus } from '@/utils/permissions';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -63,8 +64,7 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
   useEffect(() => {
     defineNotificationCategories();
 
-    // Only picks up a token if permission was already granted (e.g. from an
-    // earlier group create/join prompt) — never prompts on app load.
+    // Only picks up a token if permission is already granted — never prompts on load.
     getPushTokenIfAuthorized().then(token => {
       if (token) setExpoPushToken(token);
     });
@@ -151,13 +151,7 @@ async function getPushTokenIfAuthorized(): Promise<string | undefined> {
   return fetchExpoPushToken();
 }
 
-/**
- * Asks for notification permission at a meaningful moment (creating or joining
- * a group) rather than blind at app launch, and registers the resulting token
- * with the backend. Safe to call when permission is already granted or already
- * denied — it won't re-prompt in either case (the OS itself blocks the denied
- * case; the granted case just re-registers the token).
- */
+/** Asks for permission at a meaningful moment (create/join group), not at launch. Safe to call when already granted or denied — won't re-prompt either way. */
 export async function requestNotificationPermission(api: AxiosInstance): Promise<boolean> {
   if (!Device.isDevice) return false;
   await ensureAndroidChannel();
@@ -168,6 +162,7 @@ export async function requestNotificationPermission(api: AxiosInstance): Promise
     const { status } = await Notifications.requestPermissionsAsync();
     finalStatus = status;
   }
+  reportPermissionStatus(api, { notifications: finalStatus as 'granted' | 'denied' | 'undetermined' });
   if (finalStatus !== 'granted') return false;
 
   const token = await fetchExpoPushToken();
@@ -185,17 +180,9 @@ const NOTIFICATION_BENEFIT_MESSAGE =
   "Get notified about:\n\n• New chat messages\n• When plans change\n• Reminders to RSVP on time";
 
 /**
- * Point-of-use notification ask, shown right after creating or joining a
- * group. Nags on repeat visits even after a prior "no" — missing group
- * notifications is costly enough to be worth re-asking, unlike the
- * one-and-done location/contacts prompts.
- *
- * The benefits explanation always shows first. What happens after "Okay"
- * depends on whether the OS can still show its own dialog: if so, that fires
- * next (with a short delay — see below); if the OS has already permanently
- * denied us (canAskAgain false — decided once on iOS, or "don't ask again"
- * on Android) and won't show it again, the button instead deep-links to
- * Settings.
+ * Shown after creating/joining a group. Unlike other one-and-done prompts,
+ * nags on repeat visits even after a prior "no". Shows benefits first; "Okay"
+ * then triggers the OS prompt, or deep-links to Settings if canAskAgain is false.
  */
 export async function promptForNotificationPermission(api: AxiosInstance): Promise<void> {
   if (!Device.isDevice) return;
@@ -221,9 +208,8 @@ export async function promptForNotificationPermission(api: AxiosInstance): Promi
     [{
       text: 'Okay',
       onPress: () => {
-        // iOS can silently drop a native dialog fired synchronously inside another
-        // alert's onPress — the explanation alert is still animating away. A short
-        // delay lets it fully dismiss before the real OS permission prompt fires.
+        // Delay lets the explanation alert finish dismissing — iOS can drop a
+        // native dialog fired synchronously inside another alert's onPress.
         setTimeout(() => { requestNotificationPermission(api); }, 400);
       },
     }]
@@ -233,7 +219,7 @@ export async function promptForNotificationPermission(api: AxiosInstance): Promi
 const FIRST_RSVP_IN_PROMPT_KEY = 'GT2_NOTIF_PROMPT_SHOWN_FIRST_RSVP_IN';
 const FIRST_CHAT_OPEN_PROMPT_KEY = 'GT2_NOTIF_PROMPT_SHOWN_FIRST_CHAT_OPEN';
 
-/** Runs `promptForNotificationPermission` the first time (ever, across app installs kept in AsyncStorage) this key's trigger occurs — never again after that, regardless of outcome. */
+/** Runs `promptForNotificationPermission` once ever per trigger key (tracked in AsyncStorage), regardless of outcome. */
 async function promptForNotificationPermissionOnce(key: string, api: AxiosInstance): Promise<void> {
   const alreadyShown = await AsyncStorage.getItem(key);
   if (alreadyShown) return;
@@ -251,11 +237,7 @@ export function promptForNotificationPermissionOnFirstChatOpen(api: AxiosInstanc
   return promptForNotificationPermissionOnce(FIRST_CHAT_OPEN_PROMPT_KEY, api);
 }
 
-/**
- * Marks a "first time" trigger as already consumed without showing anything —
- * for when a different prompt (e.g. the post-join ask) already covered this
- * moment, so the first-time trigger shouldn't also fire on a later visit.
- */
+/** Marks a "first time" trigger as consumed without showing anything, e.g. when another prompt already covered this moment. */
 export function markNotificationPromptShown(trigger: 'firstRsvpIn' | 'firstChatOpen'): Promise<void> {
   const key = trigger === 'firstRsvpIn' ? FIRST_RSVP_IN_PROMPT_KEY : FIRST_CHAT_OPEN_PROMPT_KEY;
   return AsyncStorage.setItem(key, '1');

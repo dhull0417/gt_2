@@ -8,10 +8,8 @@ import Animated, {
     Easing,
 } from 'react-native-reanimated';
 
-// Drives the In/Out RSVP buttons through breathe-up -> shake "In" -> shake "Out" -> breathe-down,
-// on and on, while the user hasn't responded yet. Each phase is explicitly chained off the previous
-// one's finish callback (rather than a single looping withRepeat/withSequence) so it always continues
-// from wherever the value actually is instead of snapping back to a start value on each lap.
+// Loops breathe-up -> shake In -> shake Out -> breathe-down. Phases chain via finish
+// callbacks (not withRepeat) so it resumes from the current value instead of snapping back.
 export const RsvpBreather = ({ active, children }: {
     active: boolean;
     children: (styles: { boxStyle: any; inTextStyle: any; outTextStyle: any }) => React.ReactNode;

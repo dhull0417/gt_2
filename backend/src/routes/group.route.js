@@ -11,6 +11,9 @@ import {
   createOneOffMeetup,
   inviteUser,
   updateGroupSchedule,
+  createSchedule,
+  updateSchedule,
+  deleteSchedule,
   updateModerators,
   toggleModerator,
   generateInviteLink,
@@ -28,7 +31,7 @@ const router = express.Router();
 router.get("/", protectRoute, getGroups);
 router.post("/create", protectRoute, createGroup);
 
-// POST /api/groups/dm — find or create a 1-on-1 DM group (must be before /:groupId wildcards)
+// find/create 1-on-1 DM group; must precede /:groupId (wildcard collision)
 router.post("/dm", protectRoute, async (req, res) => {
   try {
     const { userId: senderClerkId } = getAuth(req);
@@ -59,8 +62,6 @@ router.post("/dm", protectRoute, async (req, res) => {
       owner: sender._id,
       members: [sender._id, target._id],
       timezone: "America/New_York",
-      generationLeadDays: 1,
-      generationLeadTime: "09:00 AM",
     });
 
     await User.updateMany(
@@ -85,8 +86,12 @@ router.patch("/:groupId/moderators", protectRoute, updateModerators);
 
 
 // --- Schedule & Meetups ---
-// This route handles recurring schedule updates and automatic meetup regeneration
+// legacy route, kept for pre-multi-schedule app installs
 router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
+// multi-schedule routes — a group can have several named schedules
+router.post("/:groupId/schedules", protectRoute, createSchedule);
+router.patch("/:groupId/schedules/:scheduleId", protectRoute, updateSchedule);
+router.delete("/:groupId/schedules/:scheduleId", protectRoute, deleteSchedule);
 router.post("/:groupId/meetups", protectRoute, createOneOffMeetup);
 
 // --- Membership & Invites ---
@@ -98,8 +103,7 @@ router.post("/:groupId/remove-member", protectRoute, removeMember);
 router.post("/:groupId/invite", protectRoute, inviteUser);
 router.post("/:groupId/invite-link", protectRoute, generateInviteLink);
 
-// PATCH /api/groups/:id/last-message
-// Updates the lastMessage preview and fans out push notifications to group members.
+// updates lastMessage preview and notifies group members
 router.patch("/:id/last-message", protectRoute, async (req, res) => {
   try {
     const { text, senderName } = req.body;
@@ -137,8 +141,7 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
   }
 });
 
-// POST /api/groups/:id/chat-reaction
-// Notifies the message owner when someone reacts to their message.
+// notifies group members of a reaction
 router.post("/:id/chat-reaction", protectRoute, async (req, res) => {
   try {
     const { emoji, senderName } = req.body;

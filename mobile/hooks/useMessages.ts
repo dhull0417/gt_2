@@ -5,9 +5,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/utils/supabase';
 import type { ChatMessage, PendingImage, ReactionResult } from '@/types/chat';
 
-// Only the most recent page is fetched/cached — older history is intentionally
-// not paginated in-app yet, so this also bounds how much data (and offline
-// storage) a single chat screen costs.
+// Only the most recent page is fetched/cached — no pagination yet.
 const MESSAGE_PAGE_SIZE = 50;
 
 export function useMessages(groupId: string) {

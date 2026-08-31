@@ -1,4 +1,3 @@
-// mobile/app/_layout.tsx
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth, useUser } from '@clerk/expo';
@@ -15,6 +14,7 @@ import { User, useApiClient, userApi } from '@/utils/api';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { syncPermissionsIfChanged } from '@/utils/permissions';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 import { ImageCropperHost } from '@/components/ImageCropperHost';
 import { OfflineBanner } from '@/components/OfflineBanner';
@@ -28,12 +28,9 @@ const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Screens re-focus often (tab switches, nav back); without this every
-      // focus would refetch even when nothing could plausibly have changed.
+      // Avoids refetching on every tab-switch/nav-back focus
       staleTime: 5 * 60 * 1000,
-      // Keeps cached data around (and eligible for disk persistence) long
-      // enough to still be useful as an offline fallback after a few days
-      // away from the app, not just a few minutes.
+      // Keeps cached data around as a useful offline fallback for days, not minutes
       gcTime: ONE_WEEK_MS,
     },
   },
@@ -44,9 +41,7 @@ const asyncStoragePersister = createAsyncStoragePersister({
   key: 'GT2_QUERY_CACHE',
 });
 
-// Drives React Query's online/offline state off real connectivity instead of
-// its default "assume online" behavior, so queries pause cleanly offline
-// (serving cached data) rather than firing and failing.
+// Drives React Query's online state off real connectivity so queries pause offline instead of failing
 onlineManager.setEventListener((setOnline) => {
   return NetInfo.addEventListener((state) => {
     setOnline(!!state.isConnected && state.isInternetReachable !== false);
@@ -99,8 +94,7 @@ const AuthLayout = () => {
 
   useUserSync();
 
-  // On launch: check clipboard for an invite token placed there by the web landing page.
-  // This is the deferred deep link mechanism for fresh installs.
+  // Deferred deep link for fresh installs: check clipboard for an invite token from the web landing page
   useEffect(() => {
     Clipboard.getStringAsync().then(clip => {
       if (clip?.startsWith('groupthat://join/')) {
@@ -116,22 +110,21 @@ const AuthLayout = () => {
     enabled: isSignedIn,
   });
 
-  // isCurrentUserError means Clerk session exists but no MongoDB user yet (new sign-up).
-  // Treat it the same as success so routing can redirect them to profile-setup.
+  // isCurrentUserError = Clerk session but no Mongo user yet (new sign-up); treat as settled so routing can redirect to profile-setup
   const currentUserSettled = isSuccess || isCurrentUserError;
 
   usePushNotifications(isSignedIn, isSuccess);
 
-  // Single source of truth: show whenever the signed-in user's own record
-  // says they haven't seen it yet, once they've actually landed in (tabs) —
-  // true for every sign-in method alike, since it no longer depends on which
-  // screen happened to set it off (profile-setup's Save vs. the dashboard's
-  // zip-code card used to race each other and could bury one popup under
-  // the other). Deliberately not backed by a local useState flag: AuthLayout
-  // stays mounted across sign-out/sign-in, so a plain "dismissed" boolean
-  // would leak from whoever dismissed it last into the next signed-in user's
-  // session. Closing writes straight into the currentUser query cache instead,
-  // which sign-out already clears (see useSignout's queryClient.clear()).
+  // Silent permission sync — picks up grants/denials changed outside the app (e.g. OS Settings)
+  useEffect(() => {
+    if (isSignedIn && isSuccess) {
+      syncPermissionsIfChanged(api);
+    }
+  }, [isSignedIn, isSuccess]);
+
+  // Driven by currentUser.hasSeenWelcome, not local state — AuthLayout stays mounted across
+  // sign-out/sign-in, so a useState flag would leak into the next user's session. Closing
+  // writes to the query cache instead, which sign-out already clears.
   const showWelcomeModal = !!currentUser && !currentUser.hasSeenWelcome && inTabsGroup;
 
   const markWelcomeSeen = useMutation({
@@ -149,12 +142,10 @@ const AuthLayout = () => {
     if (!isLoaded || (isSignedIn && !currentUserSettled)) return;
 
     const inAuthGroup = segments[0] === '(auth)';
-    // Mid-OAuth-flow: Clerk hasn't flipped isSignedIn yet when this route mounts
-    // (see mobile/app/sso-callback.tsx), so don't bounce back to sign-in here —
-    // wait for isSignedIn to settle (or useSocialAuth's own error handling).
+    // Mid-OAuth: Clerk hasn't flipped isSignedIn yet on mount (see sso-callback.tsx) — wait for it to settle
     const inSsoCallback = segments[0] === 'sso-callback';
 
-    // Allowed routes list to ensure the user isn't redirected to the dashboard during configuration flows
+    // Routes exempt from the dashboard redirect during configuration flows
     const inAllowedModalGroup = [
       'profile-setup',
       'account',
@@ -173,8 +164,7 @@ const AuthLayout = () => {
     ].includes(segments[0]);
 
     if (isSignedIn) {
-      // !currentUser (no Mongo user yet) always routes through profile-setup first,
-      // since its Save button is what triggers syncUser and creates the record.
+      // No Mongo user yet always routes through profile-setup — its Save triggers syncUser
       const profileIncomplete = !currentUser || (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()));
       // TEMP DEBUG — remove once the profile-setup redirect-loop bug is diagnosed.
       console.log('[routing]', { segment: segments[0], profileIncomplete, firstName: currentUser?.firstName, lastName: currentUser?.lastName, isAppleUser });
@@ -195,8 +185,7 @@ const AuthLayout = () => {
     }
   }, [isLoaded, isSignedIn, isSuccess]);
 
-  // After sign-in with a complete profile, redeem any saved pending invite token.
-  // This covers users who tapped a link while signed out and already had a profile.
+  // Redeem a saved invite token after sign-in for users who tapped a link while signed out
   useEffect(() => {
     if (!isSignedIn || !currentUser) return;
     const profileIncomplete = !currentUser.firstName?.trim() || !currentUser.lastName?.trim();

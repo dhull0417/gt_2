@@ -40,8 +40,7 @@ const styles = StyleSheet.create({
 });
 
 interface GroupDetailsScreenProps {
-  // False when this screen is mounted outside the Groups tab (no native tab
-  // bar sitting underneath it to clear) — see app/group-details/[id].tsx.
+  // False when mounted outside the Groups tab (no tab bar underneath) — see app/group-details/[id].tsx
   showsTabBarBeneath?: boolean;
 }
 
@@ -53,8 +52,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  // Cached (or freshly fetched) list data gives an instant name/avatar/isDM fallback
-  // while the heavier per-group details request below is still in flight.
+  // Cached list data gives an instant name/avatar/isDM fallback while details load.
   const { data: groups } = useGetGroups();
   const fallbackGroup = useMemo(() => groups?.find(g => g._id === id), [groups, id]);
 
@@ -153,10 +151,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
     >
       <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
         <View className="flex-row items-center flex-1">
-          {/* Always back to chat, regardless of how Details was entered (chat's own
-              header button, or an in-app notification) — Details' only meaningful
-              parent is the conversation, not whatever happens to be under it in the
-              navigation stack. */}
+          {/* Always back to chat — its only meaningful parent, regardless of nav stack */}
           <TouchableOpacity onPress={handleOpenChat} className="mr-2 p-1">
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
           </TouchableOpacity>

@@ -20,9 +20,8 @@ export const useUpdateMeetup = () => {
     
     onSuccess: () => {
       Alert.alert("Success", "Meetup updated successfully!");
-      // Invalidate the meetups query to refresh the list
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
-      router.back(); // Go back to the meetup detail screen
+      router.back();
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Failed to update meetup.";

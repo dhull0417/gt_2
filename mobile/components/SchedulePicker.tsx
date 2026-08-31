@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, FlatList, Alert } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-// 👇 CHANGED: Import the official Schedule type from your API definition
 import { Schedule } from '@/utils/api';
 
-// 👇 CHANGED: Use the imported type for props
 interface SchedulePickerProps {
     onScheduleChange: (schedule: Schedule) => void;
     initialValue?: Schedule;
@@ -21,17 +19,15 @@ const daysOfWeek = [
 ];
 
 const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange, initialValue }) => {
-    // We default to 'weekly' if the initial value is complex or missing, 
-    // but we respect 'daily', 'biweekly', etc. if provided.
+    // Defaults to 'weekly' unless initialValue specifies otherwise
     const [frequency, setFrequency] = useState<Schedule['frequency']>(initialValue?.frequency || 'weekly');
     const [selectedDays, setSelectedDays] = useState<number[]>(initialValue?.days || []);
-    
-    // For simplicity, we are reusing the 'days' array for monthly dates (1-31) as well
+
+    // 'days' array doubles as monthly dates (1-31)
     const [selectedDates, setSelectedDates] = useState<number[]>(initialValue?.frequency === 'monthly' ? (initialValue.days || []) : []);
 
 useEffect(() => {
-        // 👇 FIX: Initialize with 'days: []' to satisfy the required type
-        const newSchedule: Schedule = { 
+        const newSchedule: Schedule = {
             frequency, 
             days: [] 
         };
@@ -41,9 +37,7 @@ useEffect(() => {
         } else if (frequency === 'monthly') {
             newSchedule.days = selectedDates;
         } else if (frequency === 'daily') {
-            // Even though daily implies every day, we often send [0-6] 
-            // or an empty array depending on your backend logic. 
-            // Let's stick to the convention we used in create-group:
+            // Send all 7 days, matching create-group convention
             newSchedule.days = [0, 1, 2, 3, 4, 5, 6];
         } 
 

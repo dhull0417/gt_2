@@ -44,9 +44,7 @@ const combineDateAndTime = (isoDate: string, time: string, timezone: string): st
 };
 
 // ─── InlineCalendar ───────────────────────────────────────────────────────────
-// Same bare/large calendar used inside create-group's own popups, copied locally
-// per this codebase's existing convention (create-group and group-edit-schedule
-// each keep their own copy rather than sharing one).
+// Copied locally per convention — create-group and group-edit-schedule each keep their own copy.
 
 const InlineCalendar = ({ value, onChange, minDate }: {
     value: string; onChange: (iso: string) => void; minDate?: string;
@@ -109,8 +107,7 @@ const InlineCalendar = ({ value, onChange, minDate }: {
 };
 
 // ─── DatePickerModal ──────────────────────────────────────────────────────────
-// Same blurred-popup treatment as create-group's CalendarPickerModal: a focused
-// overlay instead of an inline calendar competing with the rest of the form.
+// Blurred-popup overlay, matching create-group's CalendarPickerModal treatment.
 
 const DatePickerModal = ({ visible, value, minDate, onChange, onCancel }: {
     visible: boolean; value: string; minDate?: string; onChange: (iso: string) => void; onCancel: () => void;
@@ -187,10 +184,7 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={resetAndClose}>
-            {/* presentationStyle="pageSheet" is iOS-only — Android renders this modal
-                truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
-                header sits under the status bar there. SafeAreaView is a no-op on iOS's
-                inset pageSheet, same as MeetupDetailModal's own top-level wrapper. */}
+            {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
             <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
                 <View style={s.screenHeader}>
                     <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>

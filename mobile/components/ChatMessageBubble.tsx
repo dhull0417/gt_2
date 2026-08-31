@@ -31,8 +31,7 @@ function getImageDisplaySize(width?: number | null, height?: number | null) {
     w = MIN_IMAGE_WIDTH;
     h = w / ratio;
   }
-  // Safety net for pathological aspect ratios (e.g. a very tall narrow screenshot) —
-  // accept minor cropping via contentFit="cover" rather than an oversized bubble.
+  // Cap extreme aspect ratios; contentFit="cover" crops rather than oversizing the bubble
   h = Math.min(h, MAX_IMAGE_HEIGHT);
 
   return { width: Math.round(w), height: Math.round(h) };

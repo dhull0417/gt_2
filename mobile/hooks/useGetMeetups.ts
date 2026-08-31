@@ -12,12 +12,12 @@ export const useGetMeetups = () => {
         queryFn: async () => {
             const cached = queryClient.getQueryData<Meetup[]>(MEETUPS_QUERY_KEY);
 
-            // No cache yet (first launch, or persisted cache expired/cleared) — full fetch.
+            // No cache yet — full fetch.
             if (!cached || cached.length === 0) {
                 return meetupApi.getMeetups(api);
             }
 
-            // Otherwise only ask for what changed since the newest thing we already have.
+            // Otherwise fetch only what changed since our newest cached item.
             const since = cached.reduce((latest, m) => (m.updatedAt > latest ? m.updatedAt : latest), '');
             const { changed, validIds } = await meetupApi.getMeetupsSince(api, since);
 

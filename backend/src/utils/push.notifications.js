@@ -6,12 +6,9 @@ import Meetup from '../models/meetup.model.js';
 const expo = new Expo();
 
 /**
- * A group-muted user should still hear about meetups further out, just not
- * the very next one — otherwise muting the chat to skip one noisy event
- * would silently swallow updates for everything after it too. "Next" is
- * whichever scheduled meetup in the group starts soonest; we check that by
- * startsAt rather than trusting the caller's own status, since this runs
- * after cancellations/updates have already been saved.
+ * Muting quiets only the group's next meetup, not everything after it.
+ * "Next" is computed by startsAt (not the caller's status) since this runs
+ * after cancellations/updates are already saved.
  */
 const isNextUpcomingMeetup = async (groupId, meetupId) => {
   if (!groupId || !meetupId) return false;
@@ -35,10 +32,7 @@ const isGroupMuted = (user, groupId) => {
     || (user.mutedUntilNextMeetup || []).some(id => id.toString() === groupIdStr);
 };
 
-/**
- * sendPushNotifications
- * Delivers notifications and handles "self-healing" by removing invalid tokens.
- */
+// delivers notifications; self-heals by removing invalid tokens
 export const sendPushNotifications = async (notifications) => {
   const messages = [];
 
@@ -67,11 +61,7 @@ export const sendPushNotifications = async (notifications) => {
       let ticketChunk = await expo.sendPushNotificationsAsync(chunk);
       tickets.push(...ticketChunk);
       
-      /**
-       * PROJECT 4: TOKEN CLEANUP LOGIC
-       * We iterate through the tickets returned for this specific chunk.
-       * The index of the ticket matches the index of the message in the chunk.
-       */
+      // ticket index matches message index in this chunk
       for (let i = 0; i < ticketChunk.length; i++) {
         const ticket = ticketChunk[i];
         if (ticket.status === 'error') {
@@ -81,7 +71,7 @@ export const sendPushNotifications = async (notifications) => {
             
             console.log(`[Cleanup] Removing invalid token: ${invalidToken}`);
             
-            // Remove the token from our database so we don't try to use it again
+            // prevent reuse of the dead token
             await User.updateOne(
               { expoPushToken: invalidToken },
               { $unset: { expoPushToken: "" } }
@@ -97,9 +87,7 @@ export const sendPushNotifications = async (notifications) => {
   return tickets;
 };
 
-/**
- * Helper to prepare a list of notifications for a specific group of users
- */
+// prepares notifications for a group of users
 export const notifyUsers = async (users, { title, body, data }) => {
   const notifications = users
     .filter(user => user.expoPushToken)
@@ -117,16 +105,13 @@ export const notifyUsers = async (users, { title, body, data }) => {
 };
 
 /**
- * Sends a push notification to a group of users and persists an in-app
- * Notification record for each of them, so every push-triggering event also
- * shows up on the notifications screen. `users` is the full recipient list —
- * unlike notifyUsers, it is not filtered down to users with a push token,
- * since users without a token should still get the in-app record.
+ * Sends push + persists in-app Notification records so every event shows up
+ * on the notifications screen. Unlike notifyUsers, `users` isn't filtered to
+ * push-token holders — those without one still get the in-app record.
  */
 export const notifyAndPersist = async (users, { title, body, data, type, sender, group, meetup, poll, meta }) => {
-  // Group-muted members still get the in-app Notification record below, but
-  // skip the push itself when this event is about the group's next upcoming
-  // meetup — that's the one event a chat mute is meant to quiet.
+  // muted members still get the in-app record, but skip the push if this is
+  // the group's next meetup — the one event a mute is meant to quiet.
   let pushRecipients = users;
   if (group && meetup && users?.length > 0) {
     const isNext = await isNextUpcomingMeetup(group, meetup);

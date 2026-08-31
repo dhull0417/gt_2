@@ -4,19 +4,16 @@ import { Meetup } from '@/utils/api';
 
 export type DayGroup = { key: string; label: string; items: Meetup[] };
 
-// Clusters a (date-ordered) meetup list into per-day buckets, so the date can be shown once above
-// every meetup that falls on it instead of repeated on each card.
+// Groups a date-ordered meetup list into per-day buckets so the date shows once, not per card.
 export const splitByDay = (list: Meetup[]): DayGroup[] => {
     const groups: DayGroup[] = [];
     list.forEach(meetup => {
         const key = new Date(meetup.date).toLocaleDateString('en-CA', { timeZone: meetup.timezone });
         let group = groups.find(g => g.key === key);
         if (!group) {
-            // key is already YYYY-MM-DD (en-CA), so its first 4 chars are the
-            // meetup's year in its own timezone — reuse it instead of a second
-            // Date computation. Only show the year when it isn't the current one,
-            // so far-future recurring instances (now generated months/years out)
-            // don't get mistaken for the nearer occurrence they resemble.
+            // key is already YYYY-MM-DD; reuse its year instead of recomputing. Show
+            // the year only when it's not current, so far-future instances aren't
+            // mistaken for near ones.
             const meetupYear = Number(key.slice(0, 4));
             const currentYear = new Date().getFullYear();
             const label = new Date(meetup.date).toLocaleDateString(undefined, {

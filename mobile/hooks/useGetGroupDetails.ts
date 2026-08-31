@@ -13,19 +13,13 @@ export const useGetGroupDetails = (groupId: string | null) => {
     getTokenRef.current = getToken;
 
     const query = useQuery<GroupDetails, Error>({
-        // The query key includes the groupId to ensure each group's data is cached independently.
         queryKey: ['groupDetails', groupId],
-        // The query function calls our new API utility function.
         queryFn: () => groupApi.getGroupDetails(api, groupId!),
-        // The 'enabled' option is crucial: it prmeetups the query from running if no groupId is provided.
-        enabled: !!groupId,
+        enabled: !!groupId, // don't run without a groupId
     });
 
-    // This device's cache is only ever invalidated locally when *this* user
-    // makes a change (see useAddMember/useRemoveMember/etc). Subscribe to a
-    // broadcast so a change made on someone else's device — a new member
-    // joining, a moderator promotion — refetches here immediately instead of
-    // waiting out the query's staleTime.
+    // Local changes invalidate this cache directly (see useAddMember etc); this
+    // subscribes to a broadcast so other devices' changes refetch immediately too.
     useEffect(() => {
         if (!groupId) return;
         let active = true;

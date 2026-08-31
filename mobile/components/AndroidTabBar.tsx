@@ -1,8 +1,5 @@
-// Custom bottom tab bar used on Android only. expo-router's NativeTabs renders
-// the real Android Material 3 NavigationBar, which draws a solid pill/oval behind
-// the selected icon and has no hook for custom per-icon animation. This JS tab bar
-// replaces that on Android so the selected icon can just tint blue, grow slightly,
-// and breathe — iOS keeps the native SF Symbols tab bar in app/(tabs)/_layout.tsx.
+// Android-only tab bar. The native Material 3 NavigationBar draws a solid pill
+// behind the selected icon with no per-icon animation hook; iOS keeps the native tab bar.
 import React, { useEffect } from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,8 +17,7 @@ import Animated, {
 const ACTIVE_COLOR = '#4A90E2';
 const INACTIVE_COLOR = '#8E8E93';
 
-// Matches TAB_BAR_HEIGHT in utils/layout.ts (android: 80), which screens use to
-// pad their bottom content — keep this in sync so nothing shifts under the bar.
+// Must match TAB_BAR_HEIGHT in utils/layout.ts (android: 80) or content shifts under the bar.
 const BAR_HEIGHT = 80;
 
 const SHADOW_WIDTH = 30;
@@ -111,14 +107,10 @@ export const AndroidTabBar = ({ state, descriptors, navigation }: BottomTabBarPr
             return;
           }
 
-          // Already on this tab. The Groups tab hosts its own nested stack (list
-          // -> group details), and React Navigation's default "tabPress on an
-          // already-focused tab pops its nested stack" reset only fires when that
-          // stack already has the list screen sitting underneath the current one.
-          // Group Details can also be reached by pushing in from the chat screen's
-          // header, entirely outside this tab, which leaves it as the stack's only
-          // entry — so that default reset has nothing to pop to and no-ops. Send
-          // the tab back to its list screen explicitly so the tap always works.
+          // Already focused. React Navigation's default pop-to-root only works if the
+          // list screen sits under the current one — but Group Details can be reached
+          // directly from chat, leaving it as the stack's only entry. Navigate to the
+          // list explicitly so the tap always works.
           if (route.name === 'groups') {
             navigation.navigate('groups', { screen: 'index' });
           }

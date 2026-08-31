@@ -78,7 +78,6 @@ const SignInScreen = () => {
             </TouchableOpacity>
           </View>
 
-          {/* --- ADDED: "Forgot Password?" Link --- */}
           <Link href="/(auth)/forgot-password" asChild>
             <TouchableOpacity className="self-end mb-6">
               <Text className="text-base text-gray-600">Forgot Password?</Text>

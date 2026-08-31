@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 
 interface UpdateGroupVariables {
   groupId: string;
-  name?: string; // --- ADDED: 'name' is now an optional property ---
+  name?: string;
   time: string;
   schedule: Schedule;
   timezone: string;

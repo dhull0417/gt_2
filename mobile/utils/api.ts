@@ -14,10 +14,7 @@ export interface CustomRule {
   dates?: number[]; // 1-31
 }
 
-/**
- * PROJECT 7: Day/Date-specific times
- * Supports both weekly days (0-6) and monthly dates (1-31).
- */
+// Day/date-specific times: weekly day (0-6) or monthly date (1-31)
 export interface DayTime {
   day?: number;    // Used for daily/weekly/biweekly/ordinal
   date?: number;   // Used for monthly
@@ -25,10 +22,7 @@ export interface DayTime {
   startDate?: string; // Biweekly-only: chosen first occurrence for this specific day
 }
 
-/**
- * Routine represents a single scheduling pattern.
- * A group can have an array of up to 5 routines for "Multiple Rules".
- */
+// A single scheduling pattern; groups can have up to 5 for "Multiple Rules"
 export interface Routine {
   frequency: Frequency;
   dayTimes: DayTime[];
@@ -40,6 +34,25 @@ export interface Schedule {
   startDate?: string;    // ISO date string for when to start generating meetups
   routines?: Routine[];  // Used for 'Multiple Rules' (Project 7)
   days?: number[];       // Legacy/Support for simple schedules
+}
+
+/**
+ * NamedSchedule: one independent recurring series on a group (e.g. "Monthly
+ * Camping" or "Sunday Dinner"). A group can have several of these (max 5
+ * active), each with its own routines, location/capacity, and RSVP-window
+ * settings, sharing the group's members/chat/timezone.
+ */
+export interface NamedSchedule extends Schedule {
+  _id: string;
+  name: string;
+  defaultLocation: string;
+  defaultCapacity: number;
+  generationLeadDays: number | null;
+  generationLeadTime: string;
+  generationDeadlineDays: number | null;
+  generationDeadlineTime: string;
+  nextGenerationAt?: string;
+  active: boolean;
 }
 
 export interface User {
@@ -57,6 +70,11 @@ export interface User {
   lastReadAt?: Record<string, string>;
   zipCode?: string;
   hasSeenWelcome?: boolean;
+  permissions?: {
+    notifications: 'granted' | 'denied' | 'undetermined';
+    location: 'granted' | 'denied' | 'undetermined';
+    photoLibrary: 'granted' | 'denied' | 'undetermined';
+  };
   createdAt?: string;
 }
 
@@ -72,13 +90,26 @@ export interface Group {
   _id: string;
   name: string;
   image?: string;
-  schedule: Schedule;
+  /** All of the group's named schedules (possibly empty). Current source of truth. */
+  schedules: NamedSchedule[];
+  /**
+   * Legacy mirror of `schedules[0]`, kept in API responses only for the
+   * pre-multi-schedule app build — current code should read `schedules`.
+   * @deprecated use `schedules` instead
+   */
+  schedule: Schedule | null;
   owner: string;
   timezone: string;
+  /** Fallback location/capacity for one-off meetups not tied to any schedule. */
   defaultLocation: string;
+  defaultCapacity: number;
+  /** @deprecated legacy mirror of schedules[0]'s field — use NamedSchedule.generationLeadDays */
   generationLeadDays: number | null;
+  /** @deprecated legacy mirror of schedules[0]'s field — use NamedSchedule.generationLeadTime */
   generationLeadTime: string;
+  /** @deprecated legacy mirror of schedules[0]'s field — use NamedSchedule.generationDeadlineDays */
   generationDeadlineDays: number | null;
+  /** @deprecated legacy mirror of schedules[0]'s field — use NamedSchedule.generationDeadlineTime */
   generationDeadlineTime: string;
   lastMessage?: LastMessage | null;
   moderators?: (User | string)[];
@@ -100,13 +131,15 @@ export interface Meetup {
     name: string;
     image?: string;
   };
+  /** The named schedule (Group.schedules[i]._id) this was generated from — null for one-off meetups. */
+  schedule?: string | null;
   name: string;
   date: string;
   time: string;
   timezone: string;
   location: string;
-  status: 'scheduled' | 'cancelled' | 'expired'; 
-  capacity: number; 
+  status: 'scheduled' | 'cancelled' | 'expired';
+  capacity: number;
   isOverride: boolean;
   members: User[];
   undecided: string[];
@@ -120,9 +153,7 @@ export interface Meetup {
   updatedAt: string;
 }
 
-// Response shape from the `?since=` delta-sync variant of a list endpoint:
-// only what changed, plus every currently-valid id so the client can drop
-// anything that's dropped out of view (left group, deleted meetup, etc).
+// Delta-sync response: changed items plus every valid id, so the client can drop stale entries.
 interface SyncResponse<T> {
   changed: T[];
   validIds: string[];
@@ -173,19 +204,33 @@ export interface Notification {
   createdAt: string;
 }
 
+// Shape sent to create/update a single named schedule — reused for the
+// `schedules` array at group-creation time and for the per-schedule endpoints.
+export interface ScheduleInput {
+  name: string;
+  startDate?: string;
+  routines?: Routine[];
+  defaultLocation?: string;
+  defaultCapacity?: number;
+  generationLeadDays?: number | null;
+  generationLeadTime?: string;
+  generationDeadlineDays?: number | null;
+  generationDeadlineTime?: string;
+  /** Shared across the whole group, not stored per-schedule — updates Group.timezone. */
+  timezone?: string;
+}
+
 interface CreateGroupPayload {
   name: string;
   image?: string;
-  schedule?: Schedule | null;
+  /** Usually 0 or 1 entries at creation time — more are added later via groupApi.createSchedule. */
+  schedules?: ScheduleInput[];
   timezone?: string;
   meetupsToDisplay: number;
   members?: string[];
+  /** Fallback location/capacity for one-off meetups not tied to any schedule. */
   defaultCapacity?: number;
   defaultLocation?: string;
-  generationLeadDays: number | null;
-  generationLeadTime: string;
-  generationDeadlineDays: number | null;
-  generationDeadlineTime: string;
 }
 
 interface UpdateGroupPayload extends Partial<Omit<CreateGroupPayload, 'groupId'>> {
@@ -228,15 +273,16 @@ interface CreateGroupResponse {
   message: string;
 }
 
-// FIXED: Added 'name' property to match backend expectation and resolve TS2353
 interface CreateOneOffMeetupPayload {
   groupId: string;
   date: Date;
   time: string;
   timezone?: string;
   capacity?: number;
-  name?: string; 
+  name?: string;
   location?: string;
+  /** Borrows an existing named schedule's location/capacity defaults, if provided. */
+  scheduleId?: string;
 }
 
 interface UpdateModeratorsPayload {
@@ -394,8 +440,22 @@ export const groupApi = {
     const response = await api.post(`/api/groups/${payload.groupId}/schedule/remove`, payload);
     return response.data;
   },
+  // Legacy single-schedule endpoint — kept only for reference; current code
+  // should use createSchedule/updateSchedule/deleteSchedule below.
   updateGroupSchedule: async (api: AxiosInstance, groupId: string, data: Partial<Schedule>): Promise<{ message: string }> => {
     const response = await api.patch(`/api/groups/${groupId}/schedule`, data);
+    return response.data;
+  },
+  createSchedule: async (api: AxiosInstance, groupId: string, data: ScheduleInput): Promise<{ message: string; group: Group; scheduleId: string }> => {
+    const response = await api.post<{ message: string; group: Group; scheduleId: string }>(`/api/groups/${groupId}/schedules`, data);
+    return response.data;
+  },
+  updateSchedule: async (api: AxiosInstance, groupId: string, scheduleId: string, data: Partial<ScheduleInput>): Promise<{ message: string; group: Group }> => {
+    const response = await api.patch<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}`, data);
+    return response.data;
+  },
+  deleteSchedule: async (api: AxiosInstance, groupId: string, scheduleId: string): Promise<{ message: string; group: Group }> => {
+    const response = await api.delete<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}`);
     return response.data;
   },
   updateModerators: async (api: AxiosInstance, { groupId, moderatorIds }: UpdateModeratorsPayload): Promise<{ message: string }> => {

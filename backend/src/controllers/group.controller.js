@@ -8,7 +8,7 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
-import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
+import { generateMeetupsForGroup, generateMeetupsForSchedule } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 
 // --- Helpers ---
@@ -16,6 +16,45 @@ import { notifyAndPersist } from "../utils/push.notifications.js";
 // Distinguishes "field omitted" (use fallback) from "field explicitly cleared to
 // unrestricted" (keep null) — a bare Number(null) would otherwise coerce to 0.
 const numOrNull = (v, fallback) => v === undefined ? fallback : (v === null ? null : Number(v));
+
+// --- Multi-schedule helpers ---
+
+const MAX_ACTIVE_SCHEDULES = 5;
+
+/**
+ * Normalizes a request body into the namedSchedule shape stored on
+ * Group.schedules; used by per-schedule endpoints and the legacy wrapper.
+ */
+const normalizeScheduleInput = (input, fallbackName) => ({
+    name: (input.name && String(input.name).trim()) || fallbackName || "Schedule",
+    startDate: input.startDate || null,
+    routines: input.routines || [],
+    defaultLocation: input.defaultLocation || "",
+    defaultCapacity: input.defaultCapacity || 0,
+    generationLeadDays: numOrNull(input.generationLeadDays, 1),
+    generationLeadTime: input.generationLeadTime || "09:00 AM",
+    generationDeadlineDays: numOrNull(input.generationDeadlineDays, null),
+    generationDeadlineTime: input.generationDeadlineTime || "09:00 AM",
+    active: true,
+});
+
+/**
+ * Mirrors the first active schedule onto legacy top-level group fields
+ * (schedule, generationLeadDays/Time, etc.) so pre-multi-schedule app
+ * installs keep working. Applied to lean objects before sending. Remove
+ * once the old client shape is no longer supported.
+ */
+const withLegacyScheduleMirror = (groupObj) => {
+    const primary = groupObj.schedules?.find(s => s.active !== false) || null;
+    return {
+        ...groupObj,
+        schedule: primary ? { startDate: primary.startDate, routines: primary.routines } : null,
+        generationLeadDays: primary ? primary.generationLeadDays : null,
+        generationLeadTime: primary ? primary.generationLeadTime : "09:00 AM",
+        generationDeadlineDays: primary ? primary.generationDeadlineDays : null,
+        generationDeadlineTime: primary ? primary.generationDeadlineTime : "09:00 AM",
+    };
+};
 
 /**
  * HELPER: canManageGroup
@@ -49,7 +88,8 @@ export const createGroup = asyncHandler(async (req, res) => {
   const {
     name,
     image,
-    schedule,
+    schedule,   // legacy singular payload — pre-multi-schedule app clients
+    schedules,  // current payload — array of named schedules (usually 0 or 1 at create time)
     timezone,
     meetupsToDisplay,
     members,
@@ -60,37 +100,52 @@ export const createGroup = asyncHandler(async (req, res) => {
     generationDeadlineDays,
     generationDeadlineTime
   } = req.body;
-  
+
   if (!name || !timezone) {
     return res.status(400).json({ error: "Name and Timezone are required." });
   }
 
   const owner = await User.findOne({ clerkId });
   if (!owner) return res.status(404).json({ error: "User not found." });
-  
+
   let initialMemberIds = [owner._id.toString()];
   if (members && Array.isArray(members)) {
       initialMemberIds = [...initialMemberIds, ...members];
   }
   const uniqueMemberIds = [...new Set(initialMemberIds)];
 
+  // new clients send `schedules`; legacy clients send a single `schedule` +
+  // top-level fields — wrap both into the same Group.schedules array.
+  let initialSchedules = [];
+  if (Array.isArray(schedules) && schedules.length > 0) {
+      initialSchedules = schedules.slice(0, MAX_ACTIVE_SCHEDULES).map(s => normalizeScheduleInput(s, name));
+  } else if (schedule?.routines?.length) {
+      initialSchedules = [normalizeScheduleInput({
+          name,
+          startDate: schedule.startDate,
+          routines: schedule.routines,
+          defaultLocation,
+          defaultCapacity,
+          generationLeadDays,
+          generationLeadTime,
+          generationDeadlineDays,
+          generationDeadlineTime,
+      }, name)];
+  }
+
   const groupData = {
       name,
       image: image || "",
-      schedule: schedule || null,
+      schedules: initialSchedules,
       timezone,
       meetupsToDisplay: meetupsToDisplay || 1,
       owner: owner._id,
       members: uniqueMemberIds,
       defaultCapacity: defaultCapacity || 0,
       defaultLocation: defaultLocation || "",
-      generationLeadDays: numOrNull(generationLeadDays, 1),
-      generationLeadTime: generationLeadTime || "09:00 AM",
-      generationDeadlineDays: numOrNull(generationDeadlineDays, null),
-      generationDeadlineTime: generationDeadlineTime || "09:00 AM",
       moderators: []
   };
-  
+
   const newGroup = await Group.create(groupData);
 
   await User.updateMany(
@@ -116,17 +171,20 @@ export const createGroup = asyncHandler(async (req, res) => {
   // --- END NOTIFICATION LOGIC ---
 
   // Initial Generation with Window Filling
-  if (newGroup.schedule && newGroup.schedule.routines) {
+  if (newGroup.schedules?.length) {
     try {
       await generateMeetupsForGroup(newGroup);
     } catch (err) { console.error("Initial Gen Error:", err); }
   }
 
-  res.status(201).json({ group: newGroup, message: "Created successfully." });
+  res.status(201).json({ group: withLegacyScheduleMirror(newGroup.toObject()), message: "Created successfully." });
 });
 
 /**
- * @desc    Update group schedule and capacity
+ * @desc    LEGACY shim: applies the edit to the group's first active schedule
+ *          (creating one if none exist), for pre-multi-schedule clients.
+ *          Current clients use createSchedule/updateSchedule instead.
+ * @route   PATCH /api/groups/:groupId/schedule
  */
 export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
@@ -139,43 +197,56 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     if (!group || !user) return res.status(404).json({ error: "Resource not found." });
     if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
 
-    if (schedule) {
-        group.schedule = schedule;
-    }
-    
     if (timezone) group.timezone = timezone;
     if (defaultCapacity !== undefined) group.defaultCapacity = Number(defaultCapacity);
-    if (defaultLocation !== undefined) {
-        group.defaultLocation = defaultLocation;
-        if (defaultLocation) {
-            // Sync all auto-generated meetups to the new location, plus any
-            // meetup (including manually-overridden ones) that has no location
-            // of its own yet — overrides with a location already set are left alone.
-            await Meetup.updateMany(
-                {
-                    group: group._id,
-                    $or: [
-                        { isOverride: false },
-                        { location: { $in: ["", null] } },
-                    ],
-                },
-                { $set: { location: defaultLocation } }
-            );
-        }
+    if (defaultLocation !== undefined) group.defaultLocation = defaultLocation;
+
+    let target = group.schedules.find(s => s.active !== false);
+    if (!target && schedule?.routines?.length) {
+        group.schedules.push(normalizeScheduleInput({
+            name: group.name,
+            startDate: schedule.startDate,
+            routines: schedule.routines,
+            defaultLocation,
+            defaultCapacity,
+        }, group.name));
+        target = group.schedules[group.schedules.length - 1];
+    } else if (target && schedule) {
+        target.startDate = schedule.startDate || target.startDate;
+        target.routines = schedule.routines || target.routines;
+        if (defaultLocation !== undefined) target.defaultLocation = defaultLocation;
+        if (defaultCapacity !== undefined) target.defaultCapacity = Number(defaultCapacity);
+    }
+
+    if (target && defaultLocation) {
+        // sync auto-generated meetups to the new location, plus overrides with
+        // no location of their own; overrides with one already set are untouched.
+        await Meetup.updateMany(
+            {
+                group: group._id,
+                schedule: target._id,
+                $or: [
+                    { isOverride: false },
+                    { location: { $in: ["", null] } },
+                ],
+            },
+            { $set: { location: defaultLocation } }
+        );
     }
 
     await group.save();
 
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    
-    await Meetup.deleteMany({ 
-        group: group._id, 
-        isOverride: false, 
-        date: { $gte: today } 
-    });
+    if (target) {
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
 
-    if (group.schedule && group.schedule.routines) {
+        await Meetup.deleteMany({
+            group: group._id,
+            schedule: target._id,
+            isOverride: false,
+            date: { $gte: today }
+        });
+
         try {
             await generateMeetupsForGroup(group);
         } catch (err) {
@@ -183,7 +254,181 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
         }
     }
 
-    res.status(200).json({ message: "Schedule updated.", group });
+    res.status(200).json({ message: "Schedule updated.", group: withLegacyScheduleMirror(group.toObject()) });
+});
+
+/**
+ * @desc    Create a new named schedule on a group (e.g. "Monthly Camping"),
+ *          independent of any other schedules the group already has.
+ * @route   POST /api/groups/:groupId/schedules
+ */
+export const createSchedule = asyncHandler(async (req, res) => {
+    const { groupId } = req.params;
+    const { userId: clerkId } = getAuth(req);
+    const {
+        name, startDate, routines, defaultLocation, defaultCapacity,
+        generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
+        timezone, // shared across the whole group, not per-schedule — see updateSchedule
+    } = req.body;
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    if (!name || !String(name).trim()) {
+        return res.status(400).json({ error: "Schedule name is required." });
+    }
+
+    const activeCount = group.schedules.filter(s => s.active !== false).length;
+    if (activeCount >= MAX_ACTIVE_SCHEDULES) {
+        return res.status(400).json({ error: `A group can have at most ${MAX_ACTIVE_SCHEDULES} active schedules.` });
+    }
+
+    if (timezone) group.timezone = timezone;
+
+    group.schedules.push(normalizeScheduleInput(
+        { name, startDate, routines, defaultLocation, defaultCapacity, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
+        name
+    ));
+    await group.save();
+
+    const created = group.schedules[group.schedules.length - 1];
+
+    if (created.routines?.length) {
+        try {
+            await generateMeetupsForSchedule(group, created);
+            await group.save();
+        } catch (err) {
+            console.error("Create Schedule Gen Error:", err);
+        }
+    }
+
+    res.status(201).json({ message: "Schedule created.", group: withLegacyScheduleMirror(group.toObject()), scheduleId: created._id });
+});
+
+/**
+ * @desc    Updates one named schedule's settings; regenerates only that
+ *          schedule's future non-override meetups (siblings untouched).
+ * @route   PATCH /api/groups/:groupId/schedules/:scheduleId
+ */
+export const updateSchedule = asyncHandler(async (req, res) => {
+    const { groupId, scheduleId } = req.params;
+    const { userId: clerkId } = getAuth(req);
+    const {
+        name, startDate, routines, defaultLocation, defaultCapacity,
+        generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
+        timezone, // shared across the whole group — schedules don't carry their own
+    } = req.body;
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const target = group.schedules.id(scheduleId);
+    if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
+
+    if (timezone) group.timezone = timezone;
+
+    if (name !== undefined) {
+        if (!String(name).trim()) return res.status(400).json({ error: "Schedule name cannot be empty." });
+        target.name = name.trim();
+        // Keep already-generated future meetups' display name in sync with a rename.
+        await Meetup.updateMany(
+            { group: group._id, schedule: target._id, date: { $gte: new Date() } },
+            { $set: { name: target.name } }
+        );
+    }
+    if (startDate !== undefined) target.startDate = startDate;
+    if (routines !== undefined) target.routines = routines;
+    if (defaultCapacity !== undefined) target.defaultCapacity = Number(defaultCapacity);
+    if (defaultLocation !== undefined) {
+        target.defaultLocation = defaultLocation;
+        if (defaultLocation) {
+            await Meetup.updateMany(
+                {
+                    group: group._id,
+                    schedule: target._id,
+                    $or: [{ isOverride: false }, { location: { $in: ["", null] } }],
+                },
+                { $set: { location: defaultLocation } }
+            );
+        }
+    }
+    if (generationLeadDays !== undefined) target.generationLeadDays = numOrNull(generationLeadDays, null);
+    if (generationLeadTime !== undefined) target.generationLeadTime = generationLeadTime;
+    if (generationDeadlineDays !== undefined) target.generationDeadlineDays = numOrNull(generationDeadlineDays, null);
+    if (generationDeadlineTime !== undefined) target.generationDeadlineTime = generationDeadlineTime;
+
+    await group.save();
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    await Meetup.deleteMany({ group: group._id, schedule: target._id, isOverride: false, date: { $gte: today } });
+
+    if (target.routines?.length) {
+        try {
+            await generateMeetupsForSchedule(group, target);
+            await group.save();
+        } catch (err) {
+            console.error("Update Schedule Gen Error:", err);
+        }
+    }
+
+    res.status(200).json({ message: "Schedule updated.", group: withLegacyScheduleMirror(group.toObject()) });
+});
+
+/**
+ * @desc    Removes a schedule: cancels (not deletes) its future non-override
+ *          meetups and notifies members, preserving RSVP history.
+ * @route   DELETE /api/groups/:groupId/schedules/:scheduleId
+ */
+export const deleteSchedule = asyncHandler(async (req, res) => {
+    const { groupId, scheduleId } = req.params;
+    const { userId: clerkId } = getAuth(req);
+
+    const group = await Group.findById(groupId);
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(requester._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const target = group.schedules.id(scheduleId);
+    if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
+
+    target.active = false;
+    await group.save();
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const futureMeetups = await Meetup.find({
+        group: group._id,
+        schedule: target._id,
+        isOverride: false,
+        status: 'scheduled',
+        date: { $gte: today },
+    });
+
+    if (futureMeetups.length > 0) {
+        await Meetup.updateMany(
+            { _id: { $in: futureMeetups.map(m => m._id) } },
+            { $set: { status: 'cancelled' } }
+        );
+
+        const membersToNotify = await User.find({ _id: { $in: group.members } });
+        if (membersToNotify.length > 0) {
+            await notifyAndPersist(membersToNotify, {
+                title: "Schedule Removed",
+                body: `"${target.name}" was removed from "${group.name}" — its upcoming meetups have been cancelled.`,
+                data: { groupId: group._id.toString(), type: 'schedule_removed' },
+                type: 'group-updated',
+                sender: requester._id,
+                group: group._id,
+            });
+        }
+    }
+
+    res.status(200).json({ message: "Schedule removed.", group: withLegacyScheduleMirror(group.toObject()) });
 });
 
 /**
@@ -214,15 +459,10 @@ export const updateGroup = asyncHandler(async (req, res) => {
 
     const oldName = group.name;
 
-    // --- NAME SYNC LOGIC ---
+    // renaming the group no longer renames meetups; a meetup's name comes from its schedule
     if (name && name !== group.name) {
         group.name = name;
-        await Meetup.updateMany(
-            { group: groupId }, 
-            { $set: { name: name } }
-        );
 
-        // --- NOTIFICATION LOGIC ---
         const membersToNotify = await User.find({ _id: { $in: group.members } });
         if (membersToNotify.length > 0) {
             await notifyAndPersist(membersToNotify, {
@@ -236,38 +476,50 @@ export const updateGroup = asyncHandler(async (req, res) => {
         }
     }
 
-
     if (image !== undefined) group.image = image;
     if (meetupsToDisplay) group.meetupsToDisplay = parseInt(meetupsToDisplay);
-    if (generationLeadDays !== undefined) group.generationLeadDays = numOrNull(generationLeadDays, null);
-    if (generationLeadTime !== undefined) group.generationLeadTime = generationLeadTime;
-    if (generationDeadlineDays !== undefined) group.generationDeadlineDays = numOrNull(generationDeadlineDays, null);
-    if (generationDeadlineTime !== undefined) group.generationDeadlineTime = generationDeadlineTime;
+
+    // defaultCapacity/defaultLocation now live on the group only as the fallback
+    // for schedule-less meetups; current clients edit a schedule directly instead.
+    // Legacy clients still PUT these expecting them to affect "the" schedule, so
+    // mirror onto the sole schedule when the group has exactly one (legacy shape).
+    const soleSchedule = group.schedules.length === 1 ? group.schedules[0] : null;
+
     if (defaultCapacity !== undefined) {
         group.defaultCapacity = Number(defaultCapacity);
-        await Meetup.updateMany({ group: groupId, isOverride: false }, { $set: { capacity: Number(defaultCapacity) } });
-    }
-    if (defaultLocation !== undefined) {
-        group.defaultLocation = defaultLocation;
-        if (defaultLocation) {
-            // Sync all auto-generated meetups to the new location, plus any
-            // meetup (including manually-overridden ones) that has no location
-            // of its own yet — overrides with a location already set are left alone.
+        if (soleSchedule) {
+            soleSchedule.defaultCapacity = Number(defaultCapacity);
             await Meetup.updateMany(
-                {
-                    group: groupId,
-                    $or: [
-                        { isOverride: false },
-                        { location: { $in: ["", null] } },
-                    ],
-                },
-                { $set: { location: defaultLocation } }
+                { group: groupId, schedule: soleSchedule._id, isOverride: false },
+                { $set: { capacity: Number(defaultCapacity) } }
             );
         }
     }
+    if (defaultLocation !== undefined) {
+        group.defaultLocation = defaultLocation;
+        if (soleSchedule) {
+            soleSchedule.defaultLocation = defaultLocation;
+            if (defaultLocation) {
+                await Meetup.updateMany(
+                    {
+                        group: groupId,
+                        schedule: soleSchedule._id,
+                        $or: [{ isOverride: false }, { location: { $in: ["", null] } }],
+                    },
+                    { $set: { location: defaultLocation } }
+                );
+            }
+        }
+    }
+    if (soleSchedule) {
+        if (generationLeadDays !== undefined) soleSchedule.generationLeadDays = numOrNull(generationLeadDays, null);
+        if (generationLeadTime !== undefined) soleSchedule.generationLeadTime = generationLeadTime;
+        if (generationDeadlineDays !== undefined) soleSchedule.generationDeadlineDays = numOrNull(generationDeadlineDays, null);
+        if (generationDeadlineTime !== undefined) soleSchedule.generationDeadlineTime = generationDeadlineTime;
+    }
 
     const updatedGroup = await group.save();
-    res.status(200).json({ group: updatedGroup, message: "Group and meetups updated successfully." });
+    res.status(200).json({ group: withLegacyScheduleMirror(updatedGroup.toObject()), message: "Group and meetups updated successfully." });
 });
 
 export const updateModerators = asyncHandler(async (req, res) => {
@@ -342,14 +594,14 @@ export const getGroups = asyncHandler(async (req, res) => {
         ]);
 
         return res.status(200).json({
-            changed,
+            changed: changed.map(withLegacyScheduleMirror),
             validIds: validIds.map((id) => id.toString()),
             syncedAt: new Date().toISOString(),
         });
     }
 
     const groups = await Group.find(filter).lean();
-    res.status(200).json(groups);
+    res.status(200).json(groups.map(withLegacyScheduleMirror));
 });
 
 export const getGroupDetails = asyncHandler(async (req, res) => {
@@ -362,7 +614,7 @@ export const getGroupDetails = asyncHandler(async (req, res) => {
         .lean();
         
     if (!group) return res.status(404).json({ error: "Group not found." });
-    res.status(200).json(group);
+    res.status(200).json(withLegacyScheduleMirror(group));
 });
 
 export const addMember = asyncHandler(async (req, res) => {
@@ -459,7 +711,7 @@ export const removeMember = asyncHandler(async (req, res) => {
 export const createOneOffMeetup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
-    const { date, time, timezone, capacity, name, location } = req.body;
+    const { date, time, timezone, capacity, name, location, scheduleId } = req.body;
 
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
@@ -469,16 +721,23 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
     const meetupDate = calculateNextMeetupDate(date, time, timezone, 'once');
     if (meetupDate < new Date()) return res.status(400).json({ error: "Cannot schedule in the past." });
 
+    // use the linked schedule's location/capacity defaults if this belongs to a
+    // series; otherwise fall back to the group-level defaults.
+    const linkedSchedule = scheduleId ? group.schedules.id(scheduleId) : null;
+    const fallbackLocation = linkedSchedule ? linkedSchedule.defaultLocation : group.defaultLocation;
+    const fallbackCapacity = linkedSchedule ? linkedSchedule.defaultCapacity : group.defaultCapacity;
+
     const newMeetup = await Meetup.create({
         group: group._id,
-        name: name || group.name,
+        schedule: linkedSchedule ? linkedSchedule._id : null,
+        name: name || (linkedSchedule ? linkedSchedule.name : group.name),
         date: meetupDate,
         time: time,
         timezone: timezone,
-        location: location !== undefined ? location : group.defaultLocation,
+        location: location !== undefined ? location : fallbackLocation,
         members: group.members,
         undecided: group.members,
-        capacity: capacity !== undefined ? capacity : group.defaultCapacity,
+        capacity: capacity !== undefined ? capacity : fallbackCapacity,
         isOverride: true,
         startsAt: meetupDate,
     });

@@ -3,8 +3,7 @@ import React, { useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
-// Screen-recorded walkthrough of creating a group, recorded separately per
-// platform (the status bar/nav chrome differs) — see assets/videos/README.md.
+// Recorded separately per platform (status bar/nav chrome differs) — see assets/videos/README.md
 const WELCOME_VIDEO = Platform.select({
   android: require('../assets/videos/welcome-create-group-android.mov'),
   default: require('../assets/videos/welcome-create-group-ios.mov'),
@@ -15,9 +14,7 @@ interface WelcomeModalProps {
   onClose: () => void;
 }
 
-// Shown once a signed-in user with hasSeenWelcome === false lands in (tabs)
-// — see the derived showWelcomeModal in app/_layout.tsx. Its only action is
-// "onClose": it doesn't navigate anywhere itself.
+// Shown once for hasSeenWelcome === false (see showWelcomeModal in app/_layout.tsx); onClose doesn't navigate.
 export function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
   const player = useVideoPlayer(WELCOME_VIDEO, (p) => {
     p.loop = true;
@@ -71,12 +68,9 @@ export function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
   );
 }
 
-// Matches each platform's source recording so the video fills the frame with
-// no cropping: iOS is 1170x2396; Android's raw frame is 1496x720 but its tkhd
-// carries a 90° rotation, so it displays at 720x1496. Width is capped
-// (instead of just height) so the box actually shrinks on the cross axis —
-// otherwise it has nothing definite to size itself by and "self-center" would
-// have no effect.
+// Matches each platform's recording (iOS 1170x2396; Android raw 1496x720 but
+// rotated 90° via tkhd, displays 720x1496). Width is capped, not height, so
+// self-center has a definite size to shrink against.
 const VIDEO_ASPECT_RATIO = Platform.select({ android: 720 / 1496, default: 1170 / 2396 })!;
 const VIDEO_MAX_HEIGHT = 480;
 const styles = StyleSheet.create({

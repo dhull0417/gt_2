@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@clerk/expo';
 import { ensurePhotoLibraryPermission, uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
+import { useApiClient } from '@/utils/api';
 import type { PendingImage } from '@/types/chat';
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 
 export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll }: Props) {
   const { getToken } = useAuth();
+  const api = useApiClient();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [pendingImage, setPendingImage] = useState<{ localUri: string; uploaded?: PendingImage } | null>(null);
@@ -22,7 +24,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   const [attachMenuVisible, setAttachMenuVisible] = useState(false);
 
   const pickImage = async () => {
-    const hasPermission = await ensurePhotoLibraryPermission();
+    const hasPermission = await ensurePhotoLibraryPermission(api);
     if (!hasPermission) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({

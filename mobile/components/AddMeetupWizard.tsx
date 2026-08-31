@@ -35,8 +35,7 @@ const usaTimezones = [
     { label: "Hawaii (HST)", value: "Pacific/Honolulu" },
 ];
 
-// Mirrors the Max Attendees validation on the group-creation Schedule screen
-// (mobile/app/create-group/index.tsx) so both screens agree on what's valid.
+// Mirrors Max Attendees validation in create-group/index.tsx
 const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
     if (mode !== "limited" || input === "") return null;
     if (!/^\d+$/.test(input)) return "Numbers only, please.";
@@ -45,11 +44,7 @@ const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): str
     return null;
 };
 
-/**
- * AddMeetupWizard
- * Single-screen form for creating one-off meetups, styled to match the
- * group-creation Schedule screen (mobile/app/create-group/index.tsx).
- */
+// Single-screen form for one-off meetups; styled to match create-group/index.tsx
 const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProps) => {
     const api = useApiClient();
     const queryClient = useQueryClient();
@@ -75,9 +70,8 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
     // --- Calendar Logic ---
     const [calendarMonth, setCalendarMonth] = useState<DateTime>(DateTime.now().startOf('month'));
 
-    // Chunked into explicit 7-cell week rows rather than one flex-wrap grid — letting
-    // aspect-ratio cells wrap on their own leaves Yoga reserving a phantom trailing row
-    // of blank space whenever the day count isn't a clean multiple of 7.
+    // Chunked into 7-cell rows; flex-wrap alone leaves a phantom blank row when
+    // the day count isn't a multiple of 7.
     const calendarWeeks = useMemo(() => {
         const start = calendarMonth.startOf('month');
         const firstDayIdx = start.weekday === 7 ? 0 : start.weekday;
@@ -99,10 +93,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
         if (!canSubmit) return;
         setIsSaving(true);
         try {
-            /**
-             * FIX: Passing meetupDate as the raw string (YYYY-MM-DD) instead of new Date().
-             * This prevents local environment timezone shifting that causes the "one day early" bug.
-             */
+            // Pass raw YYYY-MM-DD string, not new Date(), to avoid a timezone off-by-one-day bug
             const capacity = maxAttendeesMode === "limited" ? parseInt(maxAttendeesInput, 10) : 0;
             await groupApi.createOneOffMeetup(api, {
                 groupId: groupDetails._id,
@@ -140,10 +131,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
             presentationStyle="pageSheet"
             onRequestClose={resetAndClose}
         >
-            {/* presentationStyle="pageSheet" is iOS-only — Android renders this modal
-                truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
-                header sits under the status bar there. SafeAreaView is a no-op on iOS's
-                inset pageSheet, same as MeetupDetailModal's own top-level wrapper. */}
+            {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
             <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
                 <View style={s.screenHeader}>
                     <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>
@@ -304,9 +292,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
                     asOverlay
                 />
 
-                {/* Rendered as a sibling of the ScrollView (not a descendant) — same rule as
-                    LocationSearchModal above: an absoluteFillObject overlay mounted inside a
-                    ScrollView only fills the scrollable content, not the screen. */}
+                {/* Sibling of ScrollView, not descendant — an overlay inside it only fills the scrollable content */}
                 {showTimePicker && (
                     <NativeTimePicker value={meetupTime} onChange={setMeetupTime} onClose={() => setShowTimePicker(false)} asOverlay />
                 )}

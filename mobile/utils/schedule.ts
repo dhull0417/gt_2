@@ -1,23 +1,23 @@
 import { Schedule, Routine, DayTime } from './api';
 
-/**
- * Formats a raw schedule object into a human-readable string.
- * PROJECT 7 UPDATE: Now supports nested Routines and the Ordinal frequency.
- * FIXED: Applied type casting to resolve "Property does not exist on type Schedule" errors.
- */
+// Formats a schedule to a readable string; supports nested Routines and Ordinal frequency.
 export const formatSchedule = (schedule: Schedule): string => {
-  // Casting to any here ensures we can access routines and legacy properties 
-  // without triggering TypeScript resolution errors while the global interface syncs.
+  // Cast to any to access routines/legacy fields ahead of the Schedule type update.
   const { frequency, routines, days: legacyDays } = schedule as any;
 
-  // 1. If it's a "Multiple Rules" schedule, format the routines list
-  if (frequency === 'custom' && routines && routines.length > 0) {
+  // Real API data never sets a top-level `frequency` on the schedule itself
+  // (only locally-built ScheduleData does, mid-edit) — so routine count, not
+  // that field, is what actually distinguishes "Multiple Rules" from a
+  // single routine here.
+  if (routines && routines.length > 1) {
     const parts = routines.map((r: Routine) => formatSingleRoutine(r));
     return parts.join(" & ");
   }
+  if (routines && routines.length === 1) {
+    return formatSingleRoutine(routines[0]);
+  }
 
-  // 2. Otherwise, treat the Schedule object itself as a single routine for formatting
-  // This maintains backward compatibility with simple schedules
+  // Fully legacy/local shape with no routines array at all.
   return formatSingleRoutine({
     frequency,
     days: legacyDays,
@@ -26,10 +26,6 @@ export const formatSchedule = (schedule: Schedule): string => {
   } as any);
 };
 
-/**
- * HELPER: formatSingleRoutine
- * Handles the logic for a specific frequency pattern.
- */
 const formatSingleRoutine = (routine: Routine & { days?: number[] }): string => {
   const { frequency, dayTimes, rules, days: legacyDays } = routine;
   const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

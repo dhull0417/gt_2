@@ -64,10 +64,8 @@ const GroupChatScreen = () => {
   const queryClient = useQueryClient();
   const sectionListRef = useRef<SectionList<ChatMessage, ChatDaySection>>(null);
 
-  // Landed here right after joining this group (see join/[token]'s goToChat) —
-  // ask once, then drop the param so revisiting this chat doesn't ask again.
-  // Also counts as this user's first-ever chat open, so mark that trigger
-  // consumed too rather than asking again moments later on a different chat.
+  // Ask once after joining (see join/[token]'s goToChat), then drop the param.
+  // Also counts as first-ever chat open, so mark that trigger consumed too.
   useEffect(() => {
     if (promptNotifications !== '1') return;
     promptForNotificationPermission(api);
@@ -75,8 +73,7 @@ const GroupChatScreen = () => {
     markNotificationPromptShown('firstChatOpen');
   }, [promptNotifications]);
 
-  // Independent of the above — covers the user's first-ever chat open when it
-  // didn't happen to be right after a join (e.g. opening their own new group's chat).
+  // Covers first-ever chat open when it wasn't right after a join
   useEffect(() => {
     if (promptNotifications === '1') return;
     promptForNotificationPermissionOnFirstChatOpen(api);
@@ -90,8 +87,7 @@ const GroupChatScreen = () => {
       .catch(() => {});
   }, [id]);
 
-  // Cached (or freshly fetched) list data gives an instant name/avatar/isDM fallback
-  // while the heavier per-group details request below is still in flight.
+  // Instant name/avatar/isDM fallback while the heavier group details request is in flight
   const { data: groups } = useGetGroups();
   const fallbackGroup = useMemo(() => groups?.find(g => g._id === id), [groups, id]);
 
@@ -155,23 +151,17 @@ const GroupChatScreen = () => {
   const handleOpenDetails = () => {
     if (!id) return;
     if (Platform.OS === 'ios') {
-      // iOS gets its own root-level copy of Group Details, entirely outside
-      // (tabs), so the native tab bar never shows there at all — see
-      // app/group-details/[id].tsx for why.
+      // iOS uses its own root-level copy, outside (tabs) — see group-details/[id].tsx
       router.push({ pathname: '/group-details/[id]', params: { id } });
       return;
     }
-    // Android: land on the Groups tab's list screen first so Group Details is
-    // pushed on top of it, not left as that nested stack's only screen —
-    // otherwise tapping the tab a second time has nothing to reset back to.
+    // Android: land on the Groups list first so Details pushes on top of it,
+    // not as the nested stack's only screen (else the tab has nothing to reset to)
     router.navigate('/(tabs)/groups');
     router.push({ pathname: '/groups/[id]', params: { id } });
   };
 
-  // Always the groups list, regardless of how this chat was entered (list tap,
-  // push notification, invite link, meetup modal, DM creation) — deterministic
-  // beats "wherever the stack happens to say," since chat can be reached from
-  // places with no consistent screen underneath it.
+  // Always the groups list, regardless of entry point — chat has no consistent screen underneath it
   const handleBack = () => {
     router.replace('/(tabs)/groups');
   };
@@ -202,8 +192,7 @@ const GroupChatScreen = () => {
   const nextMeetupDay = nextMeetup
     ? new Date(nextMeetup.date).toLocaleDateString(undefined, { day: 'numeric', timeZone: nextMeetup.timezone })
     : null;
-  // Mirrors the RSVP state MeetupDetailModal and the meetup card compute, so the bar
-  // previews the same tint/status the card and modal already show.
+  // Mirrors MeetupDetailModal/meetup card RSVP state so the bar shows the same tint/status
   const nextMeetupRsvpStatus = useMemo(() => {
     if (!nextMeetup || !currentUser) return null;
     const isOut = nextMeetup.out?.some(u => getUserId(u) === currentUser._id) || false;
@@ -219,9 +208,7 @@ const GroupChatScreen = () => {
     return isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
   }, [nextMeetupRsvpStatus]);
 
-  // Right side of the next-event bar: whichever polls are currently open for
-  // this group, so the bar can surface them alongside (or instead of) the
-  // next meetup without needing the header poll button.
+  // Right side of the next-event bar: currently open polls for this group
   const { data: polls } = useGetPolls(!isDM ? id : undefined);
   const activePolls = useMemo(() => (polls ?? []).filter(p => p.status === 'active'), [polls]);
   const hasUnansweredActivePoll = useMemo(() => {
@@ -234,8 +221,7 @@ const GroupChatScreen = () => {
   const [selectedPollId, setSelectedPollId] = useState<string | null>(null);
   const [pollVoteModalVisible, setPollVoteModalVisible] = useState(false);
 
-  // A single active poll opens straight to its vote screen; with more than one,
-  // the user first picks which poll from a small selector popup.
+  // One active poll opens straight to voting; more than one shows a selector popup first
   const handlePollBarPress = () => {
     if (activePolls.length === 0) return;
     if (activePolls.length === 1) {
@@ -283,26 +269,21 @@ const GroupChatScreen = () => {
   }, [messages]);
 
   const [listHeight, setListHeight] = useState(0);
-  // Gates the first paint of a freshly opened chat so it never visibly starts at the
-  // oldest message and animates down — see the two effects below.
+  // Gates first paint so a freshly opened chat never visibly animates down from the oldest message
   const [contentReady, setContentReady] = useState(false);
 
   useEffect(() => {
     setContentReady(false);
   }, [id]);
 
-  // scrollToLocation estimates an item's offset from average cell height for anything
-  // it hasn't actually measured yet — with our wildly variable message heights (short
-  // text vs. images vs. reactions) that estimate is unreliable, landing short of the
-  // true end. getScrollResponder() gives the real underlying ScrollView, whose
-  // scrollToEnd() uses the actual measured content size — no estimation involved.
+  // scrollToLocation estimates offset from average cell height, unreliable with our variable
+  // message heights. getScrollResponder().scrollToEnd() uses real measured content size instead.
   const scrollToBottom = useCallback((animated: boolean) => {
     sectionListRef.current?.getScrollResponder()?.scrollToEnd({ animated });
   }, []);
 
-  // First paint for this chat: jump to the bottom instantly (not animated — an
-  // animation here is exactly the visible "zip from oldest to newest" this avoids),
-  // then reveal the list only once that position has actually landed.
+  // First paint: jump to bottom instantly (animating here is the exact visual glitch we're avoiding),
+  // then reveal the list once that position has landed.
   useEffect(() => {
     if (contentReady || messages.length === 0) return;
     scrollToBottom(false);
@@ -314,17 +295,14 @@ const GroupChatScreen = () => {
     if (!loading && messages.length === 0) setContentReady(true);
   }, [loading, messages.length]);
 
-  // Once the chat is visibly open, new messages arriving get the usual animated
-  // scroll-into-view.
+  // Once visibly open, new messages get the usual animated scroll-into-view
   useEffect(() => {
     if (!contentReady) return;
     scrollToBottom(true);
   }, [messages.length, contentReady, scrollToBottom]);
 
-  // Re-anchor to the bottom whenever the list's own measured height actually changes —
-  // this is what KeyboardAvoidingView resizing it (keyboard open/close) looks like from
-  // the list's point of view, and it's the real signal that the resize has landed, unlike
-  // guessing a delay off the keyboard event (which fires before the resize finishes).
+  // Re-anchor on list height change — the real signal a keyboard-driven resize has landed,
+  // unlike guessing a delay off the keyboard event (which fires before resize finishes).
   useEffect(() => {
     if (listHeight > 0) scrollToBottom(true);
   }, [listHeight]);
@@ -348,8 +326,7 @@ const GroupChatScreen = () => {
       );
       const notifyText = text || '📷 Photo';
       api.patch(`/api/groups/${id}/last-message`, { text: notifyText, senderName }).catch(() => {});
-      // Sending a message means you've obviously "read" up to it — keep the unread
-      // dot from lighting back up on your own message once you leave the chat.
+      // Mark read so your own message doesn't re-trigger the unread dot after you leave
       userApi.markGroupRead(api, id).catch(() => {});
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? JSON.stringify(err));

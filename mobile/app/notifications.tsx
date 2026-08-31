@@ -10,7 +10,6 @@ import { Feather } from '@expo/vector-icons';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { getNotificationIcon } from '@/utils/notificationIcons';
 
-// A simple time ago function for demonstration
 const timeAgo = (date: string) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
     let interval = seconds / 31536000;
@@ -32,9 +31,7 @@ const CHANGED_FIELD_LABELS: Record<string, string> = {
     capacity: 'capacity',
 };
 
-// Turns ['schedule', 'location'] into "date and time and location"; falls
-// back to null when there's nothing to describe (e.g. older notifications
-// persisted before per-field change tracking existed).
+// Turns ['schedule', 'location'] into "date and time and location"; null if nothing to describe
 const describeChangedFields = (fields?: string[]) => {
     if (!fields || fields.length === 0) return null;
     const labels = fields.map(f => CHANGED_FIELD_LABELS[f] || f);

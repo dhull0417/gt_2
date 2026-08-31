@@ -1,15 +1,10 @@
 import React from 'react';
 import { Stack } from 'expo-router';
 
-// [id] here is Android's Group Details screen — kept nested under the Groups
-// tab's stack so the native tab bar stays visible while browsing group info,
-// and can be reset back to the list by tapping the tab again (AndroidTabBar.tsx).
-// iOS uses a separate root-level copy at app/group-details/[id].tsx instead,
-// because its native tab bar can't be hidden for one nested screen and has no
-// way to reset itself — see that file. The message thread itself lives at the
-// root-level /group-chat/[id] route on both platforms, entirely outside
-// (tabs), which is what actually prevents the native tab bar from overlapping
-// the keyboard/input on Android.
+// [id] is Android's Group Details, nested here so the tab bar stays visible/resettable
+// (AndroidTabBar.tsx); iOS has its own copy at group-details/[id].tsx. Chat itself lives
+// at the root-level /group-chat/[id] on both platforms, outside (tabs), so the tab bar
+// never overlaps the keyboard on Android.
 export default function GroupsLayout() {
   return (
     <Stack

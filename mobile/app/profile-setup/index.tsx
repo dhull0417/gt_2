@@ -20,10 +20,8 @@ const ProfileSetupScreen = () => {
 
     const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
 
-    // Plain awaited calls, same shape as the dashboard's "One quick thing" zip
-    // modal (app/(tabs)/index.tsx) — not a useMutation(). A per-call mutate()
-    // onSuccess doesn't reliably fire once router.replace unmounts this screen
-    // (see useUpdateProfile's history).
+    // Plain awaited calls, not useMutation() — its onSuccess doesn't reliably fire
+    // once router.replace unmounts this screen (see useUpdateProfile's history).
     const handleSaveProfile = async () => {
         if (!isAppleUser && (!firstName.trim() || !lastName.trim())) {
             Alert.alert('Missing Information', 'Please fill out all fields.');
@@ -33,17 +31,14 @@ const ProfileSetupScreen = () => {
             Alert.alert('Invalid Zip Code', 'Zip code must be exactly 5 digits.');
             return;
         }
-        // For Apple users, omit firstName/lastName entirely — syncUser's backend Clerk API
-        // call will populate them from Apple's token, and we don't want to overwrite with
-        // potentially empty client-side values.
+        // Apple users: omit firstName/lastName so syncUser populates them from Apple's token instead
         const profileData = isAppleUser
             ? { ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) }
             : { firstName, lastName, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) };
 
         setIsSaving(true);
         try {
-            // Ensure the MongoDB user exists before updating profile — idempotent,
-            // syncUser just returns the existing user if one's already there.
+            // Ensure the Mongo user exists first — idempotent, returns existing user if present
             const syncRes = await userApi.syncUser(api, { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' });
             // TEMP DEBUG — remove once the profile-setup redirect-loop bug is diagnosed.
             console.log('[profile-setup] syncUser response', syncRes.data);

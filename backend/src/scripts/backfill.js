@@ -1,13 +1,9 @@
 /**
- * One-time backfill script — run once after deploying the startsAt / nextGenerationAt changes.
+ * One-time backfill: run after deploying the startsAt / nextGenerationAt changes.
+ * Sets startsAt on all meetups, expires past scheduled ones, and computes
+ * nextGenerationAt on groups with a schedule.
  *
- * What it does:
- *   1. Computes and sets startsAt on every existing Meetup
- *   2. Marks past scheduled meetups as 'expired' (fixing the accumulation of stale records)
- *   3. Computes and sets nextGenerationAt on every Group that has a schedule
- *
- * Run with:
- *   node --env-file=.env src/scripts/backfill.js
+ * Run: node --env-file=.env src/scripts/backfill.js
  */
 
 import dotenv from "dotenv";
@@ -33,7 +29,7 @@ async function backfill() {
   await mongoose.connect(process.env.MONGO_URI);
   console.log("Connected to MongoDB.");
 
-  // ── Step 1: Set startsAt on all meetups ──────────────────────────────────────
+  // Step 1: set startsAt on all meetups
   console.log("\nStep 1: Computing startsAt for all meetups...");
   const meetups = await Meetup.find({}, 'date time timezone');
   let startsAtUpdated = 0;
@@ -50,7 +46,7 @@ async function backfill() {
   }
   console.log(`  ✓ Set startsAt on ${startsAtUpdated} meetup(s).`);
 
-  // ── Step 2: Expire past scheduled meetups ────────────────────────────────────
+  // Step 2: expire past scheduled meetups
   console.log("\nStep 2: Expiring past scheduled meetups...");
   const now = new Date();
 
@@ -77,7 +73,7 @@ async function backfill() {
     console.log("  ✓ No past meetups to expire.");
   }
 
-  // ── Step 3: Set nextGenerationAt on all scheduled groups ─────────────────────
+  // Step 3: set nextGenerationAt on all scheduled groups
   console.log("\nStep 3: Computing nextGenerationAt for all groups...");
   const groups = await Group.find({
     'schedule.routines': { $exists: true, $not: { $size: 0 } }

@@ -22,11 +22,11 @@ export const toggleGroupMute = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "User not found." });
   }
 
-  // 1. Clean start: Remove from both lists first to ensure no duplicates or cross-over
+  // clear both lists first to avoid duplicates/cross-over
   user.mutedGroups = user.mutedGroups.filter(id => id.toString() !== groupId);
   user.mutedUntilNextMeetup = user.mutedUntilNextMeetup.filter(id => id.toString() !== groupId);
 
-  // 2. Add to the requested list
+  // add to the requested list
   if (muteType === 'indefinite') {
     user.mutedGroups.push(groupId);
   } else if (muteType === 'untilNext') {
@@ -82,6 +82,38 @@ export const updatePushToken = asyncHandler(async (req, res) => {
   }
 
   res.status(200).json({ message: "Push token updated successfully." });
+});
+
+const PERMISSION_TYPES = ['notifications', 'location', 'photoLibrary'];
+const PERMISSION_STATUSES = ['granted', 'denied', 'undetermined'];
+
+/**
+ * @desc    Report current device permission status (batch: only changed types)
+ * @route   PATCH /api/users/permissions
+ */
+export const updatePermissionStatus = asyncHandler(async (req, res) => {
+  const { userId: clerkId } = getAuth(req);
+  const updates = req.body.permissions;
+
+  if (!updates || typeof updates !== 'object') {
+    return res.status(400).json({ error: "permissions object is required." });
+  }
+
+  const setDoc = {};
+  for (const [type, status] of Object.entries(updates)) {
+    if (!PERMISSION_TYPES.includes(type) || !PERMISSION_STATUSES.includes(status)) {
+      return res.status(400).json({ error: `Invalid permission type or status: ${type}` });
+    }
+    setDoc[`permissions.${type}`] = status;
+  }
+  if (Object.keys(setDoc).length === 0) {
+    return res.status(400).json({ error: "No valid permission updates provided." });
+  }
+
+  const user = await User.findOneAndUpdate({ clerkId }, { $set: setDoc }, { new: true });
+  if (!user) return res.status(404).json({ error: "User not found." });
+
+  res.status(200).json({ permissions: user.permissions });
 });
 
 export const matchContacts = asyncHandler(async (req, res) => {
@@ -150,9 +182,7 @@ export const syncUser = asyncHandler(async (req, res) => {
 
   const clerkUser = await clerkClient.users.getUser(userId);
 
-  // The mobile client sends firstName/lastName from its local Clerk session,
-  // which is populated immediately from Apple/Google's token. The backend
-  // Clerk API can lag slightly on first sign-in, so we prefer the client value.
+  // prefer client-sent firstName/lastName — the backend Clerk API can lag on first sign-in
   const { firstName: bodyFirstName, lastName: bodyLastName } = req.body;
 
   const userData = {
@@ -185,7 +215,7 @@ export const deleteAccount = asyncHandler(async (req, res) => {
 
   const userId = user._id;
 
-  // --- Step 1: Handle groups where the user is the owner ---
+  // owned groups: delete if solely owned, else transfer ownership
   const ownedGroups = await Group.find({ owner: userId });
 
   for (const group of ownedGroups) {
@@ -197,8 +227,7 @@ export const deleteAccount = asyncHandler(async (req, res) => {
       await Notification.deleteMany({ group: group._id });
       await Group.findByIdAndDelete(group._id);
     } else {
-      // Transfer ownership: prefer moderators, fall back to members.
-      // Tiebreaker: oldest account (createdAt asc) since per-member join dates aren't stored.
+      // prefer moderators over members; tiebreak by oldest account (no join dates stored)
       const otherModerators = group.moderators.filter(id => id.toString() !== userId.toString());
 
       let newOwnerId;
@@ -217,27 +246,24 @@ export const deleteAccount = asyncHandler(async (req, res) => {
     }
   }
 
-  // --- Step 2: Remove user from all non-owned groups ---
+  // remove user from non-owned groups
   await Group.updateMany(
     { members: userId, owner: { $ne: userId } },
     { $pull: { members: userId, moderators: userId } }
   );
 
-  // --- Step 3: Remove user from all meetup attendance arrays ---
+  // remove user from meetup attendance arrays
   await Meetup.updateMany(
     {},
     { $pull: { members: userId, undecided: userId, in: userId, out: userId, waitlist: userId } }
   );
 
-  // --- Step 4: Delete all notifications involving the user ---
+  // delete notifications involving the user
   await Notification.deleteMany({ $or: [{ recipient: userId }, { sender: userId }] });
 
-  // --- Step 5: Delete from Clerk ---
-  // Must happen before MongoDB so that if Clerk deletion fails,
-  // the user record is still intact and the deletion can be retried.
+  // delete from Clerk first — if it fails, the Mongo record stays intact for retry
   await clerkClient.users.deleteUser(clerkId);
 
-  // --- Step 7: Delete from MongoDB ---
   await User.findByIdAndDelete(userId);
 
   res.status(200).json({ message: "Account deleted successfully." });
