@@ -380,8 +380,9 @@ export const updateSchedule = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Removes a schedule: cancels (not deletes) its future non-override
- *          meetups and notifies members, preserving RSVP history.
+ * @desc    Removes a schedule: permanently deletes its future non-override
+ *          meetups (they drop off the meetup tab entirely, not just shown as
+ *          cancelled) and notifies members. Past meetups are left alone.
  * @route   DELETE /api/groups/:groupId/schedules/:scheduleId
  */
 export const deleteSchedule = asyncHandler(async (req, res) => {
@@ -410,16 +411,13 @@ export const deleteSchedule = asyncHandler(async (req, res) => {
     });
 
     if (futureMeetups.length > 0) {
-        await Meetup.updateMany(
-            { _id: { $in: futureMeetups.map(m => m._id) } },
-            { $set: { status: 'cancelled' } }
-        );
+        await Meetup.deleteMany({ _id: { $in: futureMeetups.map(m => m._id) } });
 
         const membersToNotify = await User.find({ _id: { $in: group.members } });
         if (membersToNotify.length > 0) {
             await notifyAndPersist(membersToNotify, {
                 title: "Schedule Removed",
-                body: `"${target.name}" was removed from "${group.name}" — its upcoming meetups have been cancelled.`,
+                body: `"${target.name}" was removed from "${group.name}" — its upcoming meetups have been deleted.`,
                 data: { groupId: group._id.toString(), type: 'schedule_removed' },
                 type: 'group-updated',
                 sender: requester._id,

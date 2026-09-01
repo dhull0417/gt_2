@@ -11,11 +11,10 @@ import { reportPermissionStatus } from '@/utils/permissions';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
-    shouldShowBanner: true, 
-    shouldShowList: true,   
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 

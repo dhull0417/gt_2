@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
     View,
     Text,
@@ -11,6 +11,7 @@ import {
     ActivityIndicator,
     LayoutAnimation,
     UIManager,
+    Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -20,8 +21,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
 import { useApiClient, groupApi, GroupDetails, NamedSchedule, Frequency, DayTime, Routine } from "../../utils/api";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
-import NativeTimePicker from "../../components/NativeTimePicker";
+import NativeTimePicker, { timeStringToDate } from "../../components/NativeTimePicker";
 import OptionPickerModal from "../../components/OptionPickerModal";
+import LocationField from "@/components/LocationField";
+import LocationSearchModal from "@/components/LocationSearchModal";
+import InfoBubble from "@/components/InfoBubble";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -62,6 +66,18 @@ const USA_TIMEZONES = [
     { label: "Hawaii (HT)",       value: "Pacific/Honolulu"    },
 ];
 
+// Short badge for the compact timezone pill — mirrors the abbreviations already
+// used elsewhere (e.g. GroupDetailsView) so the same zone reads the same way everywhere.
+const TZ_ABBR: Record<string, string> = {
+    "America/New_York": "ET",
+    "America/Chicago": "CT",
+    "America/Denver": "MT",
+    "America/Phoenix": "MST",
+    "America/Los_Angeles": "PT",
+    "America/Anchorage": "AKST",
+    "Pacific/Honolulu": "HST",
+};
+
 const FREQ_LABELS: Record<string, string> = {
     daily: "Daily", weekly: "Weekly", biweekly: "Bi-Weekly",
     monthly: "Monthly", custom: "Multiple Rules",
@@ -70,6 +86,46 @@ const FREQ_LABELS: Record<string, string> = {
 const uid = () => Math.random().toString(36).slice(2);
 const ordSfx = (n: number) => n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th";
 const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
+// Time-of-day matters when RSVP open/deadline land on the same day-count —
+// comparing leadDays >= deadlineDays alone isn't enough.
+const timeToMinutes = (time: string): number => {
+    const t = timeStringToDate(time);
+    return t.getHours() * 60 + t.getMinutes();
+};
+
+const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
+    if (mode !== "limited" || input === "") return null;
+    if (!/^\d+$/.test(input)) return "Numbers only, please.";
+    const n = parseInt(input, 10);
+    if (n < 1 || n > 200) return "Enter a number between 1 and 200.";
+    return null;
+};
+
+// ─── ToggleSwitch ─────────────────────────────────────────────────────────────
+
+const ToggleSwitch = ({ value, onValueChange, activeColor = "#7C3AED" }: {
+    value: boolean; onValueChange: (v: boolean) => void; activeColor?: string;
+}) => {
+    const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
+    const scale = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        Animated.timing(anim, { toValue: value ? 1 : 0, duration: 180, useNativeDriver: false }).start();
+        Animated.sequence([
+            Animated.timing(scale, { toValue: 1.3, duration: 90, useNativeDriver: false }),
+            Animated.spring(scale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: false }),
+        ]).start();
+    }, [value]);
+    const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["#E5E7EB", activeColor] });
+    const thumbLeft = anim.interpolate({ inputRange: [0, 1], outputRange: [2, 20] });
+    return (
+        <TouchableOpacity activeOpacity={0.8} onPress={() => onValueChange(!value)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Animated.View style={[s.switchTrack, { backgroundColor: trackColor }]}>
+                <Animated.View style={[s.switchThumb, { left: thumbLeft, transform: [{ scale }] }]} />
+            </Animated.View>
+        </TouchableOpacity>
+    );
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -115,7 +171,17 @@ interface BuiltRoutine {
 interface ScheduleData {
     name: string;
     location: string;
-    capacity: string; // blank/"0" = unlimited, mirrors the capacity input pattern used elsewhere
+    maxAttendeesMode: "unlimited" | "limited";
+    maxAttendeesInput: string;
+    rsvpRestricted: boolean;
+    leadEnabled: boolean;
+    leadDays: number;
+    leadTime: string;
+    showLeadTimePicker: boolean;
+    deadlineEnabled: boolean;
+    deadlineDays: number;
+    deadlineTime: string;
+    showDeadlineTimePicker: boolean;
     startDate: string;
     timezone: string;
     frequency: Frequency | null;
@@ -139,7 +205,17 @@ interface ScheduleData {
 const defaultSchedule = (): ScheduleData => ({
     name: "",
     location: "",
-    capacity: "",
+    maxAttendeesMode: "unlimited",
+    maxAttendeesInput: "",
+    rsvpRestricted: false,
+    leadEnabled: true,
+    leadDays: 5,
+    leadTime: "09:00 AM",
+    showLeadTimePicker: false,
+    deadlineEnabled: false,
+    deadlineDays: 2,
+    deadlineTime: "09:00 AM",
+    showDeadlineTimePicker: false,
     startDate: DateTime.now().toISODate()!,
     timezone: "America/Denver",
     frequency: null,
@@ -218,7 +294,11 @@ const buildSchedulePayload = (d: ScheduleData) => {
         startDate: d.startDate,
         routines,
         defaultLocation: d.location.trim(),
-        defaultCapacity: d.capacity.trim() ? parseInt(d.capacity, 10) : 0,
+        defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
+        generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
+        generationLeadTime: d.leadTime,
+        generationDeadlineDays: d.rsvpRestricted && d.deadlineEnabled ? d.deadlineDays : null,
+        generationDeadlineTime: d.deadlineTime,
         timezone: d.timezone,
     };
 };
@@ -293,7 +373,15 @@ const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSchedule | n
     const common = {
         name: sched.name,
         location: sched.defaultLocation || "",
-        capacity: sched.defaultCapacity ? String(sched.defaultCapacity) : "",
+        maxAttendeesMode: (sched.defaultCapacity > 0 ? "limited" : "unlimited") as "unlimited" | "limited",
+        maxAttendeesInput: sched.defaultCapacity ? String(sched.defaultCapacity) : "",
+        rsvpRestricted: sched.generationLeadDays != null || sched.generationDeadlineDays != null,
+        leadEnabled: sched.generationLeadDays != null,
+        leadDays: sched.generationLeadDays ?? 5,
+        leadTime: sched.generationLeadTime || "09:00 AM",
+        deadlineEnabled: sched.generationDeadlineDays != null,
+        deadlineDays: sched.generationDeadlineDays ?? 2,
+        deadlineTime: sched.generationDeadlineTime || "09:00 AM",
     };
 
     const routines = (sched.routines ?? []) as Routine[];
@@ -440,6 +528,7 @@ const EditScheduleScreen = () => {
     const { data: group, isLoading } = useGetGroupDetails(id);
     const [isSaving, setIsSaving] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
 
     const targetSchedule = useMemo(
         () => group?.schedules?.find(s => s._id === scheduleId) ?? null,
@@ -644,6 +733,7 @@ const EditScheduleScreen = () => {
 
     const isScheduleValid = (): boolean => {
         if (!d.name.trim()) return false;
+        if (d.maxAttendeesMode === "limited" && (d.maxAttendeesInput === "" || getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput))) return false;
         if (!d.frequency) return false;
         if (d.frequency === "daily") return d.dailySameTime !== null;
         if (d.frequency === "weekly" || d.frequency === "biweekly")
@@ -1143,111 +1233,328 @@ const EditScheduleScreen = () => {
                             : "Changes will delete future meetups and regenerate them from the updated schedule."}
                     </Text>
 
+                    {/* Timezone — applies to the whole group, not just this schedule,
+                        so it's a standalone field rather than part of the form below. */}
+                    <View style={s.tzSection}>
+                        <View style={s.tzRow}>
+                            <Text style={[s.fieldLabel, s.fieldLabelFirst, { marginBottom: 0 }]}>Timezone</Text>
+                            <TouchableOpacity style={s.tzPill} onPress={() => upd({
+                                showTZPicker: !d.showTZPicker,
+                                showFreqPicker: false, showStartDatePicker: false, showLeadTimePicker: false, showDeadlineTimePicker: false,
+                            })}>
+                                <Feather name="globe" size={13} color="#4A90E2" />
+                                <Text style={s.tzPillText}>{TZ_ABBR[d.timezone] ?? d.timezone}</Text>
+                                <Feather name={d.showTZPicker ? "chevron-up" : "chevron-down"} size={13} color="#4A90E2" />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
                     {/* Name */}
-                    <Text style={s.fieldLabel}>Schedule name</Text>
-                    <View style={s.dateFieldRow}>
-                        <Feather name="tag" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <TextInput
-                            style={s.textInputField}
-                            value={d.name}
-                            onChangeText={t => setD(prev => ({ ...prev, name: t }))}
-                            placeholder="e.g. Sunday Dinner"
-                            placeholderTextColor="#9CA3AF"
-                            maxLength={60}
+                    <View style={s.sectionCard}>
+                        <View style={s.sectionHeaderRow}>
+                            <View style={[s.sectionIconChip, s.sectionIconChipIndigo]}>
+                                <Feather name="tag" size={16} color="#6366F1" />
+                            </View>
+                            <Text style={s.sectionTitle}>Name</Text>
+                        </View>
+
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Schedule name</Text>
+                        <View style={s.dateFieldRow}>
+                            <Feather name="tag" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                            <TextInput
+                                style={s.textInputField}
+                                value={d.name}
+                                onChangeText={t => setD(prev => ({ ...prev, name: t }))}
+                                placeholder="e.g. Sunday Dinner"
+                                placeholderTextColor="#9CA3AF"
+                                maxLength={60}
+                            />
+                        </View>
+                    </View>
+
+                    {/* Where */}
+                    <View style={s.sectionCard}>
+                        <View style={s.sectionHeaderRow}>
+                            <View style={[s.sectionIconChip, s.sectionIconChipBlue]}>
+                                <Feather name="map-pin" size={16} color="#4A90E2" />
+                            </View>
+                            <Text style={s.sectionTitle}>Where</Text>
+                        </View>
+
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Location or link</Text>
+                        <LocationField
+                            variant="wizard"
+                            placeholder="e.g. 123 Main St or zoom.us/j/..."
+                            value={d.location}
+                            onPress={() => setIsLocationSearchOpen(true)}
                         />
                     </View>
 
-                    {/* Location */}
-                    <Text style={s.fieldLabel}>Default location</Text>
-                    <View style={s.dateFieldRow}>
-                        <Feather name="map-pin" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <TextInput
-                            style={s.textInputField}
-                            value={d.location}
-                            onChangeText={t => setD(prev => ({ ...prev, location: t }))}
-                            placeholder="Optional"
-                            placeholderTextColor="#9CA3AF"
-                        />
+                    {/* When */}
+                    <View style={s.sectionCard}>
+                        <View style={s.sectionHeaderRow}>
+                            <View style={[s.sectionIconChip, s.sectionIconChipAmber]}>
+                                <Feather name="calendar" size={16} color="#F59E0B" />
+                            </View>
+                            <Text style={s.sectionTitle}>When</Text>
+                        </View>
+
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>How often?</Text>
+                        <TouchableOpacity style={s.dateFieldRow}
+                            onPress={() => upd({ showFreqPicker: !d.showFreqPicker, showStartDatePicker: false, showTZPicker: false })}>
+                            <Feather name="repeat" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                            <Text style={d.frequency ? s.dateFieldText : s.dayPickerPlaceholder}>
+                                {d.frequency ? FREQ_LABELS[d.frequency] : "Select frequency"}
+                            </Text>
+                            <Feather name={d.showFreqPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        </TouchableOpacity>
+                        {d.showFreqPicker && (
+                            <View style={s.inlineDayPicker}>
+                                {(["daily", "weekly", "biweekly", "monthly", "custom"] as Frequency[]).map(f => (
+                                    <TouchableOpacity key={f} style={[s.dayOption, d.frequency === f && s.dayOptionActive]}
+                                        onPress={() => selectFreq(f)}>
+                                        <Text style={[s.dayOptionText, d.frequency === f && s.dayOptionTextActive]}>{FREQ_LABELS[f]}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        )}
+
+                        {d.frequency === "daily" && renderDailyOptions()}
+                        {d.frequency === "weekly" && renderWeekdayRows(false)}
+                        {d.frequency === "biweekly" && renderWeekdayRows(true)}
+                        {d.frequency === "monthly" && renderMonthlyOptions()}
+                        {d.frequency === "custom" && renderCustomOptions()}
+
+                        {/* Start Date — hidden for biweekly, where each day already asks for its own start date */}
+                        {d.frequency !== "biweekly" && (
+                            <>
+                                <Text style={s.fieldLabel}>Start date</Text>
+                                <TouchableOpacity style={s.dateFieldRow}
+                                    onPress={() => upd({ showStartDatePicker: !d.showStartDatePicker, showFreqPicker: false, showTZPicker: false })}>
+                                    <Feather name="calendar" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                                    <Text style={s.dateFieldText}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
+                                    <Feather name={d.showStartDatePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                </TouchableOpacity>
+                                {d.showStartDatePicker && (
+                                    <InlineCalendar value={d.startDate}
+                                        onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
+                                        minDate={DateTime.now().toISODate()!} />
+                                )}
+                            </>
+                        )}
+                    </View>
+
+                    {/* RSVP Rules */}
+                    <View style={s.sectionCard}>
+                        <View style={s.sectionHeaderRow}>
+                            <View style={[s.sectionIconChip, s.sectionIconChipViolet]}>
+                                <Feather name="bell" size={16} color="#7C3AED" />
+                            </View>
+                            <Text style={s.sectionTitle}>RSVP Rules</Text>
+                        </View>
+
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Limit when people can RSVP?</Text>
+                        <View style={s.boolRow}>
+                            <TouchableOpacity style={[s.boolBtn, !d.rsvpRestricted && s.boolBtnActive]}
+                                onPress={() => upd({ rsvpRestricted: false })}>
+                                <Text style={[s.boolBtnText, !d.rsvpRestricted && s.boolBtnTextActive]}>Allow anytime</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[s.boolBtn, d.rsvpRestricted && s.boolBtnActive]}
+                                onPress={() => upd({ rsvpRestricted: true })}>
+                                <Text style={[s.boolBtnText, d.rsvpRestricted && s.boolBtnTextActive]}>Limit RSVPs</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {d.rsvpRestricted && (
+                            <View style={{ marginTop: 14, gap: 14 }}>
+                                <View>
+                                    <View style={s.toggleRow}>
+                                        <View style={s.toggleRowLabelWrap}>
+                                            <Text style={s.toggleRowLabel}>Earliest time to RSVP</Text>
+                                            <InfoBubble
+                                                title="Earliest time to RSVP"
+                                                description={"This sets the earliest time and day people can respond.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs as soon as the meetup is created."}
+                                            />
+                                        </View>
+                                        <ToggleSwitch value={d.leadEnabled} onValueChange={v => {
+                                            const leadDays = v && d.deadlineEnabled && d.leadDays < d.deadlineDays ? d.deadlineDays : d.leadDays;
+                                            const sameDayViolation = v && d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
+                                            upd({
+                                                leadEnabled: v,
+                                                leadDays,
+                                                ...(sameDayViolation ? { leadTime: d.deadlineTime } : {}),
+                                            });
+                                        }} />
+                                    </View>
+                                    {d.leadEnabled && (
+                                        <View style={{ marginTop: 10 }}>
+                                            <View style={s.leadRow}>
+                                                <TouchableOpacity style={s.stepperBtn} onPress={() => {
+                                                    const leadDays = Math.max(d.deadlineEnabled ? d.deadlineDays : 0, d.leadDays - 1);
+                                                    const sameDayViolation = d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
+                                                    upd({ leadDays, ...(sameDayViolation ? { leadTime: d.deadlineTime } : {}) });
+                                                }}>
+                                                    <Feather name="minus" size={18} color="#4A90E2" />
+                                                </TouchableOpacity>
+                                                <View style={s.leadCenter}>
+                                                    <Text style={s.leadVal}>{d.leadDays}</Text>
+                                                    <Text style={s.leadSub}>days before</Text>
+                                                </View>
+                                                <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ leadDays: d.leadDays + 1 })}>
+                                                    <Feather name="plus" size={18} color="#4A90E2" />
+                                                </TouchableOpacity>
+                                            </View>
+                                            <Text style={s.fieldLabel}>Time</Text>
+                                            <TouchableOpacity style={s.dateFieldRow}
+                                                onPress={() => upd({ showLeadTimePicker: !d.showLeadTimePicker, showDeadlineTimePicker: false, showStartDatePicker: false, showFreqPicker: false, showTZPicker: false })}>
+                                                <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                                                <Text style={s.dateFieldText}>{d.leadTime}</Text>
+                                                <Feather name={d.showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+                                    {d.leadEnabled && d.showLeadTimePicker && (
+                                        <NativeTimePicker value={d.leadTime} onChange={t => {
+                                            const capped = d.deadlineEnabled && d.leadDays === d.deadlineDays && timeToMinutes(t) > timeToMinutes(d.deadlineTime);
+                                            if (capped) {
+                                                Alert.alert(
+                                                    "Earliest RSVP time must be before the latest RSVP time",
+                                                    `• Both are ${d.leadDays} day${d.leadDays === 1 ? '' : 's'} before the meetup\n• Earliest time can't be later than ${d.deadlineTime}\n• Earliest time set to ${d.deadlineTime}`
+                                                );
+                                            }
+                                            upd({ leadTime: capped ? d.deadlineTime : t });
+                                        }}
+                                            onClose={() => upd({ showLeadTimePicker: false })} />
+                                    )}
+                                </View>
+
+                                <View>
+                                    <View style={s.toggleRow}>
+                                        <View style={s.toggleRowLabelWrap}>
+                                            <Text style={s.toggleRowLabel}>Latest time to RSVP</Text>
+                                            <InfoBubble
+                                                title="Latest time to RSVP"
+                                                description={"This sets the cutoff for responding.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs right up until the meetup starts."}
+                                            />
+                                        </View>
+                                        <ToggleSwitch value={d.deadlineEnabled} onValueChange={v => {
+                                            const deadlineDays = v && d.leadEnabled && d.deadlineDays > d.leadDays ? d.leadDays : d.deadlineDays;
+                                            const sameDayViolation = v && d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
+                                            upd({
+                                                deadlineEnabled: v,
+                                                deadlineDays,
+                                                ...(sameDayViolation ? { deadlineTime: d.leadTime } : {}),
+                                            });
+                                        }} />
+                                    </View>
+                                    {d.deadlineEnabled && (
+                                        <View style={{ marginTop: 10 }}>
+                                            <View style={s.leadRow}>
+                                                <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ deadlineDays: Math.max(0, d.deadlineDays - 1) })}>
+                                                    <Feather name="minus" size={18} color="#4A90E2" />
+                                                </TouchableOpacity>
+                                                <View style={s.leadCenter}>
+                                                    <Text style={s.leadVal}>{d.deadlineDays}</Text>
+                                                    <Text style={s.leadSub}>days before</Text>
+                                                </View>
+                                                <TouchableOpacity style={s.stepperBtn} onPress={() => {
+                                                    const deadlineDays = d.leadEnabled ? Math.min(d.leadDays, d.deadlineDays + 1) : d.deadlineDays + 1;
+                                                    const sameDayViolation = d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
+                                                    upd({ deadlineDays, ...(sameDayViolation ? { deadlineTime: d.leadTime } : {}) });
+                                                }}>
+                                                    <Feather name="plus" size={18} color="#4A90E2" />
+                                                </TouchableOpacity>
+                                            </View>
+                                            <Text style={s.fieldLabel}>Time</Text>
+                                            <TouchableOpacity style={s.dateFieldRow}
+                                                onPress={() => upd({ showDeadlineTimePicker: !d.showDeadlineTimePicker, showLeadTimePicker: false, showStartDatePicker: false, showFreqPicker: false, showTZPicker: false })}>
+                                                <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                                                <Text style={s.dateFieldText}>{d.deadlineTime}</Text>
+                                                <Feather name={d.showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+                                    {d.deadlineEnabled && d.showDeadlineTimePicker && (
+                                        <NativeTimePicker value={d.deadlineTime} onChange={t => {
+                                            const capped = d.leadEnabled && d.deadlineDays === d.leadDays && timeToMinutes(t) < timeToMinutes(d.leadTime);
+                                            if (capped) {
+                                                Alert.alert(
+                                                    "Latest RSVP time must be after the earliest RSVP time",
+                                                    `• Both are ${d.deadlineDays} day${d.deadlineDays === 1 ? '' : 's'} before the meetup\n• Latest time can't be earlier than ${d.leadTime}\n• Latest time set to ${d.leadTime}`
+                                                );
+                                            }
+                                            upd({ deadlineTime: capped ? d.leadTime : t });
+                                        }}
+                                            onClose={() => upd({ showDeadlineTimePicker: false })} />
+                                    )}
+                                </View>
+                            </View>
+                        )}
                     </View>
 
                     {/* Capacity */}
-                    <Text style={s.fieldLabel}>Attendee limit</Text>
-                    <View style={s.dateFieldRow}>
-                        <Feather name="users" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <TextInput
-                            style={s.textInputField}
-                            value={d.capacity}
-                            onChangeText={t => setD(prev => ({ ...prev, capacity: t.replace(/[^0-9]/g, "") }))}
-                            placeholder="Unlimited"
-                            placeholderTextColor="#9CA3AF"
-                            keyboardType="number-pad"
-                        />
-                    </View>
-
-                    {/* Frequency */}
-                    <Text style={s.fieldLabel}>How often?</Text>
-                    <TouchableOpacity style={s.dateFieldRow}
-                        onPress={() => upd({ showFreqPicker: !d.showFreqPicker, showStartDatePicker: false, showTZPicker: false })}>
-                        <Feather name="repeat" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <Text style={d.frequency ? s.dateFieldText : s.dayPickerPlaceholder}>
-                            {d.frequency ? FREQ_LABELS[d.frequency] : "Select frequency"}
-                        </Text>
-                        <Feather name={d.showFreqPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
-                    {d.showFreqPicker && (
-                        <View style={s.inlineDayPicker}>
-                            {(["daily", "weekly", "biweekly", "monthly", "custom"] as Frequency[]).map(f => (
-                                <TouchableOpacity key={f} style={[s.dayOption, d.frequency === f && s.dayOptionActive]}
-                                    onPress={() => selectFreq(f)}>
-                                    <Text style={[s.dayOptionText, d.frequency === f && s.dayOptionTextActive]}>{FREQ_LABELS[f]}</Text>
-                                </TouchableOpacity>
-                            ))}
+                    <View style={[s.sectionCard, { marginBottom: 8 }]}>
+                        <View style={s.sectionHeaderRow}>
+                            <View style={[s.sectionIconChip, s.sectionIconChipTeal]}>
+                                <Feather name="users" size={16} color="#0D9488" />
+                            </View>
+                            <Text style={s.sectionTitle}>Capacity</Text>
                         </View>
-                    )}
 
-                    {d.frequency === "daily" && renderDailyOptions()}
-                    {d.frequency === "weekly" && renderWeekdayRows(false)}
-                    {d.frequency === "biweekly" && renderWeekdayRows(true)}
-                    {d.frequency === "monthly" && renderMonthlyOptions()}
-                    {d.frequency === "custom" && renderCustomOptions()}
-
-                    {/* Start Date — hidden for biweekly, where each day already asks for its own start date */}
-                    {d.frequency !== "biweekly" && (
-                        <>
-                            <Text style={s.fieldLabel}>Start date</Text>
-                            <TouchableOpacity style={s.dateFieldRow}
-                                onPress={() => upd({ showStartDatePicker: !d.showStartDatePicker, showTZPicker: false, showFreqPicker: false })}>
-                                <Feather name="calendar" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                                <Text style={s.dateFieldText}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
-                                <Feather name={d.showStartDatePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Max Attendees</Text>
+                        <View style={s.boolRow}>
+                            <TouchableOpacity
+                                style={[s.boolBtn, d.maxAttendeesMode === "unlimited" && s.boolBtnActive]}
+                                onPress={() => upd({ maxAttendeesMode: "unlimited", maxAttendeesInput: "" })}
+                            >
+                                <Text style={[s.boolBtnText, d.maxAttendeesMode === "unlimited" && s.boolBtnTextActive]}>Unlimited</Text>
                             </TouchableOpacity>
-                            {d.showStartDatePicker && (
-                                <InlineCalendar value={d.startDate}
-                                    onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
-                                    minDate={DateTime.now().toISODate()!} />
-                            )}
-                        </>
-                    )}
-
-                    {/* Timezone */}
-                    <Text style={s.fieldLabel}>Timezone</Text>
-                    <TouchableOpacity style={s.dateFieldRow}
-                        onPress={() => upd({ showTZPicker: !d.showTZPicker, showStartDatePicker: false, showFreqPicker: false })}>
-                        <Feather name="globe" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <Text style={s.dateFieldText}>{USA_TIMEZONES.find(t => t.value === d.timezone)?.label || d.timezone}</Text>
-                        <Feather name={d.showTZPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
-                    {d.showTZPicker && (
-                        <View style={s.inlineDayPicker}>
-                            {USA_TIMEZONES.map(tz => (
-                                <TouchableOpacity key={tz.value} style={[s.dayOption, d.timezone === tz.value && s.dayOptionActive]}
-                                    onPress={() => upd({ timezone: tz.value, showTZPicker: false })}>
-                                    <Text style={[s.dayOptionText, d.timezone === tz.value && s.dayOptionTextActive]}>{tz.label}</Text>
-                                </TouchableOpacity>
-                            ))}
+                            <TouchableOpacity
+                                style={[s.boolBtn, d.maxAttendeesMode === "limited" && s.boolBtnActive]}
+                                onPress={() => upd({ maxAttendeesMode: "limited" })}
+                            >
+                                <Text style={[s.boolBtnText, d.maxAttendeesMode === "limited" && s.boolBtnTextActive]}>Limited</Text>
+                            </TouchableOpacity>
                         </View>
-                    )}
+                        {d.maxAttendeesMode === "limited" && (() => {
+                            const maxAttendeesError = getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput);
+                            return (
+                                <View style={{ marginTop: 10 }}>
+                                    <View style={[s.inputRow, { marginBottom: 0 }, maxAttendeesError && s.inputRowError]}>
+                                        <Feather name="users" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                                        <TextInput
+                                            style={s.inlineInput}
+                                            placeholder="How many?"
+                                            placeholderTextColor="#C4C9D4"
+                                            keyboardType="number-pad"
+                                            value={d.maxAttendeesInput}
+                                            onChangeText={v => upd({ maxAttendeesInput: v })}
+                                        />
+                                    </View>
+                                    {maxAttendeesError && <Text style={s.errorText}>{maxAttendeesError}</Text>}
+                                </View>
+                            );
+                        })()}
+                    </View>
                 </ScrollView>
+
+                <LocationSearchModal
+                    visible={isLocationSearchOpen}
+                    initialValue={d.location}
+                    placeholder="e.g. 123 Main St or zoom.us/j/..."
+                    onDone={(text) => { upd({ location: text }); setIsLocationSearchOpen(false); }}
+                    onCancel={() => setIsLocationSearchOpen(false)}
+                />
+
+                {d.showTZPicker && (
+                    <OptionPickerModal
+                        title="Timezone"
+                        options={USA_TIMEZONES.map(tz => ({ key: tz.value, label: tz.label }))}
+                        selectedKey={d.timezone}
+                        onSelect={key => upd({ timezone: key, showTZPicker: false })}
+                        onClose={() => upd({ showTZPicker: false })}
+                    />
+                )}
 
                 <View style={s.screenFooter}>
                     {!isNew && (
@@ -1292,6 +1599,34 @@ const s = StyleSheet.create({
     deleteBtn: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: "#FECACA", marginRight: "auto" },
     iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
     textInputField: { flex: 1, fontSize: 15, color: "#374151", fontWeight: "500", padding: 0 },
+    fieldLabelFirst: { marginTop: 0 },
+    sectionCard: { backgroundColor: "#fff", borderRadius: 20, borderWidth: 1, borderColor: "#F3F4F6", padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
+    sectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
+    sectionIconChip: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+    sectionIconChipBlue: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
+    sectionIconChipAmber: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
+    sectionIconChipViolet: { backgroundColor: "#F5F3FF", borderColor: "#DDD6FE" },
+    sectionIconChipTeal: { backgroundColor: "#ECFDF9", borderColor: "#99E6DA" },
+    sectionIconChipIndigo: { backgroundColor: "#EEF2FF", borderColor: "#C7D2FE" },
+    tzSection: { marginTop: 2, marginBottom: 24 },
+    tzRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    tzPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: "#EEF6FF", borderWidth: 1, borderColor: "#BFDBFE" },
+    tzPillText: { fontSize: 13, fontWeight: "800", color: "#4A90E2" },
+    sectionTitle: { fontSize: 16, fontWeight: "900", color: "#111827", letterSpacing: -0.2 },
+    toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    toggleRowLabelWrap: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, marginRight: 12 },
+    toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151" },
+    switchTrack: { width: 44, height: 26, borderRadius: 13, padding: 2, justifyContent: "center" },
+    switchThumb: { position: "absolute", width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.25, shadowRadius: 2, elevation: 2 },
+    leadRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+    stepperBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
+    leadCenter: { alignItems: "center", minWidth: 60 },
+    leadVal: { fontSize: 22, fontWeight: "900", color: "#111827" },
+    leadSub: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase" },
+    inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
+    inputRowError: { borderColor: "#EF4444" },
+    inlineInput: { flex: 1, fontSize: 15, color: "#374151" },
+    errorText: { fontSize: 12, fontWeight: "600", color: "#EF4444", marginTop: 6, marginLeft: 2 },
     primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
     primaryBtnDisabled: { backgroundColor: "#93C5FD" },
     primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },

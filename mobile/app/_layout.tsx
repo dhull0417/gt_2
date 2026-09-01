@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth, useUser } from '@clerk/expo';
+import { resourceCache } from '@clerk/expo/resource-cache';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { QueryClient, onlineManager, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
@@ -22,6 +23,17 @@ import { WelcomeModal } from '@/components/WelcomeModal';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
+
+// expo-notifications logs these on every load when running in Expo Go (remote
+// push genuinely isn't supported there — a dev build doesn't have this
+// limitation). They're expected noise, not an error to act on, so filter them
+// out of the terminal instead of seeing them on every reload.
+const originalWarn = console.warn;
+console.warn = (...args: unknown[]) => {
+  const first = args[0];
+  if (typeof first === 'string' && first.includes('expo-notifications')) return;
+  originalWarn(...args);
+};
 
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -63,7 +75,14 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
+      <ClerkProvider
+        tokenCache={tokenCache}
+        publishableKey={publishableKey}
+        // Persists Clerk's client/session resources to SecureStore so a signed-in user
+        // can reach `isLoaded` (and the app) on a cold start with no network — otherwise
+        // Clerk has to fetch that state from its API before auth can resolve at all.
+        __experimental_resourceCache={resourceCache}
+      >
         <PersistQueryClientProvider
           client={queryClient}
           persistOptions={{
@@ -166,10 +185,7 @@ const AuthLayout = () => {
     if (isSignedIn) {
       // No Mongo user yet always routes through profile-setup — its Save triggers syncUser
       const profileIncomplete = !currentUser || (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()));
-      // TEMP DEBUG — remove once the profile-setup redirect-loop bug is diagnosed.
-      console.log('[routing]', { segment: segments[0], profileIncomplete, firstName: currentUser?.firstName, lastName: currentUser?.lastName, isAppleUser });
       if (profileIncomplete && segments[0] !== 'profile-setup') {
-        console.log('[routing] bouncing to /profile-setup');
         router.replace('/profile-setup');
       } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
         router.replace('/(tabs)');

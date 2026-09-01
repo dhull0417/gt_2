@@ -15,12 +15,7 @@ export const useUserSync = () => {
       firstName: clerkUser?.firstName ?? '',
       lastName: clerkUser?.lastName ?? '',
     }),
-    onSuccess: (response: any) => {
-      if (response.data?.user) {
-        console.log("User sync successful for:", response.data.user._id);
-      } else {
-        console.log("User sync check complete:", response.data);
-      }
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
     onError: (error) => console.error("User sync failed:", error),
