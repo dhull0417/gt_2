@@ -518,8 +518,7 @@ const MembersScreen = ({ groupId, groupName, onDone }: {
 
 // ─── SCREEN 3: Group Settings ─────────────────────────────────────────────────
 
-const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, onBack, onSkip }: {
-    groupName: string;
+const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onSkip }: {
     initialSchedules?: ScheduleData[];
     initialTimezone?: string;
     onNext: (schedules: ScheduleData[], timezone: string) => void;
@@ -531,9 +530,8 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
     const [timezone, setTimezone] = useState(initialTimezone ?? "America/Denver");
     const [showTZPicker, setShowTZPicker] = useState(false);
 
-    const [schedules, setSchedules] = useState<ScheduleData[]>(
-        initialSchedules && initialSchedules.length > 0 ? initialSchedules : [defaultSchedule(groupName)]
-    );
+    // Starts empty — the user has to tap + to add their first series.
+    const [schedules, setSchedules] = useState<ScheduleData[]>(initialSchedules ?? []);
     const [activeIndex, setActiveIndexState] = useState(0);
     // Mirrors activeIndex so `setD` (defined once, empty deps) always targets
     // the tab that's actually active instead of closing over a stale index.
@@ -1173,8 +1171,12 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 automaticallyAdjustKeyboardInsets
+                // Index 3 is the "Schedule tabs" ScrollView below — pins it to the
+                // top once scrolled to, so switching series doesn't require
+                // scrolling back up past a long form (Where/When/RSVP/Capacity).
+                stickyHeaderIndices={[3]}
             >
-                <Text style={s.screenTitle}>Group Schedule</Text>
+                <Text style={s.screenTitle}>Set Recurring Meetups</Text>
                 <Text style={s.screenSub}>Set up when, where, and how you meet</Text>
 
                 {/* Timezone — applies to the whole group, not any one schedule, so
@@ -1199,8 +1201,12 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                     {schedules.map((sch, i) => (
                         <View key={i} style={[s.scheduleTab, activeIndex === i && s.scheduleTabActive]}>
                             <TouchableOpacity onPress={() => setActiveIndex(i)}>
-                                <Text style={[s.scheduleTabText, activeIndex === i && s.scheduleTabTextActive]}>
-                                    Schedule {i + 1}
+                                <Text
+                                    style={[s.scheduleTabText, activeIndex === i && s.scheduleTabTextActive]}
+                                    numberOfLines={1}
+                                    ellipsizeMode="tail"
+                                >
+                                    {sch.name.trim() || String(i + 1)}
                                 </Text>
                             </TouchableOpacity>
                             <TouchableOpacity onPress={() => removeScheduleTab(i)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
@@ -1218,7 +1224,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                 {schedules.length === 0 ? (
                     <View style={s.reviewEmptyCard}>
                         <Feather name="calendar" size={18} color="#9CA3AF" />
-                        <Text style={s.reviewMuted}>No schedules — tap + to add one, or continue without any</Text>
+                        <Text style={s.reviewMuted}>No series — tap + to add one, or continue without any</Text>
                     </View>
                 ) : (
                 <>
@@ -1231,7 +1237,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                         <Text style={s.sectionTitle}>Name</Text>
                     </View>
 
-                    <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Schedule name</Text>
+                    <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Series name</Text>
                     <View style={s.dateFieldRow}>
                         <Feather name="tag" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
                         <TextInput
@@ -1627,13 +1633,13 @@ const ReviewScreen = ({ groupName, groupImage, members, schedules, timezone, onC
                     <View style={[s.reviewIconChip, s.reviewIconChipAmber]}>
                         <Feather name="calendar" size={15} color="#F59E0B" />
                     </View>
-                    <Text style={s.reviewSectionTitle}>Schedule{schedules.length > 1 ? "s" : ""}</Text>
+                    <Text style={s.reviewSectionTitle}>Series</Text>
                 </View>
 
                 {schedules.length === 0 ? (
                     <View style={s.reviewEmptyCard}>
                         <Feather name="calendar" size={18} color="#9CA3AF" />
-                        <Text style={s.reviewMuted}>No schedule set — you can add one later</Text>
+                        <Text style={s.reviewMuted}>No series set — you can add one later</Text>
                     </View>
                 ) : (
                     <>
@@ -1801,7 +1807,7 @@ const CreateGroupScreen = () => {
     };
 
     if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("schedule"); }} onClose={handleClose} /></SafeAreaView>;
-    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen groupName={groupName} initialSchedules={schedules} initialTimezone={timezone} onNext={(data, tz) => { setSchedules(data); setTimezone(tz); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedules([]); setStep("review"); }} /></SafeAreaView>;
+    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen initialSchedules={schedules} initialTimezone={timezone} onNext={(data, tz) => { setSchedules(data); setTimezone(tz); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedules([]); setStep("review"); }} /></SafeAreaView>;
     if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} groupImage={groupImage} members={[]} schedules={schedules} timezone={timezone} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
     return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} groupName={groupName} onDone={() => router.replace({ pathname: "/(tabs)/groups", params: { promptNotifications: "1" } })} /></SafeAreaView>;
 };
@@ -1818,11 +1824,14 @@ const s = StyleSheet.create({
     screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#F3F4F6", backgroundColor: "#fff" },
     screenTitle: { fontSize: 26, fontWeight: "900", color: "#111827", marginBottom: 4 },
     screenSub: { fontSize: 14, color: "#9CA3AF", marginBottom: 20 },
-    tabBar: { flexGrow: 0, marginBottom: 16 },
+    // Opaque background + bottom border so, once pinned by stickyHeaderIndices,
+    // content scrolling up underneath doesn't show through and the pin reads
+    // as a distinct bar rather than tabs floating over the form.
+    tabBar: { flexGrow: 0, marginBottom: 16, backgroundColor: "#F9FAFB", paddingTop: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
     tabBarContent: { flexDirection: "row", alignItems: "center", gap: 8, paddingRight: 8 },
     scheduleTab: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: "#4A90E2", backgroundColor: "#fff" },
     scheduleTabActive: { backgroundColor: "#4A90E2" },
-    scheduleTabText: { fontSize: 14, fontWeight: "700", color: "#4A90E2" },
+    scheduleTabText: { fontSize: 14, fontWeight: "700", color: "#4A90E2", maxWidth: 140 },
     scheduleTabTextActive: { color: "#fff" },
     scheduleTabAdd: { width: 40, height: 40, borderRadius: 12, borderWidth: 1.5, borderColor: "#4A90E2", backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
     iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },

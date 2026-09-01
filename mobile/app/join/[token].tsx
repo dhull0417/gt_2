@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,6 +12,14 @@ import { LoadingAnimation } from '@/components/LoadingAnimation';
 export const PENDING_INVITE_KEY = 'GROUPTHAT_PENDING_INVITE';
 
 type JoinState = 'loading' | 'success' | 'already_member' | 'error';
+
+const Logo = () => (
+    <Image
+        source={require('../../assets/images/splash-icon.png')}
+        style={styles.logo}
+        resizeMode="contain"
+    />
+);
 
 const JoinGroupScreen = () => {
     const { token } = useLocalSearchParams<{ token: string }>();
@@ -54,6 +62,7 @@ const JoinGroupScreen = () => {
         };
         return (
             <SafeAreaView style={styles.container}>
+                <Logo />
                 <Feather name="users" size={48} color="#4A90E2" style={styles.icon} />
                 <Text style={styles.title}>You're invited!</Text>
                 <Text style={styles.subtitle}>Sign in to GroupThat to join this group.</Text>
@@ -67,6 +76,7 @@ const JoinGroupScreen = () => {
     if (state === 'loading') {
         return (
             <SafeAreaView style={styles.container}>
+                <Logo />
                 <LoadingAnimation />
                 <Text style={styles.subtitle}>Joining group...</Text>
             </SafeAreaView>
@@ -76,6 +86,7 @@ const JoinGroupScreen = () => {
     if (state === 'error') {
         return (
             <SafeAreaView style={styles.container}>
+                <Logo />
                 <Feather name="alert-circle" size={48} color="#EF4444" style={styles.icon} />
                 <Text style={styles.title}>Invite Invalid</Text>
                 <Text style={styles.subtitle}>{errorMessage}</Text>
@@ -88,6 +99,7 @@ const JoinGroupScreen = () => {
 
     return (
         <SafeAreaView style={styles.container}>
+            <Logo />
             <Feather name="check-circle" size={48} color="#22C55E" style={styles.icon} />
             <Text style={styles.title}>
                 {state === 'already_member' ? 'Already a member!' : 'You joined!'}
@@ -106,6 +118,7 @@ const JoinGroupScreen = () => {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center', padding: 32 },
+    logo: { width: 160, height: 98, marginBottom: 24 },
     icon: { marginBottom: 20 },
     title: { fontSize: 24, fontWeight: '700', color: '#111827', textAlign: 'center', marginBottom: 8 },
     subtitle: { fontSize: 16, color: '#6B7280', textAlign: 'center', marginBottom: 32 },
