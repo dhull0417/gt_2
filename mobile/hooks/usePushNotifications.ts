@@ -233,11 +233,23 @@ export async function promptForNotificationPermission(api: AxiosInstance): Promi
 const FIRST_RSVP_IN_PROMPT_KEY = 'GT2_NOTIF_PROMPT_SHOWN_FIRST_RSVP_IN';
 const FIRST_CHAT_OPEN_PROMPT_KEY = 'GT2_NOTIF_PROMPT_SHOWN_FIRST_CHAT_OPEN';
 
-/** Runs `promptForNotificationPermission` the first time (ever, across app installs kept in AsyncStorage) this key's trigger occurs — never again after that, regardless of outcome. */
+/**
+ * Runs `promptForNotificationPermission` the first time (ever, across app
+ * installs kept in AsyncStorage) this key's trigger occurs — never again
+ * after that, regardless of outcome. Android's Auto Backup restores this
+ * AsyncStorage flag on reinstall without restoring the actual OS permission
+ * grant, so the stored flag alone can't be trusted — only skip if the OS
+ * itself already has a final answer (granted, or denied with no further
+ * asking allowed); an undetermined status always gets a prompt.
+ */
 async function promptForNotificationPermissionOnce(key: string, api: AxiosInstance): Promise<void> {
   const alreadyShown = await AsyncStorage.getItem(key);
-  if (alreadyShown) return;
-  await AsyncStorage.setItem(key, '1');
+  if (alreadyShown) {
+    const { status, canAskAgain } = await Notifications.getPermissionsAsync();
+    if (status !== 'undetermined' || !canAskAgain) return;
+  } else {
+    await AsyncStorage.setItem(key, '1');
+  }
   promptForNotificationPermission(api);
 }
 
