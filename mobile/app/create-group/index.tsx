@@ -23,6 +23,7 @@ import { useRouter } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import { pickAndUploadImage } from "@/utils/uploadImage";
+import { getUserDisplayName } from "@/utils/groupDisplay";
 import { GroupAvatar } from "@/components/GroupAvatar";
 import { DateTime } from "luxon";
 import { useQuery } from "@tanstack/react-query";
@@ -529,9 +530,13 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
     // only stores one Group.timezone), so it lives outside the tabbed array.
     const [timezone, setTimezone] = useState(initialTimezone ?? "America/Denver");
     const [showTZPicker, setShowTZPicker] = useState(false);
+    const scrollViewRef = useRef<ScrollView>(null);
 
-    // Starts empty — the user has to tap + to add their first series.
-    const [schedules, setSchedules] = useState<ScheduleData[]>(initialSchedules ?? []);
+    // Starts with one blank series already in place so its fields are
+    // immediately visible — no tap required to begin filling it out.
+    const [schedules, setSchedules] = useState<ScheduleData[]>(
+        initialSchedules && initialSchedules.length > 0 ? initialSchedules : [defaultSchedule()]
+    );
     const [activeIndex, setActiveIndexState] = useState(0);
     // Mirrors activeIndex so `setD` (defined once, empty deps) always targets
     // the tab that's actually active instead of closing over a stale index.
@@ -548,6 +553,10 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
         animate();
         setSchedules(prev => [...prev, defaultSchedule()]);
         setActiveIndex(schedules.length);
+        // Jump back to the top so the new (unnamed) series' Name field is
+        // immediately visible, rather than leaving the user scrolled down
+        // wherever they were editing the previous one.
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     };
 
     const removeScheduleTab = (index: number) => {
@@ -1166,6 +1175,7 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                 <View style={{ width: 36 }} />
             </View>
             <ScrollView
+                ref={scrollViewRef}
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
                 keyboardShouldPersistTaps="handled"
@@ -1206,7 +1216,7 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                                     numberOfLines={1}
                                     ellipsizeMode="tail"
                                 >
-                                    {sch.name.trim() || String(i + 1)}
+                                    {sch.name.trim() || "Series Name"}
                                 </Text>
                             </TouchableOpacity>
                             <TouchableOpacity onPress={() => removeScheduleTab(i)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
@@ -1214,17 +1224,12 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                             </TouchableOpacity>
                         </View>
                     ))}
-                    {schedules.length < MAX_SCHEDULE_TABS && (
-                        <TouchableOpacity style={s.scheduleTabAdd} onPress={addScheduleTab}>
-                            <Feather name="plus" size={16} color="#4A90E2" />
-                        </TouchableOpacity>
-                    )}
                 </ScrollView>
 
                 {schedules.length === 0 ? (
                     <View style={s.reviewEmptyCard}>
                         <Feather name="calendar" size={18} color="#9CA3AF" />
-                        <Text style={s.reviewMuted}>No series — tap + to add one, or continue without any</Text>
+                        <Text style={s.reviewMuted}>No series — tap "Add More Series" below to add one, or continue without any</Text>
                     </View>
                 ) : (
                 <>
@@ -1521,14 +1526,29 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                 )}
             </ScrollView>
             <View style={s.screenFooter}>
-                <TouchableOpacity style={s.skipBtn} onPress={onSkip}>
+                <TouchableOpacity style={[s.skipBtn, { marginLeft: 12 }]} onPress={onSkip}>
                     <Text style={s.skipBtnText}>Skip</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.primaryBtn, !canProceed() && s.primaryBtnDisabled]}
+
+                {schedules.length < MAX_SCHEDULE_TABS && (
+                    // box-none: this full-width centering wrapper is otherwise
+                    // invisible to touches, so it doesn't steal taps meant for
+                    // Skip/Review on either side — only the button itself does.
+                    <View style={s.addSeriesButton} pointerEvents="box-none">
+                        <TouchableOpacity onPress={addScheduleTab} style={{ alignItems: "center" }}>
+                            <View style={s.addSeriesCircle}>
+                                <Feather name="plus" size={18} color="#4A90E2" />
+                            </View>
+                            <Text style={s.addSeriesLabel}>Add More Series</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                <TouchableOpacity style={[s.reviewBtnGhost, !canProceed() && s.reviewBtnGhostDisabled]}
                     onPress={() => canProceed() && onNext(schedules.filter(sch => sch.frequency), timezone)}
                     disabled={!canProceed()}>
-                    <Text style={s.primaryBtnText}>Review</Text>
-                    <Feather name="arrow-right" size={18} color="#fff" style={{ marginLeft: 6 }} />
+                    <Text style={s.reviewBtnGhostText}>Review</Text>
+                    <Feather name="arrow-right" size={16} color="#4FD1C5" style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
             </View>
 
@@ -1738,7 +1758,7 @@ const ReviewScreen = ({ groupName, groupImage, members, schedules, timezone, onC
                         <Text style={s.detailValue}>
                             {members.length === 0
                                 ? "Just you — invite friends after creating"
-                                : members.map(m => [m.firstName, m.lastName].filter(Boolean).join(' ')).join(', ')}
+                                : members.map(m => getUserDisplayName(m)).join(', ')}
                         </Text>
                     </View>
                 </View>
@@ -1821,7 +1841,7 @@ const s = StyleSheet.create({
     screen: { flex: 1 },
     screenHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
     screenBody: { flex: 1, paddingHorizontal: 24, paddingTop: 16 },
-    screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#F3F4F6", backgroundColor: "#fff" },
+    screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#F3F4F6", backgroundColor: "#fff", position: "relative" },
     screenTitle: { fontSize: 26, fontWeight: "900", color: "#111827", marginBottom: 4 },
     screenSub: { fontSize: 14, color: "#9CA3AF", marginBottom: 20 },
     // Opaque background + bottom border so, once pinned by stickyHeaderIndices,
@@ -1833,7 +1853,11 @@ const s = StyleSheet.create({
     scheduleTabActive: { backgroundColor: "#4A90E2" },
     scheduleTabText: { fontSize: 14, fontWeight: "700", color: "#4A90E2", maxWidth: 140 },
     scheduleTabTextActive: { color: "#fff" },
-    scheduleTabAdd: { width: 40, height: 40, borderRadius: 12, borderWidth: 1.5, borderColor: "#4A90E2", backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
+    // Absolutely centered in the footer (dead-center between Skip and Review,
+    // regardless of how wide either of those end up being).
+    addSeriesButton: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
+    addSeriesCircle: { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: "#4A90E2", backgroundColor: "#fff", alignItems: "center", justifyContent: "center", marginBottom: 4 },
+    addSeriesLabel: { fontSize: 11, fontWeight: "700", color: "#4A90E2" },
     iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
     dots: { flexDirection: "row", alignItems: "center", width: "50%", alignSelf: "center" },
     dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: "#E5E7EB", backgroundColor: "#fff" },
@@ -1865,6 +1889,12 @@ const s = StyleSheet.create({
     shareBtnText: { marginLeft: 8, color: "#4A90E2", fontWeight: "700", fontSize: 14 },
     primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
     primaryBtnDisabled: { backgroundColor: "#93C5FD" },
+    // Review, in this footer, is a plain text+icon control (no button fill) so
+    // Skip / Add More Series / Review can all fit — colored to match the
+    // "I'm In" RSVP button's teal-green (#4FD1C5) rather than the app's usual blue.
+    reviewBtnGhost: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 11 },
+    reviewBtnGhostDisabled: { opacity: 0.4 },
+    reviewBtnGhostText: { color: "#4FD1C5", fontWeight: "800", fontSize: 15 },
     primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
     skipBtn: { paddingHorizontal: 16, paddingVertical: 14 },
     skipBtnText: { color: "#9CA3AF", fontWeight: "700", fontSize: 15 },

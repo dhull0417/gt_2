@@ -22,7 +22,7 @@ export const getNotifications = asyncHandler(async (req, res) => {
     // Drop notifications with broken refs (deleted group/meetup/poll) to avoid
     // client crashes. Sender is optional — system notifications have none.
     const validNotifications = notifications.filter(notification => {
-        const groupRequiredTypes = ['group-invite', 'invite-accepted', 'invite-declined', 'group-added', 'group-updated'];
+        const groupRequiredTypes = ['group-invite', 'invite-accepted', 'invite-declined', 'group-added', 'group-member-joined', 'group-removed', 'group-updated', 'ownership-transferred'];
         if (groupRequiredTypes.includes(notification.type) && !notification.group) {
             return false;
         }

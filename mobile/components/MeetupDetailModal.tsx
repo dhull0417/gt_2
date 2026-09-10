@@ -19,6 +19,7 @@ import {
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import VideoServiceIcon from './VideoServiceIcon';
 import { detectVideoService, isHttpUrl } from '../utils/videoLinks';
+import { getUserDisplayName, getUserInitial } from '../utils/groupDisplay';
 import Animated, {
     FadeIn,
     FadeOut,
@@ -36,6 +37,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
+import { DateTime } from 'luxon';
 import { RsvpBreather } from '@/components/RsvpBreather';
 import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
@@ -115,6 +117,49 @@ interface MeetupDetailModalProps {
 
 // Extracts user ID whether the array holds strings or populated objects
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
+
+const FREQUENCY_LABELS: Record<string, string> = {
+    daily: 'Daily',
+    weekly: 'Weekly',
+    biweekly: 'Bi-Weekly',
+    monthly: 'Monthly',
+    ordinal: 'Monthly',
+};
+
+const DAY_ABBR: Record<number, string> = { 0: 'Su', 1: 'M', 2: 'T', 3: 'W', 4: 'Th', 5: 'F', 6: 'Sa' };
+
+const ordSfx = (n: number) => {
+    if (n > 3 && n < 21) return 'th';
+    switch (n % 10) {
+        case 1: return 'st';
+        case 2: return 'nd';
+        case 3: return 'rd';
+        default: return 'th';
+    }
+};
+
+// Short parenthetical detail for the frequency label, e.g. "W" or "13th day" or "Last W".
+// Derived straight off this occurrence's own date/timezone — not the group's stored
+// routine — so it can't go stale or miss when the schedule that generated it was
+// since edited, deleted, or hasn't loaded into cache yet.
+const buildFrequencyDetail = (meetup: Meetup): string | null => {
+    if (!meetup.frequency) return null;
+    const dt = DateTime.fromJSDate(new Date(meetup.date)).setZone(meetup.timezone);
+    if (!dt.isValid) return null;
+
+    if (meetup.frequency === 'weekly' || meetup.frequency === 'biweekly') {
+        return DAY_ABBR[dt.weekday % 7];
+    }
+    if (meetup.frequency === 'monthly') {
+        return `${dt.day}${ordSfx(dt.day)} day`;
+    }
+    if (meetup.frequency === 'ordinal') {
+        const isLast = dt.day + 7 > dt.daysInMonth;
+        const occurrence = isLast ? 'Last' : `${Math.ceil(dt.day / 7)}${ordSfx(Math.ceil(dt.day / 7))}`;
+        return `${occurrence} ${DAY_ABBR[dt.weekday % 7]}`;
+    }
+    return null;
+};
 
 // Mirrors Max Attendees validation across create-group, AddMeetupWizard, and group settings.
 const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
@@ -580,14 +625,14 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         </View>
                     )}
                 </View>
-                <Text style={styles.gridName} numberOfLines={1}>{user.firstName} {user.lastName}</Text>
+                <Text style={styles.gridName} numberOfLines={1}>{getUserDisplayName(user)}</Text>
             </Wrapper>
         );
     };
 
     const renderGuestTiles = (g: { userId: string; count: number }) => {
         const host = (meetup.members || []).find(m => (m as any).clerkId === g.userId);
-        const hostName = host ? host.firstName : 'A member';
+        const hostName = host ? getUserDisplayName(host) : 'A member';
         return Array.from({ length: g.count }, (_, i) => (
             <View key={`guest-${g.userId}-${i}`} style={styles.gridItem}>
                 <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder, styles.guestAvatarPlaceholder]}>
@@ -632,6 +677,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const resolvedLocation = meetup.location || (meetup.group as any)?.defaultLocation || '';
     const headerVideoService = detectVideoService(resolvedLocation);
+    const frequencyDetail = buildFrequencyDetail(meetup);
+    const frequencyLabel = meetup.frequency
+        ? `${FREQUENCY_LABELS[meetup.frequency]}${frequencyDetail ? ` (${frequencyDetail})` : ''}`
+        : null;
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: modalBackgroundColor }]} edges={['top', 'bottom']}>
@@ -684,6 +733,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         )}
                         {isOut && (
                             <PulsingWatermark label="OUT" style={styles.outWatermark} baseOpacity={0.32} peakOpacity={0.42} />
+                        )}
+                        {!!frequencyLabel && (
+                            <Text style={styles.meetupFrequencyLabel}>{frequencyLabel}</Text>
                         )}
                         <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough]}>
                             {meetup.name}
@@ -1063,11 +1115,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         {dmTargetUser && (
                             <>
                                 <Image
-                                    source={{ uri: dmTargetUser.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${dmTargetUser.firstName?.[0] ?? dmTargetUser.email?.[0]}` }}
+                                    source={{ uri: dmTargetUser.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${getUserInitial(dmTargetUser)}` }}
                                     style={dmStyles.avatar}
                                 />
                                 <Text style={dmStyles.name}>
-                                    {[dmTargetUser.firstName, dmTargetUser.lastName].filter(Boolean).join(' ') || dmTargetUser.email?.split('@')[0]}
+                                    {getUserDisplayName(dmTargetUser)}
                                 </Text>
                                 <TouchableOpacity
                                     style={dmStyles.dmBtn}
@@ -1263,6 +1315,16 @@ const styles = StyleSheet.create({
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
     meetupTitle: { fontSize: 26, fontWeight: '900', color: '#111827', letterSpacing: -0.5, lineHeight: 30, marginBottom: 4, textAlign: 'center' },
+    meetupFrequencyLabel: {
+        position: 'absolute',
+        top: -16,
+        left: 0,
+        right: 0,
+        textAlign: 'center',
+        fontSize: 12,
+        fontStyle: 'italic',
+        color: '#9CA3AF',
+    },
     inWatermark: {
         position: 'absolute',
         top: '50%',

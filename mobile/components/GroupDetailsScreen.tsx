@@ -19,7 +19,7 @@ import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useRemoveMember } from '@/hooks/useRemoveMember';
 import { User, useApiClient, userApi, groupApi } from '@/utils/api';
-import { getDMDisplayName } from '@/utils/groupDisplay';
+import { getDMDisplayName, getUserDisplayName, getUserInitial } from '@/utils/groupDisplay';
 import { Feather } from '@expo/vector-icons';
 import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
@@ -220,11 +220,11 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
             {dmTargetMember && (
               <>
                 <Image
-                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${dmTargetMember.firstName?.[0] ?? dmTargetMember.email?.[0]}` }}
+                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${getUserInitial(dmTargetMember)}` }}
                   style={dmStyles.avatar}
                 />
                 <Text style={dmStyles.name}>
-                  {[dmTargetMember.firstName, dmTargetMember.lastName].filter(Boolean).join(' ') || dmTargetMember.email?.split('@')[0]}
+                  {getUserDisplayName(dmTargetMember)}
                 </Text>
                 <TouchableOpacity
                   style={dmStyles.dmBtn}

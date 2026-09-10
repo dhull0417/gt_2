@@ -16,6 +16,7 @@ import {
   deleteSchedule,
   updateModerators,
   toggleModerator,
+  transferOwnership,
   generateInviteLink,
   redeemInviteToken,
 } from "../controllers/group.controller.js";
@@ -82,7 +83,8 @@ router.delete("/:groupId", protectRoute, deleteGroup);
 
 // --- Moderator Management ---
 router.patch("/:groupId/moderator", protectRoute, toggleModerator);
-router.patch("/:groupId/moderators", protectRoute, updateModerators); 
+router.patch("/:groupId/moderators", protectRoute, updateModerators);
+router.post("/:groupId/transfer-ownership", protectRoute, transferOwnership);
 
 
 // --- Schedule & Meetups ---

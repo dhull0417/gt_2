@@ -17,7 +17,7 @@ import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import { GroupAvatar } from './GroupAvatar';
 import { useQuery } from '@tanstack/react-query';
-import { getDMDisplayName } from '@/utils/groupDisplay';
+import { getDMDisplayName, getUserDisplayName } from '@/utils/groupDisplay';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 
@@ -341,7 +341,7 @@ export const GroupDetailsView = ({
                                     </TouchableOpacity>
                                 )}
                             </View>
-                            <Text style={styles.gridName} numberOfLines={1}>{member.firstName} {member.lastName}</Text>
+                            <Text style={styles.gridName} numberOfLines={1}>{getUserDisplayName(member)}</Text>
                         </Wrapper>
                     );
                 };

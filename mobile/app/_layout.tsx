@@ -11,7 +11,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { useUserSync } from '@/hooks/useUserSync';
 import * as SecureStore from 'expo-secure-store';
 import * as Clipboard from 'expo-clipboard';
-import { User, useApiClient, userApi } from '@/utils/api';
+import { User, useApiClient, userApi, meetupApi, groupApi, notificationApi } from '@/utils/api';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
@@ -131,6 +131,16 @@ const AuthLayout = () => {
 
   // isCurrentUserError = Clerk session but no Mongo user yet (new sign-up); treat as settled so routing can redirect to profile-setup
   const currentUserSettled = isSuccess || isCurrentUserError;
+
+  // Warms the Home/Groups tab caches before the user ever taps those tabs, so the
+  // first switch shows real content immediately instead of a loading flash + reflow
+  // (both tabs are lazy-mounted and previously only fetched on their own first focus).
+  useEffect(() => {
+    if (!isSignedIn || !isSuccess) return;
+    queryClient.prefetchQuery({ queryKey: ['meetups'], queryFn: () => meetupApi.getMeetups(api) });
+    queryClient.prefetchQuery({ queryKey: ['groups'], queryFn: () => groupApi.getGroups(api) });
+    queryClient.prefetchQuery({ queryKey: ['notifications'], queryFn: () => notificationApi.getNotifications(api) });
+  }, [isSignedIn, isSuccess]);
 
   usePushNotifications(isSignedIn, isSuccess);
 

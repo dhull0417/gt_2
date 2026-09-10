@@ -65,6 +65,10 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> declined your invitation to <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'group-added':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> added you to <Text style={styles.bold}>{groupName}</Text>.</Text>;
+            case 'group-member-joined':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> has been added to <Text style={styles.bold}>{groupName}</Text>!</Text>;
+            case 'group-removed':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> removed you from <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'group-updated':
                 return <Text style={styles.messageText}>The group <Text style={styles.bold}>{groupName}</Text> was renamed.</Text>;
             case 'meetup-rsvp-in':
@@ -107,6 +111,8 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
     };
 
     const handlePress = () => {
+        // The user is no longer a member, so the group details screen isn't reachable.
+        if (notification.type === 'group-removed') return;
         if (notification.group?._id) {
             // See the matching branch in group-chat/[id].tsx's handleOpenDetails.
             if (Platform.OS === 'ios') {

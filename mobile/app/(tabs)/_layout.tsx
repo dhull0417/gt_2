@@ -22,7 +22,7 @@ const TabsLayout = () => {
   // so use a custom tab bar there for the tint/grow effect; iOS keeps native tabs.
   if (Platform.OS === 'android') {
     return (
-      <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <AndroidTabBar {...props} />}>
+      <Tabs screenOptions={{ headerShown: false, lazy: false }} tabBar={(props) => <AndroidTabBar {...props} />}>
         <Tabs.Screen name="index" />
         <Tabs.Screen name="groups" />
         <Tabs.Screen name="profile" />

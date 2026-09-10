@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@clerk/expo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useApiClient, groupApi, GroupDetails } from '../utils/api';
 import { getSupabaseClient } from '../utils/supabase';
 import { groupUpdatesChannel } from '../utils/groupRealtime';
@@ -24,12 +25,13 @@ export const useGetGroupDetails = (groupId: string | null) => {
         if (!groupId) return;
         let active = true;
         let supabase: ReturnType<typeof getSupabaseClient> | null = null;
+        let channel: RealtimeChannel | null = null;
 
         const setup = async () => {
             const token = await getTokenRef.current({ template: 'supabase' });
             if (!token || !active) return;
             supabase = getSupabaseClient(token);
-            supabase
+            channel = supabase
                 .channel(groupUpdatesChannel(groupId))
                 .on('broadcast', { event: 'updated' }, () => {
                     if (!active) return;
@@ -41,8 +43,9 @@ export const useGetGroupDetails = (groupId: string | null) => {
 
         return () => {
             active = false;
-            supabase?.removeAllChannels();
+            if (channel) supabase?.removeChannel(channel);
             supabase = null;
+            channel = null;
         };
     }, [groupId, queryClient]);
 

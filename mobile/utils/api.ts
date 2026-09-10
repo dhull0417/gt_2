@@ -183,7 +183,7 @@ export interface Poll {
 }
 
 export type NotificationType =
-  | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-updated'
+  | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-removed' | 'group-updated' | 'ownership-transferred'
   | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion'
   | 'meetup-rsvp-admin-in' | 'meetup-rsvp-admin-out'
   | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled'
@@ -288,6 +288,11 @@ interface CreateOneOffMeetupPayload {
 interface UpdateModeratorsPayload {
   groupId: string;
   moderatorIds: string[];
+}
+
+interface TransferOwnershipPayload {
+  groupId: string;
+  newOwnerId: string;
 }
 
 interface RsvpMeetupPayload {
@@ -460,6 +465,10 @@ export const groupApi = {
   },
   updateModerators: async (api: AxiosInstance, { groupId, moderatorIds }: UpdateModeratorsPayload): Promise<{ message: string }> => {
     const response = await api.patch(`/api/groups/${groupId}/moderators`, { moderatorIds });
+    return response.data;
+  },
+  transferOwnership: async (api: AxiosInstance, { groupId, newOwnerId }: TransferOwnershipPayload): Promise<{ message: string }> => {
+    const response = await api.post(`/api/groups/${groupId}/transfer-ownership`, { newOwnerId });
     return response.data;
   },
   generateInviteLink: async (api: AxiosInstance, groupId: string): Promise<{ link: string }> => {

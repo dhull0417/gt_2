@@ -25,7 +25,7 @@ import MeetupDetailModal from '@/components/MeetupDetailModal';
 import AddMeetupWizard from '@/components/AddMeetupWizard';
 import CreatePollModal from '@/components/CreatePollModal';
 import PollListModal from '@/components/PollListModal';
-import { getDMDisplayName } from '@/utils/groupDisplay';
+import { getDMDisplayName, getUserDisplayName } from '@/utils/groupDisplay';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { useMessages } from '@/hooks/useMessages';
@@ -168,9 +168,7 @@ const GroupChatScreen = () => {
 
   // --- Message thread ---
   const senderId = currentUser?.clerkId ?? '';
-  const senderName = currentUser
-    ? [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.email
-    : '';
+  const senderName = currentUser ? getUserDisplayName(currentUser) : '';
 
   const { messages, loading, sendMessage, addReaction, deleteMessage, editMessage } =
     useMessages(id ?? '');

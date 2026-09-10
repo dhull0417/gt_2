@@ -11,6 +11,7 @@ import * as Updates from 'expo-updates';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { pickAndUploadImage } from '@/utils/uploadImage';
+import { getUserDisplayName } from '@/utils/groupDisplay';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 
 const CALENDAR_OPTIONS = [
@@ -233,7 +234,7 @@ const HomeScreen = () => {
                 </View>
               </TouchableOpacity>
               <Text style={styles.name}>
-                  {currentUser.firstName} {currentUser.lastName}
+                  {getUserDisplayName(currentUser)}
               </Text>
               <Text className="text-sm text-gray-400 mt-0.5">
                   {currentUser.email}

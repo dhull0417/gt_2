@@ -20,6 +20,7 @@ import { useInviteUser } from '@/hooks/useInviteUser';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useContactMatching, ContactEntry } from '@/hooks/useContactMatching';
 import { User, useApiClient, groupApi } from '@/utils/api';
+import { getUserDisplayName } from '@/utils/groupDisplay';
 
 const AddMembersScreen = () => {
     const { id: groupId } = useLocalSearchParams<{ id: string }>();
@@ -83,7 +84,7 @@ const AddMembersScreen = () => {
     const renderSearchResult = ({ item }: { item: User }) => (
         <View style={styles.resultRow}>
             <View style={styles.resultInfo}>
-                <Text style={styles.resultName}>{item.firstName} {item.lastName}</Text>
+                <Text style={styles.resultName}>{getUserDisplayName(item)}</Text>
             </View>
             <TouchableOpacity
                 style={styles.inviteButton}

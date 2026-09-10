@@ -171,6 +171,18 @@ export function useMessages(groupId: string) {
       if (!token || !active) return;
       const supabase = getSupabaseClient(token);
       realtimeClientRef.current = supabase;
+
+      // The client is shared/cached by token, and supabase-js reuses an
+      // existing channel object for a topic that's still registered rather
+      // than creating a new one. On a fast remount the previous mount's
+      // async removeChannel() may not have finished yet, so without this
+      // we'd get handed back the old, already-subscribed channel and
+      // .on() would throw ("cannot add callbacks after subscribe()").
+      const topic = `realtime:messages-${groupId}`;
+      const stale = supabase.getChannels().find((c) => c.topic === topic);
+      if (stale) await supabase.removeChannel(stale);
+      if (!active) return;
+
       const channel = supabase
         .channel(`messages-${groupId}`)
         .on('postgres_changes',
@@ -198,7 +210,7 @@ export function useMessages(groupId: string) {
     setupRealtime();
     return () => {
       active = false;
-      realtimeClientRef.current?.removeAllChannels();
+      if (channelRef.current) realtimeClientRef.current?.removeChannel(channelRef.current);
       channelRef.current = null;
       realtimeClientRef.current = null;
     };

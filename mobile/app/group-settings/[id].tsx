@@ -29,6 +29,7 @@ import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
 import { broadcastGroupUpdate } from '@/utils/groupRealtime';
+import { getUserDisplayName } from '@/utils/groupDisplay';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import LocationSearchModal from '@/components/LocationSearchModal';
@@ -95,6 +96,10 @@ const GroupSettings = () => {
   const [isEditingMembers, setIsEditingMembers] = useState(false);
   const [isRemovingMemberId, setIsRemovingMemberId] = useState<string | null>(null);
 
+  // --- State for Ownership Transfer ---
+  const [isTransferModalVisible, setIsTransferModalVisible] = useState(false);
+  const [isTransferringId, setIsTransferringId] = useState<string | null>(null);
+
   // --- Robust Permission Logic ---
   const isUserOwner = useMemo(() => {
     if (!currentUser || !group) return false;
@@ -139,6 +144,7 @@ const GroupSettings = () => {
     { id: 'location', label: 'Default Location', icon: 'map-pin', color: '#10B981', bg: '#ECFDF5' },
     { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: '#ECFEFF' },
     { id: 'members', label: 'Remove Members', icon: 'user-minus', color: '#F97316', bg: '#FFF7ED' },
+    ...(isUserOwner ? [{ id: 'transfer', label: 'Transfer Ownership', icon: 'repeat', color: '#8B5CF6', bg: '#F5F3FF' }] : []),
     { id: 'terminate', label: isUserOwner ? 'Delete Group' : 'Leave Group', icon: isUserOwner ? 'trash-2' : 'log-out', color: '#EF4444', bg: '#FEF2F2', destructive: true },
   ];
 
@@ -172,6 +178,9 @@ const GroupSettings = () => {
         break;
       case 'members':
         setIsEditingMembers(true);
+        break;
+      case 'transfer':
+        setIsTransferModalVisible(true);
         break;
       case 'terminate':
         if (isUserOwner) handleConfirmDelete();
@@ -423,6 +432,38 @@ const GroupSettings = () => {
         Alert.alert("Error", error.response?.data?.error || "Failed to remove member.");
     } finally {
         setIsRemovingMemberId(null);
+    }
+  };
+
+  // --- OWNERSHIP TRANSFER LOGIC ---
+  const handleTransferPress = (member: User) => {
+    Alert.alert(
+      "Transfer Ownership",
+      `Are you sure you want to make ${member.firstName} ${member.lastName} the new owner? You will become a moderator.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Transfer",
+          style: "destructive",
+          onPress: () => performTransfer(member._id),
+        },
+      ]
+    );
+  };
+
+  const performTransfer = async (newOwnerId: string) => {
+    if (!id) return;
+    setIsTransferringId(newOwnerId);
+    try {
+      await groupApi.transferOwnership(api, { groupId: id, newOwnerId });
+      await queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+      broadcastGroupUpdate(getToken, id);
+      setIsTransferModalVisible(false);
+      Alert.alert("Success", "Ownership transferred.");
+    } catch (error: any) {
+      Alert.alert("Error", error.response?.data?.error || "Failed to transfer ownership.");
+    } finally {
+      setIsTransferringId(null);
     }
   };
 
@@ -810,7 +851,7 @@ const GroupSettings = () => {
                   <View style={styles.memberInfo}>
                     <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
                     <View>
-                      <Text style={[styles.memberName, isSelected && !isOwner && styles.textWhite]}>{item.firstName} {item.lastName}</Text>
+                      <Text style={[styles.memberName, isSelected && !isOwner && styles.textWhite]}>{getUserDisplayName(item)}</Text>
                       <Text style={[styles.memberRole, isSelected && !isOwner && styles.textWhite70]}>{isOwner ? 'Owner' : isSelected ? 'Moderator' : 'Member'}</Text>
                     </View>
                   </View>
@@ -861,7 +902,7 @@ const GroupSettings = () => {
                   <View style={styles.memberInfo}>
                     <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
                     <View>
-                      <Text style={styles.memberName}>{item.firstName} {item.lastName}</Text>
+                      <Text style={styles.memberName}>{getUserDisplayName(item)}</Text>
                       <Text style={styles.memberRole}>{isMbrOwner ? 'Owner' : isMbrMod ? 'Moderator' : 'Member'}</Text>
                     </View>
                   </View>
@@ -872,6 +913,64 @@ const GroupSettings = () => {
                     </TouchableOpacity>
                   ) : isMbrOwner ? <View style={styles.ownerBadgeShield}><Feather name="shield" size={16} color="#4A90E2" /></View> : null}
                 </View>
+              );
+            }}
+          />
+        </View>
+      </Modal>
+
+      {/* Transfer Ownership Modal */}
+      <Modal
+        visible={isTransferModalVisible}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={() => setIsTransferModalVisible(false)}
+      >
+        <View style={[styles.fullModalContainer, { paddingTop: insets.top }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setIsTransferModalVisible(false)} style={styles.headerIconButton}>
+              <Feather name="chevron-down" size={28} color="#374151" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitleLarge}>Transfer Ownership</Text>
+            <View style={{ width: 44 }} />
+          </View>
+          <FlatList
+            data={(group?.members || []).filter((m: any) => m._id.toString() !== ((group?.owner as any)?._id || group?.owner || "").toString())}
+            keyExtractor={(item) => item._id}
+            contentContainerStyle={{ padding: 20 }}
+            ListHeaderComponent={() => (
+              <Text style={styles.modalSubtitleLeft}>
+                Pick a member to become the new owner. You'll become a moderator of this group.
+              </Text>
+            )}
+            ListEmptyComponent={() => (
+              <Text style={styles.modalSubtitleLeft}>No other members to transfer ownership to.</Text>
+            )}
+            renderItem={({ item }) => {
+              const mId = item._id.toString();
+              const isMbrMod = group?.moderators?.some((m: any) => (m?._id || m).toString() === mId);
+
+              return (
+                <TouchableOpacity
+                  style={styles.selectMemberRow}
+                  onPress={() => handleTransferPress(item)}
+                  disabled={!!isTransferringId}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.memberInfo}>
+                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
+                    <View>
+                      <Text style={styles.memberName}>{getUserDisplayName(item)}</Text>
+                      <Text style={styles.memberRole}>{isMbrMod ? 'Moderator' : 'Member'}</Text>
+                    </View>
+                  </View>
+
+                  {isTransferringId === mId ? (
+                    <ActivityIndicator size="small" color="#8B5CF6" />
+                  ) : (
+                    <Feather name="chevron-right" size={20} color="#D1D5DB" />
+                  )}
+                </TouchableOpacity>
               );
             }}
           />

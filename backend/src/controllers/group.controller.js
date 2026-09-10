@@ -569,6 +569,60 @@ export const toggleModerator = asyncHandler(async (req, res) => {
     res.status(200).json({ message: isCurrentlyMod ? "Moderator removed." : "Moderator added.", group });
 });
 
+/**
+ * @desc    Transfers group ownership to another current member. The outgoing
+ *          owner becomes a moderator so management continuity isn't lost.
+ * @route   POST /api/groups/:groupId/transfer-ownership
+ */
+export const transferOwnership = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { groupId } = req.params;
+    const { newOwnerId } = req.body;
+
+    const group = await Group.findById(groupId);
+    const requester = await User.findOne({ clerkId }).lean();
+    const newOwner = await User.findById(newOwnerId).lean();
+
+    if (!group || !requester || !newOwner) return res.status(404).json({ error: "Resource not found." });
+    if (group.owner.toString() !== requester._id.toString()) {
+        return res.status(403).json({ error: "Only the group owner can transfer ownership." });
+    }
+    if (newOwner._id.toString() === requester._id.toString()) {
+        return res.status(400).json({ error: "You are already the owner." });
+    }
+    if (!group.members.some(m => m.toString() === newOwner._id.toString())) {
+        return res.status(400).json({ error: "New owner must be a current group member." });
+    }
+
+    // outgoing owner keeps management ability as a moderator; incoming owner
+    // is pulled out of moderators since that role is now redundant for them
+    const newModerators = group.moderators
+        .filter(id => id.toString() !== newOwner._id.toString())
+        .concat(requester._id);
+
+    // the owner: requester._id match doubles as a compare-and-swap guard
+    // against a concurrent transfer (e.g. a double-tap) racing this one
+    const updated = await Group.findOneAndUpdate(
+        { _id: groupId, owner: requester._id },
+        { $set: { owner: newOwner._id, moderators: newModerators } },
+        { new: true }
+    );
+    if (!updated) return res.status(409).json({ error: "Ownership already changed. Please refresh and try again." });
+
+    try {
+        await notifyAndPersist([newOwner], {
+            title: "You're Now the Owner",
+            body: `${requester.firstName} made you the owner of "${group.name}".`,
+            data: { groupId: group._id.toString(), type: 'ownership-transferred' },
+            type: 'ownership-transferred',
+            sender: requester._id,
+            group: group._id,
+        });
+    } catch (err) { console.error(err); }
+
+    res.status(200).json({ message: "Ownership transferred." });
+});
+
 export const getGroups = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const user = await User.findOne({ clerkId }).lean();
@@ -703,6 +757,18 @@ export const removeMember = asyncHandler(async (req, res) => {
     await group.updateOne({ $pull: { members: memberToRemove._id, moderators: memberToRemove._id } });
     await memberToRemove.updateOne({ $pull: { groups: group._id } });
     await Meetup.updateMany({ group: group._id, date: { $gte: new Date() } }, { $pull: { members: memberToRemove._id, in: memberToRemove._id, out: memberToRemove._id, undecided: memberToRemove._id, waitlist: memberToRemove._id } });
+
+    try {
+        await notifyAndPersist([memberToRemove], {
+            title: "Removed from Group",
+            body: `${requester.firstName} removed you from "${group.name}".`,
+            data: { groupId: group._id.toString(), type: 'group-removed' },
+            type: 'group-removed',
+            sender: requester._id,
+            group: group._id,
+        });
+    } catch (err) { console.error(err); }
+
     res.status(200).json({ message: "Member removed." });
 });
 
@@ -843,8 +909,8 @@ export const redeemInviteToken = asyncHandler(async (req, res) => {
             await notifyAndPersist([owner], {
                 title: "New Member",
                 body: `${user.firstName} joined "${group.name}" via invite link.`,
-                data: { groupId: group._id.toString(), type: 'group-added' },
-                type: 'group-added',
+                data: { groupId: group._id.toString(), type: 'group-member-joined' },
+                type: 'group-member-joined',
                 sender: user._id,
                 group: group._id,
             });
