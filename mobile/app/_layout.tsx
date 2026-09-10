@@ -3,7 +3,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth, useUser } from '@clerk/expo';
 import { resourceCache } from '@clerk/expo/resource-cache';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { QueryClient, onlineManager, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MutationCache, QueryClient, onlineManager, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,13 +13,17 @@ import * as SecureStore from 'expo-secure-store';
 import * as Clipboard from 'expo-clipboard';
 import { User, useApiClient, userApi, meetupApi, groupApi, notificationApi } from '@/utils/api';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { syncPermissionsIfChanged } from '@/utils/permissions';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 import { ImageCropperHost } from '@/components/ImageCropperHost';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { WelcomeModal } from '@/components/WelcomeModal';
+import { UpdateNameModal } from '@/components/UpdateNameModal';
+import { setClerkTokenGetter } from '@/utils/authToken';
+import { registerChatMutationDefaults } from '@/utils/chatMutations';
+import { registerOfflineMutationDefaults, RSVP_MUTATION_KEY, ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -37,6 +41,15 @@ console.warn = (...args: unknown[]) => {
 
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Mutations queued/replayed offline (persisted to disk and resumed on reconnect
+// or app restart) — everything else still just fails fast with an alert offline.
+const QUEUED_MUTATION_KEYS: readonly string[] = [
+  'sendMessage',
+  RSVP_MUTATION_KEY[0],
+  ACCEPT_INVITE_MUTATION_KEY[0],
+  DECLINE_INVITE_MUTATION_KEY[0],
+];
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -46,12 +59,39 @@ const queryClient = new QueryClient({
       gcTime: ONE_WEEK_MS,
     },
   },
+  mutationCache: new MutationCache({
+    // Runs for every mutation of these kinds regardless of whether a screen is
+    // still mounted to see it — unlike a callback passed to useMutation(), this
+    // still fires for one resumed in the background after the user has
+    // navigated away, or after an app restart.
+    onSuccess: (_data, _variables, _context, mutation) => {
+      switch (mutation.options.mutationKey?.[0]) {
+        case RSVP_MUTATION_KEY[0]:
+          queryClient.invalidateQueries({ queryKey: ['meetups'] });
+          break;
+        case ACCEPT_INVITE_MUTATION_KEY[0]:
+          queryClient.invalidateQueries({ queryKey: ['notifications'] });
+          queryClient.invalidateQueries({ queryKey: ['groups'] });
+          break;
+        case DECLINE_INVITE_MUTATION_KEY[0]:
+          queryClient.invalidateQueries({ queryKey: ['notifications'] });
+          break;
+      }
+    },
+  }),
 });
 
 const asyncStoragePersister = createAsyncStoragePersister({
   storage: AsyncStorage,
   key: 'GT2_QUERY_CACHE',
 });
+
+// Lets a chat send, RSVP, or invite response survive being offline: the
+// mutationFn is looked up by key here (see utils/chatMutations.ts and
+// utils/offlineMutations.ts) rather than closed over in a component, so one
+// queued before an app kill can still be resumed on the next launch.
+registerChatMutationDefaults(queryClient);
+registerOfflineMutationDefaults(queryClient);
 
 // Drives React Query's online state off real connectivity so queries pause offline instead of failing
 onlineManager.setEventListener((setOnline) => {
@@ -88,9 +128,14 @@ export default function RootLayout() {
           persistOptions={{
             persister: asyncStoragePersister,
             maxAge: ONE_WEEK_MS,
-            // Mutations aren't queued/replayed yet — only persist read data.
-            dehydrateOptions: { shouldDehydrateMutation: () => false },
+            dehydrateOptions: {
+              shouldDehydrateMutation: (mutation) =>
+                QUEUED_MUTATION_KEYS.includes(mutation.options.mutationKey?.[0] as string),
+            },
           }}
+          // Resumes any send that was still paused-offline when the app was last
+          // closed, once the persisted cache (and this mutation) is back in memory.
+          onSuccess={() => { queryClient.resumePausedMutations(); }}
         >
           <AuthLayout />
           <ImageCropperHost />
@@ -101,7 +146,7 @@ export default function RootLayout() {
 }
 
 const AuthLayout = () => {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   const { user: clerkUser } = useUser();
   const segments = useSegments();
   const router = useRouter();
@@ -112,6 +157,25 @@ const AuthLayout = () => {
   const inTabsGroup = segments[0] === '(tabs)';
 
   useUserSync();
+
+  // Gives the mutation-defaults registry (utils/authToken.ts) a way to fetch a
+  // token outside React, for queued mutations resumed with no screen mounted.
+  useEffect(() => {
+    setClerkTokenGetter(isSignedIn ? getToken : null);
+    return () => setClerkTokenGetter(null);
+  }, [isSignedIn, getToken]);
+
+  // Mutations created in this session auto-resume on reconnect, but a send
+  // restored from disk needs an explicit kick once connectivity is confirmed.
+  useEffect(() => {
+    return onlineManager.subscribe((isOnline) => {
+      if (isOnline) queryClient.resumePausedMutations();
+    });
+  }, [queryClient]);
+
+  useEffect(() => {
+    if (!isSignedIn) setNameModalDismissed(false);
+  }, [isSignedIn]);
 
   // Deferred deep link for fresh installs: check clipboard for an invite token from the web landing page
   useEffect(() => {
@@ -156,6 +220,16 @@ const AuthLayout = () => {
   // writes to the query cache instead, which sign-out already clears.
   const showWelcomeModal = !!currentUser && !currentUser.hasSeenWelcome && inTabsGroup;
 
+  // Apple only grants a name on the account's very first authorization ever, so a
+  // returning/re-created Apple account can reach the tabs with nothing on file (the
+  // profileIncomplete check below deliberately skips the name for Apple users so they
+  // aren't blocked from the app). Driven by currentUser rather than a dismiss flag, so
+  // it resurfaces on every app open — not persisted locally — until the name is set.
+  const [nameModalDismissed, setNameModalDismissed] = useState(false);
+  const needsNameUpdate = !!currentUser && isAppleUser
+    && !currentUser.firstName?.trim() && !currentUser.lastName?.trim();
+  const showUpdateNameModal = needsNameUpdate && inTabsGroup && !showWelcomeModal && !nameModalDismissed;
+
   const markWelcomeSeen = useMutation({
     mutationFn: () => userApi.updateProfile(api, { hasSeenWelcome: true }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['currentUser'] }),
@@ -193,8 +267,13 @@ const AuthLayout = () => {
     ].includes(segments[0]);
 
     if (isSignedIn) {
-      // No Mongo user yet always routes through profile-setup — its Save triggers syncUser
-      const profileIncomplete = !currentUser || (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()));
+      // No Mongo user yet always routes through profile-setup — its Save triggers syncUser.
+      // Also gates on zipCode: Apple users can already have a Mongo user with a name at this
+      // point (useAppleAuth syncs it as soon as Apple grants one, before profile-setup ever
+      // runs), which would otherwise let them skip straight past the zip code step.
+      const profileIncomplete = !currentUser
+        || (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()))
+        || !currentUser.zipCode?.trim();
       if (profileIncomplete && segments[0] !== 'profile-setup') {
         router.replace('/profile-setup');
       } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
@@ -229,6 +308,7 @@ const AuthLayout = () => {
     <View style={{ flex: 1 }}>
       <OfflineBanner />
       <WelcomeModal visible={showWelcomeModal} onClose={closeWelcomeModal} />
+      <UpdateNameModal visible={showUpdateNameModal} onClose={() => setNameModalDismissed(true)} />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />

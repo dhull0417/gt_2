@@ -43,6 +43,7 @@ import {
 } from '@/hooks/usePushNotifications';
 import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
 import type { ChatMessage, PendingImage } from '@/types/chat';
+import EmojiPicker from 'rn-emoji-keyboard';
 
 interface ChatDaySection {
   key: string;
@@ -170,7 +171,7 @@ const GroupChatScreen = () => {
   const senderId = currentUser?.clerkId ?? '';
   const senderName = currentUser ? getUserDisplayName(currentUser) : '';
 
-  const { messages, loading, sendMessage, addReaction, deleteMessage, editMessage } =
+  const { messages, loading, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage } =
     useMessages(id ?? '');
   const { typingNames, handleTyping } = useTypingIndicator(id ?? '', senderId, senderName);
 
@@ -242,6 +243,7 @@ const GroupChatScreen = () => {
   const [editText, setEditText] = useState('');
   const [reactionDetailMessage, setReactionDetailMessage] = useState<ChatMessage | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<{ url: string; width?: number | null; height?: number | null } | null>(null);
+  const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
 
   const userNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -328,6 +330,30 @@ const GroupChatScreen = () => {
       userApi.markGroupRead(api, id).catch(() => {});
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? JSON.stringify(err));
+    }
+  };
+
+  const handlePendingPress = (item: ChatMessage) => {
+    if (!item.mutationId) return;
+    if (item.failed) {
+      Alert.alert(
+        "Message didn't send",
+        'Connection issue — this message was saved as a draft. Try again?',
+        [
+          { text: 'Retry', onPress: () => retrySend(item.mutationId!) },
+          { text: 'Discard', style: 'destructive', onPress: () => discardSend(item.mutationId!) },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Still sending…',
+        'This message is waiting for a connection.',
+        [
+          { text: 'Discard', style: 'destructive', onPress: () => discardSend(item.mutationId!) },
+          { text: 'Close', style: 'cancel' },
+        ]
+      );
     }
   };
 
@@ -467,6 +493,7 @@ const GroupChatScreen = () => {
                 onLongPress={() => setSelectedMessage(item)}
                 onReactionLongPress={() => setReactionDetailMessage(item)}
                 onImagePress={(url, width, height) => setFullscreenImage({ url, width, height })}
+                onPendingPress={() => handlePendingPress(item)}
               />
             )}
             renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}
@@ -574,7 +601,12 @@ const GroupChatScreen = () => {
       </View>
 
       {/* Action sheet */}
-      <Modal visible={!!selectedMessage} transparent animationType="fade" onRequestClose={() => setSelectedMessage(null)}>
+      {/* Hidden (rather than unmounted) while the emoji picker is open — two
+          simultaneously-visible RN <Modal>s fight over the native presentation
+          stack and the second one silently fails to appear, so only one can
+          be visible at a time. selectedMessage itself stays set so handleReact
+          still has its target once an emoji is picked. */}
+      <Modal visible={!!selectedMessage && !emojiPickerVisible} transparent animationType="fade" onRequestClose={() => setSelectedMessage(null)}>
         <Pressable style={chatStyles.overlay} onPress={() => setSelectedMessage(null)}>
           <View style={chatStyles.actionPanel}>
             {!isDeletedSelected && (
@@ -584,6 +616,9 @@ const GroupChatScreen = () => {
                     <Text style={{ fontSize: 28 }}>{emoji}</Text>
                   </TouchableOpacity>
                 ))}
+                <TouchableOpacity style={chatStyles.emojiBtn} onPress={() => setEmojiPickerVisible(true)} activeOpacity={0.7}>
+                  <Feather name="plus-circle" size={26} color="#9CA3AF" />
+                </TouchableOpacity>
               </View>
             )}
             {!isDeletedSelected && (
@@ -610,6 +645,16 @@ const GroupChatScreen = () => {
           </View>
         </Pressable>
       </Modal>
+
+      <EmojiPicker
+        open={emojiPickerVisible}
+        onClose={() => setEmojiPickerVisible(false)}
+        onEmojiSelected={(item) => handleReact(item.emoji)}
+        enableSearchBar
+        enableRecentlyUsed
+        defaultHeight="75%"
+        expandedHeight="90%"
+      />
 
       {/* Reaction detail */}
       <Modal visible={!!reactionDetailMessage} transparent animationType="fade" onRequestClose={() => setReactionDetailMessage(null)}>

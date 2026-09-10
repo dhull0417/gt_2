@@ -18,7 +18,6 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   const { getToken } = useAuth();
   const api = useApiClient();
   const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
   const [pendingImage, setPendingImage] = useState<{ localUri: string; uploaded?: PendingImage } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [attachMenuVisible, setAttachMenuVisible] = useState(false);
@@ -54,20 +53,19 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
     }
   };
 
-  const canSend = !sending && !uploading && (!!text.trim() || !!pendingImage?.uploaded);
+  const canSend = !uploading && (!!text.trim() || !!pendingImage?.uploaded);
 
-  const handleSend = async () => {
+  // Doesn't await onSend: a send can stay paused for a while offline (it's
+  // queued, not lost — see useMessages/chatMutations), and this input
+  // shouldn't stay locked for that whole time. The caller (group-chat screen)
+  // already surfaces genuine failures via Alert, so nothing else to do here.
+  const handleSend = () => {
     if (!canSend) return;
-    setSending(true);
     const image = pendingImage?.uploaded;
     const trimmed = text.trim();
-    try {
-      await onSend(trimmed, image);
-      setText('');
-      setPendingImage(null);
-    } finally {
-      setSending(false);
-    }
+    setText('');
+    setPendingImage(null);
+    onSend(trimmed, image).catch(() => {});
   };
 
   return (
@@ -94,10 +92,10 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
         <TouchableOpacity
           style={styles.photoBtn}
           onPress={() => setAttachMenuVisible(true)}
-          disabled={sending || uploading}
+          disabled={uploading}
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
-          <Feather name="plus-circle" size={24} color={sending || uploading ? '#D1D5DB' : '#4A90E2'} />
+          <Feather name="plus-circle" size={24} color={uploading ? '#D1D5DB' : '#4A90E2'} />
         </TouchableOpacity>
 
         <TextInput
@@ -116,11 +114,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
           onPress={handleSend}
           disabled={!canSend}
         >
-          {sending ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.sendLabel}>Send</Text>
-          )}
+          <Text style={styles.sendLabel}>Send</Text>
         </TouchableOpacity>
       </View>
 

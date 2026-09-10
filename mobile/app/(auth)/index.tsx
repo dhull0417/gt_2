@@ -1,16 +1,40 @@
 import { useSocialAuth } from "@/hooks/useSocialAuth";
 import { useAppleAuth } from "@/hooks/useAppleAuth";
-import { Text, Image, View, TouchableOpacity, ActivityIndicator, StyleSheet, Linking } from "react-native";
+import { useRef, useState } from "react";
+import { Animated, Dimensions, Text, Image, View, TouchableOpacity, ActivityIndicator, StyleSheet, Linking } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from '@expo/vector-icons';
 import * as AppleAuthentication from "expo-apple-authentication";
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function Index() {
   const { handleSocialAuth, isLoading } = useSocialAuth();
   const { handleAppleAuth, isLoading: appleIsLoading } = useAppleAuth();
   const isAnyLoading = isLoading || appleIsLoading;
   const router = useRouter();
+  const [showOtherOptions, setShowOtherOptions] = useState(false);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleOtherOptions = () => {
+    const toValue = showOtherOptions ? 0 : 1;
+    Animated.timing(slideAnim, {
+      toValue,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+    setShowOtherOptions(!showOtherOptions);
+  };
+
+  const primaryTranslateX = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -SCREEN_WIDTH],
+  });
+  const otherTranslateX = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [SCREEN_WIDTH, 0],
+  });
 
   const handleOpenPrivacyPolicy = () => {
     Linking.openURL("https://groupthatapp.com/privacy-policy/").catch((err) =>
@@ -31,64 +55,83 @@ export default function Index() {
             </View>
           </View>
 
-          <View style={styles.buttonGroup}>
-            {/* Apple Button */}
-            {appleIsLoading ? (
-              <View style={[styles.appleButton, styles.shadow]}>
-                <ActivityIndicator size="small" color="#fff" />
-              </View>
-            ) : (
-              <AppleAuthentication.AppleAuthenticationButton
-                buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
-                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                cornerRadius={9999}
-                style={[styles.appleButton, styles.shadow]}
-                onPress={handleAppleAuth}
-              />
-            )}
+          <View style={{ height: '50%' }} />
 
-            {/* Google Button */}
-            <TouchableOpacity
-              style={[styles.button, styles.shadow]}
-              onPress={() => handleSocialAuth("oauth_google")}
-              disabled={isAnyLoading}
-            >
-              {isLoading ? <ActivityIndicator size="small" color="#000" /> : (
-                <View style={styles.buttonContent}>
-                  <Image source={require("../../assets/images/google-logo.png")} style={styles.iconImage} resizeMode="contain" />
-                  <Text style={styles.buttonText}>Continue with Google</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+          <View style={[styles.buttonGroup, { marginTop: 118 }]}>
+            <View style={styles.slideStage}>
+              {/* Primary: Google + Email */}
+              <Animated.View
+                style={[styles.slidePane, { transform: [{ translateX: primaryTranslateX }] }]}
+                pointerEvents={showOtherOptions ? 'none' : 'auto'}
+              >
+                <TouchableOpacity
+                  style={[styles.button, styles.shadow]}
+                  onPress={() => handleSocialAuth("oauth_google")}
+                  disabled={isAnyLoading}
+                >
+                  {isLoading ? <ActivityIndicator size="small" color="#000" /> : (
+                    <View style={styles.buttonContent}>
+                      <Image source={require("../../assets/images/google-logo.png")} style={styles.iconImage} resizeMode="contain" />
+                      <Text style={styles.buttonText}>Continue with Google</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
 
-            {/* Phone Button */}
-            <TouchableOpacity
-              style={[styles.button, styles.shadow]}
-              onPress={() => router.push('/(auth)/phone-login')}
-              disabled={isAnyLoading}
-            >
-              <View style={styles.buttonContent}>
-                <Feather name="phone" size={28} color="#000" style={{ marginRight: 12 }} />
-                <Text style={styles.buttonText}>Continue with Phone</Text>
-              </View>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.shadow]}
+                  onPress={() => router.push('/(auth)/sign-in')}
+                >
+                  <View style={styles.buttonContent}>
+                      <Feather name="mail" size={24} color="#000" style={{ marginRight: 12 }} />
+                      <Text style={styles.buttonText}>Continue with Email</Text>
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
 
-            <View style={styles.separatorContainer}>
-                <View style={styles.separatorLine} />
-                <Text style={styles.separatorText}>or</Text>
-                <View style={styles.separatorLine} />
+              {/* Other: Apple + Phone */}
+              <Animated.View
+                style={[styles.slidePane, styles.slidePaneOverlay, { transform: [{ translateX: otherTranslateX }] }]}
+                pointerEvents={showOtherOptions ? 'auto' : 'none'}
+              >
+                {appleIsLoading ? (
+                  <View style={[styles.appleButton, styles.shadow]}>
+                    <ActivityIndicator size="small" color="#fff" />
+                  </View>
+                ) : (
+                  <AppleAuthentication.AppleAuthenticationButton
+                    buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                    buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                    cornerRadius={9999}
+                    style={[styles.appleButton, styles.shadow]}
+                    onPress={handleAppleAuth}
+                  />
+                )}
+
+                <TouchableOpacity
+                  style={[styles.button, styles.shadow]}
+                  onPress={() => router.push('/(auth)/phone-login')}
+                  disabled={isAnyLoading}
+                >
+                  <View style={styles.buttonContent}>
+                    <Feather name="phone" size={22} color="#000" style={{ marginRight: 12 }} />
+                    <Text style={styles.buttonText}>Continue with Phone</Text>
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
             </View>
 
-            <TouchableOpacity 
-              style={[styles.button, styles.shadow]}
-              onPress={() => router.push('/(auth)/sign-in')}
+            {/* Other Options Toggle */}
+            <TouchableOpacity
+              style={styles.otherOptionsToggle}
+              onPress={toggleOtherOptions}
             >
-              <View style={styles.buttonContent}>
-                  <Text style={styles.buttonText}>Continue with Email</Text>
-              </View>
+              <Text style={styles.otherOptionsText}>Other Options</Text>
+              <Feather name={showOtherOptions ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" style={{ marginLeft: 4 }} />
             </TouchableOpacity>
           </View>
-          
+
+          <View style={{ flex: 1 }} />
+
           <View>
             <Text style={styles.footerText}>
               By signing up, you agree to our
@@ -111,9 +154,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logoContainer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
     alignItems: 'center',
-    flex: 1,
     justifyContent: 'center',
+    transform: [{ translateY: -85 }],
   },
   logoBox: {
     width: 320,
@@ -126,6 +174,20 @@ const styles = StyleSheet.create({
   },
   buttonGroup: {
     gap: 8,
+  },
+  slideStage: {
+    height: 104,
+    overflow: 'hidden',
+  },
+  slidePane: {
+    width: '100%',
+    gap: 8,
+  },
+  slidePaneOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   appleButton: {
     width: '100%',
@@ -168,19 +230,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 18,
   },
-  separatorContainer: {
+  otherOptionsToggle: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 16,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 8,
   },
-  separatorLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#D1D5DB',
-  },
-  separatorText: {
-    marginHorizontal: 16,
+  otherOptionsText: {
     color: '#6B7280',
+    fontWeight: '600',
+    fontSize: 14,
   },
   footerText: {
     textAlign: 'center',

@@ -191,7 +191,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '900',
+    color: '#111827',
   },
   content: {
     padding: 24,
@@ -199,7 +200,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: '900',
     marginBottom: 8,
     color: '#111827',
   },

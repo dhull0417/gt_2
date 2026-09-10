@@ -48,7 +48,7 @@ const ForgotPasswordScreen = () => {
           className="p-8"
           keyboardShouldPersistTaps="handled"
         >
-          <Text className="text-3xl font-bold text-gray-800 mb-2">Reset Password</Text>
+          <Text className="text-3xl font-black text-gray-900 mb-2">Reset Password</Text>
           <Text className="text-base text-gray-600 mb-8">Enter your email address to receive a verification code.</Text>
           <TextInput
             autoCapitalize="none"

@@ -55,7 +55,7 @@ const SignUpScreen = () => {
             className="p-8"
             keyboardShouldPersistTaps="handled"
         >
-            <Text className="text-3xl font-bold text-gray-800 mb-8">Create Account</Text>
+            <Text className="text-3xl font-black text-gray-900 mb-8">Create Account</Text>
             <TextInput
                 autoCapitalize="none"
                 keyboardType="email-address"
@@ -64,6 +64,7 @@ const SignUpScreen = () => {
                 placeholder="Email Address"
                 placeholderTextColor="#9CA3AF"
                 className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
+                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
             />
             <View className="w-full flex-row items-center bg-gray-100 border border-gray-300 rounded-lg text-base mb-4 pr-4">
                 <TextInput
@@ -73,12 +74,13 @@ const SignUpScreen = () => {
                     placeholderTextColor="#9CA3AF"
                     secureTextEntry={!isPasswordVisible}
                     className="flex-1 p-4 text-base"
+                    style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
                 />
                 <TouchableOpacity onPress={() => setPasswordVisible(!isPasswordVisible)}>
-                    <Feather 
-                        name={isPasswordVisible ? 'eye-off' : 'eye'} 
-                        size={22} 
-                        color="#6B7280" 
+                    <Feather
+                        name={isPasswordVisible ? 'eye-off' : 'eye'}
+                        size={22}
+                        color="#6B7280"
                     />
                 </TouchableOpacity>
             </View>
@@ -90,6 +92,7 @@ const SignUpScreen = () => {
                     placeholderTextColor="#9CA3AF"
                     secureTextEntry={!isConfirmPasswordVisible}
                     className="flex-1 p-4 text-base"
+                    style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
                 />
                 <TouchableOpacity onPress={() => setConfirmPasswordVisible(!isConfirmPasswordVisible)}>
                     <Feather 

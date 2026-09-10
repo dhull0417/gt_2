@@ -1,8 +1,9 @@
 import { useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@clerk/expo';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/utils/supabase';
+import { SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
 import type { ChatMessage, PendingImage, ReactionResult } from '@/types/chat';
 
 // Only the most recent page is fetched/cached — no pagination yet.
@@ -39,36 +40,117 @@ export function useMessages(groupId: string) {
     enabled: !!groupId,
   });
 
+  // mutationFn lives in the shared registry (utils/chatMutations.ts), not here,
+  // so a send that's paused for being offline can be resumed after an app
+  // restart even before this screen (or any component) has remounted.
+  const sendMessageMutation = useMutation<void, Error, SendMessageVariables>({
+    mutationKey: SEND_MESSAGE_MUTATION_KEY,
+  });
+  const mutateSendMessage = sendMessageMutation.mutateAsync;
+
   const sendMessage = useCallback(
-    async (
+    (
       content: string,
       senderId: string,
       senderName: string,
       replyTo?: { id: string; content: string; senderName: string },
       image?: PendingImage
     ) => {
-      const token = await getTokenRef.current({ template: 'supabase' });
-      if (!token) throw new Error('No auth token');
-      const supabase = getSupabaseClient(token);
-      const { error: sbError } = await supabase.from('messages').insert({
-        group_id: groupId,
-        sender_id: senderId,
-        sender_name: senderName,
+      return mutateSendMessage({
+        clientId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        groupId,
+        senderId,
+        senderName,
         content,
-        ...(image && {
-          image_url: image.url,
-          ...(image.width && { image_width: image.width }),
-          ...(image.height && { image_height: image.height }),
-        }),
-        ...(replyTo && {
-          reply_to_id: replyTo.id,
-          reply_to_content: replyTo.content,
-          reply_to_sender: replyTo.senderName,
-        }),
+        createdAt: new Date().toISOString(),
+        replyTo,
+        image,
       });
-      if (sbError) throw sbError;
     },
-    [groupId]
+    [groupId, mutateSendMessage]
+  );
+
+  // Queued/in-flight sends for this group, rendered as placeholders — covers
+  // both a send still in flight and one paused offline (including one just
+  // restored from disk after an app restart, before it's had a chance to send).
+  const pendingSends = useMutationState<{ variables: SendMessageVariables; mutationId: number }>({
+    filters: { mutationKey: SEND_MESSAGE_MUTATION_KEY, status: 'pending' },
+    select: (mutation) => ({ variables: mutation.state.variables as SendMessageVariables, mutationId: mutation.mutationId }),
+  });
+
+  // Sends that exhausted their retries (see registerChatMutationDefaults) —
+  // rendered as placeholders the user can tap to retry or discard.
+  const failedSends = useMutationState<{ variables: SendMessageVariables; mutationId: number }>({
+    filters: { mutationKey: SEND_MESSAGE_MUTATION_KEY, status: 'error' },
+    select: (mutation) => ({ variables: mutation.state.variables as SendMessageVariables, mutationId: mutation.mutationId }),
+  });
+
+  const toPlaceholder = useCallback(
+    (v: SendMessageVariables, mutationId: number, extra: Partial<ChatMessage>): ChatMessage => ({
+      id: `pending-${v.clientId}`,
+      group_id: v.groupId,
+      sender_id: v.senderId,
+      sender_name: v.senderName,
+      content: v.content,
+      created_at: v.createdAt,
+      reply_to_id: v.replyTo?.id ?? null,
+      reply_to_content: v.replyTo?.content ?? null,
+      reply_to_sender: v.replyTo?.senderName ?? null,
+      image_url: v.image?.url ?? null,
+      image_width: v.image?.width ?? null,
+      image_height: v.image?.height ?? null,
+      mutationId,
+      ...extra,
+    }),
+    []
+  );
+
+  const pendingMessages = useMemo<ChatMessage[]>(
+    () =>
+      pendingSends
+        .filter((s) => s?.variables?.groupId === groupId)
+        .map((s) => toPlaceholder(s.variables, s.mutationId, { pending: true })),
+    [pendingSends, groupId, toPlaceholder]
+  );
+
+  const failedMessages = useMemo<ChatMessage[]>(
+    () =>
+      failedSends
+        .filter((s) => s?.variables?.groupId === groupId)
+        .map((s) => toPlaceholder(s.variables, s.mutationId, { failed: true })),
+    [failedSends, groupId, toPlaceholder]
+  );
+
+  const messagesWithPending = useMemo(
+    () =>
+      pendingMessages.length || failedMessages.length
+        ? [...messages, ...pendingMessages, ...failedMessages]
+        : messages,
+    [messages, pendingMessages, failedMessages]
+  );
+
+  // Retrying re-submits the exact original variables (same clientId, and
+  // critically the same createdAt) so the message keeps its place in the
+  // conversation instead of jumping to the resend time.
+  const retrySend = useCallback(
+    (mutationId: number) => {
+      const cache = queryClient.getMutationCache();
+      const mutation = cache.getAll().find((m) => m.mutationId === mutationId);
+      if (!mutation) return;
+      const variables = mutation.state.variables as SendMessageVariables;
+      cache.remove(mutation);
+      mutateSendMessage(variables).catch(() => {});
+    },
+    [queryClient, mutateSendMessage]
+  );
+
+  const discardSend = useCallback(
+    (mutationId: number) => {
+      const cache = queryClient.getMutationCache();
+      const mutation = cache.getAll().find((m) => m.mutationId === mutationId);
+      if (mutation) cache.remove(mutation);
+    },
+    [queryClient]
   );
 
   const addReaction = useCallback(
@@ -216,5 +298,5 @@ export function useMessages(groupId: string) {
     };
   }, [groupId, queryClient, queryKey]);
 
-  return { messages, loading, error, sendMessage, addReaction, deleteMessage, editMessage, refetch };
+  return { messages: messagesWithPending, loading, error, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage, refetch };
 }

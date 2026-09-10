@@ -16,6 +16,7 @@ const NOTIFICATION_ICONS: Record<NotificationType, NotificationIconSpec> = {
   'invite-accepted': { name: 'check-circle', color: '#10B981' },
   'invite-declined': { name: 'x-circle', color: '#EF4444' },
   'group-added': { name: 'users', color: '#6366F1' },
+  'group-member-joined': { name: 'users', color: '#6366F1' },
   'group-removed': { name: 'user-minus', color: '#EF4444' },
   'group-updated': { name: 'edit-2', color: '#6366F1' },
   'ownership-transferred': { name: 'repeat', color: '#8B5CF6' },

@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
 import { Image } from 'expo-image';
+import { Feather } from '@expo/vector-icons';
 import type { ChatMessage } from '@/types/chat';
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
   currentUserId?: string;
   onReactionLongPress?: () => void;
   onImagePress?: (url: string, width?: number | null, height?: number | null) => void;
+  // Tapping a still-sending or failed-to-send placeholder — offers cancel (pending) or retry/discard (failed).
+  onPendingPress?: () => void;
 }
 
 const MAX_IMAGE_WIDTH = 240;
@@ -37,14 +40,18 @@ function getImageDisplaySize(width?: number | null, height?: number | null) {
   return { width: Math.round(w), height: Math.round(h) };
 }
 
-export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, onReactionLongPress, onImagePress }: Props) {
+export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, onReactionLongPress, onImagePress, onPendingPress }: Props) {
   const isDeleted = !!message.deleted_at;
   const isEdited = !!message.edited_at && !isDeleted;
   const hasImage = !!message.image_url && !isDeleted;
   const hasText = !!message.content && !isDeleted;
   const imageSize = hasImage ? getImageDisplaySize(message.image_width, message.image_height) : null;
 
-  const time = new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = message.failed
+    ? "Couldn't send"
+    : message.pending
+    ? 'Sending…'
+    : new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const reactions = (!isDeleted && message.reactions) ? message.reactions : {};
   const reactionEntries = Object.entries(reactions).filter(([, users]) => users.length > 0);
 
@@ -52,10 +59,17 @@ export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, 
     <View style={[styles.row, isOwn && styles.rowOwn]}>
       <View style={styles.column}>
         <TouchableOpacity
-          style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther, hasImage && !hasText && styles.bubbleImageOnly]}
-          onLongPress={isDeleted ? undefined : onLongPress}
+          style={[
+            styles.bubble,
+            isOwn ? styles.bubbleOwn : styles.bubbleOther,
+            hasImage && !hasText && styles.bubbleImageOnly,
+            message.pending && styles.bubblePending,
+            message.failed && styles.bubbleFailed,
+          ]}
+          onPress={message.pending || message.failed ? onPendingPress : undefined}
+          onLongPress={isDeleted || message.pending || message.failed ? undefined : onLongPress}
           delayLongPress={350}
-          activeOpacity={isDeleted ? 1 : 0.85}
+          activeOpacity={isDeleted ? 1 : message.pending || message.failed ? 0.7 : 0.85}
         >
           {!isOwn && <Text style={styles.senderName}>{message.sender_name}</Text>}
 
@@ -93,7 +107,12 @@ export function ChatMessageBubble({ message, isOwn, onLongPress, currentUserId, 
 
           <View style={[styles.timeRow, hasImage && !hasText && styles.timeRowImageOnly]}>
             {isEdited && <Text style={[styles.editedLabel, isOwn && styles.editedLabelOwn]}>edited · </Text>}
-            <Text style={[styles.time, isOwn && styles.timeOwn, hasImage && !hasText && styles.timeOnImage]}>{time}</Text>
+            {message.failed ? (
+              <Feather name="wifi-off" size={11} color={isOwn ? 'rgba(255,255,255,0.9)' : '#DC2626'} style={styles.statusIcon} />
+            ) : message.pending ? (
+              <Feather name="clock" size={11} color={isOwn ? 'rgba(255,255,255,0.7)' : '#9CA3AF'} style={styles.statusIcon} />
+            ) : null}
+            <Text style={[styles.time, isOwn && styles.timeOwn, hasImage && !hasText && styles.timeOnImage, message.failed && !isOwn && styles.timeFailed]}>{time}</Text>
           </View>
         </TouchableOpacity>
 
@@ -125,6 +144,8 @@ const styles = StyleSheet.create({
   bubbleOwn: { backgroundColor: '#4A90E2', borderBottomRightRadius: 4 },
   bubbleOther: { backgroundColor: '#E5E7EB', borderBottomLeftRadius: 4 },
   bubbleImageOnly: { paddingHorizontal: 4, paddingVertical: 4 },
+  bubblePending: { opacity: 0.55 },
+  bubbleFailed: { opacity: 0.85, borderWidth: 1, borderColor: '#DC2626' },
   senderName: { fontSize: 12, fontWeight: '700', color: '#6B7280', marginBottom: 2 },
   messageImage: { borderRadius: 10 },
   messageImageWithText: { marginBottom: 6 },
@@ -144,6 +165,8 @@ const styles = StyleSheet.create({
   time: { fontSize: 11, color: '#9CA3AF' },
   timeOwn: { color: 'rgba(255,255,255,0.7)' },
   timeOnImage: { color: 'rgba(255,255,255,0.85)' },
+  timeFailed: { color: '#DC2626', fontWeight: '600' },
+  statusIcon: { marginRight: 3 },
   reactions: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 4 },
   reactionsOwn: { justifyContent: 'flex-end' },
   badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: '#E5E7EB' },

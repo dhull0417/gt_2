@@ -1,6 +1,11 @@
 // Legacy (non-signal) Clerk API — matches the shape Clerk's own native Apple hook
 // uses internally (signIn.create/firstFactorVerification.status, signUp.create({transfer}), setActive).
-import { useSignIn, useSignUp } from "@clerk/react/legacy";
+// Imported via require(), not `import`, so Metro resolves the CommonJS build (matching
+// how @clerk/expo's own precompiled ClerkProvider requires it) instead of the separate
+// ESM build — the two builds each create their own React context instance, so an `import`
+// here would read from a context @clerk/expo's <ClerkProvider> never writes to and throw
+// "useSignIn can only be used within the <ClerkProvider />" even though it clearly is.
+const { useSignIn, useSignUp } = require("@clerk/react/legacy") as typeof import("@clerk/react/legacy");
 import { useState } from "react";
 import { Alert } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
