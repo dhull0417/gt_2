@@ -24,6 +24,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi, groupApi } from '@/utils/api';
+import { getErrorMessage } from '@/utils/networkError';
+import { useIsOnline } from '@/hooks/useIsOnline';
 import { formatSchedule } from '@/utils/schedule';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
@@ -50,6 +52,7 @@ const GroupSettings = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
+  const isOnline = useIsOnline();
 
   const { getToken } = useAuth();
   const { data: group, isLoading: isLoadingGroup } = useGetGroupDetails(id);
@@ -264,8 +267,8 @@ const GroupSettings = () => {
       );
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       setIsImageModalVisible(false);
-    } catch {
-      Alert.alert('Error', 'Could not update group photo. Please try again.');
+    } catch (error) {
+      Alert.alert('Error', getErrorMessage(error, 'Could not update group photo. Please try again.'));
     } finally {
       setIsConfirmingImage(false);
     }
@@ -325,7 +328,7 @@ const GroupSettings = () => {
         ]);
         playNameCelebration(tempName.trim());
     } catch (error: any) {
-        Alert.alert("Error", error.response?.data?.error || "Failed to update group name.");
+        Alert.alert("Error", getErrorMessage(error, "Failed to update group name."));
     } finally {
         setIsSavingName(false);
     }
@@ -350,7 +353,7 @@ const GroupSettings = () => {
         setIsEditingCapacity(false);
         Alert.alert("Success", "Attendee limit and associated meetups updated.");
     } catch (error: any) {
-        Alert.alert("Error", error.response?.data?.error || "Failed to update attendee limit.");
+        Alert.alert("Error", getErrorMessage(error, "Failed to update attendee limit."));
     } finally {
         setIsSavingCapacity(false);
     }
@@ -372,7 +375,7 @@ const GroupSettings = () => {
         ]);
         Alert.alert("Success", "Default location and future meetups updated.");
     } catch (error: any) {
-        Alert.alert("Error", error.response?.data?.error || "Failed to update location.");
+        Alert.alert("Error", getErrorMessage(error, "Failed to update location."));
     }
   };
 
@@ -396,7 +399,7 @@ const GroupSettings = () => {
         setIsEditingMods(false);
         Alert.alert("Success", "Moderator list updated.");
     } catch (error: any) {
-        Alert.alert("Error", error.response?.data?.error || "Failed to update moderators.");
+        Alert.alert("Error", getErrorMessage(error, "Failed to update moderators."));
     } finally {
         setIsSavingMods(false);
     }
@@ -429,7 +432,7 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
     } catch (error: any) {
-        Alert.alert("Error", error.response?.data?.error || "Failed to remove member.");
+        Alert.alert("Error", getErrorMessage(error, "Failed to remove member."));
     } finally {
         setIsRemovingMemberId(null);
     }
@@ -461,7 +464,7 @@ const GroupSettings = () => {
       setIsTransferModalVisible(false);
       Alert.alert("Success", "Ownership transferred.");
     } catch (error: any) {
-      Alert.alert("Error", error.response?.data?.error || "Failed to transfer ownership.");
+      Alert.alert("Error", getErrorMessage(error, "Failed to transfer ownership."));
     } finally {
       setIsTransferringId(null);
     }
@@ -533,7 +536,13 @@ const GroupSettings = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView
+      style={styles.container}
+      // OfflineBanner already reserves the top safe-area inset for itself
+      // while offline, so this screen would double-reserve it here otherwise
+      // (see hooks/useContentTopInset.ts).
+      edges={isOnline ? ['top', 'left', 'right', 'bottom'] : ['left', 'right', 'bottom']}
+    >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
           <Feather name="x" size={28} color="#374151" />

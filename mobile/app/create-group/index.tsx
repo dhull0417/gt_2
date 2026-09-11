@@ -16,6 +16,7 @@ import {
     Keyboard,
     Animated,
     Modal,
+    Pressable,
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -185,8 +186,6 @@ const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): str
     return null;
 };
 
-const MAX_SCHEDULE_TABS = 5;
-
 // A tab with no frequency chosen is "empty" — always valid, contributes nothing
 // to the group (same as today's single-schedule Skip). Only a tab someone has
 // actually started configuring needs to be complete before Review is reachable.
@@ -212,7 +211,7 @@ const defaultSchedule = (name = ""): ScheduleData => ({
     startDate: DateTime.now().toISODate()!,
     frequency: null,
     rsvpRestricted: false,
-    leadEnabled: true,
+    leadEnabled: false,
     leadDays: 5,
     leadTime: "09:00 AM",
     showLeadTimePicker: false,
@@ -379,6 +378,7 @@ const StepDots = ({ total, current }: { total: number; current: number }) => (
 
 const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: string) => void; onClose: () => void }) => {
     const [name, setName] = useState("");
+    const [nameFocused, setNameFocused] = useState(false);
     const [localUri, setLocalUri] = useState<string | null>(null);
     const [imageUrl, setImageUrl] = useState("");
     const [uploading, setUploading] = useState(false);
@@ -417,11 +417,13 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
                 <Text style={s.screenSub}>What are you calling this crew?</Text>
                 <TextInput
                     style={s.bigInput}
-                    placeholder="e.g. Basketball Squad"
+                    placeholder={nameFocused ? "" : '"Basketball Squad"'}
                     placeholderTextColor="#C4C9D4"
+                    textAlign="center"
                     value={name}
                     onChangeText={setName}
-                    autoFocus
+                    onFocus={() => setNameFocused(true)}
+                    onBlur={() => setNameFocused(false)}
                     returnKeyType="done"
                     onSubmitEditing={() => Keyboard.dismiss()}
                 />
@@ -439,7 +441,6 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
                         <>
                             <Feather name="image" size={36} color="#9CA3AF" />
                             <Text style={s.imagePickerText}>Add group photo</Text>
-                            <Text style={s.imagePickerSub}>Optional</Text>
                         </>
                     )}
                 </TouchableOpacity>
@@ -519,7 +520,8 @@ const MembersScreen = ({ groupId, groupName, onDone }: {
 
 // ─── SCREEN 3: Group Settings ─────────────────────────────────────────────────
 
-const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onSkip }: {
+const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, onBack, onSkip }: {
+    groupName?: string;
     initialSchedules?: ScheduleData[];
     initialTimezone?: string;
     onNext: (schedules: ScheduleData[], timezone: string) => void;
@@ -530,6 +532,7 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
     // only stores one Group.timezone), so it lives outside the tabbed array.
     const [timezone, setTimezone] = useState(initialTimezone ?? "America/Denver");
     const [showTZPicker, setShowTZPicker] = useState(false);
+    const [showMultiScheduleInfo, setShowMultiScheduleInfo] = useState(false);
     const scrollViewRef = useRef<ScrollView>(null);
 
     // Starts with one blank series already in place so its fields are
@@ -548,29 +551,8 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
         setSchedules(prev => prev.map((sch, i) => i === activeIndexRef.current ? updater(sch) : sch));
     }, []);
 
-    const addScheduleTab = () => {
-        if (schedules.length >= MAX_SCHEDULE_TABS) return;
-        animate();
-        setSchedules(prev => [...prev, defaultSchedule()]);
-        setActiveIndex(schedules.length);
-        // Jump back to the top so the new (unnamed) series' Name field is
-        // immediately visible, rather than leaving the user scrolled down
-        // wherever they were editing the previous one.
-        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-    };
-
-    const removeScheduleTab = (index: number) => {
-        animate();
-        const newLength = schedules.length - 1;
-        let nextActive = activeIndexRef.current;
-        if (index < nextActive) nextActive -= 1;
-        else if (index === nextActive) nextActive = Math.max(0, index - 1);
-        nextActive = Math.min(nextActive, Math.max(0, newLength - 1));
-        setSchedules(prev => prev.filter((_, i) => i !== index));
-        setActiveIndex(newLength > 0 ? nextActive : 0);
-    };
-
     const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
+    const [nameInputFocused, setNameInputFocused] = useState(false);
     const [dayPickerRowId, setDayPickerRowId] = useState<string | null>(null);
     const [calendarPickerRowId, setCalendarPickerRowId] = useState<string | null>(null);
 
@@ -1181,50 +1163,9 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 automaticallyAdjustKeyboardInsets
-                // Index 3 is the "Schedule tabs" ScrollView below — pins it to the
-                // top once scrolled to, so switching series doesn't require
-                // scrolling back up past a long form (Where/When/RSVP/Capacity).
-                stickyHeaderIndices={[3]}
             >
                 <Text style={s.screenTitle}>Set Recurring Meetups</Text>
                 <Text style={s.screenSub}>Set up when, where, and how you meet</Text>
-
-                {/* Timezone — applies to the whole group, not any one schedule, so
-                    it's a standalone field rather than part of any tab. */}
-                <View style={s.tzSection}>
-                    <View style={s.tzRow}>
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { marginBottom: 0 }]}>Timezone</Text>
-                        <TouchableOpacity style={s.tzPill} onPress={() => {
-                            animate();
-                            setShowTZPicker(v => !v);
-                            upd({ showFreqPicker: false, showStartDatePicker: false, showLeadTimePicker: false, showDeadlineTimePicker: false });
-                        }}>
-                            <Feather name="globe" size={13} color="#4A90E2" />
-                            <Text style={s.tzPillText}>{TZ_ABBR[timezone] ?? timezone}</Text>
-                            <Feather name={showTZPicker ? "chevron-up" : "chevron-down"} size={13} color="#4A90E2" />
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                {/* Schedule tabs */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabBar} contentContainerStyle={s.tabBarContent}>
-                    {schedules.map((sch, i) => (
-                        <View key={i} style={[s.scheduleTab, activeIndex === i && s.scheduleTabActive]}>
-                            <TouchableOpacity onPress={() => setActiveIndex(i)}>
-                                <Text
-                                    style={[s.scheduleTabText, activeIndex === i && s.scheduleTabTextActive]}
-                                    numberOfLines={1}
-                                    ellipsizeMode="tail"
-                                >
-                                    {sch.name.trim() || "Series Name"}
-                                </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => removeScheduleTab(i)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
-                                <Feather name="x" size={13} color={activeIndex === i ? "#fff" : "#4A90E2"} />
-                            </TouchableOpacity>
-                        </View>
-                    ))}
-                </ScrollView>
 
                 {schedules.length === 0 ? (
                     <View style={s.reviewEmptyCard}>
@@ -1233,34 +1174,35 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                     </View>
                 ) : (
                 <>
-                {/* Name */}
-                <View style={s.sectionCard}>
+                {/* Name — a hero-style field instead of a standard card, so it
+                    reads unmistakably as "you're naming this series" rather
+                    than blending in with the other form sections below. */}
+                <View style={[s.nameHero, { borderLeftWidth: 3, borderLeftColor: "#4A90E2" }]}>
                     <View style={s.sectionHeaderRow}>
-                        <View style={[s.sectionIconChip, s.sectionIconChipIndigo]}>
-                            <Feather name="tag" size={16} color="#6366F1" />
+                        <View style={s.sectionIconChip}>
+                            <Feather name="tag" size={19} color="#4A90E2" />
                         </View>
-                        <Text style={s.sectionTitle}>Name</Text>
+                        <Text style={s.sectionTitle}>Series Name</Text>
                     </View>
-
-                    <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Series name</Text>
-                    <View style={s.dateFieldRow}>
-                        <Feather name="tag" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <TextInput
-                            style={s.inlineInput}
-                            value={d.name}
-                            onChangeText={t => upd({ name: t })}
-                            placeholder="e.g. Sunday Dinner"
-                            placeholderTextColor="#C4C9D4"
-                            maxLength={60}
-                        />
-                    </View>
+                    <TextInput
+                        style={s.nameHeroInput}
+                        value={d.name}
+                        onChangeText={t => upd({ name: t })}
+                        onFocus={() => setNameInputFocused(true)}
+                        onBlur={() => setNameInputFocused(false)}
+                        placeholder={nameInputFocused ? "" : '"Sunday Dinner"'}
+                        textAlign="center"
+                        placeholderTextColor="#C4C9D4"
+                        maxLength={60}
+                    />
+                    <View style={s.nameHeroUnderline} />
                 </View>
 
                 {/* Where */}
-                <View style={s.sectionCard}>
+                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#EF4444" }]}>
                     <View style={s.sectionHeaderRow}>
-                        <View style={[s.sectionIconChip, s.sectionIconChipBlue]}>
-                            <Feather name="map-pin" size={16} color="#4A90E2" />
+                        <View style={s.sectionIconChip}>
+                            <Feather name="map-pin" size={19} color="#EF4444" />
                         </View>
                         <Text style={s.sectionTitle}>Where</Text>
                     </View>
@@ -1275,10 +1217,10 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                 </View>
 
                 {/* When */}
-                <View style={s.sectionCard}>
+                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#F59E0B" }]}>
                     <View style={s.sectionHeaderRow}>
-                        <View style={[s.sectionIconChip, s.sectionIconChipAmber]}>
-                            <Feather name="calendar" size={16} color="#F59E0B" />
+                        <View style={s.sectionIconChip}>
+                            <Feather name="calendar" size={19} color="#F59E0B" />
                         </View>
                         <Text style={s.sectionTitle}>When</Text>
                     </View>
@@ -1286,22 +1228,19 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                     {/* Frequency */}
                     <Text style={[s.fieldLabel, s.fieldLabelFirst]}>How often?</Text>
                     <TouchableOpacity style={s.dateFieldRow}
-                        onPress={() => { setShowTZPicker(false); upd({ showFreqPicker: !d.showFreqPicker, showStartDatePicker: false, showLeadTimePicker: false }); }}>
+                        onPress={() => { setShowTZPicker(false); upd({ showFreqPicker: true, showStartDatePicker: false, showLeadTimePicker: false }); }}>
                         <Feather name="repeat" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
                         <Text style={d.frequency ? s.dateFieldText : s.dayPickerPlaceholder}>
                             {d.frequency ? FREQ_LABELS[d.frequency] : "Select frequency"}
                         </Text>
-                        <Feather name={d.showFreqPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     {d.showFreqPicker && (
-                        <View style={s.inlineDayPicker}>
-                            {(["daily", "weekly", "biweekly", "monthly", "custom"] as Frequency[]).map(f => (
-                                <TouchableOpacity key={f} style={[s.dayOption, d.frequency === f && s.dayOptionActive]}
-                                    onPress={() => selectFreq(f)}>
-                                    <Text style={[s.dayOptionText, d.frequency === f && s.dayOptionTextActive]}>{FREQ_LABELS[f]}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
+                        <OptionPickerModal title="How often?"
+                            options={(["daily", "weekly", "biweekly", "monthly", "custom"] as Frequency[]).map(f => ({ key: f, label: FREQ_LABELS[f] }))}
+                            selectedKey={d.frequency ?? ""}
+                            onSelect={key => selectFreq(key as Frequency)}
+                            onClose={() => upd({ showFreqPicker: false })} />
                     )}
 
                     {d.frequency === "daily" && renderDailyOptions()}
@@ -1315,26 +1254,43 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                         <>
                             <Text style={s.fieldLabel}>Start date</Text>
                             <TouchableOpacity style={s.dateFieldRow}
-                                onPress={() => { setShowTZPicker(false); upd({ showStartDatePicker: !d.showStartDatePicker, showFreqPicker: false, showLeadTimePicker: false }); }}>
+                                onPress={() => { setShowTZPicker(false); upd({ showStartDatePicker: true, showFreqPicker: false, showLeadTimePicker: false }); }}>
                                 <Feather name="calendar" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
                                 <Text style={s.dateFieldText}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
-                                <Feather name={d.showStartDatePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
-                            {d.showStartDatePicker && (
-                                <InlineCalendar value={d.startDate}
-                                    onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
-                                    minDate={DateTime.now().toISODate()!}
-                                    maxDate={DateTime.now().plus({ months: 4 }).toISODate()!} />
-                            )}
+                            <CalendarPickerModal
+                                visible={d.showStartDatePicker}
+                                value={d.startDate}
+                                minDate={DateTime.now().toISODate()!}
+                                maxDate={DateTime.now().plus({ months: 4 }).toISODate()!}
+                                onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
+                                onCancel={() => upd({ showStartDatePicker: false })}
+                            />
                         </>
                     )}
+
+                    {/* Timezone — applies to the whole group, not any one schedule, so
+                        it isn't part of the per-series fields above, but lives here
+                        since it's still a "when" concern. */}
+                    <Text style={s.fieldLabel}>Timezone</Text>
+                    <TouchableOpacity style={s.dateFieldRow}
+                        onPress={() => {
+                            animate();
+                            setShowTZPicker(v => !v);
+                            upd({ showFreqPicker: false, showStartDatePicker: false, showLeadTimePicker: false, showDeadlineTimePicker: false });
+                        }}>
+                        <Feather name="globe" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                        <Text style={s.dateFieldText}>{TZ_ABBR[timezone] ?? timezone}</Text>
+                        <Feather name={showTZPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                    </TouchableOpacity>
                 </View>
 
                 {/* RSVP Rules */}
-                <View style={s.sectionCard}>
+                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#7C3AED" }]}>
                     <View style={s.sectionHeaderRow}>
-                        <View style={[s.sectionIconChip, s.sectionIconChipViolet]}>
-                            <Feather name="bell" size={16} color="#7C3AED" />
+                        <View style={s.sectionIconChip}>
+                            <Feather name="bell" size={19} color="#7C3AED" />
                         </View>
                         <Text style={s.sectionTitle}>RSVP Rules</Text>
                     </View>
@@ -1479,10 +1435,10 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                 </View>
 
                 {/* Capacity */}
-                <View style={[s.sectionCard, { marginBottom: 8 }]}>
+                <View style={[s.sectionCard, { marginBottom: 8, borderLeftWidth: 3, borderLeftColor: "#0D9488" }]}>
                     <View style={s.sectionHeaderRow}>
-                        <View style={[s.sectionIconChip, s.sectionIconChipTeal]}>
-                            <Feather name="users" size={16} color="#0D9488" />
+                        <View style={s.sectionIconChip}>
+                            <Feather name="users" size={19} color="#0D9488" />
                         </View>
                         <Text style={s.sectionTitle}>Capacity</Text>
                     </View>
@@ -1530,27 +1486,38 @@ const ScheduleScreen = ({ initialSchedules, initialTimezone, onNext, onBack, onS
                     <Text style={s.skipBtnText}>Skip</Text>
                 </TouchableOpacity>
 
-                {schedules.length < MAX_SCHEDULE_TABS && (
-                    // box-none: this full-width centering wrapper is otherwise
-                    // invisible to touches, so it doesn't steal taps meant for
-                    // Skip/Review on either side — only the button itself does.
-                    <View style={s.addSeriesButton} pointerEvents="box-none">
-                        <TouchableOpacity onPress={addScheduleTab} style={{ alignItems: "center" }}>
-                            <View style={s.addSeriesCircle}>
-                                <Feather name="plus" size={18} color="#4A90E2" />
-                            </View>
-                            <Text style={s.addSeriesLabel}>Add More Series</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-
                 <TouchableOpacity style={[s.reviewBtnGhost, !canProceed() && s.reviewBtnGhostDisabled]}
-                    onPress={() => canProceed() && onNext(schedules.filter(sch => sch.frequency), timezone)}
+                    onPress={() => canProceed() && setShowMultiScheduleInfo(true)}
                     disabled={!canProceed()}>
                     <Text style={s.reviewBtnGhostText}>Review</Text>
-                    <Feather name="arrow-right" size={16} color="#4FD1C5" style={{ marginLeft: 4 }} />
+                    <Feather name="arrow-right" size={16} color="#4A90E2" style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
             </View>
+
+            <Modal visible={showMultiScheduleInfo} transparent animationType="fade" onRequestClose={() => {
+                setShowMultiScheduleInfo(false);
+                onNext(schedules.filter(sch => sch.frequency), timezone);
+            }}>
+                <Pressable style={s.multiScheduleInfoBackdrop} onPress={() => {
+                    setShowMultiScheduleInfo(false);
+                    onNext(schedules.filter(sch => sch.frequency), timezone);
+                }}>
+                    <Pressable style={s.multiScheduleInfoCard} onPress={() => {}}>
+                        <Text style={s.multiScheduleInfoText}>
+                            A group can have multiple schedules for different types of meetups. Add more schedules to this group from {groupName ? `${groupName}'s` : "the group's"} Group Settings.
+                        </Text>
+                        <TouchableOpacity
+                            style={s.multiScheduleInfoBtn}
+                            onPress={() => {
+                                setShowMultiScheduleInfo(false);
+                                onNext(schedules.filter(sch => sch.frequency), timezone);
+                            }}
+                        >
+                            <Text style={s.multiScheduleInfoBtnText}>Got it</Text>
+                        </TouchableOpacity>
+                    </Pressable>
+                </Pressable>
+            </Modal>
 
             <LocationSearchModal
                 visible={isLocationSearchOpen}
@@ -1827,7 +1794,7 @@ const CreateGroupScreen = () => {
     };
 
     if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("schedule"); }} onClose={handleClose} /></SafeAreaView>;
-    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen initialSchedules={schedules} initialTimezone={timezone} onNext={(data, tz) => { setSchedules(data); setTimezone(tz); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedules([]); setStep("review"); }} /></SafeAreaView>;
+    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen groupName={groupName} initialSchedules={schedules} initialTimezone={timezone} onNext={(data, tz) => { setSchedules(data); setTimezone(tz); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedules([]); setStep("review"); }} /></SafeAreaView>;
     if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} groupImage={groupImage} members={[]} schedules={schedules} timezone={timezone} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
     return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} groupName={groupName} onDone={() => router.replace({ pathname: "/(tabs)/groups", params: { promptNotifications: "1" } })} /></SafeAreaView>;
 };
@@ -1844,27 +1811,21 @@ const s = StyleSheet.create({
     screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#F3F4F6", backgroundColor: "#fff", position: "relative" },
     screenTitle: { fontSize: 26, fontWeight: "900", color: "#111827", marginBottom: 4 },
     screenSub: { fontSize: 14, color: "#9CA3AF", marginBottom: 20 },
-    // Opaque background + bottom border so, once pinned by stickyHeaderIndices,
-    // content scrolling up underneath doesn't show through and the pin reads
-    // as a distinct bar rather than tabs floating over the form.
-    tabBar: { flexGrow: 0, marginBottom: 16, backgroundColor: "#F9FAFB", paddingTop: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-    tabBarContent: { flexDirection: "row", alignItems: "center", gap: 8, paddingRight: 8 },
-    scheduleTab: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: "#4A90E2", backgroundColor: "#fff" },
-    scheduleTabActive: { backgroundColor: "#4A90E2" },
-    scheduleTabText: { fontSize: 14, fontWeight: "700", color: "#4A90E2", maxWidth: 140 },
-    scheduleTabTextActive: { color: "#fff" },
-    // Absolutely centered in the footer (dead-center between Skip and Review,
-    // regardless of how wide either of those end up being).
-    addSeriesButton: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
-    addSeriesCircle: { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: "#4A90E2", backgroundColor: "#fff", alignItems: "center", justifyContent: "center", marginBottom: 4 },
-    addSeriesLabel: { fontSize: 11, fontWeight: "700", color: "#4A90E2" },
+    multiScheduleInfoBackdrop: { flex: 1, backgroundColor: "rgba(17,24,39,0.45)", alignItems: "center", justifyContent: "center", padding: 28 },
+    multiScheduleInfoCard: {
+        backgroundColor: "#fff", borderRadius: 18, padding: 20, width: "100%", maxWidth: 360,
+        shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 6,
+    },
+    multiScheduleInfoText: { fontSize: 14, color: "#4B5563", lineHeight: 20, marginBottom: 16 },
+    multiScheduleInfoBtn: { backgroundColor: "#4A90E2", borderRadius: 12, paddingVertical: 12, alignItems: "center" },
+    multiScheduleInfoBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
     iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
     dots: { flexDirection: "row", alignItems: "center", width: "50%", alignSelf: "center" },
     dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: "#E5E7EB", backgroundColor: "#fff" },
     dotActive: { backgroundColor: "#4A90E2", borderColor: "#4A90E2" },
     dotLine: { flex: 1, height: 2, backgroundColor: "#E5E7EB" },
     dotLineFilled: { backgroundColor: "#4A90E2" },
-    bigInput: { fontSize: 22, fontWeight: "700", color: "#111827", borderBottomWidth: 2, borderBottomColor: "#4A90E2", paddingVertical: 12, marginTop: 8 },
+    bigInput: { fontSize: 32, fontWeight: "800", color: "#111827", letterSpacing: -0.3, borderBottomWidth: 2, borderBottomColor: "#4A90E2", paddingVertical: 12, marginTop: 8 },
     inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
     inputRowError: { borderColor: "#EF4444" },
     inlineInput: { flex: 1, fontSize: 15, color: "#374151" },
@@ -1894,7 +1855,7 @@ const s = StyleSheet.create({
     // "I'm In" RSVP button's teal-green (#4FD1C5) rather than the app's usual blue.
     reviewBtnGhost: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 11 },
     reviewBtnGhostDisabled: { opacity: 0.4 },
-    reviewBtnGhostText: { color: "#4FD1C5", fontWeight: "800", fontSize: 15 },
+    reviewBtnGhostText: { color: "#4A90E2", fontWeight: "800", fontSize: 15 },
     primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
     skipBtn: { paddingHorizontal: 16, paddingVertical: 14 },
     skipBtnText: { color: "#9CA3AF", fontWeight: "700", fontSize: 15 },
@@ -1905,17 +1866,14 @@ const s = StyleSheet.create({
     // Groups related fields into bounded cards so the long form reads as scannable chunks
     sectionCard: { backgroundColor: "#fff", borderRadius: 20, borderWidth: 1, borderColor: "#F3F4F6", padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
     sectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
-    sectionIconChip: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-    sectionIconChipBlue: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
-    sectionIconChipAmber: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
-    sectionIconChipViolet: { backgroundColor: "#F5F3FF", borderColor: "#DDD6FE" },
-    sectionIconChipTeal: { backgroundColor: "#ECFDF9", borderColor: "#99E6DA" },
-    sectionIconChipIndigo: { backgroundColor: "#EEF2FF", borderColor: "#C7D2FE" },
-    tzSection: { marginTop: 2, marginBottom: 24 },
-    tzRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    tzPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: "#EEF6FF", borderWidth: 1, borderColor: "#BFDBFE" },
-    tzPillText: { fontSize: 13, fontWeight: "800", color: "#4A90E2" },
+    sectionIconChip: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
     sectionTitle: { fontSize: 16, fontWeight: "900", color: "#111827", letterSpacing: -0.2 },
+    // Hero-style Series Name field — plain white like the rest of the page,
+    // but deliberately un-card-like (no border box, no icon chip header) so
+    // the oversized headline input itself is what signals "name this."
+    nameHero: { backgroundColor: "#fff", borderRadius: 20, borderWidth: 1, borderColor: "#F3F4F6", padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
+    nameHeroInput: { fontSize: 32, fontWeight: "800", color: "#111827", padding: 0, letterSpacing: -0.3 },
+    nameHeroUnderline: { height: 3, borderRadius: 1.5, backgroundColor: "#4A90E2", marginTop: 14 },
     dateFieldRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 13, marginBottom: 4 },
     dateFieldText: { fontSize: 15, color: "#1F2937", fontWeight: "600" },
     startDateLabel: { fontSize: 11, fontWeight: "700", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
@@ -2018,7 +1976,6 @@ const s = StyleSheet.create({
     imagePreview: { width: 160, height: 160, borderRadius: 32 },
     imageEditBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#4A90E2", borderRadius: 14, padding: 6 },
     imagePickerText: { fontSize: 13, fontWeight: "600", color: "#6B7280", marginTop: 6, textAlign: "center" },
-    imagePickerSub: { fontSize: 11, color: "#9CA3AF", textAlign: "center" },
 });
 
 const cal = StyleSheet.create({

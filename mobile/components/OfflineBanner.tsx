@@ -1,13 +1,10 @@
-import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { onlineManager } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsOnline } from '@/hooks/useIsOnline';
 
 export function OfflineBanner() {
-  const [isOnline, setIsOnline] = useState(onlineManager.isOnline());
+  const isOnline = useIsOnline();
   const insets = useSafeAreaInsets();
-
-  useEffect(() => onlineManager.subscribe(setIsOnline), []);
 
   if (isOnline) return null;
 

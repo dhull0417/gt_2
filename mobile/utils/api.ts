@@ -315,12 +315,19 @@ interface VotePollPayload {
 }
 
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
-  const api = axios.create({ 
-    baseURL: API_BASE_URL, 
-    headers: { 
+  const api = axios.create({
+    baseURL: API_BASE_URL,
+    // Bounds every request so a call made with no real connectivity fails
+    // fast (see utils/networkError.ts) instead of hanging indefinitely -
+    // axios has no timeout by default. Mutations that are meant to queue and
+    // wait for reconnect (sendMessage/rsvp/acceptInvite/declineInvite) are
+    // paused by React Query's offline handling before the request is ever
+    // sent, so they're unaffected by this.
+    timeout: 5000,
+    headers: {
       "User-Agent": "GT2MobileApp/1.0",
       "Content-Type": "application/json"
-    } 
+    }
   });
   
   api.interceptors.request.use(async (config) => {

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, groupApi, Schedule } from "../utils/api";
+import { getErrorMessage } from "../utils/networkError";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -30,8 +31,7 @@ export const useUpdateGroup = () => {
       router.back();
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to update group.";
-      Alert.alert("Error", errorMessage);
+      Alert.alert("Error", getErrorMessage(error, "Failed to update group."));
     },
   });
 };

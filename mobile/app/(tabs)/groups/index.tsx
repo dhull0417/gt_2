@@ -17,11 +17,13 @@ import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { TAB_BAR_HEIGHT } from '@/utils/layout';
 import { promptForNotificationPermission } from '@/hooks/usePushNotifications';
+import { useIsOnline } from '@/hooks/useIsOnline';
 
 const GroupScreen = () => {
   const api = useApiClient();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const isOnline = useIsOnline();
   const { promptNotifications } = useLocalSearchParams<{ promptNotifications?: string }>();
 
   // Ask once after group creation, then drop the param so revisiting this tab doesn't re-ask
@@ -108,7 +110,13 @@ const GroupScreen = () => {
   };
 
   return (
-    <SafeAreaView className='flex-1 bg-gray-50' edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      className='flex-1 bg-gray-50'
+      // OfflineBanner already reserves the top safe-area inset for itself
+      // while offline, so this screen would double-reserve it here otherwise
+      // (see hooks/useContentTopInset.ts).
+      edges={isOnline ? ['top', 'left', 'right'] : ['left', 'right']}
+    >
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
         <TouchableOpacity onPress={() => router.push('/notifications')}>
           <Feather name="bell" size={26} color="#4A90E2" />

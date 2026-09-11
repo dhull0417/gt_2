@@ -22,7 +22,7 @@ import { OfflineBanner } from '@/components/OfflineBanner';
 import { WelcomeModal } from '@/components/WelcomeModal';
 import { UpdateNameModal } from '@/components/UpdateNameModal';
 import { setClerkTokenGetter } from '@/utils/authToken';
-import { registerChatMutationDefaults } from '@/utils/chatMutations';
+import { registerChatMutationDefaults, SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
 import { registerOfflineMutationDefaults, RSVP_MUTATION_KEY, ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
 import "../global.css";
 
@@ -64,8 +64,25 @@ const queryClient = new QueryClient({
     // still mounted to see it — unlike a callback passed to useMutation(), this
     // still fires for one resumed in the background after the user has
     // navigated away, or after an app restart.
-    onSuccess: (_data, _variables, _context, mutation) => {
+    onSuccess: (_data, variables, _context, mutation) => {
       switch (mutation.options.mutationKey?.[0]) {
+        case SEND_MESSAGE_MUTATION_KEY[0]: {
+          // Needed for a send that finishes after being paused offline: the
+          // realtime INSERT event only reaches a chat screen that's mounted
+          // and subscribed at the moment it lands, so without this the
+          // message can go missing from the thread even though it made it
+          // to Supabase (it still shows up via the group list's own refetch
+          // of last-message, which is what made this look like a display-only
+          // bug rather than the message failing to send). Skipped for a normal
+          // online send (resolves in well under a second) since realtime's own
+          // INSERT event already delivers those - no need for the extra fetch.
+          const elapsed = Date.now() - mutation.state.submittedAt;
+          if (elapsed > 3000) {
+            const { groupId } = variables as SendMessageVariables;
+            queryClient.invalidateQueries({ queryKey: ['messages', groupId] });
+          }
+          break;
+        }
         case RSVP_MUTATION_KEY[0]:
           queryClient.invalidateQueries({ queryKey: ['meetups'] });
           break;

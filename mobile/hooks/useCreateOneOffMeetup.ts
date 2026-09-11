@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, groupApi } from "../utils/api";
+import { getErrorMessage } from "../utils/networkError";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -25,8 +26,7 @@ export const useCreateOneOffMeetup = () => {
       router.back();
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to schedule meetup.";
-      Alert.alert("Error", errorMessage);
+      Alert.alert("Error", getErrorMessage(error, "Failed to schedule meetup."));
     },
   });
 };

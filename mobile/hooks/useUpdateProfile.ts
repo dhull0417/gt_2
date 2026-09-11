@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, userApi } from "../utils/api";
+import { getErrorMessage } from "../utils/networkError";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import * as SecureStore from 'expo-secure-store';
@@ -33,8 +34,7 @@ export const useUpdateProfile = () => {
       }
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to update profile.";
-      Alert.alert("Error", errorMessage);
+      Alert.alert("Error", getErrorMessage(error, "Failed to update profile."));
     },
   });
 };

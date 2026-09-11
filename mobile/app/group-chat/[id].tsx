@@ -13,7 +13,9 @@ import {
   Pressable,
 } from 'react-native';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useContentTopInset } from '@/hooks/useContentTopInset';
+import { useIsOnline } from '@/hooks/useIsOnline';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
@@ -59,7 +61,8 @@ const GroupChatScreen = () => {
   const { id, promptNotifications } = useLocalSearchParams<{ id: string; promptNotifications?: string }>();
   const [chatHeaderHeight, setChatHeaderHeight] = useState(0);
 
-  const insets = useSafeAreaInsets();
+  const contentTopInset = useContentTopInset();
+  const isOnline = useIsOnline();
   const api = useApiClient();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -421,7 +424,13 @@ const GroupChatScreen = () => {
   const chatContentReady = contentReady && !isLoadingDetails && !!groupDetails && !!currentUser;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: 'white' }}
+      // OfflineBanner (rendered above the root Stack) already reserves the
+      // top safe-area inset for itself while offline, so this screen would
+      // double-reserve it here - drop 'top' in that case (see useContentTopInset).
+      edges={isOnline ? ['top', 'left', 'right', 'bottom'] : ['left', 'right', 'bottom']}
+    >
       <View
         className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200"
         onLayout={(e) => setChatHeaderHeight(e.nativeEvent.layout.height)}
@@ -478,7 +487,7 @@ const GroupChatScreen = () => {
           style={{ flex: 1, opacity: chatContentReady ? 1 : 0 }}
           pointerEvents={chatContentReady ? 'auto' : 'none'}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={insets.top + chatHeaderHeight}
+          keyboardVerticalOffset={contentTopInset + chatHeaderHeight}
         >
           <SectionList
             ref={sectionListRef}

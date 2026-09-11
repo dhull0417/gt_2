@@ -5,6 +5,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/utils/supabase';
 import { SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
 import type { ChatMessage, PendingImage, ReactionResult } from '@/types/chat';
+import { useIsOnline } from '@/hooks/useIsOnline';
 
 // Only the most recent page is fetched/cached — no pagination yet.
 const MESSAGE_PAGE_SIZE = 50;
@@ -19,6 +20,7 @@ export function useMessages(groupId: string) {
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const realtimeClientRef = useRef<ReturnType<typeof getSupabaseClient> | null>(null);
+  const isOnline = useIsOnline();
 
   const fetchMessages = useCallback(async (): Promise<ChatMessage[]> => {
     const token = await getTokenRef.current({ template: 'supabase' });
@@ -246,8 +248,15 @@ export function useMessages(groupId: string) {
   }, [groupId, queryClient, queryKey]);
 
   useEffect(() => {
-    if (!groupId) return;
+    // Also re-runs on reconnect (isOnline flips false -> true): the channel
+    // from before going offline is torn down by this effect's own cleanup,
+    // and a stale/dropped socket wouldn't otherwise resubscribe on its own,
+    // silently missing any INSERT events sent while it was down.
+    if (!groupId || !isOnline) return;
     let active = true;
+    // Catches up on anything missed while disconnected, before the fresh
+    // subscription below is listening.
+    refetch();
     const setupRealtime = async () => {
       const token = await getTokenRef.current({ template: 'supabase' });
       if (!token || !active) return;
@@ -296,7 +305,7 @@ export function useMessages(groupId: string) {
       channelRef.current = null;
       realtimeClientRef.current = null;
     };
-  }, [groupId, queryClient, queryKey]);
+  }, [groupId, isOnline, queryClient, queryKey, refetch]);
 
   return { messages: messagesWithPending, loading, error, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage, refetch };
 }

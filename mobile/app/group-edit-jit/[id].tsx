@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
 import { useApiClient, groupApi } from "../../utils/api";
+import { getErrorMessage } from "../../utils/networkError";
 import NativeTimePicker, { timeStringToDate } from "@/components/NativeTimePicker";
 import InfoBubble from "@/components/InfoBubble";
 
@@ -150,8 +151,7 @@ const EditJitScreen = () => {
                 { text: "OK", onPress: () => router.back() },
             ]);
         } catch (error: any) {
-            const msg = error.response?.data?.error || "Failed to update RSVP settings.";
-            Alert.alert("Error", msg);
+            Alert.alert("Error", getErrorMessage(error, "Failed to update RSVP settings."));
         } finally {
             setIsSaving(false);
         }

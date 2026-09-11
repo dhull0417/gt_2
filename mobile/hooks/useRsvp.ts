@@ -4,6 +4,7 @@ import { Alert } from "react-native";
 import { emitRsvpResponse } from "../utils/rsvpResponseBus";
 import { promptForNotificationPermissionOnFirstRsvpIn } from "./usePushNotifications";
 import { RSVP_MUTATION_KEY, type RsvpVariables } from "../utils/offlineMutations";
+import { useIsOnline } from "./useIsOnline";
 
 // The mutationFn lives in utils/offlineMutations.ts (registered on the
 // QueryClient), not here — see the comment there. The ['meetups'] cache
@@ -13,8 +14,9 @@ import { RSVP_MUTATION_KEY, type RsvpVariables } from "../utils/offlineMutations
 // the case: the popup/notification-prompt has nothing to attach to.
 export const useRsvp = () => {
   const api = useApiClient();
+  const isOnline = useIsOnline();
 
-  return useMutation<unknown, any, RsvpVariables>({
+  const mutation = useMutation<unknown, any, RsvpVariables>({
     mutationKey: RSVP_MUTATION_KEY,
 
     onSuccess: (_data, variables) => {
@@ -26,4 +28,16 @@ export const useRsvp = () => {
       Alert.alert("Error", errorMessage);
     },
   });
+
+  return {
+    ...mutation,
+    // Tapping while offline still queues the RSVP (it's applied once
+    // reconnected, same as before) - this just surfaces feedback so the tap
+    // doesn't look like a no-op, since the only other visible change offline
+    // was the button's own disabled-opacity styling.
+    mutate: (variables: RsvpVariables, options?: Parameters<typeof mutation.mutate>[1]) => {
+      if (!isOnline) Alert.alert("You're offline", "Connect to internet to RSVP.");
+      mutation.mutate(variables, options);
+    },
+  };
 };

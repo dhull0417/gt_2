@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, meetupApi } from "../utils/api";
+import { getErrorMessage } from "../utils/networkError";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -24,8 +25,7 @@ export const useUpdateMeetup = () => {
       router.back();
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to update meetup.";
-      Alert.alert("Error", errorMessage);
+      Alert.alert("Error", getErrorMessage(error, "Failed to update meetup."));
     },
   });
 };
