@@ -25,7 +25,7 @@ import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi, groupApi } from '@/utils/api';
 import { getErrorMessage } from '@/utils/networkError';
-import { useIsOnline } from '@/hooks/useIsOnline';
+import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { formatSchedule } from '@/utils/schedule';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
@@ -52,7 +52,7 @@ const GroupSettings = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-  const isOnline = useIsOnline();
+  const contentTopInset = useContentTopInset();
 
   const { getToken } = useAuth();
   const { data: group, isLoading: isLoadingGroup } = useGetGroupDetails(id);
@@ -537,11 +537,8 @@ const GroupSettings = () => {
 
   return (
     <SafeAreaView
-      style={styles.container}
-      // OfflineBanner already reserves the top safe-area inset for itself
-      // while offline, so this screen would double-reserve it here otherwise
-      // (see hooks/useContentTopInset.ts).
-      edges={isOnline ? ['top', 'left', 'right', 'bottom'] : ['left', 'right', 'bottom']}
+      style={[styles.container, { paddingTop: contentTopInset }]}
+      edges={['left', 'right', 'bottom']}
     >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>

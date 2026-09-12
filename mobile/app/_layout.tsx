@@ -19,6 +19,7 @@ import { syncPermissionsIfChanged } from '@/utils/permissions';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 import { ImageCropperHost } from '@/components/ImageCropperHost';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { OfflineBannerHeightProvider } from '@/contexts/OfflineBannerContext';
 import { WelcomeModal } from '@/components/WelcomeModal';
 import { UpdateNameModal } from '@/components/UpdateNameModal';
 import { setClerkTokenGetter } from '@/utils/authToken';
@@ -322,28 +323,30 @@ const AuthLayout = () => {
   }, [isSignedIn, currentUser?._id]);
 
   return (
-    <View style={{ flex: 1 }}>
-      <OfflineBanner />
-      <WelcomeModal visible={showWelcomeModal} onClose={closeWelcomeModal} />
-      <UpdateNameModal visible={showUpdateNameModal} onClose={() => setNameModalDismissed(true)} />
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
-        <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: false }} />
-        <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
-        <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
-        <Stack.Screen name="group-settings" options={{ headerShown: false }} />
-        <Stack.Screen name="group-chat" options={{ headerShown: false }} />
-        <Stack.Screen name="group-details" options={{ headerShown: false }} />
-        <Stack.Screen name="meetup-edit" options={{ headerShown: false }} />
-        <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />
-        <Stack.Screen name="add-members" options={{ headerShown: false, presentation: 'modal' }} />
-        <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />
-        <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />
-        <Stack.Screen name="join" options={{ headerShown: false }} />
-        <Stack.Screen name="sso-callback" options={{ headerShown: false }} />
-      </Stack>
-    </View>
+    <OfflineBannerHeightProvider>
+      <View style={{ flex: 1 }}>
+        <OfflineBanner />
+        <WelcomeModal visible={showWelcomeModal} onClose={closeWelcomeModal} />
+        <UpdateNameModal visible={showUpdateNameModal} onClose={() => setNameModalDismissed(true)} />
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
+          <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: false }} />
+          <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
+          <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
+          <Stack.Screen name="group-settings" options={{ headerShown: false }} />
+          <Stack.Screen name="group-chat" options={{ headerShown: false }} />
+          <Stack.Screen name="group-details" options={{ headerShown: false }} />
+          <Stack.Screen name="meetup-edit" options={{ headerShown: false }} />
+          <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />
+          <Stack.Screen name="add-members" options={{ headerShown: false, presentation: 'modal' }} />
+          <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />
+          <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />
+          <Stack.Screen name="join" options={{ headerShown: false }} />
+          <Stack.Screen name="sso-callback" options={{ headerShown: false }} />
+        </Stack>
+      </View>
+    </OfflineBannerHeightProvider>
   );
 };

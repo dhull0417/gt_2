@@ -13,7 +13,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { pickAndUploadImage } from '@/utils/uploadImage';
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import { useIsOnline } from '@/hooks/useIsOnline';
+import { useContentTopInset } from '@/hooks/useContentTopInset';
 
 const CALENDAR_OPTIONS = [
   {
@@ -39,7 +39,7 @@ const HomeScreen = () => {
   const api = useApiClient();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const isOnline = useIsOnline();
+  const contentTopInset = useContentTopInset();
   const queryClient = useQueryClient();
   const [photoUploading, setPhotoUploading] = useState(false);
   const [calendarModalVisible, setCalendarModalVisible] = useState(false);
@@ -200,10 +200,8 @@ const HomeScreen = () => {
   return (
     <SafeAreaView
       className='flex-1 bg-gray-100'
-      // OfflineBanner already reserves the top safe-area inset for itself
-      // while offline, so this screen would double-reserve it here otherwise
-      // (see hooks/useContentTopInset.ts).
-      edges={isOnline ? ['top', 'left', 'right'] : ['left', 'right']}
+      edges={['left', 'right']}
+      style={{ paddingTop: contentTopInset }}
     >
       <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
         <Text className="text-xl font-black text-gray-900">

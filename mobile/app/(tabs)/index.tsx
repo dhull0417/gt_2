@@ -16,7 +16,7 @@ import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { TAB_BAR_HEIGHT } from '@/utils/layout';
 import { MeetupCard } from '@/components/MeetupCard';
 import { DayHeader, splitByDay } from '@/components/MeetupDayGroups';
-import { useIsOnline } from '@/hooks/useIsOnline';
+import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { getMeetupStatus } from '@/utils/meetupStatus';
 
 type GroupedMeetups = {
@@ -123,7 +123,7 @@ const DashboardScreen = () => {
   const queryClient = useQueryClient();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const isOnline = useIsOnline();
+  const contentTopInset = useContentTopInset();
   const { openMeetupId } = useLocalSearchParams<{ openMeetupId?: string }>();
   const [selectedMeetup, setSelectedMeetup] = useState<Meetup | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -329,10 +329,8 @@ const DashboardScreen = () => {
   return (
     <SafeAreaView
       className="flex-1 bg-gray-50"
-      // OfflineBanner already reserves the top safe-area inset for itself
-      // while offline, so this screen would double-reserve it here otherwise
-      // (see hooks/useContentTopInset.ts).
-      edges={isOnline ? ['top', 'left', 'right'] : ['left', 'right']}
+      edges={['left', 'right']}
+      style={{ paddingTop: contentTopInset }}
     >
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
         <View style={{ width: 26 }} />
