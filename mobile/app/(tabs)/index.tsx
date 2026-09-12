@@ -3,8 +3,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
+import { useGetGroups } from '@/hooks/useGetGroups';
 import { useRsvp } from '@/hooks/useRsvp';
 import { Meetup, User, useApiClient, userApi, meetupApi } from '@/utils/api';
+import AddMeetupWizard from '@/components/AddMeetupWizard';
 import { useFocusEffect, useRouter, useLocalSearchParams, Link } from 'expo-router';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
@@ -15,6 +17,7 @@ import { TAB_BAR_HEIGHT } from '@/utils/layout';
 import { MeetupCard } from '@/components/MeetupCard';
 import { DayHeader, splitByDay } from '@/components/MeetupDayGroups';
 import { useIsOnline } from '@/hooks/useIsOnline';
+import { getMeetupStatus } from '@/utils/meetupStatus';
 
 type GroupedMeetups = {
   'Upcoming': Meetup[];
@@ -128,6 +131,9 @@ const DashboardScreen = () => {
   const { data: meetups, isLoading, isError, refetch } = useGetMeetups();
   const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
   const { mutate: rsvp, isPending: isRsvping } = useRsvp();
+  const { data: groups } = useGetGroups();
+  const meetupCapableGroups = useMemo(() => (groups ?? []).filter(g => !g.isDM), [groups]);
+  const [addMeetupVisible, setAddMeetupVisible] = useState(false);
   const [hiddenMeetupIds, setHiddenMeetupIds] = useState<Set<string>>(new Set());
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string>>(new Set());
@@ -174,8 +180,8 @@ const DashboardScreen = () => {
   const upcomingVisibleMeetupIds = useMemo(() => {
     if (!meetups) return new Set<string>();
     const candidates = meetups.filter(meetup => {
-      const isPast = new Date(meetup.date) < new Date();
-      return meetup.status === 'scheduled' && !isPast;
+      const { isExpired } = getMeetupStatus(meetup);
+      return meetup.status === 'scheduled' && !isExpired;
     });
     return new Set(capMeetupsByFrequency(candidates).map(m => m._id));
   }, [meetups]);
@@ -183,10 +189,10 @@ const DashboardScreen = () => {
   const allUndecidedMeetups = useMemo(() => {
     if (!meetups || !currentUser) return [];
     return meetups.filter(meetup => {
-      const isPast = new Date(meetup.date) < new Date();
+      const { isExpired } = getMeetupStatus(meetup);
       const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
       const isRsvpDeadlinePassed = meetup.rsvpCloseDate ? new Date(meetup.rsvpCloseDate) < new Date() : false;
-      return meetup.status === 'scheduled' && !isPast && !isRsvpLocked && !isRsvpDeadlinePassed
+      return meetup.status === 'scheduled' && !isExpired && !isRsvpLocked && !isRsvpDeadlinePassed
         && meetup.undecided.includes(currentUser._id)
         && upcomingVisibleMeetupIds.has(meetup._id);
     });
@@ -239,8 +245,8 @@ const DashboardScreen = () => {
 
     meetups.forEach(meetup => {
       if (hiddenGroupIds.has(meetup.group._id)) return;
-      const isPast = new Date(meetup.date) < new Date();
-      if (meetup.status === 'expired' || isPast) {
+      const { isExpired } = getMeetupStatus(meetup);
+      if (isExpired) {
         groups['Past Week'].push(meetup);
       } else {
         upcomingCandidates.push(meetup);
@@ -328,8 +334,15 @@ const DashboardScreen = () => {
       // (see hooks/useContentTopInset.ts).
       edges={isOnline ? ['top', 'left', 'right'] : ['left', 'right']}
     >
-      <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
+      <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
+        <View style={{ width: 26 }} />
         <Text className="text-xl font-black text-gray-900">Meetups</Text>
+        <TouchableOpacity
+          onPress={() => setAddMeetupVisible(true)}
+          style={{ alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Feather name="plus-circle" size={26} color="#4A90E2" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView className="p-4" contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}>
@@ -589,7 +602,22 @@ const DashboardScreen = () => {
         </Animated.View>
       )}
 
-      <RsvpResponseOverlay />
+      {/* MeetupDetailModal renders its own instance while open (a nested RN
+          Modal can fail to present on iOS), so skip this one then to avoid
+          both firing off the same RSVP and showing the burst twice. */}
+      {!isModalVisible && <RsvpResponseOverlay />}
+
+      <AddMeetupWizard
+        visible={addMeetupVisible}
+        onClose={() => setAddMeetupVisible(false)}
+        groupPickerMode={{
+          groups: meetupCapableGroups,
+          onMeetupCreated: (groupId) => {
+            setAddMeetupVisible(false);
+            router.push({ pathname: '/add-members/[id]', params: { id: groupId } });
+          },
+        }}
+      />
     </SafeAreaView>
   );
 };

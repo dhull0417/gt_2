@@ -96,6 +96,8 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
             }
             case 'meetup-cancelled':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> cancelled <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'meetup-restored':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> restored <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-rsvp-reminder':
                 return <Text style={styles.messageText}>Don't forget to RSVP for <Text style={styles.bold}>{meetupName || 'the meetup'}</Text>!</Text>;
             case 'meetup-rsvp-open':
@@ -114,6 +116,15 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
     const handlePress = () => {
         // The user is no longer a member, so the group details screen isn't reachable.
         if (notification.type === 'group-removed') return;
+        // Meetup-related notifications deep-link straight to that meetup's detail
+        // modal — mirrors the OS push-tap handling in usePushNotifications.ts.
+        if (notification.meetup?._id) {
+            router.push({
+                pathname: '/(tabs)',
+                params: { openMeetupId: notification.meetup._id }
+            });
+            return;
+        }
         if (notification.group?._id) {
             // See the matching branch in group-chat/[id].tsx's handleOpenDetails.
             if (Platform.OS === 'ios') {

@@ -32,9 +32,12 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { useMessages } from '@/hooks/useMessages';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
-import { ChatMessageBubble } from '@/components/ChatMessageBubble';
+import { ChatMessageBubble, type BubbleLayout } from '@/components/ChatMessageBubble';
 import { ChatMessageInput } from '@/components/ChatMessageInput';
 import { ChatDayBubble } from '@/components/ChatDayBubble';
+import { ChatTypingBubble } from '@/components/ChatTypingBubble';
+import { ChatScrollToBottomButton } from '@/components/ChatScrollToBottomButton';
+import { ChatActionPanel } from '@/components/ChatActionPanel';
 import { ChatImageViewer } from '@/components/ChatImageViewer';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { GroupCalendarButton } from '@/components/GroupCalendarButton';
@@ -52,8 +55,6 @@ interface ChatDaySection {
   title: string;
   data: ChatMessage[];
 }
-
-const REACTIONS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
 
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
@@ -112,6 +113,9 @@ const GroupChatScreen = () => {
   }, [groupDetails, currentUser]);
 
   const isDM = groupDetails?.isDM ?? fallbackGroup?.isDM ?? false;
+
+  // Any group member (implicit by being in this chat) can create a one-off meetup or a poll.
+  const canCreateEvent = !isDM;
 
   const isMutedUntilNext = useMemo(() => {
     if (!id || !currentUser) return false;
@@ -241,6 +245,7 @@ const GroupChatScreen = () => {
   };
 
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
+  const [selectedMessageLayout, setSelectedMessageLayout] = useState<BubbleLayout | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [editText, setEditText] = useState('');
@@ -275,6 +280,29 @@ const GroupChatScreen = () => {
   // Gates first paint so a freshly opened chat never visibly animates down from the oldest message
   const [contentReady, setContentReady] = useState(false);
 
+  // --- Scroll-to-bottom FAB: only auto-scroll on new messages while already near the bottom;
+  // otherwise surface the button with an unread count instead of yanking the view down.
+  const NEAR_BOTTOM_THRESHOLD = 120;
+  const isNearBottomRef = useRef(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const handleListScroll = useCallback((e: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+    const nearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
+    isNearBottomRef.current = nearBottom;
+    setShowScrollToBottom(!nearBottom);
+    if (nearBottom) setUnreadCount(0);
+  }, []);
+
+  const handleScrollToBottomPress = useCallback(() => {
+    isNearBottomRef.current = true;
+    setUnreadCount(0);
+    setShowScrollToBottom(false);
+    scrollToBottom(true);
+  }, []);
+
   useEffect(() => {
     setContentReady(false);
   }, [id]);
@@ -298,10 +326,15 @@ const GroupChatScreen = () => {
     if (!loading && messages.length === 0) setContentReady(true);
   }, [loading, messages.length]);
 
-  // Once visibly open, new messages get the usual animated scroll-into-view
+  // Once visibly open, new messages get the usual animated scroll-into-view —
+  // but only when the user is already near the bottom; otherwise surface the FAB instead.
   useEffect(() => {
     if (!contentReady) return;
-    scrollToBottom(true);
+    if (isNearBottomRef.current) {
+      scrollToBottom(true);
+    } else {
+      setUnreadCount((c) => c + 1);
+    }
   }, [messages.length, contentReady, scrollToBottom]);
 
   // Re-anchor on list height change — the real signal a keyboard-driven resize has landed,
@@ -317,6 +350,10 @@ const GroupChatScreen = () => {
     if (!id) return;
     const currentReply = replyingTo;
     setReplyingTo(null);
+    // Sending your own message always snaps the view to it, regardless of prior scroll position.
+    isNearBottomRef.current = true;
+    setShowScrollToBottom(false);
+    setUnreadCount(0);
     try {
       await sendMessage(
         text,
@@ -360,10 +397,15 @@ const GroupChatScreen = () => {
     }
   };
 
+  const closeActionPanel = () => {
+    setSelectedMessage(null);
+    setSelectedMessageLayout(null);
+  };
+
   const handleReact = async (emoji: string) => {
     if (!selectedMessage || !id) return;
     const target = selectedMessage;
-    setSelectedMessage(null);
+    closeActionPanel();
     try {
       const result = await addReaction(target.id, emoji, senderId);
       if (result.action !== 'removed') {
@@ -380,14 +422,14 @@ const GroupChatScreen = () => {
   const handleReplyOpen = () => {
     if (!selectedMessage) return;
     setReplyingTo(selectedMessage);
-    setSelectedMessage(null);
+    closeActionPanel();
   };
 
   const handleEditOpen = () => {
     if (!selectedMessage) return;
     setEditText(selectedMessage.content);
     setEditingMessage(selectedMessage);
-    setSelectedMessage(null);
+    closeActionPanel();
   };
 
   const handleEditSave = async () => {
@@ -406,7 +448,7 @@ const GroupChatScreen = () => {
   const handleDeleteConfirm = () => {
     if (!selectedMessage) return;
     const target = selectedMessage;
-    setSelectedMessage(null);
+    closeActionPanel();
     Alert.alert('Delete Message', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
@@ -489,36 +531,47 @@ const GroupChatScreen = () => {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={contentTopInset + chatHeaderHeight}
         >
-          <SectionList
-            ref={sectionListRef}
-            style={{ flex: 1 }}
-            sections={sections}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <ChatMessageBubble
-                message={item}
-                isOwn={item.sender_id === senderId}
-                currentUserId={senderId}
-                onLongPress={() => setSelectedMessage(item)}
-                onReactionLongPress={() => setReactionDetailMessage(item)}
-                onImagePress={(url, width, height) => setFullscreenImage({ url, width, height })}
-                onPendingPress={() => handlePendingPress(item)}
-              />
-            )}
-            renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}
-            stickySectionHeadersEnabled
-            contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}
-            ListEmptyComponent={
-              <View style={chatStyles.center}>
-                <Text style={{ color: '#9CA3AF', fontSize: 15 }}>No messages yet. Say hello!</Text>
-              </View>
-            }
-            onContentSizeChange={() => scrollToBottom(false)}
-            onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
-          />
+          <View style={{ flex: 1, position: 'relative' }}>
+            <SectionList
+              ref={sectionListRef}
+              style={{ flex: 1 }}
+              sections={sections}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <ChatMessageBubble
+                  message={item}
+                  isOwn={item.sender_id === senderId}
+                  currentUserId={senderId}
+                  isHighlighted={selectedMessage?.id === item.id}
+                  onLongPress={(layout) => { setSelectedMessage(item); setSelectedMessageLayout(layout); }}
+                  onReactionLongPress={() => setReactionDetailMessage(item)}
+                  onImagePress={(url, width, height) => setFullscreenImage({ url, width, height })}
+                  onPendingPress={() => handlePendingPress(item)}
+                  onSwipeReply={() => setReplyingTo(item)}
+                />
+              )}
+              renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}
+              stickySectionHeadersEnabled
+              contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}
+              ListEmptyComponent={
+                <View style={chatStyles.center}>
+                  <Text style={{ color: '#9CA3AF', fontSize: 15 }}>No messages yet. Say hello!</Text>
+                </View>
+              }
+              onContentSizeChange={() => scrollToBottom(false)}
+              onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
+              onScroll={handleListScroll}
+              scrollEventThrottle={16}
+            />
+            <ChatScrollToBottomButton
+              visible={showScrollToBottom}
+              unreadCount={unreadCount}
+              onPress={handleScrollToBottomPress}
+            />
+          </View>
 
-          <View style={{ minHeight: 20, paddingHorizontal: 16, justifyContent: 'center' }}>
-            {typingLabel ? <Text style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>{typingLabel}</Text> : null}
+          <View style={{ minHeight: 20, paddingHorizontal: 12, justifyContent: 'center' }}>
+            {typingLabel ? <ChatTypingBubble label={typingLabel} /> : null}
           </View>
 
           {replyingTo && (
@@ -597,8 +650,8 @@ const GroupChatScreen = () => {
           <ChatMessageInput
             onSend={handleSend}
             onTyping={handleTyping}
-            onCreateEvent={canManageGroup && !isDM ? () => setMeetupWizardVisible(true) : undefined}
-            onCreatePoll={canManageGroup && !isDM ? () => setCreatePollVisible(true) : undefined}
+            onCreateEvent={canCreateEvent ? () => setMeetupWizardVisible(true) : undefined}
+            onCreatePoll={!isDM ? () => setCreatePollVisible(true) : undefined}
           />
         </KeyboardAvoidingView>
 
@@ -615,44 +668,21 @@ const GroupChatScreen = () => {
           stack and the second one silently fails to appear, so only one can
           be visible at a time. selectedMessage itself stays set so handleReact
           still has its target once an emoji is picked. */}
-      <Modal visible={!!selectedMessage && !emojiPickerVisible} transparent animationType="fade" onRequestClose={() => setSelectedMessage(null)}>
-        <Pressable style={chatStyles.overlay} onPress={() => setSelectedMessage(null)}>
-          <View style={chatStyles.actionPanel}>
-            {!isDeletedSelected && (
-              <View style={chatStyles.emojiRow}>
-                {REACTIONS.map((emoji) => (
-                  <TouchableOpacity key={emoji} style={chatStyles.emojiBtn} onPress={() => handleReact(emoji)} activeOpacity={0.7}>
-                    <Text style={{ fontSize: 28 }}>{emoji}</Text>
-                  </TouchableOpacity>
-                ))}
-                <TouchableOpacity style={chatStyles.emojiBtn} onPress={() => setEmojiPickerVisible(true)} activeOpacity={0.7}>
-                  <Feather name="plus-circle" size={26} color="#9CA3AF" />
-                </TouchableOpacity>
-              </View>
-            )}
-            {!isDeletedSelected && (
-              <>
-                <View style={chatStyles.divider} />
-                <TouchableOpacity style={chatStyles.actionRow} onPress={handleReplyOpen}>
-                  <Text style={chatStyles.actionLabel}>Reply</Text>
-                </TouchableOpacity>
-              </>
-            )}
-            {isOwnSelected && (
-              <>
-                <View style={chatStyles.divider} />
-                {!isDeletedSelected && (
-                  <TouchableOpacity style={chatStyles.actionRow} onPress={handleEditOpen}>
-                    <Text style={chatStyles.actionLabel}>Edit</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity style={chatStyles.actionRow} onPress={handleDeleteConfirm}>
-                  <Text style={[chatStyles.actionLabel, { color: '#EF4444' }]}>Delete</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </Pressable>
+      <Modal visible={!!selectedMessage && !emojiPickerVisible} transparent animationType="none" onRequestClose={closeActionPanel}>
+        <ChatActionPanel
+          anchor={selectedMessageLayout}
+          isOwn={isOwnSelected}
+          showReactions={!isDeletedSelected}
+          onReact={handleReact}
+          onOpenEmojiPicker={() => setEmojiPickerVisible(true)}
+          showReply={!isDeletedSelected}
+          onReply={handleReplyOpen}
+          showEdit={isOwnSelected && !isDeletedSelected}
+          onEdit={handleEditOpen}
+          showDelete={isOwnSelected}
+          onDelete={handleDeleteConfirm}
+          onClose={closeActionPanel}
+        />
       </Modal>
 
       <EmojiPicker
@@ -771,6 +801,10 @@ const GroupChatScreen = () => {
           visible={meetupWizardVisible}
           onClose={() => setMeetupWizardVisible(false)}
           groupDetails={groupDetails}
+          onMeetupCreated={(groupId) => {
+            setMeetupWizardVisible(false);
+            router.push({ pathname: '/add-members/[id]', params: { id: groupId } });
+          }}
         />
       )}
 
@@ -867,12 +901,6 @@ const styles = StyleSheet.create({
 const chatStyles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  actionPanel: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', width: '100%', maxWidth: 360, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
-  emojiRow: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 8, paddingVertical: 12 },
-  emojiBtn: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E7EB' },
-  actionRow: { paddingVertical: 16, paddingHorizontal: 20 },
-  actionLabel: { fontSize: 16, color: '#111827', fontWeight: '600' },
   detailPanel: { backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 360, maxHeight: '70%', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
   nextEventBarRow: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#DBEAFE' },
   nextEventBarHalf: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 8 },

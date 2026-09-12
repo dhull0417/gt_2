@@ -1,11 +1,17 @@
-import { useState } from 'react';
-import { View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Image, Alert, Modal, Pressable } from 'react-native';
+import { useRef, useState } from 'react';
+import { View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Image, Alert, Animated, LayoutAnimation, Platform, UIManager } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@clerk/expo';
 import { ensurePhotoLibraryPermission, uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
 import { useApiClient } from '@/utils/api';
 import type { PendingImage } from '@/types/chat';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const TRAY_LAYOUT_ANIM = LayoutAnimation.create(180, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity);
 
 interface Props {
   onSend: (text: string, image?: PendingImage) => Promise<void>;
@@ -20,7 +26,30 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   const [text, setText] = useState('');
   const [pendingImage, setPendingImage] = useState<{ localUri: string; uploaded?: PendingImage } | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [attachMenuVisible, setAttachMenuVisible] = useState(false);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const attachAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleAttachMenu = () => {
+    const next = !attachMenuOpen;
+    LayoutAnimation.configureNext(TRAY_LAYOUT_ANIM);
+    setAttachMenuOpen(next);
+    Animated.timing(attachAnim, {
+      toValue: next ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeAttachMenu = () => {
+    if (!attachMenuOpen) return;
+    LayoutAnimation.configureNext(TRAY_LAYOUT_ANIM);
+    setAttachMenuOpen(false);
+    Animated.timing(attachAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  };
 
   const pickImage = async () => {
     const hasPermission = await ensurePhotoLibraryPermission(api);
@@ -68,6 +97,8 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
     onSend(trimmed, image).catch(() => {});
   };
 
+  const plusRotation = attachAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] });
+
   return (
     <View>
       {pendingImage && (
@@ -88,20 +119,63 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
         </View>
       )}
 
+      {attachMenuOpen && (
+        <View style={styles.tray}>
+          <View style={styles.trayRow}>
+            <TouchableOpacity
+              style={styles.trayItem}
+              onPress={() => { closeAttachMenu(); pickImage(); }}
+            >
+              <View style={[styles.trayIconWrap, { backgroundColor: '#EFF6FF' }]}>
+                <Feather name="image" size={20} color="#4A90E2" />
+              </View>
+              <Text style={styles.trayItemLabel}>Photos</Text>
+            </TouchableOpacity>
+
+            {onCreateEvent && (
+              <TouchableOpacity
+                style={styles.trayItem}
+                onPress={() => { closeAttachMenu(); onCreateEvent(); }}
+              >
+                <View style={[styles.trayIconWrap, { backgroundColor: '#ECFDF5' }]}>
+                  <Feather name="calendar" size={20} color="#10B981" />
+                </View>
+                <Text style={styles.trayItemLabel}>Event</Text>
+              </TouchableOpacity>
+            )}
+
+            {onCreatePoll && (
+              <TouchableOpacity
+                style={styles.trayItem}
+                onPress={() => { closeAttachMenu(); onCreatePoll(); }}
+              >
+                <View style={[styles.trayIconWrap, { backgroundColor: '#F5F3FF' }]}>
+                  <Feather name="bar-chart-2" size={20} color="#7C3AED" />
+                </View>
+                <Text style={styles.trayItemLabel}>Poll</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
+
       <View style={styles.container}>
         <TouchableOpacity
           style={styles.photoBtn}
-          onPress={() => setAttachMenuVisible(true)}
+          onPress={toggleAttachMenu}
           disabled={uploading}
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
-          <Feather name="plus-circle" size={24} color={uploading ? '#D1D5DB' : '#4A90E2'} />
+          <Animated.View style={{ transform: [{ rotate: plusRotation }] }}>
+            <Feather name="plus-circle" size={24} color={uploading ? '#D1D5DB' : '#4A90E2'} />
+          </Animated.View>
         </TouchableOpacity>
 
         <TextInput
           style={styles.input}
           value={text}
           onChangeText={(val) => { setText(val); if (val) onTyping?.(); }}
+          onFocus={closeAttachMenu}
           placeholder="Message..."
           placeholderTextColor="#9CA3AF"
           multiline
@@ -117,58 +191,6 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
           <Text style={styles.sendLabel}>Send</Text>
         </TouchableOpacity>
       </View>
-
-      <Modal
-        visible={attachMenuVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setAttachMenuVisible(false)}
-      >
-        <Pressable style={styles.sheetBackdrop} onPress={() => setAttachMenuVisible(false)}>
-          <Pressable style={styles.sheetCard}>
-            <TouchableOpacity
-              style={styles.sheetRow}
-              onPress={() => { setAttachMenuVisible(false); pickImage(); }}
-            >
-              <View style={[styles.sheetIconWrap, { backgroundColor: '#EFF6FF' }]}>
-                <Feather name="image" size={20} color="#4A90E2" />
-              </View>
-              <Text style={styles.sheetRowLabel}>Photos</Text>
-            </TouchableOpacity>
-
-            {onCreateEvent && (
-              <TouchableOpacity
-                style={styles.sheetRow}
-                onPress={() => { setAttachMenuVisible(false); onCreateEvent(); }}
-              >
-                <View style={[styles.sheetIconWrap, { backgroundColor: '#ECFDF5' }]}>
-                  <Feather name="calendar" size={20} color="#10B981" />
-                </View>
-                <Text style={styles.sheetRowLabel}>Event</Text>
-              </TouchableOpacity>
-            )}
-
-            {onCreatePoll && (
-              <TouchableOpacity
-                style={styles.sheetRow}
-                onPress={() => { setAttachMenuVisible(false); onCreatePoll(); }}
-              >
-                <View style={[styles.sheetIconWrap, { backgroundColor: '#F5F3FF' }]}>
-                  <Feather name="bar-chart-2" size={20} color="#7C3AED" />
-                </View>
-                <Text style={styles.sheetRowLabel}>Poll</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={styles.sheetCancelBtn}
-              onPress={() => setAttachMenuVisible(false)}
-            >
-              <Text style={styles.sheetCancelLabel}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
@@ -238,47 +260,31 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: '#B0C4E8' },
   sendLabel: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  sheetCard: {
+  tray: {
+    overflow: 'hidden',
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingTop: 8,
-    paddingBottom: 34,
-    paddingHorizontal: 16,
   },
-  sheetRow: {
+  trayRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
-  sheetIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  trayItem: {
+    alignItems: 'center',
+    marginRight: 24,
+  },
+  trayIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
+    marginBottom: 4,
   },
-  sheetRowLabel: {
-    fontSize: 16,
+  trayItemLabel: {
+    fontSize: 12,
     fontWeight: '600',
-    color: '#111827',
-  },
-  sheetCancelBtn: {
-    marginTop: 8,
-    paddingVertical: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E5E7EB',
-    alignItems: 'center',
-  },
-  sheetCancelLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6B7280',
+    color: '#374151',
   },
 });

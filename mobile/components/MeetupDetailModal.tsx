@@ -14,7 +14,8 @@ import {
     Platform,
     Pressable,
     Linking,
-    Dimensions
+    Dimensions,
+    Share
 } from 'react-native';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import VideoServiceIcon from './VideoServiceIcon';
@@ -33,6 +34,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/utils/api';
+import { getMeetupStatus } from '@/utils/meetupStatus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
@@ -265,9 +267,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         ? groupData.moderators.some((m: any) => typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id)
         : false;
 
-    const isCancelled = meetup.status === 'cancelled';
-    const isPast = new Date(meetup.date) < new Date(); 
-    const isExpired = meetup.status === 'expired' || isPast;
+    const { isCancelled, isExpired, isHappeningNow } = getMeetupStatus(meetup);
 
     const isRsvpLocked = meetup.rsvpOpenDate
     ? new Date(meetup.rsvpOpenDate) > new Date()
@@ -280,6 +280,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     // Controls all "adjustment" UI
     const isReadOnly = isCancelled || isExpired;
     const canManage = (isOwner || isMod) && !isReadOnly;
+
+    // Whoever created this one-off meetup can also edit/cancel it, even without owner/mod
+    // status — but NOT override other members' RSVPs or send reminders (canManage handles those).
+    const createdBy = (meetup as any).createdBy;
+    const isCreator = !!createdBy && (typeof createdBy === 'string' ? createdBy === currentUser._id : createdBy._id === currentUser._id);
+    const canEditOrCancel = (isOwner || isMod || isCreator) && !isReadOnly;
+    // A cancelled (but not yet expired) meetup can still be restored by the same
+    // set of people who could cancel it — unlike canEditOrCancel, this stays true
+    // while isCancelled so the "Reactivate" action remains reachable.
+    const canCancelOrRestore = (isOwner || isMod || isCreator) && !isExpired;
 
     // Owner can override any RSVP; a moderator can override only regular members.
     const canManageTarget = (target: User): boolean =>
@@ -485,6 +495,17 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         });
     };
 
+    const handleInviteToMeetup = async () => {
+        try {
+            const { link } = await groupApi.generateInviteLink(api, meetup.group._id);
+            await Share.share({
+                message: `Join me for "${meetup.name}" on GroupThat!\n\nSTEP 1 — Download the app:\n→ https://invite.groupthatapp.com/download\n\nSTEP 2 — Join the group:\n→ ${link}`,
+            });
+        } catch {
+            Alert.alert('Error', 'Could not create invite link. Please try again.');
+        }
+    };
+
     const handleSendDM = async () => {
         if (!dmTargetUser) return;
         setIsCreatingDM(true);
@@ -654,18 +675,31 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     );
 
     const handleCancelMeetup = () => {
-        if (isReadOnly && !isCancelled) return; // Can't cancel if already ended
+        if (isExpired) return; // Can't cancel or restore an ended meetup
         const action = isCancelled ? "Reactivate" : "Cancel";
         Alert.alert(`${action} Meetup`, `Are you sure?`, [
             { text: "No", style: "cancel" },
-            { 
-                text: "Yes", 
-                style: isCancelled ? "default" : "destructive", 
+            {
+                text: "Yes",
+                style: isCancelled ? "default" : "destructive",
                 onPress: async () => {
                     try {
-                        await meetupApi.cancelMeetup(api, meetup._id);
+                        const newStatus = isCancelled ? 'scheduled' : 'cancelled';
+                        if (isCancelled) {
+                            await meetupApi.restoreMeetup(api, meetup._id);
+                        } else {
+                            await meetupApi.cancelMeetup(api, meetup._id);
+                        }
+
+                        // Apply the new status immediately — invalidateQueries alone leaves
+                        // the card/modal showing the old status until the background
+                        // refetch lands, which can take a beat (or longer offline).
+                        setMeetup(prev => prev ? { ...prev, status: newStatus } : prev);
+                        queryClient.setQueryData<Meetup[]>(['meetups'], (old) =>
+                            old?.map(m => m._id === meetup._id ? { ...m, status: newStatus } : m)
+                        );
                         queryClient.invalidateQueries({ queryKey: ['meetups'] });
-                        if (!isCancelled) onClose(); 
+                        if (!isCancelled) onClose();
                     } catch (e: any) {
                         Alert.alert("Error", e.response?.data?.error || e.message);
                     }
@@ -715,9 +749,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 <View style={{ marginBottom: showRsvpSelector ? 32 : 14 }}>
                     {isCancelled && (
-                        <View style={styles.cancelBanner}>
-                            <Feather name="alert-triangle" size={18} color="#B91C1C" />
-                            <Text style={styles.cancelBannerText}>Meetup Cancelled</Text>
+                        <View style={[styles.cancelBanner, { justifyContent: 'space-between' }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Feather name="alert-triangle" size={18} color="#B91C1C" />
+                                <Text style={styles.cancelBannerText}>Meetup Cancelled</Text>
+                            </View>
+                            {canCancelOrRestore && (
+                                <TouchableOpacity onPress={handleCancelMeetup} style={styles.reactivateBannerBtn}>
+                                    <Text style={styles.reactivateBannerBtnText}>Reactivate</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                     )}
                     {isExpired && !isCancelled && (
@@ -726,7 +767,13 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             <Text style={[styles.cancelBannerText, { color: '#6B7280' }]}>This Meetup Has Ended</Text>
                         </View>
                     )}
-                    
+                    {isHappeningNow && (
+                        <View style={[styles.cancelBanner, { backgroundColor: '#F0FDFB', borderColor: '#99F6E4' }]}>
+                            <Feather name="radio" size={18} color="#0F766E" />
+                            <Text style={[styles.cancelBannerText, { color: '#0F766E' }]}>Meetup Happening Right Now</Text>
+                        </View>
+                    )}
+
                     <View style={{ marginTop: 8, marginBottom: 18 }}>
                         {isIn && (
                             <PulsingWatermark label="IN" style={styles.inWatermark} baseOpacity={0.32} peakOpacity={0.55} />
@@ -970,12 +1017,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     )}
                 </Animated.View>
 
-                {canManage && (
+                {canCancelOrRestore && !isCancelled && (
                     <View style={styles.ownerSection}>
-                        <TouchableOpacity onPress={handleCancelMeetup} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4A90E2', borderColor: '#4A90E2' }]}>
-                            <Text style={[styles.cancelToggleText, isCancelled && { color: 'white' }]}>
-                                {isCancelled ? "Reactivate Meetup" : "Cancel This Meetup"}
-                            </Text>
+                        <TouchableOpacity onPress={handleCancelMeetup} style={styles.cancelToggle}>
+                            <Text style={styles.cancelToggleText}>Cancel This Meetup</Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -988,7 +1033,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         {actionsMenuAnchor && (
                             <View style={[styles.actionsMenuPointer, { left: actionsMenuAnchor.pointerLeft }]} />
                         )}
-                        {canManage && (
+                        {canEditOrCancel && (
                             <>
                                 <TouchableOpacity
                                     style={styles.actionsMenuItem}
@@ -1020,6 +1065,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Feather name="message-circle" size={18} color="#0EA5E9" />
                             </View>
                             <Text style={styles.actionsMenuLabel}>Go to Chat</Text>
+                        </TouchableOpacity>
+                        <View style={styles.actionsMenuDivider} />
+                        <TouchableOpacity
+                            style={styles.actionsMenuItem}
+                            onPress={() => { setIsActionsMenuVisible(false); handleInviteToMeetup(); }}
+                        >
+                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#ECFDF5' }]}>
+                                <Feather name="user-plus" size={18} color="#0D9488" />
+                            </View>
+                            <Text style={styles.actionsMenuLabel}>Invite to Meetup</Text>
                         </TouchableOpacity>
                         <View style={styles.actionsMenuDivider} />
                         <TouchableOpacity
@@ -1095,7 +1150,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             <View style={styles.detailSeparator} />
                             <View style={styles.detailItem}>
                                 <Text style={styles.detailLabel}>Status</Text>
-                                <Text style={styles.detailValue}>{isCancelled ? "Cancelled" : isExpired ? "Ended" : "Upcoming"}</Text>
+                                <Text style={styles.detailValue}>{isCancelled ? "Cancelled" : isExpired ? "Ended" : isHappeningNow ? "Happening Now" : "Upcoming"}</Text>
                             </View>
                         </View>
                     </View>
@@ -1314,6 +1369,8 @@ const styles = StyleSheet.create({
     content: { flex: 1, padding: 24 },
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
+    reactivateBannerBtn: { backgroundColor: '#4A90E2', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12, marginLeft: 8 },
+    reactivateBannerBtnText: { color: 'white', fontWeight: '800', fontSize: 11, textTransform: 'uppercase' },
     meetupTitle: { fontSize: 26, fontWeight: '900', color: '#111827', letterSpacing: -0.5, lineHeight: 30, marginBottom: 4, textAlign: 'center' },
     meetupFrequencyLabel: {
         position: 'absolute',

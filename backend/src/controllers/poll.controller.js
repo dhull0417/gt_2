@@ -14,7 +14,7 @@ const POLL_POPULATE = [
 ];
 
 /**
- * @desc    Create a new poll (Owner/Moderator Only)
+ * @desc    Create a new poll (Any group member)
  * @route   POST /api/polls
  */
 export const createPoll = asyncHandler(async (req, res) => {
@@ -29,7 +29,8 @@ export const createPoll = asyncHandler(async (req, res) => {
     const group = await Group.findById(groupId);
     if (!requester || !group) return res.status(404).json({ error: "Resource not found." });
 
-    if (!canManageGroup(requester._id, group)) {
+    const isMember = group.members?.some(m => m.toString() === requester._id.toString());
+    if (!isMember) {
         return res.status(403).json({ error: "Permission denied." });
     }
 
@@ -150,7 +151,7 @@ export const votePoll = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Cancel an active poll (Owner/Moderator Only)
+ * @desc    Cancel an active poll (Owner/Moderator, or the poll's own creator)
  * @route   PATCH /api/polls/:pollId/cancel
  */
 export const cancelPoll = asyncHandler(async (req, res) => {
@@ -165,7 +166,8 @@ export const cancelPoll = asyncHandler(async (req, res) => {
     const poll = await Poll.findById(pollId).populate('group');
     if (!requester || !poll) return res.status(404).json({ error: "Resource not found." });
 
-    if (!canManageGroup(requester._id, poll.group)) {
+    const isCreator = poll.creator.toString() === requester._id.toString();
+    if (!isCreator && !canManageGroup(requester._id, poll.group)) {
         return res.status(403).json({ error: "Permission denied." });
     }
 

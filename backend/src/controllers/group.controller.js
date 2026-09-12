@@ -780,7 +780,8 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
-    if (!canManageGroup(requester._id, group)) return res.status(403).json({ error: "Permission denied." });
+    const isMember = group.members.some(id => id.toString() === requester._id.toString());
+    if (!isMember) return res.status(403).json({ error: "Permission denied." });
 
     const meetupDate = calculateNextMeetupDate(date, time, timezone, 'once');
     if (meetupDate < new Date()) return res.status(400).json({ error: "Cannot schedule in the past." });
@@ -804,6 +805,7 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
         capacity: capacity !== undefined ? capacity : fallbackCapacity,
         isOverride: true,
         startsAt: meetupDate,
+        createdBy: requester._id,
     });
 
     // --- NOTIFICATION LOGIC ---

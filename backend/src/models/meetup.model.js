@@ -5,6 +5,8 @@ const meetupSchema = new mongoose.Schema({
   group: { type: mongoose.Schema.Types.ObjectId, ref: "Group", required: true },
   // schedule this was generated from (Group.schedules[i]._id); null for one-off meetups
   schedule: { type: mongoose.Schema.Types.ObjectId, default: null },
+  // user who created this meetup via createOneOffMeetup; null for schedule-generated meetups
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   name: { type: String, required: true },
   date: { type: Date, required: true },
   time: { type: String, required: true },

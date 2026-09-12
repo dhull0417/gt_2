@@ -227,7 +227,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                         </View>
                     )}
 
-                    {canManage && !isExpired && (
+                    {(canManage || selectedPoll.creator._id === currentUserId) && !isExpired && (
                         <TouchableOpacity onPress={() => handleCancelPoll(selectedPoll)} disabled={isCancelling} style={styles.cancelPollBtn} activeOpacity={0.7}>
                             <Text style={styles.cancelPollText}>Cancel Poll</Text>
                         </TouchableOpacity>

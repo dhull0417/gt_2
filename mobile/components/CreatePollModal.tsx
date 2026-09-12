@@ -262,20 +262,20 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                             <View style={[s.sectionIconChip, s.sectionIconChipTeal]}>
                                 <Feather name="check-square" size={16} color="#0D9488" />
                             </View>
-                            <Text style={s.sectionTitle}>Response Type</Text>
+                            <Text style={s.sectionTitle}>Group Members can choose:</Text>
                         </View>
                         <View style={s.boolRow}>
                             <TouchableOpacity
                                 style={[s.boolBtn, !allowMultiple && s.boolBtnActive]}
                                 onPress={() => setAllowMultiple(false)}
                             >
-                                <Text style={[s.boolBtnText, !allowMultiple && s.boolBtnTextActive]}>Single Answer</Text>
+                                <Text style={[s.boolBtnText, !allowMultiple && s.boolBtnTextActive]}>Only ONE Response</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[s.boolBtn, allowMultiple && s.boolBtnActive]}
                                 onPress={() => setAllowMultiple(true)}
                             >
-                                <Text style={[s.boolBtnText, allowMultiple && s.boolBtnTextActive]}>Multiple Answers</Text>
+                                <Text style={[s.boolBtnText, allowMultiple && s.boolBtnTextActive]}>Multiple Responses</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -379,8 +379,8 @@ const s = StyleSheet.create({
     },
     limitReachedText: { marginLeft: 30, fontSize: 12, color: '#9CA3AF', fontStyle: 'italic', marginTop: 4 },
 
-    boolRow: { flexDirection: "row", gap: 10 },
-    boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: "#E5E7EB", alignItems: "center", backgroundColor: "#fff" },
+    boolRow: { flexDirection: "column", gap: 10 },
+    boolBtn: { paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: "#E5E7EB", alignItems: "center", backgroundColor: "#fff" },
     boolBtnActive: { borderColor: "#4A90E2", backgroundColor: "#EEF6FF" },
     boolBtnText: { fontSize: 14, fontWeight: "700", color: "#6B7280" },
     boolBtnTextActive: { color: "#4A90E2" },

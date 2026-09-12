@@ -5,6 +5,7 @@ import ReanimatedAnimated from 'react-native-reanimated';
 import { Meetup, User } from '@/utils/api';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { RsvpBreather } from '@/components/RsvpBreather';
+import { getMeetupStatus } from '@/utils/meetupStatus';
 
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
@@ -77,9 +78,7 @@ export const MeetupCard = ({
     }
   }, [meetup.guests, currentUser?.clerkId, guestExpanded]);
 
-  const isCancelled = meetup.status === 'cancelled';
-  const isPast = new Date(meetup.date) < new Date();
-  const isExpired = meetup.status === 'expired' || isPast;
+  const { isCancelled, isExpired, isHappeningNow } = getMeetupStatus(meetup);
   const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
   const isRsvpDeadlinePassed = meetup.rsvpCloseDate ? new Date(meetup.rsvpCloseDate) < new Date() : false;
 
@@ -139,6 +138,11 @@ export const MeetupCard = ({
             {isExpired && !isCancelled && (
               <View className="bg-gray-300 self-start px-2 py-0.5 rounded-md mt-1">
                 <Text className="text-gray-700 text-[10px] font-black uppercase">Past Event</Text>
+              </View>
+            )}
+            {isHappeningNow && (
+              <View className="bg-teal-100 self-start px-2 py-0.5 rounded-md mt-1">
+                <Text className="text-teal-700 text-[10px] font-black uppercase">Happening Now</Text>
               </View>
             )}
           </View>

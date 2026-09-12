@@ -29,6 +29,7 @@ const NOTIFICATION_ICONS: Record<NotificationType, NotificationIconSpec> = {
   'meetup-created': { name: 'calendar', color: '#22C55E' },
   'meetup-updated': { name: 'edit-3', color: '#F59E0B' },
   'meetup-cancelled': { name: 'slash', color: '#EF4444' },
+  'meetup-restored': { name: 'rotate-ccw', color: '#22C55E' },
   'meetup-rsvp-reminder': { name: 'bell', color: '#3B82F6' },
   'meetup-rsvp-open': { name: 'unlock', color: '#14B8A6' },
   'meetup-starting-soon': { name: 'watch', color: '#F97316' },

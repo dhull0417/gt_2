@@ -133,6 +133,8 @@ export interface Meetup {
   };
   /** The named schedule (Group.schedules[i]._id) this was generated from — null for one-off meetups. */
   schedule?: string | null;
+  /** User who created this via createOneOffMeetup; null/absent for schedule-generated meetups. */
+  createdBy?: string | { _id: string } | null;
   name: string;
   date: string;
   time: string;
@@ -186,7 +188,7 @@ export type NotificationType =
   | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-member-joined' | 'group-removed' | 'group-updated' | 'ownership-transferred'
   | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion'
   | 'meetup-rsvp-admin-in' | 'meetup-rsvp-admin-out'
-  | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled'
+  | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled' | 'meetup-restored'
   | 'meetup-rsvp-reminder' | 'meetup-rsvp-open' | 'meetup-starting-soon'
   | 'poll-created' | 'poll-closed';
 
@@ -515,6 +517,10 @@ export const meetupApi = {
   },
   cancelMeetup: async (api: AxiosInstance, meetupId: string): Promise<{ message: string }> => {
     const response = await api.patch(`/api/meetups/${meetupId}/cancel`);
+    return response.data;
+  },
+  restoreMeetup: async (api: AxiosInstance, meetupId: string): Promise<{ message: string; meetup: Meetup }> => {
+    const response = await api.patch(`/api/meetups/${meetupId}/restore`);
     return response.data;
   },
   setGuestCount: async (api: AxiosInstance, meetupId: string, count: number): Promise<{ meetup: Meetup }> => {
