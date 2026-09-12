@@ -275,7 +275,8 @@ export const updateMeetup = asyncHandler(async (req, res) => {
             return res.status(400).json({ error: "This event is closed for adjustments." });
         }
 
-    if (!canManageGroup(requester._id, meetup.group)) {
+    const isCreator = meetup.createdBy && meetup.createdBy.toString() === requester._id.toString();
+    if (!canManageGroup(requester._id, meetup.group) && !isCreator) {
         return res.status(403).json({ error: "Permission denied." });
     }
 
@@ -410,7 +411,8 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
             return res.status(400).json({ error: "This event is closed for adjustments." });
         }
 
-    if (!canManageGroup(requester._id, meetup.group)) {
+    const isCreator = meetup.createdBy && meetup.createdBy.toString() === requester._id.toString();
+    if (!canManageGroup(requester._id, meetup.group) && !isCreator) {
         return res.status(403).json({ error: "Permission denied." });
     }
 
@@ -436,6 +438,53 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
     }
 
     res.status(200).json({ message: "Meetup cancelled successfully.", meetup });
+});
+
+/**
+ * @desc    Restore a cancelled meetup back to scheduled (Owner/Moderator/Creator Only)
+ * @route   PATCH /api/meetups/:meetupId/restore
+ */
+export const restoreMeetup = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { meetupId } = req.params;
+
+    const meetup = await Meetup.findById(meetupId).populate('group');
+    const requester = await User.findOne({ clerkId }).lean();
+
+    if (!meetup || !requester) return res.status(404).json({ error: "Resource not found." });
+
+    const isCreator = meetup.createdBy && meetup.createdBy.toString() === requester._id.toString();
+    if (!canManageGroup(requester._id, meetup.group) && !isCreator) {
+        return res.status(403).json({ error: "Permission denied." });
+    }
+
+    if (meetup.status !== 'cancelled') {
+        return res.status(400).json({ error: "Only a cancelled meetup can be restored." });
+    }
+
+    const isPast = new Date(meetup.date) < new Date();
+    if (isPast) {
+        return res.status(400).json({ error: "Cannot restore a meetup that is already in the past." });
+    }
+
+    meetup.status = 'scheduled';
+    meetup.isOverride = true;
+    await meetup.save();
+
+    const membersToNotify = await User.find({ _id: { $in: meetup.members } });
+    if (membersToNotify.length > 0) {
+        await notifyAndPersist(membersToNotify, {
+            title: "Meetup Restored",
+            body: `The meetup "${meetup.name}" on ${new Date(meetup.date).toLocaleDateString('en-US', { timeZone: meetup.timezone })} is back on.`,
+            data: { meetupId: meetup._id.toString(), type: 'meetup_restored' },
+            type: 'meetup-restored',
+            sender: requester._id,
+            meetup: meetup._id,
+            group: meetup.group._id,
+        });
+    }
+
+    res.status(200).json({ message: "Meetup restored successfully.", meetup });
 });
 
 /**
@@ -524,7 +573,8 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
     const requester = await User.findOne({ clerkId }).lean();
     if (!meetup || !requester) return res.status(404).json({ error: "Resource not found." });
 
-    if (!canManageGroup(requester._id, meetup.group)) {
+    const isCreator = meetup.createdBy && meetup.createdBy.toString() === requester._id.toString();
+    if (!canManageGroup(requester._id, meetup.group) && !isCreator) {
         return res.status(403).json({ error: "Permission denied." });
     }
 
