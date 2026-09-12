@@ -18,7 +18,7 @@ const notificationSchema = new mongoose.Schema({
             'ownership-transferred',
             'meetup-rsvp-in', 'meetup-rsvp-out', 'meetup-waitlist-join', 'waitlist-promotion',
             'meetup-rsvp-admin-in', 'meetup-rsvp-admin-out',
-            'meetup-created', 'meetup-updated', 'meetup-cancelled',
+            'meetup-created', 'meetup-updated', 'meetup-cancelled', 'meetup-restored',
             'meetup-rsvp-reminder', 'meetup-rsvp-open', 'meetup-starting-soon',
             'poll-created', 'poll-closed',
         ],
