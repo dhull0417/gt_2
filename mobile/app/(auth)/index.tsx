@@ -177,7 +177,6 @@ const styles = StyleSheet.create({
   },
   slideStage: {
     height: 104,
-    overflow: 'hidden',
   },
   slidePane: {
     width: '100%',
