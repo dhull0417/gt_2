@@ -37,16 +37,20 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
   res.status(200).json({ generated: generatedCount, message: "Regeneration complete." });
 });
 
+// Meetups stay "happening now" for this long after startsAt before expiring — mirrors MEETUP_ACTIVE_DURATION_MS in mobile/utils/meetupStatus.ts.
+const MEETUP_ACTIVE_DURATION_MS = 60 * 60 * 1000;
+
 /**
- * @desc    Expire meetups whose start time has passed.
+ * @desc    Expire meetups whose active window (startsAt + 1hr) has passed.
  *          Uses startsAt for a single atomic DB operation — no JS loop.
  * @route   POST /api/jobs/expire-meetups
  */
 export const expirePastMeetups = asyncHandler(async (req, res) => {
   const now = new Date();
+  const cutoff = new Date(now.getTime() - MEETUP_ACTIVE_DURATION_MS);
 
   const toExpire = await Meetup.find(
-    { status: 'scheduled', startsAt: { $lte: now } },
+    { status: 'scheduled', startsAt: { $lte: cutoff } },
     'group'
   );
 
@@ -57,7 +61,7 @@ export const expirePastMeetups = asyncHandler(async (req, res) => {
   const groupIds = [...new Set(toExpire.map(m => m.group.toString()))];
 
   const result = await Meetup.updateMany(
-    { status: 'scheduled', startsAt: { $lte: now } },
+    { status: 'scheduled', startsAt: { $lte: cutoff } },
     { $set: { status: 'expired' } }
   );
 
