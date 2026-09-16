@@ -20,6 +20,15 @@ export function useTypingIndicator(groupId: string, userId: string, userName: st
       if (!token || !active) return;
       const supabase = getSupabaseClient(token);
       realtimeClientRef.current = supabase;
+
+      // See useMessages.ts for why this is needed: the client is shared by
+      // token, and supabase-js would otherwise hand back a stale,
+      // already-subscribed channel for this topic on a fast remount.
+      const topic = `realtime:typing:${groupId}`;
+      const stale = supabase.getChannels().find((c) => c.topic === topic);
+      if (stale) await supabase.removeChannel(stale);
+      if (!active) return;
+
       const channel = supabase.channel(`typing:${groupId}`, {
         config: { presence: { key: userId } },
       });
@@ -39,7 +48,7 @@ export function useTypingIndicator(groupId: string, userId: string, userName: st
     return () => {
       active = false;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      realtimeClientRef.current?.removeAllChannels();
+      if (channelRef.current) realtimeClientRef.current?.removeChannel(channelRef.current);
       channelRef.current = null;
       realtimeClientRef.current = null;
     };

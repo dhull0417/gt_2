@@ -1,4 +1,3 @@
-// backend/src/routes/user.route.js
 import express from "express";
 import {
   getCurrentUser,
@@ -7,11 +6,12 @@ import {
   searchUsers,
   matchContacts,
   updatePushToken,
+  updatePermissionStatus,
   toggleGroupMute,
   markGroupRead,
   deleteAccount,
 } from "../controllers/user.controller.js";
-import { getCalendarSyncUrl, getCalendarFeed } from "../controllers/calendar.controller.js"; // <-- Add this import
+import { getCalendarSyncUrl, getCalendarFeed } from "../controllers/calendar.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
 const router = express.Router();  
@@ -23,11 +23,12 @@ router.post("/sync", protectRoute, syncUser);
 router.get("/me", protectRoute, getCurrentUser);
 router.put("/profile", protectRoute, updateProfile);
 router.post("/push-token", protectRoute, updatePushToken);
+router.patch("/permissions", protectRoute, updatePermissionStatus);
 router.patch("/mute-group", protectRoute, toggleGroupMute);
 router.patch("/groups/:groupId/read", protectRoute, markGroupRead);
 router.delete("/account", protectRoute, deleteAccount);
 
-// --- NEW CALENDAR ROUTES ---
+// --- Calendar routes ---
 // Protected: The mobile app fetches the user's specific URL
 router.get("/calendar-url", protectRoute, getCalendarSyncUrl);
 

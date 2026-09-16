@@ -45,10 +45,7 @@ const MeetupEditScreen = () => {
 
     const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
         if (Platform.OS === 'android') {
-            // Android's picker is a system dialog, not an inline spinner — there's no
-            // separate "Done" button, so the dialog closing on a real pick (event.type
-            // 'set') IS the confirm step. Dismissing it (back button / tap outside)
-            // fires 'dismissed' with no selectedDate and must leave `date` untouched.
+            // Android has no "Done" button — event.type 'set' IS the confirm; 'dismissed' must leave `date` untouched
             setShowDatePicker(false);
             if (event.type === 'set' && selectedDate) {
                 setDate(selectedDate);
@@ -68,7 +65,7 @@ const MeetupEditScreen = () => {
     
     const handleSaveChanges = () => {
         if (!id) return;
-        // Do not send timezone. The backend will automatically use the group's default.
+        // Timezone omitted — backend uses the group's default
         updateMeetup({ meetupId: id, date, time: meetTime });
     };
 
@@ -115,9 +112,8 @@ const MeetupEditScreen = () => {
                 </TouchableOpacity>
             </ScrollView>
 
-            {/* --- THIS IS THE NEW MODAL FOR THE DATE PICKER --- */}
             {showDatePicker && (
-                // On Android, the default picker is a modal, so we only need the custom modal for iOS
+                // Android's picker is already a modal; iOS needs this custom wrapper
                 Platform.OS === 'ios' ? (
                     <Modal
                         animationType="slide"

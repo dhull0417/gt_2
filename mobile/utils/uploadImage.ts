@@ -1,8 +1,10 @@
 import { Alert, Linking, Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
+import { AxiosInstance } from "axios";
 import { getSupabaseClient } from "./supabase";
 import { requestImageCrop } from "../components/ImageCropperHost";
+import { reportPermissionStatus } from "./permissions";
 
 type Bucket = "profile-pictures" | "group-images" | "chat-images";
 
@@ -52,20 +54,17 @@ async function processAndUpload(
   };
 }
 
-/**
- * Ensure photo library access, requesting it if we haven't yet.
- *
- * If the OS has already permanently denied us (canAskAgain is false — this
- * happens after the user explicitly answers once on iOS, or picks "don't ask
- * again" on Android), it can't be re-prompted natively, so we offer a direct
- * jump to Settings instead of a dead-end message.
- */
-export async function ensurePhotoLibraryPermission(): Promise<boolean> {
+/** Ensure photo library access. If canAskAgain is false (permanently denied), offer a Settings deep-link instead of a dead-end prompt. */
+export async function ensurePhotoLibraryPermission(api?: AxiosInstance): Promise<boolean> {
   const current = await ImagePicker.getMediaLibraryPermissionsAsync();
-  if (current.status === "granted") return true;
+  if (current.status === "granted") {
+    if (api) reportPermissionStatus(api, { photoLibrary: "granted" });
+    return true;
+  }
 
   if (current.canAskAgain) {
     const requested = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (api) reportPermissionStatus(api, { photoLibrary: requested.status as "granted" | "denied" | "undetermined" });
     if (requested.status === "granted") return true;
     if (!requested.canAskAgain) {
       offerSettings();
@@ -73,6 +72,7 @@ export async function ensurePhotoLibraryPermission(): Promise<boolean> {
     return false;
   }
 
+  if (api) reportPermissionStatus(api, { photoLibrary: current.status as "granted" | "denied" | "undetermined" });
   offerSettings();
   return false;
 }
@@ -88,16 +88,9 @@ function offerSettings() {
   );
 }
 
-/**
- * Open the image picker and return a local URI without uploading.
- *
- * On iOS this uses the native crop/zoom editor (allowsEditing), which works well.
- * On Android that same editor's toolbar renders with no visible confirm/cancel
- * buttons, leaving users stuck — so on Android we use our own crop screen
- * (ImageCropperHost, mounted at the app root) instead.
- */
-export async function pickImageUri(): Promise<string | null> {
-  const hasPermission = await ensurePhotoLibraryPermission();
+/** Opens the image picker; returns a local URI (no upload). Android skips native allowsEditing (its toolbar has no visible confirm/cancel) and uses ImageCropperHost instead. */
+export async function pickImageUri(api?: AxiosInstance): Promise<string | null> {
+  const hasPermission = await ensurePhotoLibraryPermission(api);
   if (!hasPermission) return null;
 
   const result = await ImagePicker.launchImageLibraryAsync({
@@ -134,10 +127,7 @@ export async function uploadImageFromUriWithDimensions(
   return processAndUpload(localUri, bucket, filePath, clerkToken);
 }
 
-/**
- * Delete an image from Supabase Storage by its public URL.
- * Silently ignores URLs that don't belong to the given bucket.
- */
+/** Delete an image from Supabase Storage by its public URL; ignores URLs outside the given bucket. */
 export async function deleteStorageImage(
   imageUrl: string,
   bucket: Bucket,

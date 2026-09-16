@@ -10,27 +10,19 @@ export const useUserSync = () => {
   const queryClient = useQueryClient();
 
   const syncUserMutation = useMutation({
-    // Pass name from the Clerk client so the backend doesn't need to re-fetch
-    // from Clerk's API, which can lag behind the client on first sign-in.
+    // Pass name from Clerk client directly — Clerk's API can lag on first sign-in.
     mutationFn: () => userApi.syncUser(api, {
       firstName: clerkUser?.firstName ?? '',
       lastName: clerkUser?.lastName ?? '',
     }),
-    onSuccess: (response: any) => {
-      if (response.data?.user) {
-        console.log("User sync successful for:", response.data.user._id);
-      } else {
-        console.log("User sync check complete:", response.data);
-      }
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
     },
     onError: (error) => console.error("User sync failed:", error),
   });
 
   useEffect(() => {
-    // Wait for Clerk to fully resolve the new session before syncing.
-    // Without isLoaded, getToken() can return null during the auth transition,
-    // causing the server to receive an unauthenticated request.
+    // Wait for isLoaded — otherwise getToken() can return null mid-transition.
     if (isLoaded && isSignedIn) {
       syncUserMutation.mutate();
     }

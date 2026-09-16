@@ -3,9 +3,9 @@ import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as SecureStore from 'expo-secure-store';
-import { useApiClient, userApi } from '@/utils/api';
+import { User, useApiClient, userApi } from '@/utils/api';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 
 const ProfileSetupScreen = () => {
@@ -13,17 +13,27 @@ const ProfileSetupScreen = () => {
     const router = useRouter();
     const api = useApiClient();
     const queryClient = useQueryClient();
-    const [firstName, setFirstName] = useState(clerkUser?.firstName ?? '');
-    const [lastName, setLastName] = useState(clerkUser?.lastName ?? '');
+    // This app never writes the name back to Clerk (only to our own backend via
+    // syncUser/updateProfile — see useAppleAuth.ts), so clerkUser.firstName is never
+    // populated for Apple sign-in. The saved name lives on our own currentUser record,
+    // which app/_layout.tsx's routing already keeps warm in this same query cache.
+    const { data: currentUser } = useQuery<User, Error>({
+        queryKey: ['currentUser'],
+        queryFn: () => userApi.getCurrentUser(api),
+    });
+    const [firstName, setFirstName] = useState(currentUser?.firstName ?? clerkUser?.firstName ?? '');
+    const [lastName, setLastName] = useState(currentUser?.lastName ?? clerkUser?.lastName ?? '');
     const [zipCode, setZipCode] = useState('');
     const [isSaving, setIsSaving] = useState(false);
 
     const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
+    // Apple only hands us a name on the account's very first authorization ever, so a
+    // returning/re-created Apple account can land here with nothing on file — prompt
+    // for it directly instead of leaving them stuck showing as "New Member".
+    const needsName = isAppleUser && !currentUser?.firstName?.trim() && !currentUser?.lastName?.trim();
 
-    // Plain awaited calls, same shape as the dashboard's "One quick thing" zip
-    // modal (app/(tabs)/index.tsx) — not a useMutation(). A per-call mutate()
-    // onSuccess doesn't reliably fire once router.replace unmounts this screen
-    // (see useUpdateProfile's history).
+    // Plain awaited calls, not useMutation() — its onSuccess doesn't reliably fire
+    // once router.replace unmounts this screen (see useUpdateProfile's history).
     const handleSaveProfile = async () => {
         if (!isAppleUser && (!firstName.trim() || !lastName.trim())) {
             Alert.alert('Missing Information', 'Please fill out all fields.');
@@ -33,17 +43,18 @@ const ProfileSetupScreen = () => {
             Alert.alert('Invalid Zip Code', 'Zip code must be exactly 5 digits.');
             return;
         }
-        // For Apple users, omit firstName/lastName entirely — syncUser's backend Clerk API
-        // call will populate them from Apple's token, and we don't want to overwrite with
-        // potentially empty client-side values.
+        // Apple users: omit firstName/lastName so syncUser populates them from Apple's token instead,
+        // unless we prompted for it ourselves because Apple never gave us one.
+        const appleNameOverride = needsName && (firstName.trim() || lastName.trim())
+            ? { firstName: firstName.trim(), lastName: lastName.trim() }
+            : {};
         const profileData = isAppleUser
-            ? { ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) }
+            ? { ...appleNameOverride, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) }
             : { firstName, lastName, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) };
 
         setIsSaving(true);
         try {
-            // Ensure the MongoDB user exists before updating profile — idempotent,
-            // syncUser just returns the existing user if one's already there.
+            // Ensure the Mongo user exists first — idempotent, returns existing user if present
             const syncRes = await userApi.syncUser(api, { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' });
             // TEMP DEBUG — remove once the profile-setup redirect-loop bug is diagnosed.
             console.log('[profile-setup] syncUser response', syncRes.data);
@@ -88,6 +99,7 @@ const ProfileSetupScreen = () => {
                                 value={firstName}
                                 onChangeText={setFirstName}
                                 className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
+                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
                                 placeholderTextColor="#999"
                             />
                             <TextInput
@@ -95,6 +107,7 @@ const ProfileSetupScreen = () => {
                                 value={lastName}
                                 onChangeText={setLastName}
                                 className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
+                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
                                 placeholderTextColor="#999"
                             />
                         </>
@@ -107,10 +120,34 @@ const ProfileSetupScreen = () => {
                         keyboardType="numeric"
                         maxLength={5}
                         className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
+                        style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
                         placeholderTextColor="#999"
                     />
 
-                    {isAppleUser && (
+                    {needsName && (
+                        <View className="w-full bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                            <Text className="text-base font-bold text-gray-800 mb-1">Update Name!</Text>
+                            <Text className="text-sm text-gray-600 mb-4">Make sure your friends know who you are.</Text>
+                            <TextInput
+                                placeholder="First Name"
+                                value={firstName}
+                                onChangeText={setFirstName}
+                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-3"
+                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
+                                placeholderTextColor="#999"
+                            />
+                            <TextInput
+                                placeholder="Last Name"
+                                value={lastName}
+                                onChangeText={setLastName}
+                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base"
+                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
+                                placeholderTextColor="#999"
+                            />
+                        </View>
+                    )}
+
+                    {isAppleUser && !needsName && (
                         <Text className="text-sm text-gray-500 text-center mb-6">
                             If you would like to modify your name, visit the Profile Tab {`>`} Update Account Info.
                         </Text>

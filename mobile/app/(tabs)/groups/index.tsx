@@ -17,15 +17,16 @@ import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { TAB_BAR_HEIGHT } from '@/utils/layout';
 import { promptForNotificationPermission } from '@/hooks/usePushNotifications';
+import { useContentTopInset } from '@/hooks/useContentTopInset';
 
 const GroupScreen = () => {
   const api = useApiClient();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const contentTopInset = useContentTopInset();
   const { promptNotifications } = useLocalSearchParams<{ promptNotifications?: string }>();
 
-  // Landed here right after creating a group (see create-group's onDone) — ask
-  // once, then drop the param so revisiting this tab doesn't ask again.
+  // Ask once after group creation, then drop the param so revisiting this tab doesn't re-ask
   useEffect(() => {
     if (promptNotifications !== '1') return;
     promptForNotificationPermission(api);
@@ -109,7 +110,11 @@ const GroupScreen = () => {
   };
 
   return (
-    <SafeAreaView className='flex-1 bg-gray-50' edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      className='flex-1 bg-gray-50'
+      edges={['left', 'right']}
+      style={{ paddingTop: contentTopInset }}
+    >
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
         <TouchableOpacity onPress={() => router.push('/notifications')}>
           <Feather name="bell" size={26} color="#4A90E2" />

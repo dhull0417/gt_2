@@ -4,10 +4,8 @@ import { ENV } from "../config/env.js";
 const AUTOCOMPLETE_FIELD_MASK = "suggestions.placePrediction.placeId,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat";
 const DETAILS_FIELD_MASK = "id,formattedAddress,location,displayName";
 
-// Search-as-you-type suggestions for a partial address/venue name.
-// sessionToken bundles this with the terminating getPlaceDetails call for session-based billing.
-// Nudges results toward the searcher without excluding anything farther away
-// (e.g. an out-of-town venue or a Zoom link typed as free text).
+// getPlacesAutocomplete: search-as-you-type; sessionToken pairs with getPlaceDetails for billing.
+// Bias radius nudges toward the searcher without excluding farther results (e.g. a Zoom link).
 const LOCATION_BIAS_RADIUS_METERS = 20000;
 
 export const getPlacesAutocomplete = asyncHandler(async (req, res) => {
@@ -49,8 +47,7 @@ export const getPlacesAutocomplete = asyncHandler(async (req, res) => {
     res.status(200).json(suggestions);
 });
 
-// Resolves a placeId (from autocomplete) into an address + coordinates.
-// Terminates the session started by getPlacesAutocomplete for billing purposes.
+// Resolves a placeId to an address + coordinates; ends the autocomplete billing session.
 export const getPlaceDetails = asyncHandler(async (req, res) => {
     const { placeId, sessionToken } = req.query;
     if (!placeId || !sessionToken) {

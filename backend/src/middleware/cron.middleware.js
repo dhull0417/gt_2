@@ -8,13 +8,13 @@ export const protectCron = asyncHandler(async (req, res, next) => {
     return res.status(500).json({ error: "Internal server configuration error." });
   }
 
-  // Check for the 'Authorization' header in the format 'Bearer <secret>'
+  // expects "Authorization: Bearer <secret>"
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(" ")[1];
 
-  
+
   if (token === cronSecret) {
-    next(); // Secret matches, proceed to the controller
+    next();
   } else {
     console.warn("Unauthorized cron job attempt detected.");
     res.status(401).json({ error: "Unauthorized." });

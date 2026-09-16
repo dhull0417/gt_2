@@ -44,9 +44,7 @@ const combineDateAndTime = (isoDate: string, time: string, timezone: string): st
 };
 
 // ─── InlineCalendar ───────────────────────────────────────────────────────────
-// Same bare/large calendar used inside create-group's own popups, copied locally
-// per this codebase's existing convention (create-group and group-edit-schedule
-// each keep their own copy rather than sharing one).
+// Copied locally per convention — create-group and group-edit-schedule each keep their own copy.
 
 const InlineCalendar = ({ value, onChange, minDate }: {
     value: string; onChange: (iso: string) => void; minDate?: string;
@@ -109,8 +107,7 @@ const InlineCalendar = ({ value, onChange, minDate }: {
 };
 
 // ─── DatePickerModal ──────────────────────────────────────────────────────────
-// Same blurred-popup treatment as create-group's CalendarPickerModal: a focused
-// overlay instead of an inline calendar competing with the rest of the form.
+// Blurred-popup overlay, matching create-group's CalendarPickerModal treatment.
 
 const DatePickerModal = ({ visible, value, minDate, onChange, onCancel }: {
     visible: boolean; value: string; minDate?: string; onChange: (iso: string) => void; onCancel: () => void;
@@ -187,10 +184,7 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={resetAndClose}>
-            {/* presentationStyle="pageSheet" is iOS-only — Android renders this modal
-                truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
-                header sits under the status bar there. SafeAreaView is a no-op on iOS's
-                inset pageSheet, same as MeetupDetailModal's own top-level wrapper. */}
+            {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
             <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
                 <View style={s.screenHeader}>
                     <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>
@@ -268,20 +262,20 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                             <View style={[s.sectionIconChip, s.sectionIconChipTeal]}>
                                 <Feather name="check-square" size={16} color="#0D9488" />
                             </View>
-                            <Text style={s.sectionTitle}>Response Type</Text>
+                            <Text style={s.sectionTitle}>Group Members can choose:</Text>
                         </View>
                         <View style={s.boolRow}>
                             <TouchableOpacity
                                 style={[s.boolBtn, !allowMultiple && s.boolBtnActive]}
                                 onPress={() => setAllowMultiple(false)}
                             >
-                                <Text style={[s.boolBtnText, !allowMultiple && s.boolBtnTextActive]}>Single Answer</Text>
+                                <Text style={[s.boolBtnText, !allowMultiple && s.boolBtnTextActive]}>Only ONE Response</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[s.boolBtn, allowMultiple && s.boolBtnActive]}
                                 onPress={() => setAllowMultiple(true)}
                             >
-                                <Text style={[s.boolBtnText, allowMultiple && s.boolBtnTextActive]}>Multiple Answers</Text>
+                                <Text style={[s.boolBtnText, allowMultiple && s.boolBtnTextActive]}>Multiple Responses</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -385,8 +379,8 @@ const s = StyleSheet.create({
     },
     limitReachedText: { marginLeft: 30, fontSize: 12, color: '#9CA3AF', fontStyle: 'italic', marginTop: 4 },
 
-    boolRow: { flexDirection: "row", gap: 10 },
-    boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: "#E5E7EB", alignItems: "center", backgroundColor: "#fff" },
+    boolRow: { flexDirection: "column", gap: 10 },
+    boolBtn: { paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: "#E5E7EB", alignItems: "center", backgroundColor: "#fff" },
     boolBtnActive: { borderColor: "#4A90E2", backgroundColor: "#EEF6FF" },
     boolBtnText: { fontSize: 14, fontWeight: "700", color: "#6B7280" },
     boolBtnTextActive: { color: "#4A90E2" },

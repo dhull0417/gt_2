@@ -27,11 +27,8 @@ const AccountLayout = () => {
                 name="update-name"
                 options={{
                     headerTitle: 'Update Name',
-                    // On iOS, a pushed screen's header shows a back button labeled
-                    // with the previous screen's title ("Update Account") alongside
-                    // this one's — too cramped next to "Update Name". Modal
-                    // presentation swaps that for a plain close affordance.
-                    // Android's back button has no title, so it doesn't need this.
+                    // iOS back button shows the prev screen's title, too cramped next to "Update Name" — use modal instead
+                    // Android's back button has no title, so it doesn't need this
                     presentation: Platform.OS === 'ios' ? 'modal' : undefined,
                 }}
             />

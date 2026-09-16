@@ -8,22 +8,31 @@ import {
     Modal,
     ActivityIndicator,
     Alert,
-    ScrollView
+    ScrollView,
+    Image
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { GroupDetails, groupApi, useApiClient } from '@/utils/api';
+import { useAuth } from '@clerk/expo';
+import { Group, groupApi, useApiClient } from '@/utils/api';
+import { pickAndUploadImage } from '@/utils/uploadImage';
 import { DateTime } from 'luxon';
 import NativeTimePicker from './NativeTimePicker';
 import LocationField from './LocationField';
 import LocationSearchModal from './LocationSearchModal';
+import OptionPickerModal from './OptionPickerModal';
 import { useQueryClient } from '@tanstack/react-query';
 
-interface AddMeetupWizardProps {
-    visible: boolean;
-    onClose: () => void;
-    groupDetails: GroupDetails;
+interface GroupPickerMode {
+    /** Non-DM groups the current user belongs to. */
+    groups: Group[];
+    /** Fires after the meetup is successfully created, with the (existing or newly created) group's id. */
+    onMeetupCreated: (groupId: string) => void;
 }
+
+type AddMeetupWizardProps =
+    | { visible: boolean; onClose: () => void; groupDetails: Group; groupPickerMode?: undefined; onMeetupCreated?: (groupId: string) => void }
+    | { visible: boolean; onClose: () => void; groupDetails?: undefined; groupPickerMode: GroupPickerMode; onMeetupCreated?: undefined };
 
 const usaTimezones = [
     { label: "Eastern (ET)", value: "America/New_York" },
@@ -35,8 +44,7 @@ const usaTimezones = [
     { label: "Hawaii (HST)", value: "Pacific/Honolulu" },
 ];
 
-// Mirrors the Max Attendees validation on the group-creation Schedule screen
-// (mobile/app/create-group/index.tsx) so both screens agree on what's valid.
+// Mirrors Max Attendees validation in create-group/index.tsx
 const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
     if (mode !== "limited" || input === "") return null;
     if (!/^\d+$/.test(input)) return "Numbers only, please.";
@@ -45,39 +53,53 @@ const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): str
     return null;
 };
 
-/**
- * AddMeetupWizard
- * Single-screen form for creating one-off meetups, styled to match the
- * group-creation Schedule screen (mobile/app/create-group/index.tsx).
- */
-const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProps) => {
+// Single-screen form for one-off meetups; styled to match create-group/index.tsx
+const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMeetupCreated }: AddMeetupWizardProps) => {
     const api = useApiClient();
     const queryClient = useQueryClient();
+    const { getToken } = useAuth();
 
     const [isSaving, setIsSaving] = useState(false);
+
+    // Group whose timezone/defaults seed the form's initial values. For groupPickerMode,
+    // that's the first group in the list (existing-group is the common case); "New Group"
+    // has no defaults to seed from.
+    const initialGroup: Group | undefined = groupDetails ?? groupPickerMode?.groups[0];
 
     // --- Data States ---
     const [meetupDate, setMeetupDate] = useState<string>(DateTime.now().toISODate()!);
     const [meetupTime, setMeetupTime] = useState("05:00 PM");
-    const [meetupTZ, setMeetupTZ] = useState(groupDetails.timezone || "America/Denver");
+    const [meetupTZ, setMeetupTZ] = useState(initialGroup?.timezone || "America/Denver");
     const [maxAttendeesMode, setMaxAttendeesMode] = useState<"unlimited" | "limited">(
-        groupDetails.defaultCapacity ? "limited" : "unlimited"
+        initialGroup?.defaultCapacity ? "limited" : "unlimited"
     );
     const [maxAttendeesInput, setMaxAttendeesInput] = useState<string>(
-        groupDetails.defaultCapacity ? String(groupDetails.defaultCapacity) : ""
+        initialGroup?.defaultCapacity ? String(initialGroup.defaultCapacity) : ""
     );
-    const [meetupLocation, setMeetupLocation] = useState(groupDetails.defaultLocation || "");
+    const [meetupLocation, setMeetupLocation] = useState(initialGroup?.defaultLocation || "");
     const [isLocationSearchActive, setIsLocationSearchActive] = useState(false);
 
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [showTZPicker, setShowTZPicker] = useState(false);
 
+    // --- Group picker state (only relevant when groupPickerMode is set) ---
+    const [pickerChoice, setPickerChoice] = useState<'new' | string>(
+        groupPickerMode ? (groupPickerMode.groups.length > 0 ? groupPickerMode.groups[0]._id : 'new') : ''
+    );
+    const [showGroupPicker, setShowGroupPicker] = useState(false);
+    const [newGroupName, setNewGroupName] = useState('');
+    const [newGroupImageUrl, setNewGroupImageUrl] = useState('');
+    const [newGroupImageLocalUri, setNewGroupImageLocalUri] = useState<string | null>(null);
+    const [isUploadingGroupImage, setIsUploadingGroupImage] = useState(false);
+    // Set once "New Group" creation succeeds, so a subsequent meetup-creation failure can be
+    // retried against the now-real group instead of creating a duplicate group.
+    const [justCreatedGroup, setJustCreatedGroup] = useState<Group | null>(null);
+
     // --- Calendar Logic ---
     const [calendarMonth, setCalendarMonth] = useState<DateTime>(DateTime.now().startOf('month'));
 
-    // Chunked into explicit 7-cell week rows rather than one flex-wrap grid — letting
-    // aspect-ratio cells wrap on their own leaves Yoga reserving a phantom trailing row
-    // of blank space whenever the day count isn't a clean multiple of 7.
+    // Chunked into 7-cell rows; flex-wrap alone leaves a phantom blank row when
+    // the day count isn't a multiple of 7.
     const calendarWeeks = useMemo(() => {
         const start = calendarMonth.startOf('month');
         const firstDayIdx = start.weekday === 7 ? 0 : start.weekday;
@@ -93,29 +115,100 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
     const minDT = DateTime.now().startOf('day');
 
     const maxAttendeesError = getMaxAttendeesError(maxAttendeesMode, maxAttendeesInput);
-    const canSubmit = maxAttendeesMode !== "limited" || (maxAttendeesInput !== "" && !maxAttendeesError);
+    const needsNewGroupName = !!groupPickerMode && pickerChoice === 'new' && !justCreatedGroup && newGroupName.trim().length === 0;
+    const canSubmit = (maxAttendeesMode !== "limited" || (maxAttendeesInput !== "" && !maxAttendeesError))
+        && !needsNewGroupName
+        && !isUploadingGroupImage;
+
+    // Re-seeds the timezone/capacity/location fields whenever the "Which group?"
+    // selection changes — otherwise a group picked earlier (e.g. the default first
+    // group) leaves its address/capacity behind when switching to another group or
+    // to "New Group", which has no defaults of its own.
+    const handleSelectGroup = (key: string) => {
+        setPickerChoice(key);
+        setShowGroupPicker(false);
+        const selectedGroup = key === 'new' ? undefined : groupPickerMode?.groups.find(g => g._id === key);
+        setMeetupTZ(selectedGroup?.timezone || "America/Denver");
+        setMaxAttendeesMode(selectedGroup?.defaultCapacity ? "limited" : "unlimited");
+        setMaxAttendeesInput(selectedGroup?.defaultCapacity ? String(selectedGroup.defaultCapacity) : "");
+        setMeetupLocation(selectedGroup?.defaultLocation || "");
+    };
+
+    const handlePickGroupImage = async () => {
+        try {
+            const token = await getToken({ template: "supabase" });
+            if (!token) return;
+            setIsUploadingGroupImage(true);
+            const url = await pickAndUploadImage("group-images", `group-${Date.now()}/cover.jpg`, token);
+            if (url) {
+                setNewGroupImageLocalUri(url);
+                setNewGroupImageUrl(url);
+            }
+        } catch {
+            Alert.alert("Error", "Could not upload image. Please try again.");
+        } finally {
+            setIsUploadingGroupImage(false);
+        }
+    };
 
     const handleCreateMeetup = async () => {
         if (!canSubmit) return;
         setIsSaving(true);
         try {
-            /**
-             * FIX: Passing meetupDate as the raw string (YYYY-MM-DD) instead of new Date().
-             * This prevents local environment timezone shifting that causes the "one day early" bug.
-             */
+            // Pass raw YYYY-MM-DD string, not new Date(), to avoid a timezone off-by-one-day bug
             const capacity = maxAttendeesMode === "limited" ? parseInt(maxAttendeesInput, 10) : 0;
+
+            let targetGroupId: string;
+            let targetGroupName: string;
+
+            if (groupPickerMode && pickerChoice === 'new' && !justCreatedGroup) {
+                if (!newGroupName.trim()) {
+                    Alert.alert("Error", "Group name is required.");
+                    setIsSaving(false);
+                    return;
+                }
+                // Group's timezone comes from this wizard's own timezone field; defaultLocation
+                // and defaultCapacity are intentionally left unset for the new group.
+                const { group: newGroup } = await groupApi.createGroup(api, {
+                    name: newGroupName.trim(),
+                    image: newGroupImageUrl || undefined,
+                    timezone: meetupTZ,
+                    meetupsToDisplay: 1,
+                });
+                setJustCreatedGroup(newGroup);
+                targetGroupId = newGroup._id;
+                targetGroupName = newGroup.name;
+                queryClient.invalidateQueries({ queryKey: ['groups'] });
+            } else if (groupPickerMode) {
+                const picked = justCreatedGroup ?? groupPickerMode.groups.find(g => g._id === pickerChoice);
+                if (!picked) {
+                    Alert.alert("Error", "Please choose a group.");
+                    setIsSaving(false);
+                    return;
+                }
+                targetGroupId = picked._id;
+                targetGroupName = picked.name;
+            } else {
+                // groupPickerMode is absent here, so the type contract guarantees groupDetails is set.
+                targetGroupId = groupDetails!._id;
+                targetGroupName = groupDetails!.name;
+            }
+
+            // If the group was just created above but this call throws, we deliberately do NOT
+            // roll back the group — the catch block below leaves it in place so the user can retry.
             await groupApi.createOneOffMeetup(api, {
-                groupId: groupDetails._id,
+                groupId: targetGroupId,
                 date: meetupDate as any,
                 time: meetupTime,
                 timezone: meetupTZ,
                 capacity,
                 location: meetupLocation,
-                name: groupDetails.name
+                name: targetGroupName
             });
             Alert.alert("Success", "Meetup added!");
-            resetAndClose();
             queryClient.invalidateQueries({ queryKey: ['meetups'] });
+            (groupPickerMode ? groupPickerMode.onMeetupCreated : onMeetupCreated)?.(targetGroupId);
+            resetAndClose();
         } catch (error: any) {
             Alert.alert("Error", error.response?.data?.error || "Failed to add meetup.");
         } finally {
@@ -128,8 +221,14 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
         setMeetupTime("05:00 PM");
         setShowTimePicker(false);
         setShowTZPicker(false);
-        setMaxAttendeesMode(groupDetails.defaultCapacity ? "limited" : "unlimited");
-        setMaxAttendeesInput(groupDetails.defaultCapacity ? String(groupDetails.defaultCapacity) : "");
+        setMaxAttendeesMode(initialGroup?.defaultCapacity ? "limited" : "unlimited");
+        setMaxAttendeesInput(initialGroup?.defaultCapacity ? String(initialGroup.defaultCapacity) : "");
+        setShowGroupPicker(false);
+        setNewGroupName('');
+        setNewGroupImageUrl('');
+        setNewGroupImageLocalUri(null);
+        setJustCreatedGroup(null);
+        setPickerChoice(groupPickerMode ? (groupPickerMode.groups.length > 0 ? groupPickerMode.groups[0]._id : 'new') : '');
         onClose();
     };
 
@@ -140,10 +239,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
             presentationStyle="pageSheet"
             onRequestClose={resetAndClose}
         >
-            {/* presentationStyle="pageSheet" is iOS-only — Android renders this modal
-                truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
-                header sits under the status bar there. SafeAreaView is a no-op on iOS's
-                inset pageSheet, same as MeetupDetailModal's own top-level wrapper. */}
+            {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
             <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
                 <View style={s.screenHeader}>
                     <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>
@@ -161,6 +257,49 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
                 >
                     <Text style={s.screenTitle}>Add Meetup</Text>
                     <Text style={s.screenSub}>Set the date, time, and details</Text>
+
+                    {/* Which group? (only in groupPickerMode) */}
+                    {groupPickerMode && groupPickerMode.groups.length > 0 && !justCreatedGroup && (
+                        <>
+                            <Text style={s.fieldLabel}>Which group?</Text>
+                            <TouchableOpacity style={s.dateFieldRow} onPress={() => setShowGroupPicker(true)}>
+                                <Feather name="users" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                                <Text style={s.dateFieldText}>
+                                    {pickerChoice === 'new' ? 'New Group' : groupPickerMode.groups.find(g => g._id === pickerChoice)?.name}
+                                </Text>
+                                <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                            </TouchableOpacity>
+                        </>
+                    )}
+
+                    {groupPickerMode && (pickerChoice === 'new') && !justCreatedGroup && (
+                        <>
+                            <Text style={s.fieldLabel}>Group Name</Text>
+                            <View style={s.inputRow}>
+                                <TextInput
+                                    style={s.inlineInput}
+                                    placeholder="e.g. Basketball Squad"
+                                    placeholderTextColor="#C4C9D4"
+                                    value={newGroupName}
+                                    onChangeText={setNewGroupName}
+                                />
+                            </View>
+
+                            <Text style={s.fieldLabel}>Group Photo (optional)</Text>
+                            <TouchableOpacity onPress={handlePickGroupImage} disabled={isUploadingGroupImage} style={s.groupImagePicker}>
+                                {isUploadingGroupImage ? (
+                                    <ActivityIndicator color="#4A90E2" />
+                                ) : newGroupImageLocalUri ? (
+                                    <Image source={{ uri: newGroupImageLocalUri }} style={s.groupImagePreview} />
+                                ) : (
+                                    <>
+                                        <Feather name="image" size={24} color="#9CA3AF" />
+                                        <Text style={s.groupImagePickerText}>Add group photo</Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        </>
+                    )}
 
                     {/* Date */}
                     <Text style={s.fieldLabel}>Date</Text>
@@ -304,11 +443,22 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails }: AddMeetupWizardProp
                     asOverlay
                 />
 
-                {/* Rendered as a sibling of the ScrollView (not a descendant) — same rule as
-                    LocationSearchModal above: an absoluteFillObject overlay mounted inside a
-                    ScrollView only fills the scrollable content, not the screen. */}
+                {/* Sibling of ScrollView, not descendant — an overlay inside it only fills the scrollable content */}
                 {showTimePicker && (
                     <NativeTimePicker value={meetupTime} onChange={setMeetupTime} onClose={() => setShowTimePicker(false)} asOverlay />
+                )}
+
+                {showGroupPicker && groupPickerMode && (
+                    <OptionPickerModal
+                        title="Which group?"
+                        options={[
+                            ...groupPickerMode.groups.map(g => ({ key: g._id, label: g.name })),
+                            { key: 'new', label: '+ New Group' },
+                        ]}
+                        selectedKey={pickerChoice}
+                        onSelect={handleSelectGroup}
+                        onClose={() => setShowGroupPicker(false)}
+                    />
                 )}
             </SafeAreaView>
         </Modal>
@@ -342,6 +492,9 @@ const s = StyleSheet.create({
     primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
     primaryBtnDisabled: { backgroundColor: "#93C5FD" },
     primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
+    groupImagePicker: { alignItems: "center", justifyContent: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", borderStyle: "dashed", paddingVertical: 20, marginBottom: 4 },
+    groupImagePickerText: { fontSize: 13, fontWeight: "600", color: "#9CA3AF", marginTop: 6 },
+    groupImagePreview: { width: 72, height: 72, borderRadius: 36 },
 });
 
 const cal = StyleSheet.create({

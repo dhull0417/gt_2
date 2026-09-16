@@ -4,14 +4,13 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
 import * as Location from 'expo-location';
 import { useApiClient, placesApi, PlaceSuggestion, PlaceDetails } from '@/utils/api';
+import { reportPermissionStatus } from '@/utils/permissions';
 
 const DEBOUNCE_MS = 300;
 const MIN_QUERY_LENGTH = 3;
 
-// For a business/venue result, Google returns the venue name (details.name) separately
-// from the street address. Plain address results often just repeat the address as the
-// "name" too, so only treat it as a real venue name when it's not already part of the
-// address — that's also what decides whether the bold name label renders at all.
+// Google repeats the address as "name" for plain address results, so only treat
+// it as a real venue name when it's not already part of the address.
 const getVenueName = (details?: PlaceDetails): string | null => {
   const name = details?.name?.trim();
   const address = details?.address?.trim();
@@ -42,21 +41,17 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
-  // Tracks the exact query a search actually completed for, so "No matches" only
-  // shows once a real search has come back empty for the current text — not on
-  // initial open (before any search has run) and not right after picking a
-  // suggestion (which also leaves the suggestion list empty).
+  // Tracks the query a search completed for, so "No matches" only shows after a
+  // real search returns empty — not on initial open or right after picking a suggestion.
   const [searchedQuery, setSearchedQuery] = useState<string | null>(null);
-  // Only shown pre-decision (permission status 'undetermined') — once the user grants
-  // or denies, this stays hidden for the rest of the session so we never nag.
+  // Shown only pre-decision; hidden for the rest of the session once granted/denied.
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
 
   const sessionTokenRef = useRef(Crypto.randomUUID());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
   const coordsRef = useRef<{ lat: number; lng: number } | null>(null);
-  // Mirrors `text` for use inside fetchCoords, which can resolve well after the render
-  // that kicked it off — reading state there would close over a stale value.
+  // Mirrors `text` for fetchCoords, which resolves late and would close over stale state.
   const textRef = useRef(initialValue);
 
   const venueName = getVenueName(resolvedPlace);
@@ -81,9 +76,7 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
     try {
       const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
       coordsRef.current = { lat: position.coords.latitude, lng: position.coords.longitude };
-      // Coords just landed — if the user already typed a query, its results are still
-      // the unbiased search from before. Re-run it now so the list updates in place
-      // instead of silently staying stale until the next keystroke.
+      // Coords just landed; re-run any pending query so results aren't stale until the next keystroke.
       const pending = textRef.current.trim();
       if (pending.length >= MIN_QUERY_LENGTH) {
         if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -105,19 +98,15 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
         }
       })
       .catch(() => {
-        // Location bias is a nice-to-have — e.g. the native module isn't in the
-        // installed build yet (needs a fresh dev-client build after adding
-        // expo-location). Search still works fine without it.
+        // Nice-to-have — e.g. native module missing until next dev-client build; search still works.
       });
   };
 
   useEffect(() => {
     checkPermissionAndFetchCoords();
 
-    // If the user grants location access from the OS Settings app instead of our
-    // in-panel "Enable" button, this panel stays mounted the whole time and never
-    // sees that change on its own. Re-check whenever the app comes back to the
-    // foreground so we pick up coords instead of silently searching unbiased.
+    // If permission is granted via OS Settings instead of our button, this panel never
+    // sees the change on its own — recheck on foreground to pick up coords.
     const subscription = AppState.addEventListener('change', nextState => {
       if (nextState === 'active' && coordsRef.current === null) {
         checkPermissionAndFetchCoords();
@@ -130,6 +119,7 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
     setShowLocationPrompt(false);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
+      reportPermissionStatus(api, { location: status as 'granted' | 'denied' | 'undetermined' });
       if (status === Location.PermissionStatus.GRANTED) {
         fetchCoords();
       }
@@ -166,8 +156,7 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
       setSuggestions([]);
       setSearchedQuery(null);
     } catch {
-      // Fall back to the suggestion's plain text if the details lookup fails —
-      // the field still gets a reasonable value instead of appearing broken.
+      // Fall back to the suggestion's plain text if details lookup fails.
       setText(suggestion.mainText);
       setResolvedPlace(undefined);
       setSuggestions([]);

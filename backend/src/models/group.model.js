@@ -37,37 +37,51 @@ const routineSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
-const groupSchema = new mongoose.Schema({
+/**
+ * namedScheduleSchema: one recurring series on a group (e.g. "Sunday Dinner").
+ * A group can have several, each with its own routines/location/capacity/RSVP
+ * window, sharing the group's members, chat, and timezone.
+ * `active: false` = soft-deleted; its past/generated meetups stay intact, cancelled not deleted.
+ */
+const namedScheduleSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
-  image: { type: String, default: "" },
-  
-  /**
-   * schedule is now optional. 
-   * If the user selects "No" to "Set Schedule Now?", this object is not created.
-   * Invites and Chat will still function as the Group document itself exists.
-   */
-  schedule: {
-    startDate: { type: Date }, // Selected from the calendar card after routines are set
-    routines: [routineSchema], // Support for "Multiple Rules" (max 5)
-  },
+  startDate: { type: Date }, // Selected from the calendar card after routines are set
+  routines: [routineSchema], // Support for "Multiple Rules" (max 5)
 
-  timezone: { type: String, required: true }, // Global timezone as requested
-  
   defaultLocation: { type: String, trim: true, default: "" },
   defaultCapacity: { type: Number, default: 0 },
-  
+
   generationLeadDays: { type: Number, min: 0, default: null },
   generationLeadTime: { type: String, default: "09:00 AM" },
   generationDeadlineDays: { type: Number, min: 0, default: null },
   generationDeadlineTime: { type: String, default: "09:00 AM" },
   nextGenerationAt: { type: Date },
-  
+
+  active: { type: Boolean, default: true },
+}, { timestamps: true });
+
+const groupSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true },
+  image: { type: String, default: "" },
+
+  /**
+   * A group can have zero or more named schedules; invites/chat work regardless.
+   * Capped at 5 active schedules, enforced in createSchedule (Mongoose can't express it).
+   */
+  schedules: [namedScheduleSchema],
+
+  timezone: { type: String, required: true }, // Global timezone, shared by every schedule
+
+  // Fallback location/capacity for one-off meetups not tied to any named schedule.
+  defaultLocation: { type: String, trim: true, default: "" },
+  defaultCapacity: { type: Number, default: 0 },
+
   // Used by the JIT job to determine how many meetups to keep in the "pipeline"
-  meetupsToDisplay: { 
-    type: Number, 
-    default: 1, 
-    min: 1, 
-    max: 50 
+  meetupsToDisplay: {
+    type: Number,
+    default: 1,
+    min: 1,
+    max: 50
   },
 
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],

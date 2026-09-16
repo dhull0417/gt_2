@@ -1,10 +1,7 @@
 import { DateTime } from "luxon";
 
-// How far ahead of "now" the recurring-meetup pipeline is kept filled, per
-// frequency. Occurrences are naturally spaced by frequency, so the resulting
-// occurrence count falls out of the window automatically (e.g. a 364-day
-// window yields ~52 weekly or ~26 biweekly occurrences with no separate
-// count logic needed).
+// How far ahead the recurring-meetup pipeline stays filled, per frequency.
+// Occurrence count falls out of the window automatically (e.g. 364 days ~52 weekly).
 export const getGenerationWindowDays = (frequency) => {
   switch (frequency) {
     case 'daily':    return 93;   // ~3 months
@@ -16,11 +13,9 @@ export const getGenerationWindowDays = (frequency) => {
   }
 };
 
-// Staged "you haven't RSVP'd yet" reminders, keyed by how far ahead of
-// startsAt each stage fires. Longer-cycle frequencies get more, earlier
-// stages since members plan further ahead for them. The final 30-minutes-out
-// ping is handled separately by notifyMeetupReminder (goes to everyone
-// except `out`, not just the undecided) and isn't part of this list.
+// Staged RSVP reminders, keyed by hours before startsAt; longer-cycle frequencies
+// get more/earlier stages. The final 30-min ping is separate (notifyMeetupReminder,
+// goes to everyone except `out`) and isn't part of this list.
 export const RSVP_REMINDER_STAGES = {
   daily:    [{ key: '4d', offsetHours: 96 }, { key: '24h', offsetHours: 24 }, { key: '6h', offsetHours: 6 }],
   weekly:   [{ key: '7d', offsetHours: 168 }, { key: '3d', offsetHours: 72 }, { key: '24h', offsetHours: 24 }, { key: '6h', offsetHours: 6 }],
@@ -38,24 +33,24 @@ export const parseTimeString = (timeStr) => {
   return { hours, minutes };
 };
 
-// Returns the UTC datetime when the next ungenerated meetup for a given
-// routine/dtEntry should be created, based on the last anchor date processed.
-export const computeNextGenerationAt = (group, lastAnchorDate, routine, dtEntry, ordinalRule = null) => {
-  const { hours: leadH, minutes: leadM } = parseTimeString(group.generationLeadTime || "09:00 AM");
+// UTC time to generate the next meetup for a routine/dtEntry, based on the last
+// anchor date. `schedule` supplies lead-time settings; `timezone` is the parent group's.
+export const computeNextGenerationAt = (schedule, timezone, lastAnchorDate, routine, dtEntry, ordinalRule = null) => {
+  const { hours: leadH, minutes: leadM } = parseTimeString(schedule.generationLeadTime || "09:00 AM");
   const anchor = lastAnchorDate || new Date();
 
   const nextOccurrence = calculateNextMeetupDate(
     routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
     dtEntry.time,
-    group.timezone,
+    timezone,
     routine.frequency,
     anchor,
     routine.frequency === 'ordinal' ? ordinalRule : null
   );
 
   return DateTime.fromJSDate(nextOccurrence)
-    .setZone(group.timezone)
-    .minus({ days: group.generationLeadDays || 1 })
+    .setZone(timezone)
+    .minus({ days: schedule.generationLeadDays || 1 })
     .set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 })
     .toJSDate();
 };
@@ -79,13 +74,8 @@ export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fr
   
   let meetupDate = now.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
-  // DAILY / WEEKLY / BI-WEEKLY
-  // All three use a day index (0-6) to target a specific weekday.
-  // The only difference is how far we skip when the found day is already past:
-  //   - daily:    skip 1 day  (next occurrence of this weekday is next week, 
-  //                            but we fill every weekday so it's always 7 days away)
-  //   - weekly:   skip 1 week
-  //   - biweekly: skip 2 weeks
+  // DAILY/WEEKLY/BIWEEKLY: target a weekday (0-6); skip ahead when it's already past —
+  // daily fills every weekday so it's always +7 days; weekly +1 week; biweekly +2 weeks.
   if (typeof dayOrRule === 'number' && ['daily', 'weekly', 'biweekly'].includes(frequency)) {
     const targetDay = dayOrRule; // 0=Sun, 6=Sat
     const luxonTarget = targetDay === 0 ? 7 : targetDay; // Luxon: Mon=1, Sun=7
@@ -95,18 +85,15 @@ export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fr
       meetupDate = meetupDate.plus({ days: 1 });
     }
 
-    // If that weekday/time is already past relative to the anchor, advance to next occurrence.
-    // For daily, each specific day only recurs weekly (Sun->next Sun = 7 days),
-    // but across all 7 dayTimes entries the group has daily coverage.
+    // advance to next occurrence if already past the anchor.
+    // daily: each entry recurs weekly (Sun->next Sun), but 7 entries together give daily coverage.
     if (meetupDate <= now) {
       meetupDate = meetupDate.plus({ days: 7 }); // Always 7 days to next same weekday
     }
 
-    // For biweekly, add another week on top — but only when continuing an
-    // already-established occurrence (fromDate given). On the very first,
-    // anchor-less bootstrap call (fromDate null), the weekday just found
-    // above IS the correct first occurrence; bumping it here would skip an
-    // entire cycle and shift every later occurrence a full week late.
+    // biweekly: add another week, but only when continuing (fromDate given) — the
+    // anchor-less bootstrap call's weekday is already correct; bumping it would shift
+    // every later occurrence a week late.
     if (frequency === 'biweekly' && fromDate) {
       meetupDate = meetupDate.plus({ weeks: 1 });
     }
@@ -152,7 +139,7 @@ export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fr
 
         candidate = candidate.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 
-        // Must be in the same month we're checking AND strictly after 'now' (the anchor + 1 second)
+        // must be in the checked month and strictly after 'now' (anchor + 1s)
         if (candidate.hasSame(monthPointer, 'month') && candidate > now) {
             return candidate.toJSDate();
         }

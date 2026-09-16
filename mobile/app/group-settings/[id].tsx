@@ -23,17 +23,20 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { User, Schedule, useApiClient, userApi, groupApi } from '@/utils/api';
+import { User, useApiClient, userApi, groupApi } from '@/utils/api';
+import { getErrorMessage } from '@/utils/networkError';
+import { useContentTopInset } from '@/hooks/useContentTopInset';
+import { formatSchedule } from '@/utils/schedule';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
 import { broadcastGroupUpdate } from '@/utils/groupRealtime';
+import { getUserDisplayName } from '@/utils/groupDisplay';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import LocationSearchModal from '@/components/LocationSearchModal';
 
-// Mirrors the Max Attendees validation on the group-creation Schedule screen and
-// the Add Meetup wizard so all three "attendee limit" entry points agree on what's valid.
+// Mirrors the group-creation and Add Meetup wizard validation so all "attendee limit" entry points agree
 const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
   if (mode !== "limited" || input === "") return null;
   if (!/^\d+$/.test(input)) return "Numbers only, please.";
@@ -42,17 +45,14 @@ const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): str
   return null;
 };
 
-/**
- * Group Settings Screen
- * Access is strictly restricted to the group owner and designated moderators.
- * Features central management for group identity, schedule, JIT, and location.
- */
+// Access restricted to the group owner and designated moderators
 const GroupSettings = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const api = useApiClient();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
+  const contentTopInset = useContentTopInset();
 
   const { getToken } = useAuth();
   const { data: group, isLoading: isLoadingGroup } = useGetGroupDetails(id);
@@ -99,6 +99,10 @@ const GroupSettings = () => {
   const [isEditingMembers, setIsEditingMembers] = useState(false);
   const [isRemovingMemberId, setIsRemovingMemberId] = useState<string | null>(null);
 
+  // --- State for Ownership Transfer ---
+  const [isTransferModalVisible, setIsTransferModalVisible] = useState(false);
+  const [isTransferringId, setIsTransferringId] = useState<string | null>(null);
+
   // --- Robust Permission Logic ---
   const isUserOwner = useMemo(() => {
     if (!currentUser || !group) return false;
@@ -116,27 +120,12 @@ const GroupSettings = () => {
     return isUserOwner || isUserMod;
   }, [isUserOwner, isUserMod]);
 
-  const scheduleTypeLabel = useMemo((): string => {
-    const schedule: Schedule | undefined = group?.schedule;
-    if (!schedule) return 'No schedule set';
-    const routines = schedule.routines ?? [];
-    if (routines.length > 1) return 'Multiple Rules';
-    const freq = routines.length === 1 ? routines[0].frequency : schedule.frequency;
-    const labels: Record<string, string> = {
-      daily: 'Daily', weekly: 'Weekly', biweekly: 'Biweekly',
-      monthly: 'Monthly', ordinal: 'Ordinal', once: 'One-time', custom: 'Custom',
-    };
-    return labels[freq] ?? 'No schedule set';
-  }, [group?.schedule]);
-
-  const rsvpSettingsLabel = useMemo((): string => {
-    const leadDays = group?.generationLeadDays;
-    const deadlineDays = group?.generationDeadlineDays;
-    const opensPart = leadDays != null ? `Earliest ${leadDays} day${leadDays !== 1 ? 's' : ''} before at ${group?.generationLeadTime || '—'}` : null;
-    const deadlinePart = deadlineDays != null ? `Latest ${deadlineDays} day${deadlineDays !== 1 ? 's' : ''} before at ${group?.generationDeadlineTime || '—'}` : null;
-    if (!opensPart && !deadlinePart) return 'RSVPs open anytime';
-    return [opensPart, deadlinePart].filter(Boolean).join(' · ');
-  }, [group?.generationLeadDays, group?.generationLeadTime, group?.generationDeadlineDays, group?.generationDeadlineTime]);
+  const activeSchedules = useMemo(
+    () => (group?.schedules ?? []).filter(sch => sch.active !== false),
+    [group?.schedules]
+  );
+  const MAX_ACTIVE_SCHEDULES = 5;
+  const canAddSchedule = activeSchedules.length < MAX_ACTIVE_SCHEDULES;
 
   // --- ACCESS CONTROL GUARD ---
   useEffect(() => {
@@ -154,12 +143,11 @@ const GroupSettings = () => {
   const settingsOptions = [
     { id: 'image', label: 'Edit Group Photo', icon: 'camera', color: '#4A90E2', bg: '#EFF6FF' },
     { id: 'name', label: 'Edit Group Name', icon: 'type', color: '#3B82F6', bg: '#EFF6FF' },
-    { id: 'schedule', label: 'Edit Schedule & Times', icon: 'calendar', color: '#6366F1', bg: '#EEF2FF' },
-    { id: 'jit', label: 'Edit RSVP Settings', icon: 'bell', color: '#F59E0B', bg: '#FFFBEB' },
-    { id: 'capacity', label: 'Edit Attendee Limit', icon: 'users', color: '#A855F7', bg: '#F5F3FF' },
-    { id: 'location', label: 'Edit Location', icon: 'map-pin', color: '#10B981', bg: '#ECFDF5' },
+    { id: 'capacity', label: 'Default Attendee Limit', icon: 'users', color: '#A855F7', bg: '#F5F3FF' },
+    { id: 'location', label: 'Default Location', icon: 'map-pin', color: '#10B981', bg: '#ECFDF5' },
     { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: '#ECFEFF' },
     { id: 'members', label: 'Remove Members', icon: 'user-minus', color: '#F97316', bg: '#FFF7ED' },
+    ...(isUserOwner ? [{ id: 'transfer', label: 'Transfer Ownership', icon: 'repeat', color: '#8B5CF6', bg: '#F5F3FF' }] : []),
     { id: 'terminate', label: isUserOwner ? 'Delete Group' : 'Leave Group', icon: isUserOwner ? 'trash-2' : 'log-out', color: '#EF4444', bg: '#FEF2F2', destructive: true },
   ];
 
@@ -194,11 +182,8 @@ const GroupSettings = () => {
       case 'members':
         setIsEditingMembers(true);
         break;
-      case 'schedule':
-        router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id } });
-        break;
-      case 'jit':
-        router.push({ pathname: '/group-edit-jit/[id]', params: { id: id } });
+      case 'transfer':
+        setIsTransferModalVisible(true);
         break;
       case 'terminate':
         if (isUserOwner) handleConfirmDelete();
@@ -239,7 +224,7 @@ const GroupSettings = () => {
   const avatarPopScale = useRef(new Animated.Value(1)).current;
 
   const handlePickNewImage = async () => {
-    const uri = await pickImageUri();
+    const uri = await pickImageUri(api);
     if (uri) {
       setPreviewUri(uri);
       avatarPopScale.setValue(1);
@@ -268,8 +253,7 @@ const GroupSettings = () => {
 
       await groupApi.updateGroup(api, { groupId: id, image: newUrl });
 
-      // Only delete the old file if it lives at a different storage path.
-      // If the paths are the same, upsert already overwrote it — deleting would remove the new file.
+      // Only delete the old file if it's a different path — same path means upsert already overwrote it
       if (oldImageUrl) {
         const marker = `/storage/v1/object/public/group-images/`;
         const oldPath = oldImageUrl.slice(oldImageUrl.indexOf(marker) + marker.length).split('?')[0];
@@ -283,8 +267,8 @@ const GroupSettings = () => {
       );
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       setIsImageModalVisible(false);
-    } catch {
-      Alert.alert('Error', 'Could not update group photo. Please try again.');
+    } catch (error) {
+      Alert.alert('Error', getErrorMessage(error, 'Could not update group photo. Please try again.'));
     } finally {
       setIsConfirmingImage(false);
     }
@@ -344,7 +328,7 @@ const GroupSettings = () => {
         ]);
         playNameCelebration(tempName.trim());
     } catch (error: any) {
-        Alert.alert("Error", error.response?.data?.error || "Failed to update group name.");
+        Alert.alert("Error", getErrorMessage(error, "Failed to update group name."));
     } finally {
         setIsSavingName(false);
     }
@@ -369,16 +353,14 @@ const GroupSettings = () => {
         setIsEditingCapacity(false);
         Alert.alert("Success", "Attendee limit and associated meetups updated.");
     } catch (error: any) {
-        Alert.alert("Error", error.response?.data?.error || "Failed to update attendee limit.");
+        Alert.alert("Error", getErrorMessage(error, "Failed to update attendee limit."));
     } finally {
         setIsSavingCapacity(false);
     }
   };
 
-  // Closes the popup immediately when called (matching the other 3 Set Location
-  // popups, which are just local-state updates with no network round-trip) —
-  // the save itself happens in the background; a failure surfaces via Alert
-  // after the fact rather than blocking the popup open until it resolves.
+  // Closes immediately like the other Set Location popups; save happens in the background
+  // and a failure surfaces via Alert after the fact rather than blocking the popup.
   const handleSaveLocation = async (locationText: string) => {
     if (!id) return;
     const trimmedLoc = locationText.trim();
@@ -393,7 +375,7 @@ const GroupSettings = () => {
         ]);
         Alert.alert("Success", "Default location and future meetups updated.");
     } catch (error: any) {
-        Alert.alert("Error", error.response?.data?.error || "Failed to update location.");
+        Alert.alert("Error", getErrorMessage(error, "Failed to update location."));
     }
   };
 
@@ -417,7 +399,7 @@ const GroupSettings = () => {
         setIsEditingMods(false);
         Alert.alert("Success", "Moderator list updated.");
     } catch (error: any) {
-        Alert.alert("Error", error.response?.data?.error || "Failed to update moderators.");
+        Alert.alert("Error", getErrorMessage(error, "Failed to update moderators."));
     } finally {
         setIsSavingMods(false);
     }
@@ -450,9 +432,41 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
     } catch (error: any) {
-        Alert.alert("Error", error.response?.data?.error || "Failed to remove member.");
+        Alert.alert("Error", getErrorMessage(error, "Failed to remove member."));
     } finally {
         setIsRemovingMemberId(null);
+    }
+  };
+
+  // --- OWNERSHIP TRANSFER LOGIC ---
+  const handleTransferPress = (member: User) => {
+    Alert.alert(
+      "Transfer Ownership",
+      `Are you sure you want to make ${member.firstName} ${member.lastName} the new owner? You will become a moderator.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Transfer",
+          style: "destructive",
+          onPress: () => performTransfer(member._id),
+        },
+      ]
+    );
+  };
+
+  const performTransfer = async (newOwnerId: string) => {
+    if (!id) return;
+    setIsTransferringId(newOwnerId);
+    try {
+      await groupApi.transferOwnership(api, { groupId: id, newOwnerId });
+      await queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+      broadcastGroupUpdate(getToken, id);
+      setIsTransferModalVisible(false);
+      Alert.alert("Success", "Ownership transferred.");
+    } catch (error: any) {
+      Alert.alert("Error", getErrorMessage(error, "Failed to transfer ownership."));
+    } finally {
+      setIsTransferringId(null);
     }
   };
 
@@ -522,7 +536,10 @@ const GroupSettings = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView
+      style={[styles.container, { paddingTop: contentTopInset }]}
+      edges={['left', 'right', 'bottom']}
+    >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
           <Feather name="x" size={28} color="#374151" />
@@ -564,24 +581,14 @@ const GroupSettings = () => {
                       {group?.name || '—'}
                     </Text>
                   )}
-                  {option.id === 'schedule' && (
-                    <Text style={styles.optionSubLabel}>
-                      {scheduleTypeLabel}
-                    </Text>
-                  )}
-                  {option.id === 'jit' && (
-                    <Text style={styles.optionSubLabel}>
-                      {rsvpSettingsLabel}
-                    </Text>
-                  )}
                   {option.id === 'location' && (
                     <Text style={styles.optionSubLabel} numberOfLines={1}>
-                       {group?.defaultLocation || 'No default location set'}
+                       {group?.defaultLocation || 'No default location set'} · for one-off meetups
                     </Text>
                   )}
                   {option.id === 'capacity' && (
                     <Text style={styles.optionSubLabel}>
-                      Current Limit: {group?.defaultCapacity === 0 ? 'Unlimited' : group?.defaultCapacity}
+                      {group?.defaultCapacity === 0 ? 'Unlimited' : group?.defaultCapacity} · for one-off meetups
                     </Text>
                   )}
                   {option.id === 'mods' && (
@@ -600,7 +607,48 @@ const GroupSettings = () => {
             </TouchableOpacity>
           ))}
         </View>
-        
+
+        <View style={styles.optionsContainer}>
+          <Text style={styles.sectionLabel}>Schedules</Text>
+          {activeSchedules.map((sch) => (
+            <View key={sch._id} style={styles.optionButton}>
+              <TouchableOpacity
+                style={styles.optionLeft}
+                activeOpacity={0.7}
+                onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: sch._id } })}
+              >
+                <View style={[styles.iconContainer, { backgroundColor: '#EEF2FF' }]}>
+                  <Feather name="calendar" size={20} color="#6366F1" />
+                </View>
+                <View style={{ flexShrink: 1 }}>
+                  <Text style={styles.optionLabel}>{sch.name}</Text>
+                  <Text style={styles.optionSubLabel} numberOfLines={1}>{formatSchedule(sch)}</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ padding: 6 }}
+                onPress={() => router.push({ pathname: '/group-edit-jit/[id]', params: { id: id!, scheduleId: sch._id } })}
+              >
+                <Feather name="bell" size={18} color="#F59E0B" />
+              </TouchableOpacity>
+            </View>
+          ))}
+          {canAddSchedule && (
+            <TouchableOpacity
+              style={styles.optionButton}
+              activeOpacity={0.7}
+              onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: 'new' } })}
+            >
+              <View style={styles.optionLeft}>
+                <View style={[styles.iconContainer, { backgroundColor: '#EEF2FF' }]}>
+                  <Feather name="plus" size={20} color="#6366F1" />
+                </View>
+                <Text style={styles.optionLabel}>Add Schedule</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
+
         <View style={styles.footer}>
           <Text style={styles.footerText}>
             Only group moderators and owners can view or modify these settings.
@@ -809,7 +857,7 @@ const GroupSettings = () => {
                   <View style={styles.memberInfo}>
                     <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
                     <View>
-                      <Text style={[styles.memberName, isSelected && !isOwner && styles.textWhite]}>{item.firstName} {item.lastName}</Text>
+                      <Text style={[styles.memberName, isSelected && !isOwner && styles.textWhite]}>{getUserDisplayName(item)}</Text>
                       <Text style={[styles.memberRole, isSelected && !isOwner && styles.textWhite70]}>{isOwner ? 'Owner' : isSelected ? 'Moderator' : 'Member'}</Text>
                     </View>
                   </View>
@@ -860,7 +908,7 @@ const GroupSettings = () => {
                   <View style={styles.memberInfo}>
                     <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
                     <View>
-                      <Text style={styles.memberName}>{item.firstName} {item.lastName}</Text>
+                      <Text style={styles.memberName}>{getUserDisplayName(item)}</Text>
                       <Text style={styles.memberRole}>{isMbrOwner ? 'Owner' : isMbrMod ? 'Moderator' : 'Member'}</Text>
                     </View>
                   </View>
@@ -871,6 +919,64 @@ const GroupSettings = () => {
                     </TouchableOpacity>
                   ) : isMbrOwner ? <View style={styles.ownerBadgeShield}><Feather name="shield" size={16} color="#4A90E2" /></View> : null}
                 </View>
+              );
+            }}
+          />
+        </View>
+      </Modal>
+
+      {/* Transfer Ownership Modal */}
+      <Modal
+        visible={isTransferModalVisible}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={() => setIsTransferModalVisible(false)}
+      >
+        <View style={[styles.fullModalContainer, { paddingTop: insets.top }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setIsTransferModalVisible(false)} style={styles.headerIconButton}>
+              <Feather name="chevron-down" size={28} color="#374151" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitleLarge}>Transfer Ownership</Text>
+            <View style={{ width: 44 }} />
+          </View>
+          <FlatList
+            data={(group?.members || []).filter((m: any) => m._id.toString() !== ((group?.owner as any)?._id || group?.owner || "").toString())}
+            keyExtractor={(item) => item._id}
+            contentContainerStyle={{ padding: 20 }}
+            ListHeaderComponent={() => (
+              <Text style={styles.modalSubtitleLeft}>
+                Pick a member to become the new owner. You'll become a moderator of this group.
+              </Text>
+            )}
+            ListEmptyComponent={() => (
+              <Text style={styles.modalSubtitleLeft}>No other members to transfer ownership to.</Text>
+            )}
+            renderItem={({ item }) => {
+              const mId = item._id.toString();
+              const isMbrMod = group?.moderators?.some((m: any) => (m?._id || m).toString() === mId);
+
+              return (
+                <TouchableOpacity
+                  style={styles.selectMemberRow}
+                  onPress={() => handleTransferPress(item)}
+                  disabled={!!isTransferringId}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.memberInfo}>
+                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
+                    <View>
+                      <Text style={styles.memberName}>{getUserDisplayName(item)}</Text>
+                      <Text style={styles.memberRole}>{isMbrMod ? 'Moderator' : 'Member'}</Text>
+                    </View>
+                  </View>
+
+                  {isTransferringId === mId ? (
+                    <ActivityIndicator size="small" color="#8B5CF6" />
+                  ) : (
+                    <Feather name="chevron-right" size={20} color="#D1D5DB" />
+                  )}
+                </TouchableOpacity>
               );
             }}
           />
@@ -888,6 +994,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '900', color: '#111827' },
   scroll: { flex: 1 },
   optionsContainer: { padding: 16 },
+  sectionLabel: { fontSize: 13, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, marginLeft: 4 },
   optionButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: 'white', borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F3F4F6', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
   optionLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
   iconContainer: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 16 },

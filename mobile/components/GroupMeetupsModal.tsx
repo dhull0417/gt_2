@@ -45,10 +45,7 @@ const GroupMeetupsModal = ({ visible, onClose, groupId }: GroupMeetupsModalProps
             {selectedMeetup ? (
                 <MeetupDetailModal meetup={selectedMeetup} onClose={() => setSelectedMeetup(null)} />
             ) : (
-                // presentationStyle="pageSheet" is iOS-only — Android renders this modal
-                // truly fullscreen (edgeToEdgeEnabled), so without safe-area insets the
-                // header sits under the status bar there. SafeAreaView is a no-op on
-                // iOS's inset pageSheet, same as MeetupDetailModal's own wrapper.
+                // pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually
                 <SafeAreaView style={styles.modalContent} edges={['top', 'bottom']}>
                     <View style={styles.modalHeader}>
                         <View style={{ width: 24 }} />

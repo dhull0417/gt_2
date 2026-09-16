@@ -16,7 +16,7 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
   const now = new Date();
 
   const groups = await Group.find({
-    nextGenerationAt: { $lte: now }
+    'schedules.nextGenerationAt': { $lte: now }
   });
 
   if (groups.length === 0) {
@@ -37,16 +37,20 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
   res.status(200).json({ generated: generatedCount, message: "Regeneration complete." });
 });
 
+// Meetups stay "happening now" for this long after startsAt before expiring — mirrors MEETUP_ACTIVE_DURATION_MS in mobile/utils/meetupStatus.ts.
+const MEETUP_ACTIVE_DURATION_MS = 60 * 60 * 1000;
+
 /**
- * @desc    Expire meetups whose start time has passed.
+ * @desc    Expire meetups whose active window (startsAt + 1hr) has passed.
  *          Uses startsAt for a single atomic DB operation — no JS loop.
  * @route   POST /api/jobs/expire-meetups
  */
 export const expirePastMeetups = asyncHandler(async (req, res) => {
   const now = new Date();
+  const cutoff = new Date(now.getTime() - MEETUP_ACTIVE_DURATION_MS);
 
   const toExpire = await Meetup.find(
-    { status: 'scheduled', startsAt: { $lte: now } },
+    { status: 'scheduled', startsAt: { $lte: cutoff } },
     'group'
   );
 
@@ -57,7 +61,7 @@ export const expirePastMeetups = asyncHandler(async (req, res) => {
   const groupIds = [...new Set(toExpire.map(m => m.group.toString()))];
 
   const result = await Meetup.updateMany(
-    { status: 'scheduled', startsAt: { $lte: now } },
+    { status: 'scheduled', startsAt: { $lte: cutoff } },
     { $set: { status: 'expired' } }
   );
 
@@ -127,10 +131,8 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Send a "starting soon" push notification 30 minutes before a meetup's startsAt.
- *          Compares reminderNotifiedFor against the live startsAt instead of a boolean flag,
- *          so an owner/moderator rescheduling the meetup automatically re-arms the reminder
- *          for the new time without any extra bookkeeping on the update path.
+ * @desc    "Starting soon" push 30 min before startsAt. Compares reminderNotifiedFor
+ *          to the live startsAt (not a boolean) so a reschedule auto re-arms it.
  * @route   POST /api/jobs/notify-meetup-reminder
  */
 export const notifyMeetupReminder = asyncHandler(async (req, res) => {
@@ -201,21 +203,14 @@ const RSVP_REMINDER_COPY = {
 };
 
 /**
- * @desc    Staged "you haven't RSVP'd yet" reminders leading up to a meetup,
- *          scaled by recurrence frequency (see RSVP_REMINDER_STAGES). Only
- *          targets members still in `undecided`, and only once RSVP is open
- *          (rsvpOpenDate null or already passed) — a meetup with a later
- *          open date simply skips whichever stages would've fallen before
- *          it; notifyRsvpOpen's own ping covers the moment it opens.
- *          If the job was down long enough that multiple stages are overdue
- *          at once, only the most imminent one is sent — the skipped,
- *          longer-lead stages are marked sent without notifying, so they
- *          don't fire belatedly out of order.
+ * @desc    Staged "you haven't RSVP'd yet" reminders, scaled by frequency
+ *          (RSVP_REMINDER_STAGES). Only undecided members, only once RSVP is
+ *          open. If multiple stages are overdue (e.g. after downtime), only the
+ *          most imminent fires — earlier stages are marked sent, not queued late.
  * @route   POST /api/jobs/notify-rsvp-reminder-stages
  */
-// No meetup can have a due-but-unsent stage further out than the longest
-// configured offset, so bounding the query on it keeps the scan proportional
-// to what's actually imminent instead of every future recurring meetup.
+// bound the query to the longest configured offset (nothing due can be further
+// out), so the scan stays proportional to what's imminent.
 const MAX_STAGE_OFFSET_HOURS = Math.max(
   ...Object.values(RSVP_REMINDER_STAGES).flat().map(s => s.offsetHours)
 );

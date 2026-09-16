@@ -2,15 +2,15 @@ import React, { useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { useMarkNotificationsAsRead } from '@/hooks/useMarkNotificationsAsRead';
 import { Notification, User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { getNotificationIcon } from '@/utils/notificationIcons';
+import { ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
 
-// A simple time ago function for demonstration
 const timeAgo = (date: string) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
     let interval = seconds / 31536000;
@@ -32,9 +32,7 @@ const CHANGED_FIELD_LABELS: Record<string, string> = {
     capacity: 'capacity',
 };
 
-// Turns ['schedule', 'location'] into "date and time and location"; falls
-// back to null when there's nothing to describe (e.g. older notifications
-// persisted before per-field change tracking existed).
+// Turns ['schedule', 'location'] into "date and time and location"; null if nothing to describe
 const describeChangedFields = (fields?: string[]) => {
     if (!fields || fields.length === 0) return null;
     const labels = fields.map(f => CHANGED_FIELD_LABELS[f] || f);
@@ -50,7 +48,7 @@ const formatMeetupDateTime = (meetup?: { date?: string; time?: string; timezone?
     return meetup.time ? `${dateStr} at ${meetup.time}` : dateStr;
 };
 
-const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void }) => {
+const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAccepting, isDeclining }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, isAccepting: boolean, isDeclining: boolean }) => {
     const router = useRouter();
 
     const getMessage = () => {
@@ -68,6 +66,10 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> declined your invitation to <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'group-added':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> added you to <Text style={styles.bold}>{groupName}</Text>.</Text>;
+            case 'group-member-joined':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> has been added to <Text style={styles.bold}>{groupName}</Text>!</Text>;
+            case 'group-removed':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> removed you from <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'group-updated':
                 return <Text style={styles.messageText}>The group <Text style={styles.bold}>{groupName}</Text> was renamed.</Text>;
             case 'meetup-rsvp-in':
@@ -94,6 +96,8 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
             }
             case 'meetup-cancelled':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> cancelled <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'meetup-restored':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> restored <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-rsvp-reminder':
                 return <Text style={styles.messageText}>Don't forget to RSVP for <Text style={styles.bold}>{meetupName || 'the meetup'}</Text>!</Text>;
             case 'meetup-rsvp-open':
@@ -110,6 +114,17 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
     };
 
     const handlePress = () => {
+        // The user is no longer a member, so the group details screen isn't reachable.
+        if (notification.type === 'group-removed') return;
+        // Meetup-related notifications deep-link straight to that meetup's detail
+        // modal — mirrors the OS push-tap handling in usePushNotifications.ts.
+        if (notification.meetup?._id) {
+            router.push({
+                pathname: '/(tabs)',
+                params: { openMeetupId: notification.meetup._id }
+            });
+            return;
+        }
         if (notification.group?._id) {
             // See the matching branch in group-chat/[id].tsx's handleOpenDetails.
             if (Platform.OS === 'ios') {
@@ -139,11 +154,19 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
                 <Text style={styles.timeText}>{timeAgo(notification.createdAt)}</Text>
                 {notification.type === 'group-invite' && notification.status === 'pending' && (
                     <View style={styles.actionContainer}>
-                        <TouchableOpacity style={[styles.actionButton, styles.acceptButton]} onPress={() => onAccept(notification._id)}>
-                            <Text style={styles.actionTextAccept}>Accept</Text>
+                        <TouchableOpacity
+                            style={[styles.actionButton, styles.acceptButton, (isAccepting || isDeclining) && styles.actionButtonDisabled]}
+                            onPress={() => onAccept(notification._id)}
+                            disabled={isAccepting || isDeclining}
+                        >
+                            <Text style={styles.actionTextAccept}>{isAccepting ? 'Accepting…' : 'Accept'}</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.actionButton, styles.declineButton]} onPress={() => onDecline(notification._id)}>
-                            <Text style={styles.actionTextDecline}>Decline</Text>
+                        <TouchableOpacity
+                            style={[styles.actionButton, styles.declineButton, (isAccepting || isDeclining) && styles.actionButtonDisabled]}
+                            onPress={() => onDecline(notification._id)}
+                            disabled={isAccepting || isDeclining}
+                        >
+                            <Text style={styles.actionTextDecline}>{isDeclining ? 'Declining…' : 'Decline'}</Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -154,29 +177,29 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline }: { 
 
 const NotificationsScreen = () => {
     const api = useApiClient();
-    const queryClient = useQueryClient();
     const { data: notifications, isLoading, refetch } = useGetNotifications();
     const { mutate: markAsRead } = useMarkNotificationsAsRead();
     const { data: currentUser } = useQuery<User>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
+
+    // mutationFn + the ['notifications']/['groups'] invalidation on success both
+    // live in utils/offlineMutations.ts / app/_layout.tsx's MutationCache, so an
+    // accept/decline tapped offline is queued and still resolves correctly even
+    // if this screen isn't around to see it (see useRsvp.ts for the same pattern).
+    const acceptMutation = useMutation<unknown, any, string>({
+        mutationKey: ACCEPT_INVITE_MUTATION_KEY,
+        onError: (error) => console.error("Failed to accept invite", error),
+    });
+    const declineMutation = useMutation<unknown, any, string>({
+        mutationKey: DECLINE_INVITE_MUTATION_KEY,
+        onError: (error) => console.error("Failed to decline invite", error),
+    });
 
     useFocusEffect(useCallback(() => {
         markAsRead(undefined, { onSettled: () => refetch() });
     }, [refetch, markAsRead]));
 
-    const handleAccept = async (id: string) => {
-        try {
-            await api.post(`/api/notifications/${id}/accept`);
-            queryClient.invalidateQueries({ queryKey: ['notifications'] });
-            queryClient.invalidateQueries({ queryKey: ['groups'] });
-        } catch (error) { console.error("Failed to accept invite", error); }
-    };
-
-    const handleDecline = async (id: string) => {
-        try {
-            await api.post(`/api/notifications/${id}/decline`);
-            queryClient.invalidateQueries({ queryKey: ['notifications'] });
-        } catch (error) { console.error("Failed to decline invite", error); }
-    };
+    const handleAccept = (id: string) => acceptMutation.mutate(id);
+    const handleDecline = (id: string) => declineMutation.mutate(id);
 
     if (isLoading || !currentUser) {
         return <View style={styles.center}><LoadingAnimation /></View>;
@@ -195,7 +218,16 @@ const NotificationsScreen = () => {
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
             <FlatList
                 data={notifications}
-                renderItem={({ item }) => <NotificationItem notification={item} currentUser={currentUser} onAccept={handleAccept} onDecline={handleDecline} />}
+                renderItem={({ item }) => (
+                    <NotificationItem
+                        notification={item}
+                        currentUser={currentUser}
+                        onAccept={handleAccept}
+                        onDecline={handleDecline}
+                        isAccepting={acceptMutation.isPending && acceptMutation.variables === item._id}
+                        isDeclining={declineMutation.isPending && declineMutation.variables === item._id}
+                    />
+                )}
                 keyExtractor={item => item._id}
                 contentContainerStyle={{ paddingVertical: 8 }}
             />
@@ -216,6 +248,7 @@ const styles = StyleSheet.create({
     timeText: { fontSize: 12, color: '#9CA3AF', marginTop: 4 },
     actionContainer: { flexDirection: 'row', marginTop: 12, gap: 12 },
     actionButton: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
+    actionButtonDisabled: { opacity: 0.5 },
     acceptButton: { backgroundColor: '#10B981' },
     declineButton: { backgroundColor: '#F3F4F6' },
     actionTextAccept: { color: 'white', fontWeight: 'bold' },

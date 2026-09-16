@@ -20,10 +20,8 @@ export const useSocialAuth = () => {
             console.log("Error in social auth", err)
             const provider = strategy ==="oauth_google" ? "Google" : "Apple";
             Alert.alert("Error", `Failed to sign in with ${provider}. Please try again.`)
-            // On Android, a failure here can happen after the deep-link callback
-            // already navigated to /sso-callback (see mobile/app/sso-callback.tsx),
-            // which no longer redirects on its own. Route back to sign-in so the
-            // user isn't stranded on the loading screen.
+            // On Android this can fail after /sso-callback already navigated away
+            // and won't redirect itself — route back so the user isn't stranded.
             router.replace('/(auth)');
         } finally {
             setIsLoading(false)

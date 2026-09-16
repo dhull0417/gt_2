@@ -14,10 +14,11 @@ const notificationSchema = new mongoose.Schema({
         type: String,
         required: true,
         enum: [
-            'group-invite', 'invite-accepted', 'invite-declined', 'group-added', 'group-updated',
+            'group-invite', 'invite-accepted', 'invite-declined', 'group-added', 'group-member-joined', 'group-removed', 'group-updated',
+            'ownership-transferred',
             'meetup-rsvp-in', 'meetup-rsvp-out', 'meetup-waitlist-join', 'waitlist-promotion',
             'meetup-rsvp-admin-in', 'meetup-rsvp-admin-out',
-            'meetup-created', 'meetup-updated', 'meetup-cancelled',
+            'meetup-created', 'meetup-updated', 'meetup-cancelled', 'meetup-restored',
             'meetup-rsvp-reminder', 'meetup-rsvp-open', 'meetup-starting-soon',
             'poll-created', 'poll-closed',
         ],
@@ -44,9 +45,7 @@ const notificationSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
     },
-    // Freeform extra context for rendering a more specific message than `type`
-    // alone allows, e.g. which fields changed on a 'meetup-updated' event:
-    // { changedFields: ['time', 'location'] }.
+    // extra context for a more specific message, e.g. { changedFields: ['time', 'location'] }
     meta: {
         type: mongoose.Schema.Types.Mixed,
     },

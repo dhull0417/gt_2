@@ -13,15 +13,15 @@ import Animated, {
 } from 'react-native-reanimated';
 import { subscribeRsvpResponse } from '@/utils/rsvpResponseBus';
 import { getRandomRsvpResponse, RsvpResponse } from '@/utils/rsvpResponses';
+import PartyPopperBurst from '@/components/PartyPopperBurst';
 
 const AUTO_DISMISS_MS = 2200;
 
-// Plain absolutely-positioned overlay (no RN <Modal>) so it reliably paints above
-// whatever screen it's mounted in — including screens that are themselves already
-// presented inside a native Modal (e.g. MeetupDetailModal), where a second nested
-// <Modal> can fail to present on iOS.
+// Absolutely-positioned overlay, not RN <Modal> — a nested Modal can fail to
+// present on iOS (e.g. inside MeetupDetailModal).
 const RsvpResponseOverlay = () => {
   const [current, setCurrent] = useState<(RsvpResponse & { status: 'in' | 'out' }) | null>(null);
+  const [burstId, setBurstId] = useState(0);
 
   const backdropOpacity = useSharedValue(0);
   const scale = useSharedValue(0);
@@ -30,6 +30,7 @@ const RsvpResponseOverlay = () => {
 
   useEffect(() => subscribeRsvpResponse((status) => {
     setCurrent({ ...getRandomRsvpResponse(status), status });
+    setBurstId(id => id + 1);
   }), []);
 
   const dismiss = () => {
@@ -87,6 +88,7 @@ const RsvpResponseOverlay = () => {
     <View style={styles.wrap} pointerEvents="box-none">
       <Pressable style={StyleSheet.absoluteFill} onPress={dismiss}>
         <Animated.View style={[styles.backdrop, backdropStyle]} />
+        <PartyPopperBurst key={burstId} emoji={isIn ? '🎉' : '😢'} />
         <View style={styles.centerWrap} pointerEvents="box-none">
           <Animated.View style={[styles.card, { borderColor: accentColor }, cardStyle]}>
             <Animated.Text style={[styles.emoji, emojiStyle]}>{current.emoji}</Animated.Text>

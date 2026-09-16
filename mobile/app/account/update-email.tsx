@@ -15,22 +15,15 @@ const UpdateEmailScreen = () => {
         if (!user) return;
         setIsLoading(true);
         try {
-            // Step 0: Clean up any unverified email addresses left over from a
-            // previous attempt that was abandoned before the code was entered —
-            // otherwise Clerk rejects re-adding the same address as "taken".
+            // Clear stale unverified emails first, or Clerk rejects re-adding as "taken"
             const stale = user.emailAddresses.filter(
                 (e) => e.id !== user.primaryEmailAddressId && e.verification?.status !== 'verified'
             );
             await Promise.all(stale.map((e) => e.destroy()));
 
-            // Step 1: Add the new email address to the user's account
             const newEmailAddress = await user.createEmailAddress({ email: newEmail });
-
-            // --- THIS IS THE FIX ---
-            // Step 2: Explicitly tell Clerk to send the verification code to the new email
             await newEmailAddress.prepareVerification({ strategy: 'email_code' });
 
-            // Step 3: Navigate to the verification screen
             router.push({
                 pathname: '/account/verify-email',
                 params: { emailId: newEmailAddress.id }

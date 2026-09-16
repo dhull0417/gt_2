@@ -12,12 +12,12 @@ export const useGetGroups = () => {
         queryFn: async () => {
             const cached = queryClient.getQueryData<Group[]>(GROUPS_QUERY_KEY);
 
-            // No cache yet (first launch, or persisted cache expired/cleared) — full fetch.
+            // No cache yet — full fetch.
             if (!cached || cached.length === 0) {
                 return groupApi.getGroups(api);
             }
 
-            // Otherwise only ask for what changed since the newest thing we already have.
+            // Otherwise fetch only what changed since our newest cached item.
             const since = cached.reduce((latest, g) => (g.updatedAt > latest ? g.updatedAt : latest), '');
             const { changed, validIds } = await groupApi.getGroupsSince(api, since);
 

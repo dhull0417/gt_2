@@ -19,7 +19,7 @@ import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useRemoveMember } from '@/hooks/useRemoveMember';
 import { User, useApiClient, userApi, groupApi } from '@/utils/api';
-import { getDMDisplayName } from '@/utils/groupDisplay';
+import { getDMDisplayName, getUserDisplayName, getUserInitial } from '@/utils/groupDisplay';
 import { Feather } from '@expo/vector-icons';
 import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
@@ -40,8 +40,7 @@ const styles = StyleSheet.create({
 });
 
 interface GroupDetailsScreenProps {
-  // False when this screen is mounted outside the Groups tab (no native tab
-  // bar sitting underneath it to clear) — see app/group-details/[id].tsx.
+  // False when mounted outside the Groups tab (no tab bar underneath) — see app/group-details/[id].tsx
   showsTabBarBeneath?: boolean;
 }
 
@@ -53,8 +52,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  // Cached (or freshly fetched) list data gives an instant name/avatar/isDM fallback
-  // while the heavier per-group details request below is still in flight.
+  // Cached list data gives an instant name/avatar/isDM fallback while details load.
   const { data: groups } = useGetGroups();
   const fallbackGroup = useMemo(() => groups?.find(g => g._id === id), [groups, id]);
 
@@ -153,10 +151,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
     >
       <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
         <View className="flex-row items-center flex-1">
-          {/* Always back to chat, regardless of how Details was entered (chat's own
-              header button, or an in-app notification) — Details' only meaningful
-              parent is the conversation, not whatever happens to be under it in the
-              navigation stack. */}
+          {/* Always back to chat — its only meaningful parent, regardless of nav stack */}
           <TouchableOpacity onPress={handleOpenChat} className="mr-2 p-1">
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
           </TouchableOpacity>
@@ -225,11 +220,11 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
             {dmTargetMember && (
               <>
                 <Image
-                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${dmTargetMember.firstName?.[0] ?? dmTargetMember.email?.[0]}` }}
+                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${getUserInitial(dmTargetMember)}` }}
                   style={dmStyles.avatar}
                 />
                 <Text style={dmStyles.name}>
-                  {[dmTargetMember.firstName, dmTargetMember.lastName].filter(Boolean).join(' ') || dmTargetMember.email?.split('@')[0]}
+                  {getUserDisplayName(dmTargetMember)}
                 </Text>
                 <TouchableOpacity
                   style={dmStyles.dmBtn}

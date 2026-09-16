@@ -14,11 +14,13 @@ import {
     Platform,
     Pressable,
     Linking,
-    Dimensions
+    Dimensions,
+    Share
 } from 'react-native';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import VideoServiceIcon from './VideoServiceIcon';
 import { detectVideoService, isHttpUrl } from '../utils/videoLinks';
+import { getUserDisplayName, getUserInitial } from '../utils/groupDisplay';
 import Animated, {
     FadeIn,
     FadeOut,
@@ -32,10 +34,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/utils/api';
+import { getMeetupStatus } from '@/utils/meetupStatus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
+import { DateTime } from 'luxon';
 import { RsvpBreather } from '@/components/RsvpBreather';
 import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
@@ -70,8 +74,7 @@ const PulsingWatermark = ({ label, style, baseOpacity, peakOpacity }: {
     );
 };
 
-// Repeat icon rendered as two color halves that spin together in a quick burst whenever
-// burstNonce changes (i.e. on tap).
+// Repeat icon split into two color halves that spin together in a burst on tap
 const InOutSwapIcon = ({ burstNonce }: { burstNonce: number }) => {
     const burst = useSharedValue(0);
     const isFirstRender = useRef(true);
@@ -114,11 +117,53 @@ interface MeetupDetailModalProps {
   onClose: () => void;
 }
 
-// Helper to safely extract user ID whether the array contains strings or populated objects
+// Extracts user ID whether the array holds strings or populated objects
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
-// Mirrors the Max Attendees validation on the group-creation Schedule screen, the
-// Add Meetup wizard, and group settings so every "attendee limit" entry point agrees.
+const FREQUENCY_LABELS: Record<string, string> = {
+    daily: 'Daily',
+    weekly: 'Weekly',
+    biweekly: 'Bi-Weekly',
+    monthly: 'Monthly',
+    ordinal: 'Monthly',
+};
+
+const DAY_ABBR: Record<number, string> = { 0: 'Su', 1: 'M', 2: 'T', 3: 'W', 4: 'Th', 5: 'F', 6: 'Sa' };
+
+const ordSfx = (n: number) => {
+    if (n > 3 && n < 21) return 'th';
+    switch (n % 10) {
+        case 1: return 'st';
+        case 2: return 'nd';
+        case 3: return 'rd';
+        default: return 'th';
+    }
+};
+
+// Short parenthetical detail for the frequency label, e.g. "W" or "13th day" or "Last W".
+// Derived straight off this occurrence's own date/timezone — not the group's stored
+// routine — so it can't go stale or miss when the schedule that generated it was
+// since edited, deleted, or hasn't loaded into cache yet.
+const buildFrequencyDetail = (meetup: Meetup): string | null => {
+    if (!meetup.frequency) return null;
+    const dt = DateTime.fromJSDate(new Date(meetup.date)).setZone(meetup.timezone);
+    if (!dt.isValid) return null;
+
+    if (meetup.frequency === 'weekly' || meetup.frequency === 'biweekly') {
+        return DAY_ABBR[dt.weekday % 7];
+    }
+    if (meetup.frequency === 'monthly') {
+        return `${dt.day}${ordSfx(dt.day)} day`;
+    }
+    if (meetup.frequency === 'ordinal') {
+        const isLast = dt.day + 7 > dt.daysInMonth;
+        const occurrence = isLast ? 'Last' : `${Math.ceil(dt.day / 7)}${ordSfx(Math.ceil(dt.day / 7))}`;
+        return `${occurrence} ${DAY_ABBR[dt.weekday % 7]}`;
+    }
+    return null;
+};
+
+// Mirrors Max Attendees validation across create-group, AddMeetupWizard, and group settings.
 const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
     if (mode !== "limited" || input === "") return null;
     if (!/^\d+$/.test(input)) return "Numbers only, please.";
@@ -222,9 +267,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         ? groupData.moderators.some((m: any) => typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id)
         : false;
 
-    const isCancelled = meetup.status === 'cancelled';
-    const isPast = new Date(meetup.date) < new Date(); 
-    const isExpired = meetup.status === 'expired' || isPast;
+    const { isCancelled, isExpired, isHappeningNow } = getMeetupStatus(meetup);
 
     const isRsvpLocked = meetup.rsvpOpenDate
     ? new Date(meetup.rsvpOpenDate) > new Date()
@@ -234,12 +277,21 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     ? new Date(meetup.rsvpCloseDate) < new Date()
     : false;
 
-    // RECOMMENDATION: This flag controls all "adjustment" UI
+    // Controls all "adjustment" UI
     const isReadOnly = isCancelled || isExpired;
     const canManage = (isOwner || isMod) && !isReadOnly;
 
-    // Owner can override anyone's RSVP; a moderator can override regular members only —
-    // not the owner, and not another moderator.
+    // Whoever created this one-off meetup can also edit/cancel it, even without owner/mod
+    // status — but NOT override other members' RSVPs or send reminders (canManage handles those).
+    const createdBy = (meetup as any).createdBy;
+    const isCreator = !!createdBy && (typeof createdBy === 'string' ? createdBy === currentUser._id : createdBy._id === currentUser._id);
+    const canEditOrCancel = (isOwner || isMod || isCreator) && !isReadOnly;
+    // A cancelled (but not yet expired) meetup can still be restored by the same
+    // set of people who could cancel it — unlike canEditOrCancel, this stays true
+    // while isCancelled so the "Reactivate" action remains reachable.
+    const canCancelOrRestore = (isOwner || isMod || isCreator) && !isExpired;
+
+    // Owner can override any RSVP; a moderator can override only regular members.
     const canManageTarget = (target: User): boolean =>
         canManage && target._id !== currentUser._id && (
             isOwner || (
@@ -261,22 +313,19 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const inFilled = !inUnselected || isUndecided;
     const outFilled = !outUnselected || isUndecided;
 
-    // Faint RSVP-status tint for the whole modal: amber until the user responds,
-    // then green ("in"/waitlisted) or red ("out") to match the RSVP button colors.
+    // Tint matches RSVP button colors: amber until responded, green (in/waitlisted), red (out).
     const modalBackgroundColor = isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
 
     const goingUsers = (meetup.members || []).filter(m => meetup.in?.some(u => getUserId(u) === m._id));
     const outUsers = (meetup.members || []).filter(m => meetup.out?.some(u => getUserId(u) === m._id));
 
-    // Guests stay attached to their host's clerkId even after the host RSVPs 'out'
-    // (the "Keep Guests" option). Since the host no longer appears in goingUsers,
-    // surface those guests as their own row instead of losing the attribution.
+    // Guests stay tied to host's clerkId even after the host RSVPs 'out' (Keep Guests).
+    // Host then drops from goingUsers, so surface guests as their own row.
     const orphanGuestEntries = (meetup.guests || []).filter(g => {
         if (!g.count) return false;
         return !goingUsers.some(user => (user as any).clerkId === g.userId);
     });
-    // Every user who brought guests gets its own tile (not just orphans),
-    // shown alongside their own tile in the "In" grid.
+    // Every user with guests gets its own tile (not just orphans), in the In grid.
     const allGuestEntries = (meetup.guests || []).filter(g => !!g.count);
     const totalGuestsForInTab = goingUsers.reduce((sum, user) => {
         const entry = (meetup.guests || []).find(g => g.userId === (user as any).clerkId);
@@ -423,9 +472,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const handleOpenLocation = (address: string) => {
         if (isHttpUrl(address)) {
-            // Meeting links (Zoom, Google Meet, Teams, etc.) are universal/app links —
-            // opening the plain https URL hands off to the native app if it's installed,
-            // and falls back to the mobile browser otherwise. No custom scheme needed.
+            // Meeting links are universal/app links; the https URL opens the native app if installed, else the browser.
             Linking.openURL(address.trim()).catch(() => {
                 Alert.alert('Error', 'Could not open this link.');
             });
@@ -446,6 +493,17 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             pathname: '/group-chat/[id]',
             params: { id: meetup.group._id }
         });
+    };
+
+    const handleInviteToMeetup = async () => {
+        try {
+            const { link } = await groupApi.generateInviteLink(api, meetup.group._id);
+            await Share.share({
+                message: `Join me for "${meetup.name}" on GroupThat!\n\nSTEP 1 — Download the app:\n→ https://invite.groupthatapp.com/download\n\nSTEP 2 — Join the group:\n→ ${link}`,
+            });
+        } catch {
+            Alert.alert('Error', 'Could not create invite link. Please try again.');
+        }
     };
 
     const handleSendDM = async () => {
@@ -539,12 +597,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
         if (Platform.OS === 'android') {
-            // Android's picker is a system dialog, not an inline spinner — there's no
-            // separate "Done" button, so the dialog closing on a real pick (event.type
-            // 'set') IS the confirm step. Dismissing it (back button / tap outside)
-            // fires 'dismissed' with no selectedDate — falling back to `tempDate` here
-            // used to silently revert a date the user had already picked, since
-            // `tempDate` only ever tracks the original meetup date on this branch.
+            // Android's dialog has no Done button; closing on a pick (event.type 'set') IS
+            // the confirm. A dismiss fires 'dismissed' with no selectedDate — don't fall back
+            // to tempDate here, it only tracks the original date on this branch.
             setShowDatePicker(false);
             if (event.type === 'set' && selectedDate) {
                 setNewDate(selectedDate);
@@ -591,14 +646,14 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         </View>
                     )}
                 </View>
-                <Text style={styles.gridName} numberOfLines={1}>{user.firstName} {user.lastName}</Text>
+                <Text style={styles.gridName} numberOfLines={1}>{getUserDisplayName(user)}</Text>
             </Wrapper>
         );
     };
 
     const renderGuestTiles = (g: { userId: string; count: number }) => {
         const host = (meetup.members || []).find(m => (m as any).clerkId === g.userId);
-        const hostName = host ? host.firstName : 'A member';
+        const hostName = host ? getUserDisplayName(host) : 'A member';
         return Array.from({ length: g.count }, (_, i) => (
             <View key={`guest-${g.userId}-${i}`} style={styles.gridItem}>
                 <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder, styles.guestAvatarPlaceholder]}>
@@ -620,18 +675,31 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     );
 
     const handleCancelMeetup = () => {
-        if (isReadOnly && !isCancelled) return; // Can't cancel if already ended
+        if (isExpired) return; // Can't cancel or restore an ended meetup
         const action = isCancelled ? "Reactivate" : "Cancel";
         Alert.alert(`${action} Meetup`, `Are you sure?`, [
             { text: "No", style: "cancel" },
-            { 
-                text: "Yes", 
-                style: isCancelled ? "default" : "destructive", 
+            {
+                text: "Yes",
+                style: isCancelled ? "default" : "destructive",
                 onPress: async () => {
                     try {
-                        await meetupApi.cancelMeetup(api, meetup._id);
+                        const newStatus = isCancelled ? 'scheduled' : 'cancelled';
+                        if (isCancelled) {
+                            await meetupApi.restoreMeetup(api, meetup._id);
+                        } else {
+                            await meetupApi.cancelMeetup(api, meetup._id);
+                        }
+
+                        // Apply the new status immediately — invalidateQueries alone leaves
+                        // the card/modal showing the old status until the background
+                        // refetch lands, which can take a beat (or longer offline).
+                        setMeetup(prev => prev ? { ...prev, status: newStatus } : prev);
+                        queryClient.setQueryData<Meetup[]>(['meetups'], (old) =>
+                            old?.map(m => m._id === meetup._id ? { ...m, status: newStatus } : m)
+                        );
                         queryClient.invalidateQueries({ queryKey: ['meetups'] });
-                        if (!isCancelled) onClose(); 
+                        if (!isCancelled) onClose();
                     } catch (e: any) {
                         Alert.alert("Error", e.response?.data?.error || e.message);
                     }
@@ -643,6 +711,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const resolvedLocation = meetup.location || (meetup.group as any)?.defaultLocation || '';
     const headerVideoService = detectVideoService(resolvedLocation);
+    const frequencyDetail = buildFrequencyDetail(meetup);
+    const frequencyLabel = meetup.frequency
+        ? `${FREQUENCY_LABELS[meetup.frequency]}${frequencyDetail ? ` (${frequencyDetail})` : ''}`
+        : null;
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: modalBackgroundColor }]} edges={['top', 'bottom']}>
@@ -676,11 +748,17 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 <View style={{ marginBottom: showRsvpSelector ? 32 : 14 }}>
-                    {/* Updated Banner Logic */}
                     {isCancelled && (
-                        <View style={styles.cancelBanner}>
-                            <Feather name="alert-triangle" size={18} color="#B91C1C" />
-                            <Text style={styles.cancelBannerText}>Meetup Cancelled</Text>
+                        <View style={[styles.cancelBanner, { justifyContent: 'space-between' }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Feather name="alert-triangle" size={18} color="#B91C1C" />
+                                <Text style={styles.cancelBannerText}>Meetup Cancelled</Text>
+                            </View>
+                            {canCancelOrRestore && (
+                                <TouchableOpacity onPress={handleCancelMeetup} style={styles.reactivateBannerBtn}>
+                                    <Text style={styles.reactivateBannerBtnText}>Reactivate</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                     )}
                     {isExpired && !isCancelled && (
@@ -689,13 +767,22 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             <Text style={[styles.cancelBannerText, { color: '#6B7280' }]}>This Meetup Has Ended</Text>
                         </View>
                     )}
-                    
+                    {isHappeningNow && (
+                        <View style={[styles.cancelBanner, { backgroundColor: '#F0FDFB', borderColor: '#99F6E4' }]}>
+                            <Feather name="radio" size={18} color="#0F766E" />
+                            <Text style={[styles.cancelBannerText, { color: '#0F766E' }]}>Meetup Happening Right Now</Text>
+                        </View>
+                    )}
+
                     <View style={{ marginTop: 8, marginBottom: 18 }}>
                         {isIn && (
                             <PulsingWatermark label="IN" style={styles.inWatermark} baseOpacity={0.32} peakOpacity={0.55} />
                         )}
                         {isOut && (
                             <PulsingWatermark label="OUT" style={styles.outWatermark} baseOpacity={0.32} peakOpacity={0.42} />
+                        )}
+                        {!!frequencyLabel && (
+                            <Text style={styles.meetupFrequencyLabel}>{frequencyLabel}</Text>
                         )}
                         <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough]}>
                             {meetup.name}
@@ -728,7 +815,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </View>
                 </View>
 
-                {/* Hide RSVP Actions if Read Only */}
                 {!isReadOnly && (
                     <Animated.View layout={LinearTransition.duration(300)} style={{ marginTop: showRsvpSelector ? 24 : 0, marginBottom: (isRsvpLocked || isRsvpDeadlinePassed || showRsvpSelector) ? 60 : 0 }}>
                         {isRsvpLocked ? (
@@ -931,13 +1017,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     )}
                 </Animated.View>
 
-                {/* Hide Management section if Read Only */}
-                {canManage && (
+                {canCancelOrRestore && !isCancelled && (
                     <View style={styles.ownerSection}>
-                        <TouchableOpacity onPress={handleCancelMeetup} style={[styles.cancelToggle, isCancelled && { backgroundColor: '#4A90E2', borderColor: '#4A90E2' }]}>
-                            <Text style={[styles.cancelToggleText, isCancelled && { color: 'white' }]}>
-                                {isCancelled ? "Reactivate Meetup" : "Cancel This Meetup"}
-                            </Text>
+                        <TouchableOpacity onPress={handleCancelMeetup} style={styles.cancelToggle}>
+                            <Text style={styles.cancelToggleText}>Cancel This Meetup</Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -950,7 +1033,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         {actionsMenuAnchor && (
                             <View style={[styles.actionsMenuPointer, { left: actionsMenuAnchor.pointerLeft }]} />
                         )}
-                        {canManage && (
+                        {canEditOrCancel && (
                             <>
                                 <TouchableOpacity
                                     style={styles.actionsMenuItem}
@@ -982,6 +1065,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Feather name="message-circle" size={18} color="#0EA5E9" />
                             </View>
                             <Text style={styles.actionsMenuLabel}>Go to Chat</Text>
+                        </TouchableOpacity>
+                        <View style={styles.actionsMenuDivider} />
+                        <TouchableOpacity
+                            style={styles.actionsMenuItem}
+                            onPress={() => { setIsActionsMenuVisible(false); handleInviteToMeetup(); }}
+                        >
+                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#ECFDF5' }]}>
+                                <Feather name="user-plus" size={18} color="#0D9488" />
+                            </View>
+                            <Text style={styles.actionsMenuLabel}>Invite to Meetup</Text>
                         </TouchableOpacity>
                         <View style={styles.actionsMenuDivider} />
                         <TouchableOpacity
@@ -1057,7 +1150,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             <View style={styles.detailSeparator} />
                             <View style={styles.detailItem}>
                                 <Text style={styles.detailLabel}>Status</Text>
-                                <Text style={styles.detailValue}>{isCancelled ? "Cancelled" : isExpired ? "Ended" : "Upcoming"}</Text>
+                                <Text style={styles.detailValue}>{isCancelled ? "Cancelled" : isExpired ? "Ended" : isHappeningNow ? "Happening Now" : "Upcoming"}</Text>
                             </View>
                         </View>
                     </View>
@@ -1077,11 +1170,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         {dmTargetUser && (
                             <>
                                 <Image
-                                    source={{ uri: dmTargetUser.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${dmTargetUser.firstName?.[0] ?? dmTargetUser.email?.[0]}` }}
+                                    source={{ uri: dmTargetUser.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${getUserInitial(dmTargetUser)}` }}
                                     style={dmStyles.avatar}
                                 />
                                 <Text style={dmStyles.name}>
-                                    {[dmTargetUser.firstName, dmTargetUser.lastName].filter(Boolean).join(' ') || dmTargetUser.email?.split('@')[0]}
+                                    {getUserDisplayName(dmTargetUser)}
                                 </Text>
                                 <TouchableOpacity
                                     style={dmStyles.dmBtn}
@@ -1224,8 +1317,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     asOverlay
                 />
 
-                {/* Rendered inside this Modal's own tree (not as a sibling <Modal>) — RN
-                    doesn't reliably stack a second native Modal on top of one already open. */}
+                {/* Rendered inside this Modal's tree, not a sibling — RN can't stack a second native Modal */}
                 {showDatePicker && (
                     Platform.OS === 'ios' ? (
                         <View style={StyleSheet.absoluteFillObject}>
@@ -1268,8 +1360,7 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: 'white' },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
     closeButton: { padding: 4 },
-    // Fixed minHeight reserves room for the location line whether or not it's present, so the
-    // header's height — and thus where the ScrollView (and IN/OUT watermark) starts — never changes.
+    // Fixed minHeight reserves room for the location line so header height never shifts.
     headerTitleContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
     headerTitle: { fontSize: 14, fontWeight: '900', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
     headerLocationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, maxWidth: '100%', flexShrink: 1 },
@@ -1278,7 +1369,19 @@ const styles = StyleSheet.create({
     content: { flex: 1, padding: 24 },
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
+    reactivateBannerBtn: { backgroundColor: '#4A90E2', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12, marginLeft: 8 },
+    reactivateBannerBtnText: { color: 'white', fontWeight: '800', fontSize: 11, textTransform: 'uppercase' },
     meetupTitle: { fontSize: 26, fontWeight: '900', color: '#111827', letterSpacing: -0.5, lineHeight: 30, marginBottom: 4, textAlign: 'center' },
+    meetupFrequencyLabel: {
+        position: 'absolute',
+        top: -16,
+        left: 0,
+        right: 0,
+        textAlign: 'center',
+        fontSize: 12,
+        fontStyle: 'italic',
+        color: '#9CA3AF',
+    },
     inWatermark: {
         position: 'absolute',
         top: '50%',

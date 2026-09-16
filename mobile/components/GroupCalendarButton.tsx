@@ -8,8 +8,7 @@ interface GroupCalendarButtonProps {
   isDM: boolean;
 }
 
-// Shared by the Group Details and Group Chat screens (both need the same calendar
-// icon/modal behavior). DMs have no meetups, so this renders nothing for them.
+// Shared by Group Details and Group Chat; renders nothing for DMs (no meetups).
 export const GroupCalendarButton = ({ groupId, isDM }: GroupCalendarButtonProps) => {
   const [modalVisible, setModalVisible] = useState(false);
 

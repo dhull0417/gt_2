@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Modal, Platform, StyleSheet } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
-// Converts between this app's "hh:mm AM/PM" time strings and the Date objects
-// the native picker requires.
+// Converts between app's "hh:mm AM/PM" strings and Date objects for the native picker.
 export const timeStringToDate = (time: string): Date => {
     const [t, period] = time.split(' ');
     let [h, m] = t.split(':').map(Number);
@@ -26,18 +25,14 @@ interface NativeTimePickerProps {
     value: string;
     onChange: (time: string) => void;
     onClose: () => void;
-    // React Native doesn't reliably stack a second native <Modal> on top of one
-    // that's already open. Pass this when rendering from inside a screen that's
-    // already presented as a Modal (e.g. MeetupDetailModal's edit modal) so this
-    // renders as a plain absolutely-positioned overlay instead. Callers must
-    // render this outside their own KeyboardAvoidingView (a sibling, not a
-    // descendant) — see LocationSearchModal for the same rule.
+    // Set when already inside a Modal (e.g. MeetupDetailModal) to render as a
+    // plain overlay instead of stacking a second native Modal. Render as a
+    // sibling of the caller's KeyboardAvoidingView, not nested — see LocationSearchModal.
     asOverlay?: boolean;
 }
 
-// Platform-native time picker: an inline spinner in a bottom sheet on iOS (with a
-// Done button to commit), or the system dialog on Android (which commits on pick).
-// Caller controls mount/unmount — render this only while its own "show picker" flag is true.
+// iOS: inline spinner sheet with a Done button. Android: system dialog, commits on pick.
+// Caller controls mount/unmount via its own "show picker" flag.
 const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, onClose, asOverlay }) => {
     const [temp, setTemp] = useState<Date>(() => timeStringToDate(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -45,8 +40,7 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, on
 
     const handleChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
         if (Platform.OS === 'android') {
-            // The dialog closing on a real pick (event.type 'set') is the confirm step;
-            // a dismiss (back button / tap outside) must not commit a value.
+            // event.type 'set' confirms; a dismiss (back/tap outside) must not commit.
             onClose();
             if (event.type === 'set' && selectedDate) {
                 onChange(dateToTimeString(selectedDate));

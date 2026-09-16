@@ -11,7 +11,9 @@ import * as Updates from 'expo-updates';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { pickAndUploadImage } from '@/utils/uploadImage';
+import { getUserDisplayName } from '@/utils/groupDisplay';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { useContentTopInset } from '@/hooks/useContentTopInset';
 
 const CALENDAR_OPTIONS = [
   {
@@ -37,6 +39,7 @@ const HomeScreen = () => {
   const api = useApiClient();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const contentTopInset = useContentTopInset();
   const queryClient = useQueryClient();
   const [photoUploading, setPhotoUploading] = useState(false);
   const [calendarModalVisible, setCalendarModalVisible] = useState(false);
@@ -195,7 +198,11 @@ const HomeScreen = () => {
   ];
 
   return (
-    <SafeAreaView className='flex-1 bg-gray-100' edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      className='flex-1 bg-gray-100'
+      edges={['left', 'right']}
+      style={{ paddingTop: contentTopInset }}
+    >
       <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
         <Text className="text-xl font-black text-gray-900">
           {currentUser?.firstName ? `${currentUser.firstName}'s Profile` : 'Profile'}
@@ -233,7 +240,7 @@ const HomeScreen = () => {
                 </View>
               </TouchableOpacity>
               <Text style={styles.name}>
-                  {currentUser.firstName} {currentUser.lastName}
+                  {getUserDisplayName(currentUser)}
               </Text>
               <Text className="text-sm text-gray-400 mt-0.5">
                   {currentUser.email}

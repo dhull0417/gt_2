@@ -3,6 +3,7 @@ import {
     updateMeetup,
     deleteMeetup,
     cancelMeetup,
+    restoreMeetup,
     getMeetups,
     rsvpMeetup,
     remindUndecided
@@ -31,7 +32,7 @@ router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
         const meetup = await Meetup.findById(req.params.meetupId);
         if (!meetup) return res.status(404).json({ message: 'Meetup not found' });
 
-        // Ensure guests array exists (handles documents created before this field was added)
+        // backfill: older docs may lack a guests array
         if (!meetup.guests) meetup.guests = [];
 
         const existingIdx = meetup.guests.findIndex(g => g.userId === clerkId);
@@ -59,6 +60,7 @@ router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
 
 // --- Management ---
 router.patch("/:meetupId/cancel", protectRoute, cancelMeetup);
+router.patch("/:meetupId/restore", protectRoute, restoreMeetup);
 router.put("/:meetupId", protectRoute, updateMeetup);
 router.delete("/:meetupId", protectRoute, deleteMeetup);
 

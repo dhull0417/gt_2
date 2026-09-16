@@ -7,11 +7,8 @@ interface Props {
   size?: number;
 }
 
-// PREVIEW implementation: renders the real Lottie file via lottie-web inside a WebView
-// rather than the native lottie-react-native renderer, so it works in Expo Go with no
-// native rebuild. Visually equivalent (Lottie is designed for renderer parity), but
-// heavier than a native view — swap to lottie-react-native once this animation is final
-// and we're building a dev client anyway.
+// Renders via lottie-web in a WebView (not native lottie-react-native) so it works in
+// Expo Go without a rebuild. Swap to native once building a dev client.
 const HTML = `
 <!DOCTYPE html>
 <html>

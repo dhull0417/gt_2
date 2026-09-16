@@ -13,7 +13,8 @@ import {
   Pressable,
 } from 'react-native';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
@@ -25,14 +26,17 @@ import MeetupDetailModal from '@/components/MeetupDetailModal';
 import AddMeetupWizard from '@/components/AddMeetupWizard';
 import CreatePollModal from '@/components/CreatePollModal';
 import PollListModal from '@/components/PollListModal';
-import { getDMDisplayName } from '@/utils/groupDisplay';
+import { getDMDisplayName, getUserDisplayName } from '@/utils/groupDisplay';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { useMessages } from '@/hooks/useMessages';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
-import { ChatMessageBubble } from '@/components/ChatMessageBubble';
+import { ChatMessageBubble, type BubbleLayout } from '@/components/ChatMessageBubble';
 import { ChatMessageInput } from '@/components/ChatMessageInput';
 import { ChatDayBubble } from '@/components/ChatDayBubble';
+import { ChatTypingBubble } from '@/components/ChatTypingBubble';
+import { ChatScrollToBottomButton } from '@/components/ChatScrollToBottomButton';
+import { ChatActionPanel } from '@/components/ChatActionPanel';
 import { ChatImageViewer } from '@/components/ChatImageViewer';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { GroupCalendarButton } from '@/components/GroupCalendarButton';
@@ -43,6 +47,7 @@ import {
 } from '@/hooks/usePushNotifications';
 import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
 import type { ChatMessage, PendingImage } from '@/types/chat';
+import EmojiPicker from 'rn-emoji-keyboard';
 
 interface ChatDaySection {
   key: string;
@@ -50,24 +55,20 @@ interface ChatDaySection {
   data: ChatMessage[];
 }
 
-const REACTIONS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
-
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
 const GroupChatScreen = () => {
   const { id, promptNotifications } = useLocalSearchParams<{ id: string; promptNotifications?: string }>();
   const [chatHeaderHeight, setChatHeaderHeight] = useState(0);
 
-  const insets = useSafeAreaInsets();
+  const contentTopInset = useContentTopInset();
   const api = useApiClient();
   const router = useRouter();
   const queryClient = useQueryClient();
   const sectionListRef = useRef<SectionList<ChatMessage, ChatDaySection>>(null);
 
-  // Landed here right after joining this group (see join/[token]'s goToChat) —
-  // ask once, then drop the param so revisiting this chat doesn't ask again.
-  // Also counts as this user's first-ever chat open, so mark that trigger
-  // consumed too rather than asking again moments later on a different chat.
+  // Ask once after joining (see join/[token]'s goToChat), then drop the param.
+  // Also counts as first-ever chat open, so mark that trigger consumed too.
   useEffect(() => {
     if (promptNotifications !== '1') return;
     promptForNotificationPermission(api);
@@ -75,8 +76,7 @@ const GroupChatScreen = () => {
     markNotificationPromptShown('firstChatOpen');
   }, [promptNotifications]);
 
-  // Independent of the above — covers the user's first-ever chat open when it
-  // didn't happen to be right after a join (e.g. opening their own new group's chat).
+  // Covers first-ever chat open when it wasn't right after a join
   useEffect(() => {
     if (promptNotifications === '1') return;
     promptForNotificationPermissionOnFirstChatOpen(api);
@@ -90,8 +90,7 @@ const GroupChatScreen = () => {
       .catch(() => {});
   }, [id]);
 
-  // Cached (or freshly fetched) list data gives an instant name/avatar/isDM fallback
-  // while the heavier per-group details request below is still in flight.
+  // Instant name/avatar/isDM fallback while the heavier group details request is in flight
   const { data: groups } = useGetGroups();
   const fallbackGroup = useMemo(() => groups?.find(g => g._id === id), [groups, id]);
 
@@ -112,6 +111,9 @@ const GroupChatScreen = () => {
   }, [groupDetails, currentUser]);
 
   const isDM = groupDetails?.isDM ?? fallbackGroup?.isDM ?? false;
+
+  // Any group member (implicit by being in this chat) can create a one-off meetup or a poll.
+  const canCreateEvent = !isDM;
 
   const isMutedUntilNext = useMemo(() => {
     if (!id || !currentUser) return false;
@@ -155,34 +157,26 @@ const GroupChatScreen = () => {
   const handleOpenDetails = () => {
     if (!id) return;
     if (Platform.OS === 'ios') {
-      // iOS gets its own root-level copy of Group Details, entirely outside
-      // (tabs), so the native tab bar never shows there at all — see
-      // app/group-details/[id].tsx for why.
+      // iOS uses its own root-level copy, outside (tabs) — see group-details/[id].tsx
       router.push({ pathname: '/group-details/[id]', params: { id } });
       return;
     }
-    // Android: land on the Groups tab's list screen first so Group Details is
-    // pushed on top of it, not left as that nested stack's only screen —
-    // otherwise tapping the tab a second time has nothing to reset back to.
+    // Android: land on the Groups list first so Details pushes on top of it,
+    // not as the nested stack's only screen (else the tab has nothing to reset to)
     router.navigate('/(tabs)/groups');
     router.push({ pathname: '/groups/[id]', params: { id } });
   };
 
-  // Always the groups list, regardless of how this chat was entered (list tap,
-  // push notification, invite link, meetup modal, DM creation) — deterministic
-  // beats "wherever the stack happens to say," since chat can be reached from
-  // places with no consistent screen underneath it.
+  // Always the groups list, regardless of entry point — chat has no consistent screen underneath it
   const handleBack = () => {
     router.replace('/(tabs)/groups');
   };
 
   // --- Message thread ---
   const senderId = currentUser?.clerkId ?? '';
-  const senderName = currentUser
-    ? [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.email
-    : '';
+  const senderName = currentUser ? getUserDisplayName(currentUser) : '';
 
-  const { messages, loading, sendMessage, addReaction, deleteMessage, editMessage } =
+  const { messages, loading, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage } =
     useMessages(id ?? '');
   const { typingNames, handleTyping } = useTypingIndicator(id ?? '', senderId, senderName);
 
@@ -202,8 +196,7 @@ const GroupChatScreen = () => {
   const nextMeetupDay = nextMeetup
     ? new Date(nextMeetup.date).toLocaleDateString(undefined, { day: 'numeric', timeZone: nextMeetup.timezone })
     : null;
-  // Mirrors the RSVP state MeetupDetailModal and the meetup card compute, so the bar
-  // previews the same tint/status the card and modal already show.
+  // Mirrors MeetupDetailModal/meetup card RSVP state so the bar shows the same tint/status
   const nextMeetupRsvpStatus = useMemo(() => {
     if (!nextMeetup || !currentUser) return null;
     const isOut = nextMeetup.out?.some(u => getUserId(u) === currentUser._id) || false;
@@ -219,9 +212,7 @@ const GroupChatScreen = () => {
     return isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
   }, [nextMeetupRsvpStatus]);
 
-  // Right side of the next-event bar: whichever polls are currently open for
-  // this group, so the bar can surface them alongside (or instead of) the
-  // next meetup without needing the header poll button.
+  // Right side of the next-event bar: currently open polls for this group
   const { data: polls } = useGetPolls(!isDM ? id : undefined);
   const activePolls = useMemo(() => (polls ?? []).filter(p => p.status === 'active'), [polls]);
   const hasUnansweredActivePoll = useMemo(() => {
@@ -234,8 +225,7 @@ const GroupChatScreen = () => {
   const [selectedPollId, setSelectedPollId] = useState<string | null>(null);
   const [pollVoteModalVisible, setPollVoteModalVisible] = useState(false);
 
-  // A single active poll opens straight to its vote screen; with more than one,
-  // the user first picks which poll from a small selector popup.
+  // One active poll opens straight to voting; more than one shows a selector popup first
   const handlePollBarPress = () => {
     if (activePolls.length === 0) return;
     if (activePolls.length === 1) {
@@ -253,11 +243,13 @@ const GroupChatScreen = () => {
   };
 
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
+  const [selectedMessageLayout, setSelectedMessageLayout] = useState<BubbleLayout | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [editText, setEditText] = useState('');
   const [reactionDetailMessage, setReactionDetailMessage] = useState<ChatMessage | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<{ url: string; width?: number | null; height?: number | null } | null>(null);
+  const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
 
   const userNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -283,26 +275,44 @@ const GroupChatScreen = () => {
   }, [messages]);
 
   const [listHeight, setListHeight] = useState(0);
-  // Gates the first paint of a freshly opened chat so it never visibly starts at the
-  // oldest message and animates down — see the two effects below.
+  // Gates first paint so a freshly opened chat never visibly animates down from the oldest message
   const [contentReady, setContentReady] = useState(false);
+
+  // --- Scroll-to-bottom FAB: only auto-scroll on new messages while already near the bottom;
+  // otherwise surface the button with an unread count instead of yanking the view down.
+  const NEAR_BOTTOM_THRESHOLD = 120;
+  const isNearBottomRef = useRef(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const handleListScroll = useCallback((e: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+    const nearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
+    isNearBottomRef.current = nearBottom;
+    setShowScrollToBottom(!nearBottom);
+    if (nearBottom) setUnreadCount(0);
+  }, []);
+
+  const handleScrollToBottomPress = useCallback(() => {
+    isNearBottomRef.current = true;
+    setUnreadCount(0);
+    setShowScrollToBottom(false);
+    scrollToBottom(true);
+  }, []);
 
   useEffect(() => {
     setContentReady(false);
   }, [id]);
 
-  // scrollToLocation estimates an item's offset from average cell height for anything
-  // it hasn't actually measured yet — with our wildly variable message heights (short
-  // text vs. images vs. reactions) that estimate is unreliable, landing short of the
-  // true end. getScrollResponder() gives the real underlying ScrollView, whose
-  // scrollToEnd() uses the actual measured content size — no estimation involved.
+  // scrollToLocation estimates offset from average cell height, unreliable with our variable
+  // message heights. getScrollResponder().scrollToEnd() uses real measured content size instead.
   const scrollToBottom = useCallback((animated: boolean) => {
     sectionListRef.current?.getScrollResponder()?.scrollToEnd({ animated });
   }, []);
 
-  // First paint for this chat: jump to the bottom instantly (not animated — an
-  // animation here is exactly the visible "zip from oldest to newest" this avoids),
-  // then reveal the list only once that position has actually landed.
+  // First paint: jump to bottom instantly (animating here is the exact visual glitch we're avoiding),
+  // then reveal the list once that position has landed.
   useEffect(() => {
     if (contentReady || messages.length === 0) return;
     scrollToBottom(false);
@@ -314,17 +324,19 @@ const GroupChatScreen = () => {
     if (!loading && messages.length === 0) setContentReady(true);
   }, [loading, messages.length]);
 
-  // Once the chat is visibly open, new messages arriving get the usual animated
-  // scroll-into-view.
+  // Once visibly open, new messages get the usual animated scroll-into-view —
+  // but only when the user is already near the bottom; otherwise surface the FAB instead.
   useEffect(() => {
     if (!contentReady) return;
-    scrollToBottom(true);
+    if (isNearBottomRef.current) {
+      scrollToBottom(true);
+    } else {
+      setUnreadCount((c) => c + 1);
+    }
   }, [messages.length, contentReady, scrollToBottom]);
 
-  // Re-anchor to the bottom whenever the list's own measured height actually changes —
-  // this is what KeyboardAvoidingView resizing it (keyboard open/close) looks like from
-  // the list's point of view, and it's the real signal that the resize has landed, unlike
-  // guessing a delay off the keyboard event (which fires before the resize finishes).
+  // Re-anchor on list height change — the real signal a keyboard-driven resize has landed,
+  // unlike guessing a delay off the keyboard event (which fires before resize finishes).
   useEffect(() => {
     if (listHeight > 0) scrollToBottom(true);
   }, [listHeight]);
@@ -336,6 +348,10 @@ const GroupChatScreen = () => {
     if (!id) return;
     const currentReply = replyingTo;
     setReplyingTo(null);
+    // Sending your own message always snaps the view to it, regardless of prior scroll position.
+    isNearBottomRef.current = true;
+    setShowScrollToBottom(false);
+    setUnreadCount(0);
     try {
       await sendMessage(
         text,
@@ -348,18 +364,46 @@ const GroupChatScreen = () => {
       );
       const notifyText = text || '📷 Photo';
       api.patch(`/api/groups/${id}/last-message`, { text: notifyText, senderName }).catch(() => {});
-      // Sending a message means you've obviously "read" up to it — keep the unread
-      // dot from lighting back up on your own message once you leave the chat.
+      // Mark read so your own message doesn't re-trigger the unread dot after you leave
       userApi.markGroupRead(api, id).catch(() => {});
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? JSON.stringify(err));
     }
   };
 
+  const handlePendingPress = (item: ChatMessage) => {
+    if (!item.mutationId) return;
+    if (item.failed) {
+      Alert.alert(
+        "Message didn't send",
+        'Connection issue — this message was saved as a draft. Try again?',
+        [
+          { text: 'Retry', onPress: () => retrySend(item.mutationId!) },
+          { text: 'Discard', style: 'destructive', onPress: () => discardSend(item.mutationId!) },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Still sending…',
+        'This message is waiting for a connection.',
+        [
+          { text: 'Discard', style: 'destructive', onPress: () => discardSend(item.mutationId!) },
+          { text: 'Close', style: 'cancel' },
+        ]
+      );
+    }
+  };
+
+  const closeActionPanel = () => {
+    setSelectedMessage(null);
+    setSelectedMessageLayout(null);
+  };
+
   const handleReact = async (emoji: string) => {
     if (!selectedMessage || !id) return;
     const target = selectedMessage;
-    setSelectedMessage(null);
+    closeActionPanel();
     try {
       const result = await addReaction(target.id, emoji, senderId);
       if (result.action !== 'removed') {
@@ -376,14 +420,14 @@ const GroupChatScreen = () => {
   const handleReplyOpen = () => {
     if (!selectedMessage) return;
     setReplyingTo(selectedMessage);
-    setSelectedMessage(null);
+    closeActionPanel();
   };
 
   const handleEditOpen = () => {
     if (!selectedMessage) return;
     setEditText(selectedMessage.content);
     setEditingMessage(selectedMessage);
-    setSelectedMessage(null);
+    closeActionPanel();
   };
 
   const handleEditSave = async () => {
@@ -402,7 +446,7 @@ const GroupChatScreen = () => {
   const handleDeleteConfirm = () => {
     if (!selectedMessage) return;
     const target = selectedMessage;
-    setSelectedMessage(null);
+    closeActionPanel();
     Alert.alert('Delete Message', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
@@ -420,7 +464,10 @@ const GroupChatScreen = () => {
   const chatContentReady = contentReady && !isLoadingDetails && !!groupDetails && !!currentUser;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: 'white', paddingTop: contentTopInset }}
+      edges={['left', 'right', 'bottom']}
+    >
       <View
         className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200"
         onLayout={(e) => setChatHeaderHeight(e.nativeEvent.layout.height)}
@@ -477,37 +524,49 @@ const GroupChatScreen = () => {
           style={{ flex: 1, opacity: chatContentReady ? 1 : 0 }}
           pointerEvents={chatContentReady ? 'auto' : 'none'}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={insets.top + chatHeaderHeight}
+          keyboardVerticalOffset={contentTopInset + chatHeaderHeight}
         >
-          <SectionList
-            ref={sectionListRef}
-            style={{ flex: 1 }}
-            sections={sections}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <ChatMessageBubble
-                message={item}
-                isOwn={item.sender_id === senderId}
-                currentUserId={senderId}
-                onLongPress={() => setSelectedMessage(item)}
-                onReactionLongPress={() => setReactionDetailMessage(item)}
-                onImagePress={(url, width, height) => setFullscreenImage({ url, width, height })}
-              />
-            )}
-            renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}
-            stickySectionHeadersEnabled
-            contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}
-            ListEmptyComponent={
-              <View style={chatStyles.center}>
-                <Text style={{ color: '#9CA3AF', fontSize: 15 }}>No messages yet. Say hello!</Text>
-              </View>
-            }
-            onContentSizeChange={() => scrollToBottom(false)}
-            onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
-          />
+          <View style={{ flex: 1, position: 'relative' }}>
+            <SectionList
+              ref={sectionListRef}
+              style={{ flex: 1 }}
+              sections={sections}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <ChatMessageBubble
+                  message={item}
+                  isOwn={item.sender_id === senderId}
+                  currentUserId={senderId}
+                  isHighlighted={selectedMessage?.id === item.id}
+                  onLongPress={(layout) => { setSelectedMessage(item); setSelectedMessageLayout(layout); }}
+                  onReactionLongPress={() => setReactionDetailMessage(item)}
+                  onImagePress={(url, width, height) => setFullscreenImage({ url, width, height })}
+                  onPendingPress={() => handlePendingPress(item)}
+                  onSwipeReply={() => setReplyingTo(item)}
+                />
+              )}
+              renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}
+              stickySectionHeadersEnabled
+              contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}
+              ListEmptyComponent={
+                <View style={chatStyles.center}>
+                  <Text style={{ color: '#9CA3AF', fontSize: 15 }}>No messages yet. Say hello!</Text>
+                </View>
+              }
+              onContentSizeChange={() => scrollToBottom(false)}
+              onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
+              onScroll={handleListScroll}
+              scrollEventThrottle={16}
+            />
+            <ChatScrollToBottomButton
+              visible={showScrollToBottom}
+              unreadCount={unreadCount}
+              onPress={handleScrollToBottomPress}
+            />
+          </View>
 
-          <View style={{ minHeight: 20, paddingHorizontal: 16, justifyContent: 'center' }}>
-            {typingLabel ? <Text style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>{typingLabel}</Text> : null}
+          <View style={{ minHeight: 20, paddingHorizontal: 12, justifyContent: 'center' }}>
+            {typingLabel ? <ChatTypingBubble label={typingLabel} /> : null}
           </View>
 
           {replyingTo && (
@@ -586,8 +645,8 @@ const GroupChatScreen = () => {
           <ChatMessageInput
             onSend={handleSend}
             onTyping={handleTyping}
-            onCreateEvent={canManageGroup && !isDM ? () => setMeetupWizardVisible(true) : undefined}
-            onCreatePoll={canManageGroup && !isDM ? () => setCreatePollVisible(true) : undefined}
+            onCreateEvent={canCreateEvent ? () => setMeetupWizardVisible(true) : undefined}
+            onCreatePoll={!isDM ? () => setCreatePollVisible(true) : undefined}
           />
         </KeyboardAvoidingView>
 
@@ -599,42 +658,37 @@ const GroupChatScreen = () => {
       </View>
 
       {/* Action sheet */}
-      <Modal visible={!!selectedMessage} transparent animationType="fade" onRequestClose={() => setSelectedMessage(null)}>
-        <Pressable style={chatStyles.overlay} onPress={() => setSelectedMessage(null)}>
-          <View style={chatStyles.actionPanel}>
-            {!isDeletedSelected && (
-              <View style={chatStyles.emojiRow}>
-                {REACTIONS.map((emoji) => (
-                  <TouchableOpacity key={emoji} style={chatStyles.emojiBtn} onPress={() => handleReact(emoji)} activeOpacity={0.7}>
-                    <Text style={{ fontSize: 28 }}>{emoji}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            {!isDeletedSelected && (
-              <>
-                <View style={chatStyles.divider} />
-                <TouchableOpacity style={chatStyles.actionRow} onPress={handleReplyOpen}>
-                  <Text style={chatStyles.actionLabel}>Reply</Text>
-                </TouchableOpacity>
-              </>
-            )}
-            {isOwnSelected && (
-              <>
-                <View style={chatStyles.divider} />
-                {!isDeletedSelected && (
-                  <TouchableOpacity style={chatStyles.actionRow} onPress={handleEditOpen}>
-                    <Text style={chatStyles.actionLabel}>Edit</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity style={chatStyles.actionRow} onPress={handleDeleteConfirm}>
-                  <Text style={[chatStyles.actionLabel, { color: '#EF4444' }]}>Delete</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </Pressable>
+      {/* Hidden (rather than unmounted) while the emoji picker is open — two
+          simultaneously-visible RN <Modal>s fight over the native presentation
+          stack and the second one silently fails to appear, so only one can
+          be visible at a time. selectedMessage itself stays set so handleReact
+          still has its target once an emoji is picked. */}
+      <Modal visible={!!selectedMessage && !emojiPickerVisible} transparent animationType="none" onRequestClose={closeActionPanel}>
+        <ChatActionPanel
+          anchor={selectedMessageLayout}
+          isOwn={isOwnSelected}
+          showReactions={!isDeletedSelected}
+          onReact={handleReact}
+          onOpenEmojiPicker={() => setEmojiPickerVisible(true)}
+          showReply={!isDeletedSelected}
+          onReply={handleReplyOpen}
+          showEdit={isOwnSelected && !isDeletedSelected}
+          onEdit={handleEditOpen}
+          showDelete={isOwnSelected}
+          onDelete={handleDeleteConfirm}
+          onClose={closeActionPanel}
+        />
       </Modal>
+
+      <EmojiPicker
+        open={emojiPickerVisible}
+        onClose={() => setEmojiPickerVisible(false)}
+        onEmojiSelected={(item) => handleReact(item.emoji)}
+        enableSearchBar
+        enableRecentlyUsed
+        defaultHeight="75%"
+        expandedHeight="90%"
+      />
 
       {/* Reaction detail */}
       <Modal visible={!!reactionDetailMessage} transparent animationType="fade" onRequestClose={() => setReactionDetailMessage(null)}>
@@ -742,6 +796,10 @@ const GroupChatScreen = () => {
           visible={meetupWizardVisible}
           onClose={() => setMeetupWizardVisible(false)}
           groupDetails={groupDetails}
+          onMeetupCreated={(groupId) => {
+            setMeetupWizardVisible(false);
+            router.push({ pathname: '/add-members/[id]', params: { id: groupId } });
+          }}
         />
       )}
 
@@ -838,12 +896,6 @@ const styles = StyleSheet.create({
 const chatStyles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  actionPanel: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', width: '100%', maxWidth: 360, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
-  emojiRow: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 8, paddingVertical: 12 },
-  emojiBtn: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E7EB' },
-  actionRow: { paddingVertical: 16, paddingHorizontal: 20 },
-  actionLabel: { fontSize: 16, color: '#111827', fontWeight: '600' },
   detailPanel: { backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%', maxWidth: 360, maxHeight: '70%', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
   nextEventBarRow: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#DBEAFE' },
   nextEventBarHalf: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 8 },

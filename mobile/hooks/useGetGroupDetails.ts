@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@clerk/expo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useApiClient, groupApi, GroupDetails } from '../utils/api';
 import { getSupabaseClient } from '../utils/supabase';
 import { groupUpdatesChannel } from '../utils/groupRealtime';
@@ -13,29 +14,24 @@ export const useGetGroupDetails = (groupId: string | null) => {
     getTokenRef.current = getToken;
 
     const query = useQuery<GroupDetails, Error>({
-        // The query key includes the groupId to ensure each group's data is cached independently.
         queryKey: ['groupDetails', groupId],
-        // The query function calls our new API utility function.
         queryFn: () => groupApi.getGroupDetails(api, groupId!),
-        // The 'enabled' option is crucial: it prmeetups the query from running if no groupId is provided.
-        enabled: !!groupId,
+        enabled: !!groupId, // don't run without a groupId
     });
 
-    // This device's cache is only ever invalidated locally when *this* user
-    // makes a change (see useAddMember/useRemoveMember/etc). Subscribe to a
-    // broadcast so a change made on someone else's device — a new member
-    // joining, a moderator promotion — refetches here immediately instead of
-    // waiting out the query's staleTime.
+    // Local changes invalidate this cache directly (see useAddMember etc); this
+    // subscribes to a broadcast so other devices' changes refetch immediately too.
     useEffect(() => {
         if (!groupId) return;
         let active = true;
         let supabase: ReturnType<typeof getSupabaseClient> | null = null;
+        let channel: RealtimeChannel | null = null;
 
         const setup = async () => {
             const token = await getTokenRef.current({ template: 'supabase' });
             if (!token || !active) return;
             supabase = getSupabaseClient(token);
-            supabase
+            channel = supabase
                 .channel(groupUpdatesChannel(groupId))
                 .on('broadcast', { event: 'updated' }, () => {
                     if (!active) return;
@@ -47,8 +43,9 @@ export const useGetGroupDetails = (groupId: string | null) => {
 
         return () => {
             active = false;
-            supabase?.removeAllChannels();
+            if (channel) supabase?.removeChannel(channel);
             supabase = null;
+            channel = null;
         };
     }, [groupId, queryClient]);
 

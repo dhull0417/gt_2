@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
     View,
     Text,
-    TextInput,
     TouchableOpacity,
     StyleSheet,
     Alert,
     FlatList,
-    Keyboard,
     ActivityIndicator,
     Share
 } from 'react-native';
@@ -15,7 +13,6 @@ import { useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchUsers } from '@/hooks/useSearchUsers';
 import { useInviteUser } from '@/hooks/useInviteUser';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useContactMatching, ContactEntry } from '@/hooks/useContactMatching';
@@ -24,9 +21,7 @@ import { User, useApiClient, groupApi } from '@/utils/api';
 const AddMembersScreen = () => {
     const { id: groupId } = useLocalSearchParams<{ id: string }>();
 
-    const [searchQuery, setSearchQuery] = useState("");
     const api = useApiClient();
-    const { data: searchResults, isLoading: isSearchingUsers } = useSearchUsers(searchQuery);
     const { data: groupDetails } = useGetGroupDetails(groupId);
     const { mutate: inviteUser, isPending: isInviting } = useInviteUser();
     const { contacts, isLoading: isLoadingContacts, permissionDenied } = useContactMatching();
@@ -36,8 +31,6 @@ const AddMembersScreen = () => {
         enabled: !!groupId,
         staleTime: 1000 * 60 * 5,
     });
-
-    const isSearching = searchQuery.length > 0;
 
     const handleInvite = (userToInvite: User) => {
         if (!groupId) return;
@@ -50,8 +43,6 @@ const AddMembersScreen = () => {
         inviteUser({ groupId, userIdToInvite: userToInvite._id }, {
             onSuccess: (data) => {
                 Alert.alert("Success", data.message);
-                setSearchQuery('');
-                Keyboard.dismiss();
             },
         });
     };
@@ -79,21 +70,6 @@ const AddMembersScreen = () => {
             console.error("Share error:", error);
         }
     };
-
-    const renderSearchResult = ({ item }: { item: User }) => (
-        <View style={styles.resultRow}>
-            <View style={styles.resultInfo}>
-                <Text style={styles.resultName}>{item.firstName} {item.lastName}</Text>
-            </View>
-            <TouchableOpacity
-                style={styles.inviteButton}
-                onPress={() => handleInvite(item)}
-                disabled={isInviting}
-            >
-                <Text style={styles.inviteButtonText}>Invite</Text>
-            </TouchableOpacity>
-        </View>
-    );
 
     const renderContact = ({ item }: { item: ContactEntry }) => {
         const isOnApp = !!item.appUser;
@@ -128,66 +104,33 @@ const AddMembersScreen = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-            <View style={styles.searchBox}>
-                <Feather name="search" size={20} color="#9CA3AF" />
-                <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search by name..."
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    autoCapitalize="none"
-                />
-                {searchQuery.length > 0 && (
-                    <TouchableOpacity onPress={() => setSearchQuery('')}>
-                        <Feather name="x" size={18} color="#9CA3AF" />
-                    </TouchableOpacity>
-                )}
-            </View>
-
-            <View style={{ flex: 1 }}>
-                {isSearching ? (
-                    isSearchingUsers ? (
-                        <ActivityIndicator size="small" color="#4A90E2" style={{ marginTop: 20 }} />
-                    ) : (
-                        <FlatList
-                            data={searchResults || []}
-                            keyExtractor={item => item._id}
-                            renderItem={renderSearchResult}
-                            ListEmptyComponent={
-                                <Text style={styles.emptyText}>No users found for "{searchQuery}"</Text>
-                            }
-                        />
-                    )
-                ) : (
-                    isLoadingContacts ? (
-                        <ActivityIndicator size="small" color="#4A90E2" style={{ marginTop: 20 }} />
-                    ) : permissionDenied ? (
-                        <Text style={styles.emptyText}>Enable contacts permission to see friends on GroupThat.</Text>
-                    ) : (
-                        <FlatList
-                            data={contacts}
-                            keyExtractor={item => item.id}
-                            renderItem={renderContact}
-                            ListEmptyComponent={
-                                <Text style={styles.emptyText}>No contacts found.</Text>
-                            }
-                        />
-                    )
-                )}
-            </View>
-
             <TouchableOpacity style={[styles.shareLinkBtn, !inviteLink && styles.shareLinkBtnDisabled]} onPress={handleShareInvite} disabled={!inviteLink}>
                 <Feather name="share-2" size={20} color={inviteLink ? "#4A90E2" : "#9CA3AF"} />
                 <Text style={[styles.shareLinkText, !inviteLink && styles.shareLinkTextDisabled]}>Share Invite Link</Text>
             </TouchableOpacity>
+
+            <View style={{ flex: 1, marginTop: 16 }}>
+                {isLoadingContacts ? (
+                    <ActivityIndicator size="small" color="#4A90E2" style={{ marginTop: 20 }} />
+                ) : permissionDenied ? (
+                    <Text style={styles.emptyText}>Enable contacts permission to see friends on GroupThat.</Text>
+                ) : (
+                    <FlatList
+                        data={contacts}
+                        keyExtractor={item => item.id}
+                        renderItem={renderContact}
+                        ListEmptyComponent={
+                            <Text style={styles.emptyText}>No contacts found.</Text>
+                        }
+                    />
+                )}
+            </View>
         </SafeAreaView>
     );
 };
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#F9FAFB', padding: 24 },
-    searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 16 },
-    searchInput: { flex: 1, marginLeft: 10, fontSize: 16 },
     resultRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', backgroundColor: 'white', borderRadius: 12, marginBottom: 8 },
     resultInfo: { flex: 1, marginRight: 12 },
     resultName: { fontSize: 16, fontWeight: '600', color: '#374151' },
@@ -199,7 +142,7 @@ const styles = StyleSheet.create({
     smsButton: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
     smsButtonText: { color: '#6B7280', fontWeight: '600', fontSize: 13 },
     emptyText: { textAlign: 'center', marginTop: 32, color: '#6B7280', fontSize: 16 },
-    shareLinkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#F5F7FF', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#4A90E2', marginTop: 16 },
+    shareLinkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: '#F5F7FF', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#4A90E2' },
     shareLinkBtnDisabled: { backgroundColor: '#F3F4F6', borderColor: '#D1D5DB' },
     shareLinkText: { color: '#4A90E2', fontWeight: '700', fontSize: 16, marginLeft: 10 },
     shareLinkTextDisabled: { color: '#9CA3AF' },

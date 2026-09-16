@@ -1,10 +1,6 @@
 import { DateTime } from 'luxon';
 
-/**
- * Label for the sticky day bubble in group chat, based on the viewer's device timezone.
- * 0 days ago -> "Today", 1 -> "Yesterday", 2-7 -> weekday name, 8+ -> date
- * (year included only once the message is over a year old).
- */
+// Day bucket label (device-local): 0d="Today", 1d="Yesterday", 2-7d=weekday, 8d+=date (+year if >1yr old)
 export function getDayBucketLabel(isoDate: string, now: DateTime = DateTime.local()): string {
   const messageDay = DateTime.fromISO(isoDate).startOf('day');
   const today = now.startOf('day');

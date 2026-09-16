@@ -11,8 +11,7 @@ interface GroupPollButtonProps {
   isDM: boolean;
 }
 
-// Shared by the Group Details and Group Chat screens (both need the same poll
-// icon/tooltip/list behavior). DMs have no polls, so this renders nothing for them.
+// Shared by Group Details and Group Chat; renders nothing for DMs (no polls).
 export const GroupPollButton = ({ groupId, currentUserId, canManage, isDM }: GroupPollButtonProps) => {
   const [pollListVisible, setPollListVisible] = useState(false);
   const [tooltipVisible, setTooltipVisible] = useState(false);

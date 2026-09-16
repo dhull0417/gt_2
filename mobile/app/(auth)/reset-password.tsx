@@ -60,7 +60,7 @@ const ResetPasswordScreen = () => {
           className="p-8"
           keyboardShouldPersistTaps="handled"
         >
-          <Text className="text-3xl font-bold text-gray-800 mb-8">Set New Password</Text>
+          <Text className="text-3xl font-black text-gray-900 mb-8">Set New Password</Text>
           <TextInput
             value={code}
             onChangeText={setCode}

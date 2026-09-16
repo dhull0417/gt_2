@@ -69,7 +69,7 @@ app.post("/api/debug/log", (req, res) => {
   res.status(200).json({ received: true });
 });
 
-// ── Public web routes ─────────────────────────────────────────────────────────
+// --- Public web routes ---
 
 const APP_STORE_URL = 'https://apps.apple.com/app/groupthat/id6756112941';
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.dallinhull.groupthat';
@@ -90,8 +90,7 @@ app.get('/.well-known/apple-app-site-association', (req, res) => {
 });
 
 // Android App Links verification file
-// Replace the sha256_cert_fingerprints value with your production signing cert fingerprint.
-// Find it in: Google Play Console > Setup > App signing > App signing key certificate > SHA-256
+// sha256_cert_fingerprints: Play Console > Setup > App signing > App signing key certificate > SHA-256
 app.get('/.well-known/assetlinks.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.json([{
@@ -106,13 +105,11 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
   }]);
 });
 
-// Group invite landing page — shown when the app is NOT installed.
-// When the app IS installed, iOS/Android intercepts the URL before this page loads.
+// Invite landing page; shown only when the app isn't installed (OS intercepts otherwise).
 app.get('/join/:token', (req, res) => {
   const { token } = req.params;
   const deepLink = `groupthat://join/${token}`;
-  // Android intent URI: opens the app directly if installed, otherwise Chrome
-  // falls through to the Play Store immediately — no timer needed on Android.
+  // intent:// opens the app if installed, else falls through to the Play Store immediately.
   const intentUri = `intent://join/${token}#Intent;scheme=groupthat;package=com.dallinhull.groupthat;S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`;
 
   res.setHeader('Content-Type', 'text/html');
@@ -180,23 +177,17 @@ app.get('/join/:token', (req, res) => {
     const deepLink = ${JSON.stringify(deepLink)};
     const intentUri = ${JSON.stringify(intentUri)};
 
-    // Write the deep link to clipboard so the app can pick it up on first launch
-    // (deferred deep link fallback for users who don't tap the link again after install)
+    // clipboard fallback: app can pick up the deep link on first launch after install
     try { navigator.clipboard.writeText(deepLink).catch(() => {}); } catch(e) {}
 
     if (isAndroid) {
-      // intent:// tells Chrome to open the app by package name if installed,
-      // or navigate to browser_fallback_url (Play Store) immediately if not.
-      // Avoids ERR_UNKNOWN_URL_SCHEME which would strand the user on an error page.
+      // intent:// opens the app if installed, else falls through to browser_fallback_url;
+      // avoids stranding the user on an ERR_UNKNOWN_URL_SCHEME page.
       setTimeout(() => { window.location.href = intentUri; }, 25);
     } else {
-      // iOS: use window.location.href so the OS can open the app when installed.
-      // If the app is not installed Safari shows a brief "cannot open" notice —
-      // that's fine because the share message already told the user to download
-      // first. We show the download section via DOM (not navigation) after 2s so
-      // it isn't blocked by Safari's popup blocker after a failed custom-scheme
-      // navigation. If the app does open the page goes to background, firing
-      // visibilitychange, which cancels the download section reveal.
+      // iOS: navigate via location.href. If not installed, Safari's brief error is
+      // fine (share text already said to download). Download UI reveals after 2s
+      // (avoids the popup blocker); visibilitychange cancels it if the app opened.
       document.getElementById('android-btn').style.display = 'none';
 
       const showDownload = setTimeout(() => {

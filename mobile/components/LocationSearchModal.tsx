@@ -10,23 +10,15 @@ interface LocationSearchModalProps {
   placeholder?: string;
   onDone: (text: string, place?: PlaceDetails) => void;
   onCancel: () => void;
-  // React Native doesn't reliably stack a second native <Modal> on top of one
-  // that's already open (most visible on Android — it can render behind, or
-  // simply not appear). When this is opened from inside a screen that's
-  // already presented as a Modal (MeetupDetailModal, AddMeetupWizard), render
-  // as a plain absolutely-positioned overlay within that existing Modal's own
-  // tree instead of a second native Modal. Callers must render this OUTSIDE
-  // their own KeyboardAvoidingView (a sibling, not a descendant) — otherwise
-  // the ancestor shrinks this overlay's bounds when the keyboard opens, and
-  // since the host Modal is transparent, the real screen behind it peeks
-  // through the gap that opens up at the bottom.
+  // RN can't reliably stack a second native Modal. Set this when already inside
+  // a Modal (MeetupDetailModal, AddMeetupWizard) to render as a plain overlay
+  // instead. Render as a sibling of the caller's KeyboardAvoidingView, not
+  // nested — else the keyboard shrinks it and the screen behind peeks through.
   asOverlay?: boolean;
 }
 
 const LocationSearchModal = ({ visible, initialValue, placeholder, onDone, onCancel, asOverlay }: LocationSearchModalProps) => {
-  // The blur backdrop always fills the full modal window, unaffected by the
-  // keyboard — only the card itself (via its own KeyboardAvoidingView) shifts
-  // up to stay clear of the keyboard.
+  // Backdrop blur fills the whole window; only the card shifts for the keyboard
   const content = (
     <>
       <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />

@@ -16,6 +16,7 @@ import {
     Keyboard,
     Animated,
     Modal,
+    Pressable,
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,6 +24,7 @@ import { useRouter } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import { pickAndUploadImage } from "@/utils/uploadImage";
+import { getUserDisplayName } from "@/utils/groupDisplay";
 import { GroupAvatar } from "@/components/GroupAvatar";
 import { DateTime } from "luxon";
 import { useQuery } from "@tanstack/react-query";
@@ -50,8 +52,7 @@ const DAYS_OF_WEEK = [
     { label: "Saturday",  short: "Sat", value: 6 },
 ];
 
-// One accent per weekday so a list of day rows/cards reads at a glance instead
-// of requiring the user to read each label to tell days apart.
+// One accent color per weekday so day rows/cards are distinguishable at a glance
 const DAY_COLORS: { bg: string; fg: string }[] = [
     { bg: "#FEE2E2", fg: "#DC2626" }, // Sunday
     { bg: "#DBEAFE", fg: "#2563EB" }, // Monday
@@ -73,6 +74,18 @@ const USA_TIMEZONES = [
     { label: "Alaska (AKT)",      value: "America/Anchorage"   },
     { label: "Hawaii (HT)",       value: "Pacific/Honolulu"    },
 ];
+
+// Short badge for the compact timezone pill — mirrors the abbreviations already
+// used elsewhere (e.g. GroupDetailsView) so the same zone reads the same way everywhere.
+const TZ_ABBR: Record<string, string> = {
+    "America/New_York": "ET",
+    "America/Chicago": "CT",
+    "America/Denver": "MT",
+    "America/Phoenix": "MST",
+    "America/Los_Angeles": "PT",
+    "America/Anchorage": "AKST",
+    "Pacific/Honolulu": "HST",
+};
 
 
 const FREQ_LABELS: Record<string, string> = {
@@ -126,9 +139,9 @@ interface BuiltRoutine {
 }
 
 interface ScheduleData {
+    name: string;
     location: string;
     startDate: string;
-    timezone: string;
     frequency: Frequency | null;
     rsvpRestricted: boolean;
     leadEnabled: boolean;
@@ -140,7 +153,6 @@ interface ScheduleData {
     deadlineTime: string;
     showDeadlineTimePicker: boolean;
     showStartDatePicker: boolean;
-    showTZPicker: boolean;
     showFreqPicker: boolean;
     dailySameTime: boolean | null;
     dailySharedTime: string;
@@ -158,12 +170,9 @@ interface ScheduleData {
     maxAttendeesInput: string;
 }
 
-// Shared by the live inline error and the Continue-button gate so both agree on
-// what counts as valid. Empty input is treated as "not yet answered" (no error
-// shown) rather than invalid, so the field doesn't flash red before typing starts.
-// RSVP opens and RSVP deadline are each "N days before, at time of day". When both
-// land on the same day-count, only the time of day keeps opens before the deadline,
-// so the day-count comparison alone (leadDays >= deadlineDays) isn't sufficient.
+// Shared by the inline error and Continue-button gate. Empty input = "not yet answered", not
+// invalid, so the field doesn't flash red before typing. Time-of-day matters because RSVP open
+// and deadline can land on the same day-count — comparing leadDays >= deadlineDays isn't enough.
 const timeToMinutes = (time: string): number => {
     const t = timeStringToDate(time);
     return t.getHours() * 60 + t.getMinutes();
@@ -177,13 +186,32 @@ const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): str
     return null;
 };
 
-const defaultSchedule = (): ScheduleData => ({
+// A tab with no frequency chosen is "empty" — always valid, contributes nothing
+// to the group (same as today's single-schedule Skip). Only a tab someone has
+// actually started configuring needs to be complete before Review is reachable.
+const isScheduleTabValid = (sch: ScheduleData): boolean => {
+    if (!sch.frequency) return true;
+    if (!sch.name.trim()) return false;
+    if (sch.maxAttendeesMode === "limited" && (sch.maxAttendeesInput === "" || getMaxAttendeesError(sch.maxAttendeesMode, sch.maxAttendeesInput))) return false;
+    if (sch.frequency === "daily") return sch.dailySameTime !== null;
+    if (sch.frequency === "weekly" || sch.frequency === "biweekly")
+        return sch.weekdayRows.length > 0 && sch.weekdayRows.every(r => r.day !== null);
+    if (sch.frequency === "monthly") {
+        if (!sch.monthlyMode) return false;
+        if (sch.monthlyMode === "date") return sch.monthlyDates.length > 0;
+        return sch.ordinalEntries.length > 0;
+    }
+    if (sch.frequency === "custom") return sch.builtRoutines.length > 0;
+    return false;
+};
+
+const defaultSchedule = (name = ""): ScheduleData => ({
+    name,
     location: "",
     startDate: DateTime.now().toISODate()!,
-    timezone: "America/Denver",
     frequency: null,
     rsvpRestricted: false,
-    leadEnabled: true,
+    leadEnabled: false,
     leadDays: 5,
     leadTime: "09:00 AM",
     showLeadTimePicker: false,
@@ -192,7 +220,6 @@ const defaultSchedule = (): ScheduleData => ({
     deadlineTime: "09:00 AM",
     showDeadlineTimePicker: false,
     showStartDatePicker: false,
-    showTZPicker: false,
     showFreqPicker: false,
     dailySameTime: null,
     dailySharedTime: "05:00 PM",
@@ -221,9 +248,8 @@ const InlineCalendar = ({ value, onChange, minDate, maxDate, bare, large }: {
     const [month, setMonth] = useState(
         value ? DateTime.fromISO(value).startOf("month") : DateTime.now().startOf("month")
     );
-    // Chunked into explicit 7-cell week rows rather than one flex-wrap grid — letting
-    // aspect-ratio cells wrap on their own leaves Yoga reserving a phantom trailing row
-    // of blank space whenever the day count isn't a clean multiple of 7.
+    // Chunked into 7-cell rows explicitly — flex-wrap leaves Yoga reserving a phantom
+    // blank trailing row whenever the day count isn't a multiple of 7.
     const weeks = useMemo(() => {
         const start = month.startOf("month");
         const firstDow = start.weekday === 7 ? 0 : start.weekday;
@@ -285,8 +311,7 @@ const InlineCalendar = ({ value, onChange, minDate, maxDate, bare, large }: {
 };
 
 // ─── CalendarPickerModal ────────────────────────────────────────────────────────
-// Same popup treatment for the biweekly "Start Date" date — was an inline
-// calendar expanding the page, now a focused overlay like the day picker above.
+// Biweekly "Start Date" as a focused overlay instead of an inline calendar expanding the page
 
 const CalendarPickerModal = ({ visible, value, minDate, maxDate, onChange, onCancel }: {
     visible: boolean; value: string; minDate?: string; maxDate?: string; onChange: (iso: string) => void; onCancel: () => void;
@@ -353,6 +378,7 @@ const StepDots = ({ total, current }: { total: number; current: number }) => (
 
 const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: string) => void; onClose: () => void }) => {
     const [name, setName] = useState("");
+    const [nameFocused, setNameFocused] = useState(false);
     const [localUri, setLocalUri] = useState<string | null>(null);
     const [imageUrl, setImageUrl] = useState("");
     const [uploading, setUploading] = useState(false);
@@ -391,11 +417,13 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
                 <Text style={s.screenSub}>What are you calling this crew?</Text>
                 <TextInput
                     style={s.bigInput}
-                    placeholder="e.g. Basketball Squad"
+                    placeholder={nameFocused ? "" : '"Basketball Squad"'}
                     placeholderTextColor="#C4C9D4"
+                    textAlign="center"
                     value={name}
                     onChangeText={setName}
-                    autoFocus
+                    onFocus={() => setNameFocused(true)}
+                    onBlur={() => setNameFocused(false)}
                     returnKeyType="done"
                     onSubmitEditing={() => Keyboard.dismiss()}
                 />
@@ -413,7 +441,6 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
                         <>
                             <Feather name="image" size={36} color="#9CA3AF" />
                             <Text style={s.imagePickerText}>Add group photo</Text>
-                            <Text style={s.imagePickerSub}>Optional</Text>
                         </>
                     )}
                 </TouchableOpacity>
@@ -493,18 +520,46 @@ const MembersScreen = ({ groupId, groupName, onDone }: {
 
 // ─── SCREEN 3: Group Settings ─────────────────────────────────────────────────
 
-const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
-    initialData?: ScheduleData | null; onNext: (data: ScheduleData) => void; onBack: () => void; onSkip: () => void;
+const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, onBack, onSkip }: {
+    groupName?: string;
+    initialSchedules?: ScheduleData[];
+    initialTimezone?: string;
+    onNext: (schedules: ScheduleData[], timezone: string) => void;
+    onBack: () => void;
+    onSkip: () => void;
 }) => {
-    const [d, setD] = useState<ScheduleData>(initialData ?? defaultSchedule());
+    // One shared timezone for the whole group — not per-schedule (the backend
+    // only stores one Group.timezone), so it lives outside the tabbed array.
+    const [timezone, setTimezone] = useState(initialTimezone ?? "America/Denver");
+    const [showTZPicker, setShowTZPicker] = useState(false);
+    const [showMultiScheduleInfo, setShowMultiScheduleInfo] = useState(false);
+    const scrollViewRef = useRef<ScrollView>(null);
+
+    // Starts with one blank series already in place so its fields are
+    // immediately visible — no tap required to begin filling it out.
+    const [schedules, setSchedules] = useState<ScheduleData[]>(
+        initialSchedules && initialSchedules.length > 0 ? initialSchedules : [defaultSchedule()]
+    );
+    const [activeIndex, setActiveIndexState] = useState(0);
+    // Mirrors activeIndex so `setD` (defined once, empty deps) always targets
+    // the tab that's actually active instead of closing over a stale index.
+    const activeIndexRef = useRef(0);
+    const setActiveIndex = (i: number) => { activeIndexRef.current = i; setActiveIndexState(i); };
+
+    const d = schedules[activeIndex] ?? defaultSchedule();
+    const setD = useCallback((updater: (prev: ScheduleData) => ScheduleData) => {
+        setSchedules(prev => prev.map((sch, i) => i === activeIndexRef.current ? updater(sch) : sch));
+    }, []);
+
     const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
+    const [nameInputFocused, setNameInputFocused] = useState(false);
     const [dayPickerRowId, setDayPickerRowId] = useState<string | null>(null);
     const [calendarPickerRowId, setCalendarPickerRowId] = useState<string | null>(null);
 
     const upd = useCallback((patch: Partial<ScheduleData>) => {
         animate();
         setD(prev => ({ ...prev, ...patch }));
-    }, []);
+    }, [setD]);
 
     const selectFreq = (freq: Frequency) => {
         animate();
@@ -697,22 +752,7 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
     const editingRoutineId = d.builtRoutines.find(r => r.editing)?.id ?? null;
 
     // ── Validation ────────────────────────────────────────────────────────────
-    const canProceed = (): boolean => {
-        if (d.maxAttendeesMode === "limited") {
-            if (d.maxAttendeesInput === "" || getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput)) return false;
-        }
-        if (!d.frequency) return true;
-        if (d.frequency === "daily") return d.dailySameTime !== null;
-        if (d.frequency === "weekly" || d.frequency === "biweekly")
-            return d.weekdayRows.length > 0 && d.weekdayRows.every(r => r.day !== null);
-        if (d.frequency === "monthly") {
-            if (!d.monthlyMode) return false;
-            if (d.monthlyMode === "date") return d.monthlyDates.length > 0;
-            return d.ordinalEntries.length > 0;
-        }
-        if (d.frequency === "custom") return d.builtRoutines.length > 0;
-        return false;
-    };
+    const canProceed = (): boolean => schedules.every(isScheduleTabValid);
 
     // ── Sub-renderers ─────────────────────────────────────────────────────────
 
@@ -1117,20 +1157,52 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                 <View style={{ width: 36 }} />
             </View>
             <ScrollView
+                ref={scrollViewRef}
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 automaticallyAdjustKeyboardInsets
             >
-                <Text style={s.screenTitle}>Group Settings</Text>
+                <Text style={s.screenTitle}>Set Recurring Meetups</Text>
                 <Text style={s.screenSub}>Set up when, where, and how you meet</Text>
 
-                {/* Where */}
-                <View style={s.sectionCard}>
+                {schedules.length === 0 ? (
+                    <View style={s.reviewEmptyCard}>
+                        <Feather name="calendar" size={18} color="#9CA3AF" />
+                        <Text style={s.reviewMuted}>No series — tap "Add More Series" below to add one, or continue without any</Text>
+                    </View>
+                ) : (
+                <>
+                {/* Name — a hero-style field instead of a standard card, so it
+                    reads unmistakably as "you're naming this series" rather
+                    than blending in with the other form sections below. */}
+                <View style={[s.nameHero, { borderLeftWidth: 3, borderLeftColor: "#4A90E2" }]}>
                     <View style={s.sectionHeaderRow}>
-                        <View style={[s.sectionIconChip, s.sectionIconChipBlue]}>
-                            <Feather name="map-pin" size={16} color="#4A90E2" />
+                        <View style={s.sectionIconChip}>
+                            <Feather name="tag" size={19} color="#4A90E2" />
+                        </View>
+                        <Text style={s.sectionTitle}>Series Name</Text>
+                    </View>
+                    <TextInput
+                        style={s.nameHeroInput}
+                        value={d.name}
+                        onChangeText={t => upd({ name: t })}
+                        onFocus={() => setNameInputFocused(true)}
+                        onBlur={() => setNameInputFocused(false)}
+                        placeholder={nameInputFocused ? "" : '"Sunday Dinner"'}
+                        textAlign="center"
+                        placeholderTextColor="#C4C9D4"
+                        maxLength={60}
+                    />
+                    <View style={s.nameHeroUnderline} />
+                </View>
+
+                {/* Where */}
+                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#EF4444" }]}>
+                    <View style={s.sectionHeaderRow}>
+                        <View style={s.sectionIconChip}>
+                            <Feather name="map-pin" size={19} color="#EF4444" />
                         </View>
                         <Text style={s.sectionTitle}>Where</Text>
                     </View>
@@ -1145,10 +1217,10 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                 </View>
 
                 {/* When */}
-                <View style={s.sectionCard}>
+                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#F59E0B" }]}>
                     <View style={s.sectionHeaderRow}>
-                        <View style={[s.sectionIconChip, s.sectionIconChipAmber]}>
-                            <Feather name="calendar" size={16} color="#F59E0B" />
+                        <View style={s.sectionIconChip}>
+                            <Feather name="calendar" size={19} color="#F59E0B" />
                         </View>
                         <Text style={s.sectionTitle}>When</Text>
                     </View>
@@ -1156,22 +1228,19 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                     {/* Frequency */}
                     <Text style={[s.fieldLabel, s.fieldLabelFirst]}>How often?</Text>
                     <TouchableOpacity style={s.dateFieldRow}
-                        onPress={() => upd({ showFreqPicker: !d.showFreqPicker, showStartDatePicker: false, showTZPicker: false, showLeadTimePicker: false })}>
+                        onPress={() => { setShowTZPicker(false); upd({ showFreqPicker: true, showStartDatePicker: false, showLeadTimePicker: false }); }}>
                         <Feather name="repeat" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
                         <Text style={d.frequency ? s.dateFieldText : s.dayPickerPlaceholder}>
                             {d.frequency ? FREQ_LABELS[d.frequency] : "Select frequency"}
                         </Text>
-                        <Feather name={d.showFreqPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     {d.showFreqPicker && (
-                        <View style={s.inlineDayPicker}>
-                            {(["daily", "weekly", "biweekly", "monthly", "custom"] as Frequency[]).map(f => (
-                                <TouchableOpacity key={f} style={[s.dayOption, d.frequency === f && s.dayOptionActive]}
-                                    onPress={() => selectFreq(f)}>
-                                    <Text style={[s.dayOptionText, d.frequency === f && s.dayOptionTextActive]}>{FREQ_LABELS[f]}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
+                        <OptionPickerModal title="How often?"
+                            options={(["daily", "weekly", "biweekly", "monthly", "custom"] as Frequency[]).map(f => ({ key: f, label: FREQ_LABELS[f] }))}
+                            selectedKey={d.frequency ?? ""}
+                            onSelect={key => selectFreq(key as Frequency)}
+                            onClose={() => upd({ showFreqPicker: false })} />
                     )}
 
                     {d.frequency === "daily" && renderDailyOptions()}
@@ -1185,45 +1254,43 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                         <>
                             <Text style={s.fieldLabel}>Start date</Text>
                             <TouchableOpacity style={s.dateFieldRow}
-                                onPress={() => upd({ showStartDatePicker: !d.showStartDatePicker, showTZPicker: false, showFreqPicker: false, showLeadTimePicker: false })}>
+                                onPress={() => { setShowTZPicker(false); upd({ showStartDatePicker: true, showFreqPicker: false, showLeadTimePicker: false }); }}>
                                 <Feather name="calendar" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
                                 <Text style={s.dateFieldText}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
-                                <Feather name={d.showStartDatePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
-                            {d.showStartDatePicker && (
-                                <InlineCalendar value={d.startDate}
-                                    onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
-                                    minDate={DateTime.now().toISODate()!}
-                                    maxDate={DateTime.now().plus({ months: 4 }).toISODate()!} />
-                            )}
+                            <CalendarPickerModal
+                                visible={d.showStartDatePicker}
+                                value={d.startDate}
+                                minDate={DateTime.now().toISODate()!}
+                                maxDate={DateTime.now().plus({ months: 4 }).toISODate()!}
+                                onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
+                                onCancel={() => upd({ showStartDatePicker: false })}
+                            />
                         </>
                     )}
 
-                    {/* Timezone */}
+                    {/* Timezone — applies to the whole group, not any one schedule, so
+                        it isn't part of the per-series fields above, but lives here
+                        since it's still a "when" concern. */}
                     <Text style={s.fieldLabel}>Timezone</Text>
                     <TouchableOpacity style={s.dateFieldRow}
-                        onPress={() => upd({ showTZPicker: !d.showTZPicker, showStartDatePicker: false, showFreqPicker: false, showLeadTimePicker: false })}>
+                        onPress={() => {
+                            animate();
+                            setShowTZPicker(v => !v);
+                            upd({ showFreqPicker: false, showStartDatePicker: false, showLeadTimePicker: false, showDeadlineTimePicker: false });
+                        }}>
                         <Feather name="globe" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <Text style={s.dateFieldText}>{USA_TIMEZONES.find(t => t.value === d.timezone)?.label || d.timezone}</Text>
-                        <Feather name={d.showTZPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Text style={s.dateFieldText}>{TZ_ABBR[timezone] ?? timezone}</Text>
+                        <Feather name={showTZPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
-                    {d.showTZPicker && (
-                        <View style={s.inlineDayPicker}>
-                            {USA_TIMEZONES.map(tz => (
-                                <TouchableOpacity key={tz.value} style={[s.dayOption, d.timezone === tz.value && s.dayOptionActive]}
-                                    onPress={() => upd({ timezone: tz.value, showTZPicker: false })}>
-                                    <Text style={[s.dayOptionText, d.timezone === tz.value && s.dayOptionTextActive]}>{tz.label}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
                 </View>
 
                 {/* RSVP Rules */}
-                <View style={s.sectionCard}>
+                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#7C3AED" }]}>
                     <View style={s.sectionHeaderRow}>
-                        <View style={[s.sectionIconChip, s.sectionIconChipViolet]}>
-                            <Feather name="bell" size={16} color="#7C3AED" />
+                        <View style={s.sectionIconChip}>
+                            <Feather name="bell" size={19} color="#7C3AED" />
                         </View>
                         <Text style={s.sectionTitle}>RSVP Rules</Text>
                     </View>
@@ -1281,7 +1348,7 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                                         </View>
                                         <Text style={s.fieldLabel}>Time</Text>
                                         <TouchableOpacity style={s.dateFieldRow}
-                                            onPress={() => upd({ showLeadTimePicker: !d.showLeadTimePicker, showDeadlineTimePicker: false, showStartDatePicker: false, showTZPicker: false, showFreqPicker: false })}>
+                                            onPress={() => { setShowTZPicker(false); upd({ showLeadTimePicker: !d.showLeadTimePicker, showDeadlineTimePicker: false, showStartDatePicker: false, showFreqPicker: false }); }}>
                                             <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
                                             <Text style={s.dateFieldText}>{d.leadTime}</Text>
                                             <Feather name={d.showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
@@ -1342,7 +1409,7 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                                         </View>
                                         <Text style={s.fieldLabel}>Time</Text>
                                         <TouchableOpacity style={s.dateFieldRow}
-                                            onPress={() => upd({ showDeadlineTimePicker: !d.showDeadlineTimePicker, showLeadTimePicker: false, showStartDatePicker: false, showTZPicker: false, showFreqPicker: false })}>
+                                            onPress={() => { setShowTZPicker(false); upd({ showDeadlineTimePicker: !d.showDeadlineTimePicker, showLeadTimePicker: false, showStartDatePicker: false, showFreqPicker: false }); }}>
                                             <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
                                             <Text style={s.dateFieldText}>{d.deadlineTime}</Text>
                                             <Feather name={d.showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
@@ -1368,10 +1435,10 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                 </View>
 
                 {/* Capacity */}
-                <View style={[s.sectionCard, { marginBottom: 8 }]}>
+                <View style={[s.sectionCard, { marginBottom: 8, borderLeftWidth: 3, borderLeftColor: "#0D9488" }]}>
                     <View style={s.sectionHeaderRow}>
-                        <View style={[s.sectionIconChip, s.sectionIconChipTeal]}>
-                            <Feather name="users" size={16} color="#0D9488" />
+                        <View style={s.sectionIconChip}>
+                            <Feather name="users" size={19} color="#0D9488" />
                         </View>
                         <Text style={s.sectionTitle}>Capacity</Text>
                     </View>
@@ -1411,17 +1478,46 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                         );
                     })()}
                 </View>
+                </>
+                )}
             </ScrollView>
             <View style={s.screenFooter}>
-                <TouchableOpacity style={s.skipBtn} onPress={onSkip}>
+                <TouchableOpacity style={[s.skipBtn, { marginLeft: 12 }]} onPress={onSkip}>
                     <Text style={s.skipBtnText}>Skip</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.primaryBtn, !canProceed() && s.primaryBtnDisabled]}
-                    onPress={() => canProceed() && onNext(d)} disabled={!canProceed()}>
-                    <Text style={s.primaryBtnText}>Review</Text>
-                    <Feather name="arrow-right" size={18} color="#fff" style={{ marginLeft: 6 }} />
+
+                <TouchableOpacity style={[s.reviewBtnGhost, !canProceed() && s.reviewBtnGhostDisabled]}
+                    onPress={() => canProceed() && setShowMultiScheduleInfo(true)}
+                    disabled={!canProceed()}>
+                    <Text style={s.reviewBtnGhostText}>Review</Text>
+                    <Feather name="arrow-right" size={16} color="#4A90E2" style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
             </View>
+
+            <Modal visible={showMultiScheduleInfo} transparent animationType="fade" onRequestClose={() => {
+                setShowMultiScheduleInfo(false);
+                onNext(schedules.filter(sch => sch.frequency), timezone);
+            }}>
+                <Pressable style={s.multiScheduleInfoBackdrop} onPress={() => {
+                    setShowMultiScheduleInfo(false);
+                    onNext(schedules.filter(sch => sch.frequency), timezone);
+                }}>
+                    <Pressable style={s.multiScheduleInfoCard} onPress={() => {}}>
+                        <Text style={s.multiScheduleInfoText}>
+                            A group can have multiple schedules for different types of meetups. Add more schedules to this group from {groupName ? `${groupName}'s` : "the group's"} Group Settings.
+                        </Text>
+                        <TouchableOpacity
+                            style={s.multiScheduleInfoBtn}
+                            onPress={() => {
+                                setShowMultiScheduleInfo(false);
+                                onNext(schedules.filter(sch => sch.frequency), timezone);
+                            }}
+                        >
+                            <Text style={s.multiScheduleInfoBtnText}>Got it</Text>
+                        </TouchableOpacity>
+                    </Pressable>
+                </Pressable>
+            </Modal>
 
             <LocationSearchModal
                 visible={isLocationSearchOpen}
@@ -1430,16 +1526,27 @@ const ScheduleScreen = ({ initialData, onNext, onBack, onSkip }: {
                 onDone={(text) => { upd({ location: text }); setIsLocationSearchOpen(false); }}
                 onCancel={() => setIsLocationSearchOpen(false)}
             />
+
+            {showTZPicker && (
+                <OptionPickerModal
+                    title="Timezone"
+                    options={USA_TIMEZONES.map(tz => ({ key: tz.value, label: tz.label }))}
+                    selectedKey={timezone}
+                    onSelect={key => { setTimezone(key); setShowTZPicker(false); }}
+                    onClose={() => setShowTZPicker(false)}
+                />
+            )}
         </View>
     );
 };
 
 // ─── Build payload ────────────────────────────────────────────────────────────
 
+// Builds everything a named schedule needs except `name` (the caller supplies
+// that, since it depends on the group name entered on an earlier screen).
 const buildSchedulePayload = (d: ScheduleData) => {
-    if (!d.frequency) return {};
+    if (!d.frequency) return null;
     let routines: any[] = [];
-    let topFreq: Frequency = d.frequency;
 
     if (d.frequency === "custom") {
         routines = d.builtRoutines.map(r => ({ frequency: r.frequency, dayTimes: r.dayTimes, rules: r.rules }));
@@ -1452,17 +1559,15 @@ const buildSchedulePayload = (d: ScheduleData) => {
         routines = [{ frequency: d.frequency, dayTimes: d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time, ...(r.startDate ? { startDate: r.startDate } : {}) })) }];
     } else if (d.frequency === "monthly") {
     if (d.monthlyMode === "date") {
-        routines = [{ 
-            frequency: "monthly", 
-            dayTimes: d.monthlyDates.map(e => ({ date: e.date, time: e.time })) 
+        routines = [{
+            frequency: "monthly",
+            dayTimes: d.monthlyDates.map(e => ({ date: e.date, time: e.time }))
         }];
     } else if (d.monthlyMode === "ordinal") {
-        topFreq = "ordinal" as Frequency;
-        // Ensure rules are always included and non-empty
-        const rules = d.ordinalEntries.map(e => ({ 
-            type: "byDay", 
-            occurrence: e.occurrence ?? "1st",  // ← safety fallback
-            day: e.day ?? 1                      // ← safety fallback
+        const rules = d.ordinalEntries.map(e => ({
+            type: "byDay",
+            occurrence: e.occurrence ?? "1st",
+            day: e.day ?? 1
         }));
         routines = [{
             frequency: "ordinal",
@@ -1471,10 +1576,13 @@ const buildSchedulePayload = (d: ScheduleData) => {
         }];
     }
   }
+    if (!routines.length) return null;
+
     return {
-        schedule: { frequency: topFreq, startDate: d.startDate, routines },
-        timezone: d.timezone,
+        startDate: d.startDate,
+        routines,
         defaultLocation: d.location,
+        defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
         generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
         generationLeadTime: d.leadTime,
         generationDeadlineDays: d.rsvpRestricted && d.deadlineEnabled ? d.deadlineDays : null,
@@ -1484,14 +1592,10 @@ const buildSchedulePayload = (d: ScheduleData) => {
 
 // ─── SCREEN 4: Review ─────────────────────────────────────────────────────────
 
-const ReviewScreen = ({ groupName, groupImage, members, schedule, onConfirm, onBack, isPending }: {
-    groupName: string; groupImage?: string; members: UserStub[]; schedule: ScheduleData | null;
+const ReviewScreen = ({ groupName, groupImage, members, schedules, timezone, onConfirm, onBack, isPending }: {
+    groupName: string; groupImage?: string; members: UserStub[]; schedules: ScheduleData[]; timezone: string;
     onConfirm: () => void; onBack: () => void; isPending: boolean;
 }) => {
-    const maxAttendeesLabel = schedule?.maxAttendeesMode === "limited" && schedule.maxAttendeesInput
-        ? schedule.maxAttendeesInput
-        : "Unlimited";
-
     return (
         <View style={s.screen}>
             <View style={s.screenHeader}>
@@ -1511,109 +1615,118 @@ const ReviewScreen = ({ groupName, groupImage, members, schedule, onConfirm, onB
                     <Text style={s.reviewHeroName} numberOfLines={2}>{groupName || "Untitled group"}</Text>
                 </View>
 
-                {/* Schedule */}
+                {/* Schedule(s) */}
                 <View style={s.reviewSectionHeaderRow}>
                     <View style={[s.reviewIconChip, s.reviewIconChipAmber]}>
                         <Feather name="calendar" size={15} color="#F59E0B" />
                     </View>
-                    <Text style={s.reviewSectionTitle}>Schedule</Text>
+                    <Text style={s.reviewSectionTitle}>Series</Text>
                 </View>
 
-                {!schedule?.frequency ? (
+                {schedules.length === 0 ? (
                     <View style={s.reviewEmptyCard}>
                         <Feather name="calendar" size={18} color="#9CA3AF" />
-                        <Text style={s.reviewMuted}>No schedule set — you can add one later</Text>
+                        <Text style={s.reviewMuted}>No series set — you can add one later</Text>
                     </View>
                 ) : (
-                    <View style={s.reviewScheduleCard}>
-                        <Text style={s.reviewScheduleFreq}>{FREQ_LABELS[schedule.frequency] || schedule.frequency}</Text>
-
-                        <View style={{ marginTop: 10, gap: 7 }}>
-                            {schedule.location ? (
-                                <View style={s.reviewInlineRow}>
-                                    <Feather name="map-pin" size={13} color="#9CA3AF" />
-                                    <Text style={s.reviewInlineText}>{schedule.location}</Text>
-                                </View>
-                            ) : null}
-                            {schedule.frequency !== "biweekly" && (
-                                <View style={s.reviewInlineRow}>
-                                    <Feather name="clock" size={13} color="#9CA3AF" />
-                                    <Text style={s.reviewInlineText}>Starts {DateTime.fromISO(schedule.startDate).toLocaleString(DateTime.DATE_MED)}</Text>
-                                </View>
-                            )}
-                            <View style={s.reviewInlineRow}>
-                                <Feather name="globe" size={13} color="#9CA3AF" />
-                                <Text style={s.reviewInlineText}>{USA_TIMEZONES.find(t => t.value === schedule.timezone)?.label}</Text>
-                            </View>
-                            {!schedule.rsvpRestricted || (!schedule.leadEnabled && !schedule.deadlineEnabled) ? (
-                                <View style={s.reviewInlineRow}>
-                                    <Feather name="bell" size={13} color="#9CA3AF" />
-                                    <Text style={s.reviewInlineText}>RSVPs open anytime</Text>
-                                </View>
-                            ) : (
-                                <>
-                                    {schedule.leadEnabled && (
-                                        <View style={s.reviewInlineRow}>
-                                            <Feather name="unlock" size={13} color="#9CA3AF" />
-                                            <Text style={s.reviewInlineText}>Earliest time to RSVP: {schedule.leadDays} days before at {schedule.leadTime}</Text>
-                                        </View>
-                                    )}
-                                    {schedule.deadlineEnabled && (
-                                        <View style={s.reviewInlineRow}>
-                                            <Feather name="lock" size={13} color="#9CA3AF" />
-                                            <Text style={s.reviewInlineText}>Latest time to RSVP: {schedule.deadlineDays} days before at {schedule.deadlineTime}</Text>
-                                        </View>
-                                    )}
-                                </>
-                            )}
+                    <>
+                        <View style={s.reviewInlineRow}>
+                            <Feather name="globe" size={13} color="#9CA3AF" />
+                            <Text style={s.reviewInlineText}>{USA_TIMEZONES.find(t => t.value === timezone)?.label}</Text>
                         </View>
+                        {schedules.map((schedule, idx) => {
+                            const maxAttendeesLabel = schedule.maxAttendeesMode === "limited" && schedule.maxAttendeesInput
+                                ? schedule.maxAttendeesInput
+                                : "Unlimited";
+                            return (
+                                <View key={idx} style={[s.reviewScheduleCard, { marginTop: 10 }]}>
+                                    <Text style={s.reviewScheduleName}>{schedule.name.trim() || groupName}</Text>
+                                    <Text style={s.reviewScheduleFreq}>{FREQ_LABELS[schedule.frequency!] || schedule.frequency}</Text>
 
-                        <View style={s.reviewDetailSeparator} />
-
-                        <View style={{ gap: 4 }}>
-                            {schedule.frequency === "daily" && (schedule.dailySameTime
-                                ? <Text style={s.reviewMutedBullet}>Every day @ {schedule.dailySharedTime}</Text>
-                                : schedule.dailyRows.map(r => <Text key={r.id} style={s.reviewMutedBullet}>• {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}</Text>)
-                            )}
-                            {(schedule.frequency === "weekly" || schedule.frequency === "biweekly") && schedule.weekdayRows.filter(r => r.day !== null).map(r => (
-                                <Text key={r.id} style={s.reviewMutedBullet}>
-                                    • {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}
-                                    {schedule.frequency === "biweekly" && r.startDate ? ` (from ${DateTime.fromISO(r.startDate).toLocaleString(DateTime.DATE_MED)})` : ""}
-                                </Text>
-                            ))}
-                            {schedule.frequency === "monthly" && schedule.monthlyMode === "date" && schedule.monthlyDates.map(e => (
-                                <Text key={e.id} style={s.reviewMutedBullet}>• {e.date}{ordSfx(e.date)} of month @ {e.time}</Text>
-                            ))}
-                            {schedule.frequency === "monthly" && schedule.monthlyMode === "ordinal" && schedule.ordinalEntries.map(e => (
-                                <Text key={e.id} style={s.reviewMutedBullet}>• {e.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === e.day)?.label} @ {e.time}</Text>
-                            ))}
-                            {schedule.frequency === "custom" && (
-                                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                                    {schedule.builtRoutines.map(r => (
-                                        <View key={r.id} style={s.reviewRoutineChip}>
-                                            <Text style={s.reviewRoutineChipText}>{r.label}</Text>
+                                    <View style={{ marginTop: 10, gap: 7 }}>
+                                        {schedule.location ? (
+                                            <View style={s.reviewInlineRow}>
+                                                <Feather name="map-pin" size={13} color="#9CA3AF" />
+                                                <Text style={s.reviewInlineText}>{schedule.location}</Text>
+                                            </View>
+                                        ) : null}
+                                        {schedule.frequency !== "biweekly" && (
+                                            <View style={s.reviewInlineRow}>
+                                                <Feather name="clock" size={13} color="#9CA3AF" />
+                                                <Text style={s.reviewInlineText}>Starts {DateTime.fromISO(schedule.startDate).toLocaleString(DateTime.DATE_MED)}</Text>
+                                            </View>
+                                        )}
+                                        <View style={s.reviewInlineRow}>
+                                            <Feather name="users" size={13} color="#9CA3AF" />
+                                            <Text style={s.reviewInlineText}>Max attendees: {maxAttendeesLabel}</Text>
                                         </View>
-                                    ))}
+                                        {!schedule.rsvpRestricted || (!schedule.leadEnabled && !schedule.deadlineEnabled) ? (
+                                            <View style={s.reviewInlineRow}>
+                                                <Feather name="bell" size={13} color="#9CA3AF" />
+                                                <Text style={s.reviewInlineText}>RSVPs open anytime</Text>
+                                            </View>
+                                        ) : (
+                                            <>
+                                                {schedule.leadEnabled && (
+                                                    <View style={s.reviewInlineRow}>
+                                                        <Feather name="unlock" size={13} color="#9CA3AF" />
+                                                        <Text style={s.reviewInlineText}>Earliest time to RSVP: {schedule.leadDays} days before at {schedule.leadTime}</Text>
+                                                    </View>
+                                                )}
+                                                {schedule.deadlineEnabled && (
+                                                    <View style={s.reviewInlineRow}>
+                                                        <Feather name="lock" size={13} color="#9CA3AF" />
+                                                        <Text style={s.reviewInlineText}>Latest time to RSVP: {schedule.deadlineDays} days before at {schedule.deadlineTime}</Text>
+                                                    </View>
+                                                )}
+                                            </>
+                                        )}
+                                    </View>
+
+                                    <View style={s.reviewDetailSeparator} />
+
+                                    <View style={{ gap: 4 }}>
+                                        {schedule.frequency === "daily" && (schedule.dailySameTime
+                                            ? <Text style={s.reviewMutedBullet}>Every day @ {schedule.dailySharedTime}</Text>
+                                            : schedule.dailyRows.map(r => <Text key={r.id} style={s.reviewMutedBullet}>• {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}</Text>)
+                                        )}
+                                        {(schedule.frequency === "weekly" || schedule.frequency === "biweekly") && schedule.weekdayRows.filter(r => r.day !== null).map(r => (
+                                            <Text key={r.id} style={s.reviewMutedBullet}>
+                                                • {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}
+                                                {schedule.frequency === "biweekly" && r.startDate ? ` (from ${DateTime.fromISO(r.startDate).toLocaleString(DateTime.DATE_MED)})` : ""}
+                                            </Text>
+                                        ))}
+                                        {schedule.frequency === "monthly" && schedule.monthlyMode === "date" && schedule.monthlyDates.map(e => (
+                                            <Text key={e.id} style={s.reviewMutedBullet}>• {e.date}{ordSfx(e.date)} of month @ {e.time}</Text>
+                                        ))}
+                                        {schedule.frequency === "monthly" && schedule.monthlyMode === "ordinal" && schedule.ordinalEntries.map(e => (
+                                            <Text key={e.id} style={s.reviewMutedBullet}>• {e.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === e.day)?.label} @ {e.time}</Text>
+                                        ))}
+                                        {schedule.frequency === "custom" && (
+                                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                                                {schedule.builtRoutines.map(r => (
+                                                    <View key={r.id} style={s.reviewRoutineChip}>
+                                                        <Text style={s.reviewRoutineChipText}>{r.label}</Text>
+                                                    </View>
+                                                ))}
+                                            </View>
+                                        )}
+                                    </View>
                                 </View>
-                            )}
-                        </View>
-                    </View>
+                            );
+                        })}
+                    </>
                 )}
 
-                {/* Members + Max Attendees */}
+                {/* Members */}
                 <View style={[s.detailsCard, { marginTop: 10, marginBottom: 0 }]}>
                     <View style={s.detailItem}>
                         <Text style={s.detailLabel}>Members</Text>
                         <Text style={s.detailValue}>
                             {members.length === 0
                                 ? "Just you — invite friends after creating"
-                                : members.map(m => [m.firstName, m.lastName].filter(Boolean).join(' ')).join(', ')}
+                                : members.map(m => getUserDisplayName(m)).join(', ')}
                         </Text>
-                    </View>
-                    <View style={s.detailSeparator} />
-                    <View style={s.detailItem}>
-                        <Text style={s.detailLabel}>Max Attendees</Text>
-                        <Text style={s.detailValue}>{maxAttendeesLabel}</Text>
                     </View>
                 </View>
             </ScrollView>
@@ -1640,28 +1753,36 @@ const CreateGroupScreen = () => {
     const [step, setStep] = useState<Step>("name");
     const [groupName, setGroupName] = useState("");
     const [groupImage, setGroupImage] = useState("");
-    const [schedule, setSchedule] = useState<ScheduleData | null>(null);
+    const [schedules, setSchedules] = useState<ScheduleData[]>([]);
+    const [timezone, setTimezone] = useState("America/Denver");
     const [createdGroupId, setCreatedGroupId] = useState<string | null>(null);
 
     const handleClose = () => router.replace("/(tabs)/groups");
 
     const handleCreate = () => {
-        const schedulePayload = schedule?.frequency ? buildSchedulePayload(schedule) : {};
-        const defaultCapacity = schedule?.maxAttendeesMode === "limited"
-            ? parseInt(schedule.maxAttendeesInput, 10)
+        // Empty (frequency-less) tabs were already filtered out before reaching
+        // this step, so every entry here is a real schedule to create.
+        const scheduleInputs = schedules
+            .map(sch => {
+                const routinePart = buildSchedulePayload(sch);
+                return routinePart ? { name: sch.name.trim() || groupName, ...routinePart } : null;
+            })
+            .filter((s): s is NonNullable<typeof s> => s !== null);
+
+        const firstCapacity = schedules[0]?.maxAttendeesMode === "limited"
+            ? parseInt(schedules[0].maxAttendeesInput, 10)
             : 0;
+
         const payload: any = {
             name: groupName,
             image: groupImage,
             meetupsToDisplay: 1,
-            generationLeadDays: null,
-            generationLeadTime: schedule?.leadTime ?? "09:00 AM",
-            generationDeadlineDays: null,
-            generationDeadlineTime: schedule?.deadlineTime ?? "09:00 AM",
-            timezone: schedule?.timezone ?? "America/Denver",
-            defaultLocation: schedule?.location ?? "",
-            defaultCapacity,
-            ...schedulePayload,
+            timezone,
+            // Fallback defaults for one-off meetups not tied to any schedule —
+            // borrowed from the first schedule when one exists.
+            defaultLocation: schedules[0]?.location ?? "",
+            defaultCapacity: firstCapacity,
+            schedules: scheduleInputs,
         };
         mutate(payload, {
             onSuccess: (data) => {
@@ -1673,8 +1794,8 @@ const CreateGroupScreen = () => {
     };
 
     if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("schedule"); }} onClose={handleClose} /></SafeAreaView>;
-    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen initialData={schedule} onNext={data => { setSchedule(data); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedule(null); setStep("review"); }} /></SafeAreaView>;
-    if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} groupImage={groupImage} members={[]} schedule={schedule} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
+    if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen groupName={groupName} initialSchedules={schedules} initialTimezone={timezone} onNext={(data, tz) => { setSchedules(data); setTimezone(tz); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedules([]); setStep("review"); }} /></SafeAreaView>;
+    if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} groupImage={groupImage} members={[]} schedules={schedules} timezone={timezone} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
     return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} groupName={groupName} onDone={() => router.replace({ pathname: "/(tabs)/groups", params: { promptNotifications: "1" } })} /></SafeAreaView>;
 };
 
@@ -1687,16 +1808,24 @@ const s = StyleSheet.create({
     screen: { flex: 1 },
     screenHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
     screenBody: { flex: 1, paddingHorizontal: 24, paddingTop: 16 },
-    screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#F3F4F6", backgroundColor: "#fff" },
+    screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#F3F4F6", backgroundColor: "#fff", position: "relative" },
     screenTitle: { fontSize: 26, fontWeight: "900", color: "#111827", marginBottom: 4 },
     screenSub: { fontSize: 14, color: "#9CA3AF", marginBottom: 20 },
+    multiScheduleInfoBackdrop: { flex: 1, backgroundColor: "rgba(17,24,39,0.45)", alignItems: "center", justifyContent: "center", padding: 28 },
+    multiScheduleInfoCard: {
+        backgroundColor: "#fff", borderRadius: 18, padding: 20, width: "100%", maxWidth: 360,
+        shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 6,
+    },
+    multiScheduleInfoText: { fontSize: 14, color: "#4B5563", lineHeight: 20, marginBottom: 16 },
+    multiScheduleInfoBtn: { backgroundColor: "#4A90E2", borderRadius: 12, paddingVertical: 12, alignItems: "center" },
+    multiScheduleInfoBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
     iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
     dots: { flexDirection: "row", alignItems: "center", width: "50%", alignSelf: "center" },
     dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: "#E5E7EB", backgroundColor: "#fff" },
     dotActive: { backgroundColor: "#4A90E2", borderColor: "#4A90E2" },
     dotLine: { flex: 1, height: 2, backgroundColor: "#E5E7EB" },
     dotLineFilled: { backgroundColor: "#4A90E2" },
-    bigInput: { fontSize: 22, fontWeight: "700", color: "#111827", borderBottomWidth: 2, borderBottomColor: "#4A90E2", paddingVertical: 12, marginTop: 8 },
+    bigInput: { fontSize: 32, fontWeight: "800", color: "#111827", letterSpacing: -0.3, borderBottomWidth: 2, borderBottomColor: "#4A90E2", paddingVertical: 12, marginTop: 8 },
     inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
     inputRowError: { borderColor: "#EF4444" },
     inlineInput: { flex: 1, fontSize: 15, color: "#374151" },
@@ -1721,6 +1850,12 @@ const s = StyleSheet.create({
     shareBtnText: { marginLeft: 8, color: "#4A90E2", fontWeight: "700", fontSize: 14 },
     primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
     primaryBtnDisabled: { backgroundColor: "#93C5FD" },
+    // Review, in this footer, is a plain text+icon control (no button fill) so
+    // Skip / Add More Series / Review can all fit — colored to match the
+    // "I'm In" RSVP button's teal-green (#4FD1C5) rather than the app's usual blue.
+    reviewBtnGhost: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 11 },
+    reviewBtnGhostDisabled: { opacity: 0.4 },
+    reviewBtnGhostText: { color: "#4A90E2", fontWeight: "800", fontSize: 15 },
     primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
     skipBtn: { paddingHorizontal: 16, paddingVertical: 14 },
     skipBtnText: { color: "#9CA3AF", fontWeight: "700", fontSize: 15 },
@@ -1728,16 +1863,17 @@ const s = StyleSheet.create({
     doneBtnText: { color: "#fff", fontWeight: "800", fontSize: 13 },
     fieldLabel: { fontSize: 11, fontWeight: "800", color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, marginTop: 16 },
     fieldLabelFirst: { marginTop: 0 },
-    // Schedule screen — groups related fields into clearly bounded cards so the long
-    // form reads as a handful of scannable chunks instead of one continuous list.
+    // Groups related fields into bounded cards so the long form reads as scannable chunks
     sectionCard: { backgroundColor: "#fff", borderRadius: 20, borderWidth: 1, borderColor: "#F3F4F6", padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
     sectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
-    sectionIconChip: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-    sectionIconChipBlue: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
-    sectionIconChipAmber: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
-    sectionIconChipViolet: { backgroundColor: "#F5F3FF", borderColor: "#DDD6FE" },
-    sectionIconChipTeal: { backgroundColor: "#ECFDF9", borderColor: "#99E6DA" },
+    sectionIconChip: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
     sectionTitle: { fontSize: 16, fontWeight: "900", color: "#111827", letterSpacing: -0.2 },
+    // Hero-style Series Name field — plain white like the rest of the page,
+    // but deliberately un-card-like (no border box, no icon chip header) so
+    // the oversized headline input itself is what signals "name this."
+    nameHero: { backgroundColor: "#fff", borderRadius: 20, borderWidth: 1, borderColor: "#F3F4F6", padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
+    nameHeroInput: { fontSize: 32, fontWeight: "800", color: "#111827", padding: 0, letterSpacing: -0.3 },
+    nameHeroUnderline: { height: 3, borderRadius: 1.5, backgroundColor: "#4A90E2", marginTop: 14 },
     dateFieldRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 13, marginBottom: 4 },
     dateFieldText: { fontSize: 15, color: "#1F2937", fontWeight: "600" },
     startDateLabel: { fontSize: 11, fontWeight: "700", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
@@ -1813,9 +1949,7 @@ const s = StyleSheet.create({
     leadCenter: { alignItems: "center", minWidth: 60 },
     leadVal: { fontSize: 22, fontWeight: "900", color: "#111827" },
     leadSub: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase" },
-    // Review screen — mirrors MeetupDetailModal's palette, section-header, and
-    // detail-card conventions so the two "confirm before you commit" screens feel
-    // like the same app.
+    // Mirrors MeetupDetailModal's palette/section conventions for a consistent "confirm" feel
     reviewHero: { alignItems: "center", marginBottom: 24 },
     reviewHeroName: { fontSize: 22, fontWeight: "900", color: "#111827", letterSpacing: -0.4, textAlign: "center", marginTop: 12 },
     detailsCard: { backgroundColor: "#F9FAFB", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#F3F4F6", marginBottom: 24 },
@@ -1831,6 +1965,7 @@ const s = StyleSheet.create({
     reviewMuted: { fontSize: 14, color: "#6B7280" },
     reviewMutedBullet: { fontSize: 13, color: "#6B7280", lineHeight: 19 },
     reviewScheduleCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", padding: 16 },
+    reviewScheduleName: { fontSize: 13, fontWeight: "800", color: "#4A90E2", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 },
     reviewScheduleFreq: { fontSize: 17, fontWeight: "800", color: "#111827" },
     reviewDetailSeparator: { height: 1, backgroundColor: "#F3F4F6", marginVertical: 14 },
     reviewInlineRow: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -1841,7 +1976,6 @@ const s = StyleSheet.create({
     imagePreview: { width: 160, height: 160, borderRadius: 32 },
     imageEditBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#4A90E2", borderRadius: 14, padding: 6 },
     imagePickerText: { fontSize: 13, fontWeight: "600", color: "#6B7280", marginTop: 6, textAlign: "center" },
-    imagePickerSub: { fontSize: 11, color: "#9CA3AF", textAlign: "center" },
 });
 
 const cal = StyleSheet.create({

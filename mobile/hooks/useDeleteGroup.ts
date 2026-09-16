@@ -16,11 +16,7 @@ export const useDeleteGroup = () => {
     
     onSuccess: (data) => {
       Alert.alert("Success", data.message);
-      // Invalidate the main 'groups' query to refresh the list on the main screen
       queryClient.invalidateQueries({ queryKey: ['groups'] });
-      
-      // --- THIS IS THE FIX ---
-      // Also invalidate the 'meetups' query to refresh the meetups list
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
     },
     onError: (error: any) => {

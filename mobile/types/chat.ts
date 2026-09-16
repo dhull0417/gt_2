@@ -29,4 +29,13 @@ export interface ChatMessage {
   image_url?: string | null;
   image_width?: number | null;
   image_height?: number | null;
+  // Set only on the local placeholder shown while a send is queued/in-flight
+  // (offline or slow network) — never present on a message from the server.
+  pending?: boolean;
+  // Set only on the local placeholder for a send that exhausted its retries —
+  // never present on a message from the server.
+  failed?: boolean;
+  // Identifies the underlying mutation for a pending/failed placeholder so it
+  // can be retried or discarded; never present on a message from the server.
+  mutationId?: number;
 }

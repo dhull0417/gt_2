@@ -1,9 +1,5 @@
-// Custom square-crop screen used on Android in place of expo-image-picker's
-// native `allowsEditing` editor, whose toolbar renders there with no visible
-// confirm/cancel buttons. Mount <ImageCropperHost /> once near the app root
-// (inside GestureHandlerRootView), then call requestImageCrop() from anywhere —
-// it drives this host imperatively and resolves with the cropped local URI,
-// or null if the user cancels.
+// Android replacement for expo-image-picker's allowsEditing (its toolbar has no
+// visible confirm/cancel there). Mount once near app root, then call requestImageCrop().
 import React, { useEffect, useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -67,8 +63,7 @@ export function ImageCropperHost() {
 
   const reqWidth = request?.width ?? 1;
   const reqHeight = request?.height ?? 1;
-  // "Cover" fit at zoom=1: the image's shorter side exactly fills the crop
-  // square, so there's never an empty gap at the edges of the viewport.
+  // "Cover" fit at zoom=1: shorter side fills the crop square, no gaps
   const baseScale = VIEW_SIZE / Math.min(reqWidth, reqHeight);
 
   const pinchGesture = Gesture.Pinch()
@@ -131,10 +126,7 @@ export function ImageCropperHost() {
 
     const activeRequest = request;
     try {
-      // Resize in the same pass as the crop. Cropping at full photo resolution
-      // (often 3000px+ per side) and then resizing down separately in the upload
-      // step means writing and re-reading a huge intermediate file — doing both
-      // here in one manipulateAsync call skips that extra full-resolution round trip.
+      // Crop and resize in one pass to avoid writing/re-reading a full-res intermediate file
       const cropSize = Math.round(size);
       const result = await ImageManipulator.manipulateAsync(
         activeRequest.uri,
@@ -154,9 +146,7 @@ export function ImageCropperHost() {
 
   return (
     <Modal visible={!!request} animationType="fade" statusBarTranslucent onRequestClose={handleCancel}>
-      {/* RN's Modal renders into its own native window, disconnected from the
-          GestureHandlerRootView at the app root — gesture-handler needs its own
-          root inside the modal or pinch/pan silently do nothing. */}
+      {/* Modal has its own native window; needs its own GestureHandlerRootView or gestures silently fail */}
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View style={styles.header}>

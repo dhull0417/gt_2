@@ -45,18 +45,14 @@ const VerifyNewEmailScreen = () => {
         if (!user || !emailId) return;
         setIsLoading(true);
         try {
-            // Find the new email address object from the user's list
             const emailAddressToVerify = user.emailAddresses.find(e => e.id === emailId);
             if (!emailAddressToVerify) {
                 throw new Error("Could not find the email address to verify.");
             }
 
-            // 1. Attempt to verify the code
             await emailAddressToVerify.attemptVerification({ code });
 
-            // 2. Make sure Mongo can accept the new email (it must be unique
-            // there too) before touching Clerk's primary email, so the two
-            // stores never end up disagreeing.
+            // Update Mongo before Clerk's primary email so the two stores can't disagree
             try {
                 await userApi.updateProfile(api, { email: emailAddressToVerify.emailAddress });
             } catch (mongoErr: any) {
@@ -64,14 +60,12 @@ const VerifyNewEmailScreen = () => {
                 return;
             }
 
-            // 3. Now that Mongo accepted it, set it as the user's primary email in Clerk
             await user.update({ primaryEmailAddressId: emailAddressToVerify.id });
 
             Alert.alert("Success", "Your email address has been updated.");
 
-            // Go back to the account menu screen
             router.back();
-            router.back(); // Go back twice to get to the main menu
+            router.back(); // twice, back to main menu
 
         } catch (err: any) {
             Alert.alert('Error', err.errors?.[0]?.longMessage || 'An error occurred.');

@@ -1,14 +1,12 @@
 import React from 'react';
 import { Stack } from 'expo-router';
 
-// Root-level (outside the (tabs) native tab navigator) so the native tab bar can
-// never render on the chat screen — see (tabs)/groups/_layout.tsx for why that
-// matters on Android.
+// Kept outside (tabs) so the native tab bar never renders on chat (see (tabs)/groups/_layout.tsx, Android issue)
 export default function GroupChatLayout() {
   return (
     <Stack
       screenOptions={{
-        headerShown: false, // We use a custom header in the screen
+        headerShown: false, // custom header used in screen
         animation: 'slide_from_right',
         contentStyle: { backgroundColor: 'white' }
       }}

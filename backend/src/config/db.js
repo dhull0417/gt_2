@@ -20,13 +20,12 @@ const warnIfMigrationsPending = async () => {
 
 export const connectDB = async () => {
     try {
-// Log the environment variable (but obscure the sensitive parts for security)
+// log host only, hide credentials
         const uri = process.env.MONGO_URI;
         if (uri) {
         console.log("MongoDB URI loaded. Host:", uri.split('@')[1].split('/')[0]);
         } else {
         console.error("MongoDB URI is not set!");
-        // You can even exit here if it's a critical dependency
         process.exit(1);
         }
 
