@@ -5,7 +5,7 @@ import { Alert, Linking, Platform } from 'react-native';
 import { AxiosInstance } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApiClient } from '@/utils/api';
-import { useRouter } from 'expo-router';
+import { useRouter, useRootNavigationState } from 'expo-router';
 import Constants from 'expo-constants';
 import { reportPermissionStatus } from '@/utils/permissions';
 
@@ -42,9 +42,20 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
   
   const api = useApiClient();
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
+  const pendingNavigationData = useRef<any>(null);
 
   // Helper to handle navigation logic in one place
   const handleNotificationNavigation = (data: any) => {
+    // On a cold start, this can fire before the root navigator has mounted.
+    // Pushing into a stack that isn't ready yet leaves the pushed screen as the
+    // only entry, so its back arrow has nothing to go back to. Queue it instead
+    // and let the effect below flush it once the navigator reports ready.
+    if (!rootNavigationState?.key) {
+      pendingNavigationData.current = data;
+      return;
+    }
+
     const { type, meetupId, groupId } = data || {};
 
     if (type === 'chat' && groupId) {
@@ -59,6 +70,15 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
       });
     }
   };
+
+  // Flush a navigation that arrived before the root navigator was ready.
+  useEffect(() => {
+    if (rootNavigationState?.key && pendingNavigationData.current) {
+      const data = pendingNavigationData.current;
+      pendingNavigationData.current = null;
+      handleNotificationNavigation(data);
+    }
+  }, [rootNavigationState?.key]);
 
   useEffect(() => {
     defineNotificationCategories();

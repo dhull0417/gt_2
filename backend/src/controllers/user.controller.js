@@ -185,12 +185,17 @@ export const syncUser = asyncHandler(async (req, res) => {
   // prefer client-sent firstName/lastName — the backend Clerk API can lag on first sign-in
   const { firstName: bodyFirstName, lastName: bodyLastName } = req.body;
 
+  // Apple only hands over the real name on the very first authorization ever; if it
+  // wasn't captured then, Apple/Clerk never supply one again. Fall back to a generic
+  // placeholder name instead of leaving these users with a blank display name.
+  const isAppleUser = clerkUser.externalAccounts?.some((account) => account.provider === "oauth_apple");
+
   const userData = {
     clerkId: userId,
     email: clerkUser.emailAddresses[0]?.emailAddress,
     phoneNumber: clerkUser.phoneNumbers[0]?.phoneNumber,
-    firstName: bodyFirstName || clerkUser.firstName || "",
-    lastName: bodyLastName || clerkUser.lastName || "",
+    firstName: bodyFirstName || clerkUser.firstName || (isAppleUser ? "No Profile" : ""),
+    lastName: bodyLastName || clerkUser.lastName || (isAppleUser ? "Pat" : ""),
     profilePicture: clerkUser.imageUrl || "",
   };
 
