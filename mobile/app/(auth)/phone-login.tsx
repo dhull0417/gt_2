@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { useSignIn, useSignUp } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -92,10 +92,12 @@ export default function PhoneLogin() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === "ios" ? "padding" : "height"} 
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={{ flex: 1 }}>
       {/* Header / Back Button */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -169,6 +171,8 @@ export default function PhoneLogin() {
           </>
         )}
       </View>
+      </View>
+      </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );
 }

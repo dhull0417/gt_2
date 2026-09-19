@@ -72,7 +72,7 @@ export default function Index() {
                   {isLoading ? <ActivityIndicator size="small" color="#000" /> : (
                     <View style={styles.buttonContent}>
                       <Image source={require("../../assets/images/google-logo.png")} style={styles.iconImage} resizeMode="contain" />
-                      <Text style={styles.buttonText}>Continue with Google</Text>
+                      <Text style={styles.buttonText} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Google</Text>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -83,7 +83,7 @@ export default function Index() {
                 >
                   <View style={styles.buttonContent}>
                       <Feather name="mail" size={24} color="#000" style={{ marginRight: 12 }} />
-                      <Text style={styles.buttonText}>Continue with Email</Text>
+                      <Text style={styles.buttonText} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Email</Text>
                   </View>
                 </TouchableOpacity>
               </Animated.View>
@@ -114,7 +114,7 @@ export default function Index() {
                 >
                   <View style={styles.buttonContent}>
                     <Feather name="phone" size={22} color="#000" style={{ marginRight: 12 }} />
-                    <Text style={styles.buttonText}>Continue with Phone</Text>
+                    <Text style={styles.buttonText} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Phone</Text>
                   </View>
                 </TouchableOpacity>
               </Animated.View>
@@ -228,6 +228,7 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontWeight: '600',
     fontSize: 18,
+    flexShrink: 1,
   },
   otherOptionsToggle: {
     flexDirection: 'row',
