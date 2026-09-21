@@ -132,6 +132,7 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         time: dtEntry.time,
         timezone,
         location: schedule.defaultLocation || "",
+        description: schedule.defaultDescription || "",
         members: group.members,
         undecided: group.members,
         capacity: schedule.defaultCapacity || 0,
@@ -144,7 +145,23 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
     }
 
     if (docsToCreate.length > 0) {
-      const created = await Meetup.insertMany(docsToCreate);
+      // unordered + tolerant of duplicate-key errors: if a concurrent call
+      // (the regen cron overlapping a manual edit, or a double-fired save)
+      // already inserted one of these slots, the unique index on
+      // (group, schedule, date, time) rejects just that doc — everything
+      // else in the batch still goes through.
+      let created = [];
+      try {
+        created = await Meetup.insertMany(docsToCreate, { ordered: false });
+      } catch (err) {
+        // Mongoose attaches the docs that DID succeed to a partial-failure
+        // error (insertMany with ordered:false) — anything absent from that
+        // list lost the race to a concurrent insert of the same slot, which
+        // is the expected/harmless outcome here. A non-duplicate-key failure
+        // has no insertedDocs and should still surface.
+        if (!err.insertedDocs) throw err;
+        created = err.insertedDocs;
+      }
       generatedCount = created.length;
 
       if (onMeetupCreated) {

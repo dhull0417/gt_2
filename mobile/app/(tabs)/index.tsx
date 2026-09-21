@@ -1,11 +1,13 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Animated, LayoutChangeEvent, TextInput, Alert } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Animated, TextInput, Alert } from 'react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@clerk/expo';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useRsvp } from '@/hooks/useRsvp';
 import { Meetup, User, useApiClient, userApi, meetupApi } from '@/utils/api';
+import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import AddMeetupWizard from '@/components/AddMeetupWizard';
 import { useFocusEffect, useRouter, useLocalSearchParams, Link } from 'expo-router';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
@@ -25,6 +27,8 @@ type GroupedMeetups = {
 };
 
 const GROUP_BORDER_COLORS = ['#C4B5FD', '#FDE68A', '#F9A8D4', '#FDBA74', '#A5B4FC', '#86EFAC'];
+
+const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
 const hashGroupColor = (groupId: string): string => {
   let hash = 0;
@@ -73,45 +77,57 @@ const capMeetupsByFrequency = (list: Meetup[]): Meetup[] => {
 
 // --- Components ---
 
-const RemovableCard = ({
-  isRemoving,
-  onRemoved,
-  children,
-}: {
-  isRemoving: boolean;
-  onRemoved: () => void;
-  children: React.ReactNode;
-}) => {
-  const opacity = useRef(new Animated.Value(1)).current;
-  const heightAnim = useRef(new Animated.Value(0)).current;
-  const currentHeight = useRef<number>(0);
-  const [isAnimating, setIsAnimating] = useState(false);
-
-  // Always track the latest rendered height so the animation starts from the right value
-  const onLayout = useCallback((e: LayoutChangeEvent) => {
-    currentHeight.current = e.nativeEvent.layout.height;
-  }, []);
+// Fades a card in when it newly appears in a filtered list (e.g. switching RSVP tabs)
+// instead of having it pop in abruptly.
+const FadeInCard = ({ children }: { children: React.ReactNode }) => {
+  const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!isRemoving) return;
-    // Snapshot the current height, lock it, then animate to 0
-    heightAnim.setValue(currentHeight.current);
-    setIsAnimating(true);
-    Animated.parallel([
-      Animated.timing(opacity, { toValue: 0, duration: 280, useNativeDriver: false }),
-      Animated.timing(heightAnim, { toValue: 0, duration: 520, delay: 80, easing: t => t * t * (3 - 2 * t), useNativeDriver: false }),
-    ]).start(() => onRemoved());
-  }, [isRemoving]);
+    Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }).start();
+  }, []);
+
+  return <Animated.View style={{ opacity }}>{children}</Animated.View>;
+};
+
+type RsvpFilter = 'all' | 'undecided' | 'in' | 'out';
+
+const FILTER_TABS: { key: RsvpFilter; label: string }[] = [
+  { key: 'all', label: 'ALL' },
+  { key: 'undecided', label: 'UNDECIDED' },
+  { key: 'in', label: 'IN' },
+  { key: 'out', label: 'OUT' },
+];
+
+// Pulses to 110% scale on tap (not just a color change) before invoking onPress.
+const FilterPill = ({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePress = () => {
+    Animated.sequence([
+      Animated.timing(scale, { toValue: 1.1, duration: 100, useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 1, duration: 120, useNativeDriver: true }),
+    ]).start();
+    onPress();
+  };
 
   return (
-    <Animated.View
-      onLayout={onLayout}
-      style={isAnimating
-        ? { height: heightAnim, overflow: 'hidden', opacity }
-        : { opacity }
-      }
-    >
-      {children}
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        onPress={handlePress}
+        activeOpacity={0.8}
+        style={{
+          paddingHorizontal: 16,
+          paddingVertical: 8,
+          borderRadius: 999,
+          borderWidth: 1.5,
+          borderColor: active ? '#4A90E2' : '#E5E7EB',
+          backgroundColor: active ? '#4A90E2' : 'white',
+        }}
+      >
+        <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.5, color: active ? 'white' : '#6B7280' }}>
+          {label}
+        </Text>
+      </TouchableOpacity>
     </Animated.View>
   );
 };
@@ -121,6 +137,7 @@ const RemovableCard = ({
 const DashboardScreen = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
+  const { getToken } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const contentTopInset = useContentTopInset();
@@ -132,11 +149,21 @@ const DashboardScreen = () => {
   const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
   const { mutate: rsvp, isPending: isRsvping } = useRsvp();
   const { data: groups } = useGetGroups();
-  const meetupCapableGroups = useMemo(() => (groups ?? []).filter(g => !g.isDM), [groups]);
+  const meetupCapableGroups = useMemo(() => {
+    if (!currentUser) return [];
+    return (groups ?? []).filter(g => {
+      if (g.isDM) return false;
+      const gAny = g as any;
+      const isOwner = (gAny.owner?._id || gAny.owner) === currentUser._id;
+      const isMod = gAny.moderators?.some((m: any) => (m?._id || m) === currentUser._id);
+      return isOwner || isMod;
+    });
+  }, [groups, currentUser]);
   const [addMeetupVisible, setAddMeetupVisible] = useState(false);
-  const [hiddenMeetupIds, setHiddenMeetupIds] = useState<Set<string>>(new Set());
-  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [addMeetupInitialMode, setAddMeetupInitialMode] = useState<'existing' | 'new'>('existing');
+  const [showAddChoicePicker, setShowAddChoicePicker] = useState(false);
   const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string>>(new Set());
+  const [rsvpFilter, setRsvpFilter] = useState<RsvpFilter>('all');
   const [zipCodeInput, setZipCodeInput] = useState('');
   const [zipCardDismissed, setZipCardDismissed] = useState(false);
   const [isSavingZip, setIsSavingZip] = useState(false);
@@ -175,35 +202,6 @@ const DashboardScreen = () => {
   };
 
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
-
-  // Meetups visible in "Upcoming" after capping — keeps "Are you in?" from prompting about ones the user can't see there
-  const upcomingVisibleMeetupIds = useMemo(() => {
-    if (!meetups) return new Set<string>();
-    const candidates = meetups.filter(meetup => {
-      const { isExpired } = getMeetupStatus(meetup);
-      return meetup.status === 'scheduled' && !isExpired;
-    });
-    return new Set(capMeetupsByFrequency(candidates).map(m => m._id));
-  }, [meetups]);
-
-  const allUndecidedMeetups = useMemo(() => {
-    if (!meetups || !currentUser) return [];
-    return meetups.filter(meetup => {
-      const { isExpired } = getMeetupStatus(meetup);
-      const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
-      const isRsvpDeadlinePassed = meetup.rsvpCloseDate ? new Date(meetup.rsvpCloseDate) < new Date() : false;
-      return meetup.status === 'scheduled' && !isExpired && !isRsvpLocked && !isRsvpDeadlinePassed
-        && meetup.undecided.includes(currentUser._id)
-        && upcomingVisibleMeetupIds.has(meetup._id);
-    });
-  }, [meetups, currentUser, upcomingVisibleMeetupIds]);
-
-  const visibleUndecidedMeetups = useMemo(() => {
-    return allUndecidedMeetups
-      .filter(m => !hiddenMeetupIds.has(m._id))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .slice(0, 1);
-  }, [allUndecidedMeetups, hiddenMeetupIds]);
 
   const uniqueGroups = useMemo(() => {
     if (!meetups) return [];
@@ -259,6 +257,28 @@ const DashboardScreen = () => {
     return groups;
   }, [meetups, hiddenGroupIds]);
 
+  // Guarded on currentUser being loaded — until then, only "All" (which needs no RSVP
+  // status) can be computed, so every other tab renders empty rather than crashing.
+  const filteredUpcomingMeetups = useMemo(() => {
+    const upcoming = groupedMeetups['Upcoming'];
+    if (rsvpFilter === 'all') return upcoming;
+    if (!currentUser) return [];
+
+    return upcoming.filter(meetup => {
+      switch (rsvpFilter) {
+        case 'in':
+          return meetup.in.some(u => getUserId(u) === currentUser._id)
+            || meetup.waitlist.some(u => getUserId(u) === currentUser._id);
+        case 'out':
+          return meetup.out.some(u => getUserId(u) === currentUser._id);
+        case 'undecided':
+          return meetup.undecided.includes(currentUser._id);
+        default:
+          return true;
+      }
+    });
+  }, [groupedMeetups, rsvpFilter, currentUser]);
+
   const handleOpenModal = (meetup: Meetup) => {
     setSelectedMeetup(meetup);
     setIsModalVisible(true);
@@ -286,7 +306,10 @@ const DashboardScreen = () => {
       onSuccess: () => {
         if (status === 'in' && guestCount > 0) {
           meetupApi.setGuestCount(api, meetup._id, guestCount)
-            .then(() => queryClient.invalidateQueries({ queryKey: ['meetups'] }))
+            .then(() => {
+              queryClient.invalidateQueries({ queryKey: ['meetups'] });
+              broadcastMeetupUpdate(getToken, meetup.group._id);
+            })
             .catch(() => Alert.alert('Note', 'RSVP saved, but guests could not be added. Try from the meetup details.'));
         }
         if (mute) {
@@ -294,7 +317,6 @@ const DashboardScreen = () => {
             .then(() => Alert.alert('RSVP recorded: Out', `The ${meetup.group.name} chat has been muted until the next meetup.`))
             .catch(() => {});
         }
-        setRemovingId(meetup._id);
       },
     });
   };
@@ -336,7 +358,7 @@ const DashboardScreen = () => {
         <View style={{ width: 26 }} />
         <Text className="text-xl font-black text-gray-900">Meetups</Text>
         <TouchableOpacity
-          onPress={() => setAddMeetupVisible(true)}
+          onPress={() => setShowAddChoicePicker(true)}
           style={{ alignItems: 'center', justifyContent: 'center' }}
         >
           <Feather name="plus-circle" size={26} color="#4A90E2" />
@@ -352,47 +374,6 @@ const DashboardScreen = () => {
           </Text>
         ) : (
           <>
-            <View className="mb-10 mt-2">
-              <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', paddingHorizontal: 8, marginBottom: 8, letterSpacing: -1 }}>
-                {currentUser?.firstName ? `${currentUser.firstName}, are you in?` : 'Are you in?'}
-              </Text>
-
-
-              {visibleUndecidedMeetups.length > 0 ? (
-                <>
-                {splitByDay(visibleUndecidedMeetups).map(day => (
-                  <DayHeader key={day.key} label={day.label} />
-                ))}
-                {visibleUndecidedMeetups.map(meetup => (
-                  <RemovableCard
-                    key={meetup._id}
-                    isRemoving={removingId === meetup._id}
-                    onRemoved={() => {
-                      setHiddenMeetupIds(prev => new Set([...prev, meetup._id]));
-                      setRemovingId(null);
-                      queryClient.invalidateQueries({ queryKey: ['meetups'] });
-                    }}
-                  >
-                    <MeetupCard
-                      meetup={meetup}
-                      onPress={() => handleOpenModal(meetup)}
-                      showRsvpButtons={true}
-                      onRsvp={(status, guestCount, mute) => handleDashboardRsvp(meetup, status, guestCount, mute)}
-                      isRsvping={isRsvping}
-                      currentUser={currentUser}
-                    />
-                  </RemovableCard>
-                ))}
-                </>
-              ) : (
-                <View className="bg-white p-8 my-2 rounded-[2rem] items-center border border-dashed border-gray-300">
-                  <Text className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">
-                    No pending RSVPs
-                  </Text>
-                </View>
-              )}
-            </View>
-
             <View className="pb-10">
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 }}>
                 <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', letterSpacing: -1 }}>
@@ -409,6 +390,17 @@ const DashboardScreen = () => {
                     )}
                   </TouchableOpacity>
                 )}
+              </View>
+
+              <View style={{ flexDirection: 'row', paddingHorizontal: 8, marginTop: 12, marginBottom: 10, gap: 8 }}>
+                {FILTER_TABS.map(tab => (
+                  <FilterPill
+                    key={tab.key}
+                    label={tab.label}
+                    active={rsvpFilter === tab.key}
+                    onPress={() => setRsvpFilter(tab.key)}
+                  />
+                ))}
               </View>
 
               <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, marginBottom: 8, gap: 6 }}>
@@ -480,47 +472,75 @@ const DashboardScreen = () => {
                 </View>
               )}
 
-              {Object.entries(groupedMeetups).map(([groupTitle, groupMeetups]) => {
-                if (groupMeetups.length === 0) return null;
-                return (
-                  <View key={groupTitle}>
-                    {groupTitle !== 'Upcoming' && (
-                      <Text style={{ fontSize: 12, fontWeight: '900', color: '#FF7A6E', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
-                        {groupTitle}
-                      </Text>
-                    )}
-                    {splitByDay(groupMeetups).map(day => (
-                      <View key={day.key}>
-                        <DayHeader label={day.label} />
-                        {day.items.map((meetup: Meetup) => (
-                          <MeetupCard
-                              key={meetup._id}
-                              meetup={meetup}
-                              onPress={() => handleOpenModal(meetup)}
-                              showRsvpButtons={false}
-                              onRsvp={() => {}}
-                              isRsvping={false}
-                              currentUser={currentUser}
-                          />
-                        ))}
-                      </View>
-                    ))}
-                  </View>
-                );
-              })}
+              {groupedMeetups['Upcoming'].length > 0 && filteredUpcomingMeetups.length === 0 && (
+                <View className="bg-white p-5 my-2 rounded-2xl items-center border border-gray-100">
+                  <Text style={{ fontSize: 14, color: '#9CA3AF', fontWeight: '500' }}>
+                    {rsvpFilter === 'in' ? "You're not marked In for any upcoming meetup." :
+                     rsvpFilter === 'out' ? "You're not marked Out for any upcoming meetup." :
+                     "Nothing undecided — you're all caught up."}
+                  </Text>
+                </View>
+              )}
+
+              {splitByDay(filteredUpcomingMeetups).map(day => (
+                <View key={day.key}>
+                  <DayHeader label={day.label} />
+                  {day.items.map((meetup: Meetup) => (
+                    <FadeInCard key={meetup._id}>
+                      <MeetupCard
+                        meetup={meetup}
+                        onPress={() => handleOpenModal(meetup)}
+                        showRsvpButtons={true}
+                        onRsvp={(status, guestCount, mute) => handleDashboardRsvp(meetup, status, guestCount, mute)}
+                        isRsvping={isRsvping}
+                        currentUser={currentUser}
+                      />
+                    </FadeInCard>
+                  ))}
+                </View>
+              ))}
+
+              {groupedMeetups['Past Week'].length > 0 && (
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: '#FF7A6E', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    Past Week
+                  </Text>
+                  {splitByDay(groupedMeetups['Past Week']).map(day => (
+                    <View key={day.key}>
+                      <DayHeader label={day.label} />
+                      {day.items.map((meetup: Meetup) => (
+                        <MeetupCard
+                            key={meetup._id}
+                            meetup={meetup}
+                            onPress={() => handleOpenModal(meetup)}
+                            showRsvpButtons={false}
+                            onRsvp={() => {}}
+                            isRsvping={false}
+                            currentUser={currentUser}
+                        />
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           </>
         )}
       </ScrollView>
 
-      <Modal
-        visible={isModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={handleCloseModal}
-      >
-        <MeetupDetailModal meetup={selectedMeetup} onClose={handleCloseModal} />
-      </Modal>
+      {/* Fully unmounted (not just visible={false}) between opens — on Android,
+          leaving this Modal permanently mounted and only toggling `visible` causes
+          the native Dialog to stop re-presenting after the first reopen or two. */}
+      {isModalVisible && (
+        <Modal
+          visible={isModalVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={handleCloseModal}
+        >
+          <MeetupDetailModal meetup={selectedMeetup} onClose={handleCloseModal} />
+        </Modal>
+      )}
 
       <Modal
         visible={!!currentUser && !!currentUser.hasSeenWelcome && readyForZipModal && !currentUser.zipCode && !zipCardDismissed}
@@ -605,11 +625,53 @@ const DashboardScreen = () => {
           both firing off the same RSVP and showing the burst twice. */}
       {!isModalVisible && <RsvpResponseOverlay />}
 
+      {showAddChoicePicker && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setShowAddChoicePicker(false)}>
+          <TouchableOpacity
+            style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', padding: 24 }}
+            activeOpacity={1}
+            onPress={() => setShowAddChoicePicker(false)}
+          >
+            <View style={{ width: '100%', maxWidth: 340, gap: 12 }}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={{ backgroundColor: '#fff', borderRadius: 32, borderWidth: 1.5, borderColor: '#E5E7EB', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}
+                onPress={() => { setShowAddChoicePicker(false); router.push('/create-group'); }}
+              >
+                <Feather name="users" size={28} color="#4A90E2" />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginTop: 10, textAlign: 'center' }}>Create New Group</Text>
+              </TouchableOpacity>
+
+              {meetupCapableGroups.length > 0 && (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  style={{ backgroundColor: '#fff', borderRadius: 32, borderWidth: 1.5, borderColor: '#E5E7EB', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}
+                  onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('existing'); setAddMeetupVisible(true); }}
+                >
+                  <Feather name="calendar" size={28} color="#4A90E2" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginTop: 10, textAlign: 'center' }}>Add Meetup to Existing Group</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={{ backgroundColor: '#fff', borderRadius: 32, borderWidth: 1.5, borderColor: '#E5E7EB', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}
+                onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('new'); setAddMeetupVisible(true); }}
+              >
+                <Feather name="plus-circle" size={28} color="#4A90E2" />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginTop: 10, textAlign: 'center' }}>Create One-Time Meetup</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
       <AddMeetupWizard
         visible={addMeetupVisible}
         onClose={() => setAddMeetupVisible(false)}
         groupPickerMode={{
           groups: meetupCapableGroups,
+          initialMode: addMeetupInitialMode,
           onMeetupCreated: (groupId) => {
             setAddMeetupVisible(false);
             router.push({ pathname: '/add-members/[id]', params: { id: groupId } });

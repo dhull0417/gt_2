@@ -261,9 +261,10 @@ export const updateMeetup = asyncHandler(async (req, res) => {
         date, 
         time,
         // timezone is intentionally omitted from destructuring
-        capacity, 
-        location 
-    } = req.body; 
+        capacity,
+        location,
+        description
+    } = req.body;
 
     const meetup = await Meetup.findById(meetupId).populate('group');
     const requester = await User.findOne({ clerkId }).lean();
@@ -309,6 +310,7 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     meetup.timezone = groupTimezone; // Always enforce the group's timezone
     if (capacity !== undefined) meetup.capacity = capacity;
     if (location !== undefined) meetup.location = location;
+    if (description !== undefined) meetup.description = description;
 
     // Recompute startsAt whenever date or time changes
     if (date || time) {
@@ -346,7 +348,17 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     }
 
     meetup.isOverride = true;
-    await meetup.save();
+    try {
+        await meetup.save();
+    } catch (err) {
+        // Rescheduled onto a slot another meetup in the same series already
+        // occupies (the unique index on group+schedule+date+time caught it) —
+        // a real, if rare, case rather than a server error.
+        if (err.code === 11000) {
+            return res.status(409).json({ error: "Another meetup in this series is already scheduled at that date and time." });
+        }
+        throw err;
+    }
 
     // --- Notification Logic ---
     const newDateStr = new Date(meetup.date).toLocaleDateString('en-US', { timeZone: groupTimezone });

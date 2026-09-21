@@ -10,6 +10,7 @@ import { Feather } from '@expo/vector-icons';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { getNotificationIcon } from '@/utils/notificationIcons';
 import { ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
+import { getUserDisplayName } from '@/utils/groupDisplay';
 
 const timeAgo = (date: string) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
@@ -52,7 +53,7 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
     const router = useRouter();
 
     const getMessage = () => {
-        const senderName = notification.sender ? `${notification.sender.firstName} ${notification.sender.lastName}` : '';
+        const senderName = notification.sender ? getUserDisplayName(notification.sender) : '';
         const groupName = notification.group?.name;
         const meetupName = notification.meetup?.name;
         const pollPrompt = notification.poll?.prompt;

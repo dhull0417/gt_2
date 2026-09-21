@@ -95,8 +95,8 @@ export const MeetupCard = ({
 
   const isReadOnly = isCancelled || isExpired;
 
-  // Tint matches detail modal: amber until responded, green (in/waitlisted), red (out).
-  const rsvpBackgroundColor = isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
+  // Tint matches detail modal: amber until responded, green (in), blue (waitlisted), red (out).
+  const rsvpBackgroundColor = isOut ? '#FEF2F2' : isWaitlisted ? '#EFF6FF' : isIn ? '#EDF5F0' : '#FFFEFA';
 
   return (
     <View
@@ -109,81 +109,95 @@ export const MeetupCard = ({
         ...(!isReadOnly ? { backgroundColor: rsvpBackgroundColor } : {}),
       }}
     >
-      <TouchableOpacity onPress={onPress} style={{ flexDirection: 'row' }}>
-        <View style={{ marginRight: 12 }}>
-          <GroupAvatar name={meetup.group.name} imageUrl={meetup.group.image} size={44} />
-        </View>
-        <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 }}>
-          {meetup.time}
-        </Text>
-
-        <View className="flex-row justify-between items-start" style={{ marginTop: 4 }}>
-          <View className="flex-1 pr-6">
-            <Text
-              style={{
-                fontSize: 20,
-                fontWeight: 'bold',
-                color: isReadOnly ? '#9CA3AF' : '#4FD1C5',
-                textDecorationLine: isCancelled ? 'line-through' : 'none'
-              }}
-            >
-              {meetup.name}
-            </Text>
-            {isCancelled && (
-              <View className="bg-red-100 self-start px-2 py-0.5 rounded-md mt-1">
-                <Text className="text-red-600 text-[10px] font-black uppercase">Cancelled</Text>
-              </View>
-            )}
-            {isExpired && !isCancelled && (
-              <View className="bg-gray-300 self-start px-2 py-0.5 rounded-md mt-1">
-                <Text className="text-gray-700 text-[10px] font-black uppercase">Past Event</Text>
-              </View>
-            )}
-            {isHappeningNow && (
-              <View className="bg-teal-100 self-start px-2 py-0.5 rounded-md mt-1">
-                <Text className="text-teal-700 text-[10px] font-black uppercase">Happening Now</Text>
-              </View>
-            )}
+      <TouchableOpacity onPress={onPress}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ marginRight: 12 }}>
+            <GroupAvatar name={meetup.group.name} imageUrl={meetup.group.image} size={44} borderRadius={12} />
           </View>
-          {!isReadOnly && (
-            isIn || isOut ? (
-              <Text style={{ fontSize: 13, fontWeight: '900', letterSpacing: 1, color: isIn ? '#4FD1C5' : '#FF7A6E' }}>
-                {isIn ? 'IN' : 'OUT'}
-              </Text>
-            ) : isRsvpLocked ? (
-              <Feather name="clock" size={20} color="#9CA3AF" />
-            ) : isRsvpDeadlinePassed ? (
-              <Feather name="lock" size={20} color="#9CA3AF" />
-            ) : (
-              <Ionicons name="mail-open-outline" size={20} color="#F59E0B" />
-            )
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 }}>
+              {meetup.time}
+            </Text>
+
+            <View className="flex-row justify-between items-start" style={{ marginTop: 4 }}>
+              <View className="flex-1 pr-6">
+                <Text
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 'bold',
+                    color: isReadOnly ? '#9CA3AF' : '#4FD1C5',
+                    textDecorationLine: isCancelled ? 'line-through' : 'none'
+                  }}
+                >
+                  {meetup.name}
+                </Text>
+              </View>
+              {!isReadOnly && (
+                isIn || isOut ? (
+                  <Text style={{ fontSize: 13, fontWeight: '900', letterSpacing: 1, color: isIn ? '#4FD1C5' : '#FF7A6E' }}>
+                    {isIn ? 'IN' : 'OUT'}
+                  </Text>
+                ) : isRsvpLocked ? (
+                  <Feather name="clock" size={20} color="#9CA3AF" />
+                ) : isRsvpDeadlinePassed ? (
+                  <Feather name="lock" size={20} color="#9CA3AF" />
+                ) : (
+                  <Ionicons name="mail-open-outline" size={20} color="#F59E0B" />
+                )
+              )}
+            </View>
+          </View>
+        </View>
+
+        <View style={{ marginLeft: 56, marginTop: 4 }}>
+          {isCancelled && (
+            <View className="bg-red-100 self-start px-2 py-0.5 rounded-md mt-1">
+              <Text className="text-red-600 text-[10px] font-black uppercase">Cancelled</Text>
+            </View>
           )}
-        </View>
-
-        {!isReadOnly && <RsvpCounts meetup={meetup} />}
-
-        <View className="flex-row mt-2">
-            {isFull && !isReadOnly && !isIn && (
-                <View className="bg-orange-100 px-2 py-1 rounded-lg mr-2 border border-orange-200">
-                    <Text className="text-orange-600 text-[10px] font-black">FULL</Text>
-                </View>
-            )}
-            {isWaitlisted && (
-                <View className="bg-blue-100 px-2 py-1 rounded-lg border border-blue-200">
-                    <Text className="text-blue-600 text-[10px] font-black uppercase">Waitlisted</Text>
-                </View>
-            )}
-        </View>
-
-        {isExpired && !isCancelled && (
-          <View className="mt-3 pt-3 border-t border-gray-200 flex-row items-center">
-            <Feather name="info" size={12} color="#9CA3AF" />
-            <Text className="text-[#9CA3AF] text-[11px] font-bold uppercase ml-1.5 tracking-tight">
-              View History & Details
+          {isExpired && !isCancelled && (
+            <View className="bg-gray-300 self-start px-2 py-0.5 rounded-md mt-1">
+              <Text className="text-gray-700 text-[10px] font-black uppercase">Past Event</Text>
+            </View>
+          )}
+          {isHappeningNow && (
+            <View className="bg-teal-100 self-start px-2 py-0.5 rounded-md mt-1">
+              <Text className="text-teal-700 text-[10px] font-black uppercase">Happening Now</Text>
+            </View>
+          )}
+          {!!meetup.description?.trim() && (
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}
+            >
+              {meetup.description.trim()}
             </Text>
+          )}
+
+          {!isReadOnly && <RsvpCounts meetup={meetup} />}
+
+          <View className="flex-row mt-2">
+              {isFull && !isReadOnly && !isIn && (
+                  <View className="bg-orange-100 px-2 py-1 rounded-lg mr-2 border border-orange-200">
+                      <Text className="text-orange-600 text-[10px] font-black">FULL</Text>
+                  </View>
+              )}
+              {isWaitlisted && (
+                  <View className="bg-blue-100 px-2 py-1 rounded-lg border border-blue-200">
+                      <Text className="text-blue-600 text-[10px] font-black uppercase">Waitlisted</Text>
+                  </View>
+              )}
           </View>
-        )}
+
+          {isExpired && !isCancelled && (
+            <View className="mt-3 pt-3 border-t border-gray-200 flex-row items-center">
+              <Feather name="info" size={12} color="#9CA3AF" />
+              <Text className="text-[#9CA3AF] text-[11px] font-bold uppercase ml-1.5 tracking-tight">
+                View History & Details
+              </Text>
+            </View>
+          )}
         </View>
       </TouchableOpacity>
 

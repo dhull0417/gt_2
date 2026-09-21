@@ -30,6 +30,11 @@ export const connectDB = async () => {
         }
 
         console.log(process.env.MONGODB_URI)
+        // In production, indexes are managed exclusively by migrate-mongo (see
+        // src/migrations/) — letting Mongoose auto-build them here is unsafe for
+        // changes like a new unique index, which Mongo silently refuses to build
+        // over pre-existing violations instead of failing loudly.
+        mongoose.set('autoIndex', ENV.NODE_ENV !== 'production');
         await mongoose.connect(ENV.MONGO_URI)
         console.log("Connected to DB successfully")
         await warnIfMigrationsPending();

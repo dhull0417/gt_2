@@ -33,10 +33,12 @@ import Animated, {
     Easing,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '@clerk/expo';
 import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/utils/api';
 import { getMeetupStatus } from '@/utils/meetupStatus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
+import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { DateTime } from 'luxon';
@@ -176,7 +178,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const api = useApiClient();
     const router = useRouter();
     const queryClient = useQueryClient();
-    
+    const { getToken } = useAuth();
+
     const [meetup, setMeetup] = useState<Meetup | null>(initialMeetup);
     const { data: allMeetups } = useGetMeetups();
     const [swapIconNonce, setSwapIconNonce] = useState(0);
@@ -189,6 +192,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
     const [newCapacity, setNewCapacity] = useState('');
     const [newLocation, setNewLocation] = useState('');
+    const [newDescription, setNewDescription] = useState('');
     const [isLocationSearchActive, setIsLocationSearchActive] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [showTimePicker, setShowTimePicker] = useState(false);
@@ -260,8 +264,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     if (!meetup || !currentUser) return null;
 
+    const meetupGroupId = typeof meetup.group === 'string' ? meetup.group : meetup.group._id;
+
     // --- READ-ONLY & PERMISSIONS LOGIC ---
-    const isOwner = typeof meetup.group === 'object' ? meetup.group.owner === currentUser._id : false; 
+    const isOwner = typeof meetup.group === 'object' ? meetup.group.owner === currentUser._id : false;
     const groupData = meetup.group as any;
     const isMod = typeof meetup.group === 'object' && Array.isArray(groupData.moderators)
         ? groupData.moderators.some((m: any) => typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id)
@@ -358,6 +364,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         try {
             const result = await meetupApi.setGuestCount(api, meetup._id, count);
             queryClient.invalidateQueries({ queryKey: ['meetups'] });
+            broadcastMeetupUpdate(getToken, meetupGroupId);
             if (result.meetup) setMeetup(result.meetup);
         } catch {
             const prev = meetup.guests?.find(g => g.userId === currentUser.clerkId)?.count ?? 0;
@@ -547,6 +554,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             const result = await meetupApi.handleRsvp(api, { meetupId: meetup._id, status, targetUserId });
             if (result.meetup) setMeetup(result.meetup);
             queryClient.invalidateQueries({ queryKey: ['meetups'] });
+            broadcastMeetupUpdate(getToken, meetupGroupId);
             setDmTargetUser(null);
         } catch (e: any) {
             Alert.alert('Error', e.response?.data?.error || "Could not update their RSVP. Please try again.");
@@ -574,6 +582,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         if (newDate.toISOString().split('T')[0] !== new Date(meetup.date).toISOString().split('T')[0]) payload.date = newDate;
         if (newTime !== meetup.time) payload.time = newTime;
         if (newLocation !== (meetup.location || '')) payload.location = newLocation;
+        if (newDescription !== (meetup.description || '')) payload.description = newDescription;
         if (capInt !== meetup.capacity) payload.capacity = capInt;
 
         if (Object.keys(payload).length <= 1) {
@@ -623,6 +632,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         setCapacityMode(meetup.capacity > 0 ? "limited" : "unlimited");
         setNewCapacity(meetup.capacity > 0 ? meetup.capacity.toString() : "");
         setNewLocation(meetup.location || '');
+        setNewDescription(meetup.description || '');
         setIsEditModalVisible(true);
     };
 
@@ -699,6 +709,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             old?.map(m => m._id === meetup._id ? { ...m, status: newStatus } : m)
                         );
                         queryClient.invalidateQueries({ queryKey: ['meetups'] });
+                        broadcastMeetupUpdate(getToken, meetupGroupId);
                         if (!isCancelled) onClose();
                     } catch (e: any) {
                         Alert.alert("Error", e.response?.data?.error || e.message);
@@ -1082,76 +1093,29 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             onPress={() => { setIsActionsMenuVisible(false); setIsDetailsModalVisible(true); }}
                         >
                             <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#F5F3FF' }]}>
-                                <Feather name="info" size={18} color="#7C3AED" />
+                                <Feather name="align-left" size={18} color="#7C3AED" />
                             </View>
-                            <Text style={styles.actionsMenuLabel}>More Details</Text>
+                            <Text style={styles.actionsMenuLabel}>Meetup Description</Text>
                         </TouchableOpacity>
                     </View>
                 </Pressable>
             </Modal>
 
-            {/* More Details Modal */}
+            {/* Meetup Description Modal */}
             <Modal transparent visible={isDetailsModalVisible} animationType="slide" onRequestClose={() => setIsDetailsModalVisible(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeaderInner}>
-                            <Text style={styles.modalTitleInner}>More Details</Text>
+                            <Text style={styles.modalTitleInner}>Meetup Description</Text>
                             <TouchableOpacity onPress={() => setIsDetailsModalVisible(false)}>
                                 <Feather name="x" size={24} color="#9CA3AF" />
                             </TouchableOpacity>
                         </View>
 
                         <View style={styles.detailsCard}>
-                            <View style={styles.detailItem}>
-                                <Text style={styles.detailLabel}>Location</Text>
-                                <View style={styles.detailLocationRow}>
-                                    {!!headerVideoService && (
-                                        <View style={styles.detailLocationIcon}>
-                                            <VideoServiceIcon service={headerVideoService} size={16} />
-                                        </View>
-                                    )}
-                                    <Text style={styles.detailValue}>{resolvedLocation || "No location set"}</Text>
-                                </View>
-                            </View>
-                            <View style={styles.detailSeparator} />
-                            <View style={styles.detailItem}>
-                                <Text style={styles.detailLabel}>Capacity</Text>
-                                <Text style={[styles.detailValue, isFull && !isReadOnly && { color: '#C2410C' }]}>
-                                    {meetup.capacity === 0 ? "Unlimited" : `${meetup.in?.length || 0}/${meetup.capacity} spots filled`}
-                                </Text>
-                            </View>
-                            <View style={styles.detailSeparator} />
-                            <View style={styles.detailItem}>
-                                <Text style={styles.detailLabel}>Group</Text>
-                                <Text style={styles.detailValue}>{(meetup.group as any)?.name || '—'}</Text>
-                            </View>
-                            {meetup.rsvpOpenDate && (
-                                <>
-                                    <View style={styles.detailSeparator} />
-                                    <View style={styles.detailItem}>
-                                        <Text style={styles.detailLabel}>RSVPs Open</Text>
-                                        <Text style={styles.detailValue}>
-                                            {new Date(meetup.rsvpOpenDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })}
-                                        </Text>
-                                    </View>
-                                </>
-                            )}
-                            {meetup.rsvpCloseDate && (
-                                <>
-                                    <View style={styles.detailSeparator} />
-                                    <View style={styles.detailItem}>
-                                        <Text style={styles.detailLabel}>RSVP Deadline</Text>
-                                        <Text style={styles.detailValue}>
-                                            {new Date(meetup.rsvpCloseDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })}
-                                        </Text>
-                                    </View>
-                                </>
-                            )}
-                            <View style={styles.detailSeparator} />
-                            <View style={styles.detailItem}>
-                                <Text style={styles.detailLabel}>Status</Text>
-                                <Text style={styles.detailValue}>{isCancelled ? "Cancelled" : isExpired ? "Ended" : isHappeningNow ? "Happening Now" : "Upcoming"}</Text>
-                            </View>
+                            <Text style={styles.detailValue}>
+                                {meetup.description || "No description added."}
+                            </Text>
                         </View>
                     </View>
                 </View>
@@ -1303,6 +1267,19 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         {capacityError && <Text style={styles.errorText}>{capacityError}</Text>}
                                     </View>
                                 )}
+
+                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Description (optional)</Text>
+                                <View style={[styles.inputContainer, styles.descriptionInputContainer]}>
+                                    <TextInput
+                                        style={[styles.textInput, styles.descriptionInput]}
+                                        placeholder="Add any extra details for this meetup..."
+                                        placeholderTextColor="#C4C9D4"
+                                        value={newDescription}
+                                        onChangeText={setNewDescription}
+                                        multiline
+                                        textAlignVertical="top"
+                                    />
+                                </View>
                             </ScrollView>
                         </View>
                     </View>
@@ -1501,6 +1478,8 @@ rsvpLockedSubtitle: {
     inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
     inputContainerError: { borderColor: '#EF4444' },
     textInput: { flex: 1, marginLeft: 12, fontSize: 16, color: '#374151' },
+    descriptionInputContainer: { height: 100, alignItems: 'flex-start', paddingVertical: 12 },
+    descriptionInput: { marginLeft: 0, height: '100%' },
     errorText: { fontSize: 12, fontWeight: '600', color: '#EF4444', marginTop: 6, marginLeft: 2 },
     boolRow: { flexDirection: 'row', gap: 10 },
     boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', backgroundColor: '#fff' },

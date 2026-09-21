@@ -30,7 +30,7 @@ import { formatSchedule } from '@/utils/schedule';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
-import { broadcastGroupUpdate } from '@/utils/groupRealtime';
+import { broadcastGroupUpdate, broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
@@ -64,6 +64,9 @@ const GroupSettings = () => {
   // --- Termination Hooks ---
   const { mutate: deleteGroup } = useDeleteGroup();
   const { mutate: leaveGroup } = useLeaveGroup();
+
+  // --- Top-level navigation between Settings home / Edit Group / Edit Schedule ---
+  const [view, setView] = useState<'main' | 'group' | 'schedules'>('main');
 
   // --- State for Edit Modals ---
   const [isImageModalVisible, setIsImageModalVisible] = useState(false);
@@ -148,6 +151,11 @@ const GroupSettings = () => {
     { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: '#ECFEFF' },
     { id: 'members', label: 'Remove Members', icon: 'user-minus', color: '#F97316', bg: '#FFF7ED' },
     ...(isUserOwner ? [{ id: 'transfer', label: 'Transfer Ownership', icon: 'repeat', color: '#8B5CF6', bg: '#F5F3FF' }] : []),
+  ];
+
+  const mainOptions = [
+    { id: 'group', label: 'Edit Group', icon: 'edit-2', color: '#4A90E2', bg: '#EFF6FF' },
+    { id: 'schedules', label: 'Edit Schedule', icon: 'calendar', color: '#6366F1', bg: '#EEF2FF' },
     { id: 'terminate', label: isUserOwner ? 'Delete Group' : 'Leave Group', icon: isUserOwner ? 'trash-2' : 'log-out', color: '#EF4444', bg: '#FEF2F2', destructive: true },
   ];
 
@@ -155,6 +163,12 @@ const GroupSettings = () => {
     if (!id) return;
 
     switch (optionId) {
+      case 'group':
+        setView('group');
+        break;
+      case 'schedules':
+        setView('schedules');
+        break;
       case 'image':
         handleOpenImageModal();
         break;
@@ -266,6 +280,9 @@ const GroupSettings = () => {
         old ? { ...old, image: newUrl } : old
       );
       queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['meetups'] });
+      broadcastGroupUpdate(getToken, id);
+      broadcastMeetupUpdate(getToken, id);
       setIsImageModalVisible(false);
     } catch (error) {
       Alert.alert('Error', getErrorMessage(error, 'Could not update group photo. Please try again.'));
@@ -326,6 +343,8 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
+        broadcastGroupUpdate(getToken, id);
+        broadcastMeetupUpdate(getToken, id);
         playNameCelebration(tempName.trim());
     } catch (error: any) {
         Alert.alert("Error", getErrorMessage(error, "Failed to update group name."));
@@ -350,6 +369,8 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
+        broadcastGroupUpdate(getToken, id);
+        broadcastMeetupUpdate(getToken, id);
         setIsEditingCapacity(false);
         Alert.alert("Success", "Attendee limit and associated meetups updated.");
     } catch (error: any) {
@@ -373,6 +394,8 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
+        broadcastGroupUpdate(getToken, id);
+        broadcastMeetupUpdate(getToken, id);
         Alert.alert("Success", "Default location and future meetups updated.");
     } catch (error: any) {
         Alert.alert("Error", getErrorMessage(error, "Failed to update location."));
@@ -395,6 +418,11 @@ const GroupSettings = () => {
             moderatorIds: selectedModIds
         });
         await queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+        // Meetups embed a snapshot of the group (for permission checks like
+        // canManage) that only refreshes via delta-sync keyed off the meetup's
+        // own updatedAt — the backend bumps that for upcoming meetups on a
+        // moderator change specifically so this catches it.
+        queryClient.invalidateQueries({ queryKey: ['meetups'] });
         broadcastGroupUpdate(getToken, id);
         setIsEditingMods(false);
         Alert.alert("Success", "Moderator list updated.");
@@ -409,7 +437,7 @@ const GroupSettings = () => {
   const handleRemoveMemberPress = (member: User) => {
     Alert.alert(
       "Remove Member",
-      `Are you sure you want to remove ${member.firstName} ${member.lastName} from the group?`,
+      `Are you sure you want to remove ${getUserDisplayName(member)} from the group?`,
       [
         { text: "Cancel", style: "cancel" },
         { 
@@ -431,6 +459,8 @@ const GroupSettings = () => {
             queryClient.invalidateQueries({ queryKey: ['groups'] }),
             queryClient.invalidateQueries({ queryKey: ['meetups'] })
         ]);
+        broadcastGroupUpdate(getToken, id);
+        broadcastMeetupUpdate(getToken, id);
     } catch (error: any) {
         Alert.alert("Error", getErrorMessage(error, "Failed to remove member."));
     } finally {
@@ -442,7 +472,7 @@ const GroupSettings = () => {
   const handleTransferPress = (member: User) => {
     Alert.alert(
       "Transfer Ownership",
-      `Are you sure you want to make ${member.firstName} ${member.lastName} the new owner? You will become a moderator.`,
+      `Are you sure you want to make ${getUserDisplayName(member)} the new owner? You will become a moderator.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -460,6 +490,7 @@ const GroupSettings = () => {
     try {
       await groupApi.transferOwnership(api, { groupId: id, newOwnerId });
       await queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+      queryClient.invalidateQueries({ queryKey: ['meetups'] });
       broadcastGroupUpdate(getToken, id);
       setIsTransferModalVisible(false);
       Alert.alert("Success", "Ownership transferred.");
@@ -541,113 +572,147 @@ const GroupSettings = () => {
       edges={['left', 'right', 'bottom']}
     >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-          <Feather name="x" size={28} color="#374151" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Group Settings</Text>
+        {view === 'main' ? (
+          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+            <Feather name="x" size={28} color="#374151" />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={() => setView('main')} style={styles.closeButton}>
+            <Feather name="arrow-left" size={26} color="#374151" />
+          </TouchableOpacity>
+        )}
+        <Text style={styles.headerTitle}>
+          {view === 'main' ? 'Group Settings' : view === 'group' ? 'Edit Group' : 'Edit Schedule'}
+        </Text>
         <View style={{ width: 44 }} />
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.optionsContainer}>
-          {settingsOptions.map((option) => (
-            <TouchableOpacity
-              key={option.id}
-              style={styles.optionButton}
-              activeOpacity={0.7}
-              onPress={() => handleOptionPress(option.id)}
-            >
-              <View style={styles.optionLeft}>
-                {option.id === 'image' ? (
-                  <View style={{ marginRight: 16 }}>
-                    <GroupAvatar name={group?.name ?? ''} imageUrl={group?.image} size={40} borderRadius={11} />
-                  </View>
-                ) : (
+        {view === 'main' && (
+          <View style={styles.optionsContainer}>
+            {mainOptions.map((option) => (
+              <TouchableOpacity
+                key={option.id}
+                style={styles.optionButton}
+                activeOpacity={0.7}
+                onPress={() => handleOptionPress(option.id)}
+              >
+                <View style={styles.optionLeft}>
                   <View style={[styles.iconContainer, { backgroundColor: option.bg }]}>
                     <Feather name={option.icon as any} size={20} color={option.color} />
                   </View>
-                )}
-                <View style={{ flexShrink: 1 }}>
                   <Text style={[styles.optionLabel, option.destructive && styles.destructiveLabel]}>
                     {option.label}
                   </Text>
-                  {option.id === 'image' && (
-                    <Text style={styles.optionSubLabel}>
-                      {group?.image ? 'Tap to change' : 'No photo set'}
-                    </Text>
-                  )}
-                  {option.id === 'name' && (
-                    <Text style={styles.optionSubLabel} numberOfLines={1}>
-                      {group?.name || '—'}
-                    </Text>
-                  )}
-                  {option.id === 'location' && (
-                    <Text style={styles.optionSubLabel} numberOfLines={1}>
-                       {group?.defaultLocation || 'No default location set'} · for one-off meetups
-                    </Text>
-                  )}
-                  {option.id === 'capacity' && (
-                    <Text style={styles.optionSubLabel}>
-                      {group?.defaultCapacity === 0 ? 'Unlimited' : group?.defaultCapacity} · for one-off meetups
-                    </Text>
-                  )}
-                  {option.id === 'mods' && (
-                    <Text style={styles.optionSubLabel}>
-                      {(group?.moderators?.length || 0)} moderators assigned
-                    </Text>
-                  )}
-                  {option.id === 'members' && (
-                    <Text style={styles.optionSubLabel}>
-                      {(group?.members?.length || 0)} total members
-                    </Text>
-                  )}
                 </View>
-              </View>
-              <Feather name="chevron-right" size={18} color="#D1D5DB" />
-            </TouchableOpacity>
-          ))}
-        </View>
+                {!option.destructive && <Feather name="chevron-right" size={18} color="#D1D5DB" />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
-        <View style={styles.optionsContainer}>
-          <Text style={styles.sectionLabel}>Schedules</Text>
-          {activeSchedules.map((sch) => (
-            <View key={sch._id} style={styles.optionButton}>
+        {view === 'group' && (
+          <View style={styles.optionsContainer}>
+            {settingsOptions.map((option) => (
               <TouchableOpacity
-                style={styles.optionLeft}
+                key={option.id}
+                style={styles.optionButton}
                 activeOpacity={0.7}
-                onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: sch._id } })}
+                onPress={() => handleOptionPress(option.id)}
               >
-                <View style={[styles.iconContainer, { backgroundColor: '#EEF2FF' }]}>
-                  <Feather name="calendar" size={20} color="#6366F1" />
+                <View style={styles.optionLeft}>
+                  {option.id === 'image' ? (
+                    <View style={{ marginRight: 16 }}>
+                      <GroupAvatar name={group?.name ?? ''} imageUrl={group?.image} size={40} borderRadius={11} />
+                    </View>
+                  ) : (
+                    <View style={[styles.iconContainer, { backgroundColor: option.bg }]}>
+                      <Feather name={option.icon as any} size={20} color={option.color} />
+                    </View>
+                  )}
+                  <View style={{ flexShrink: 1 }}>
+                    <Text style={[styles.optionLabel, (option as any).destructive && styles.destructiveLabel]}>
+                      {option.label}
+                    </Text>
+                    {option.id === 'image' && (
+                      <Text style={styles.optionSubLabel}>
+                        {group?.image ? 'Tap to change' : 'No photo set'}
+                      </Text>
+                    )}
+                    {option.id === 'name' && (
+                      <Text style={styles.optionSubLabel} numberOfLines={1}>
+                        {group?.name || '—'}
+                      </Text>
+                    )}
+                    {option.id === 'location' && (
+                      <Text style={styles.optionSubLabel} numberOfLines={1}>
+                         {group?.defaultLocation || 'No default location set'} · for one-off meetups
+                      </Text>
+                    )}
+                    {option.id === 'capacity' && (
+                      <Text style={styles.optionSubLabel}>
+                        {group?.defaultCapacity === 0 ? 'Unlimited' : group?.defaultCapacity} · for one-off meetups
+                      </Text>
+                    )}
+                    {option.id === 'mods' && (
+                      <Text style={styles.optionSubLabel}>
+                        {(group?.moderators?.length || 0)} moderators assigned
+                      </Text>
+                    )}
+                    {option.id === 'members' && (
+                      <Text style={styles.optionSubLabel}>
+                        {(group?.members?.length || 0)} total members
+                      </Text>
+                    )}
+                  </View>
                 </View>
-                <View style={{ flexShrink: 1 }}>
-                  <Text style={styles.optionLabel}>{sch.name}</Text>
-                  <Text style={styles.optionSubLabel} numberOfLines={1}>{formatSchedule(sch)}</Text>
-                </View>
+                <Feather name="chevron-right" size={18} color="#D1D5DB" />
               </TouchableOpacity>
-              <TouchableOpacity
-                style={{ padding: 6 }}
-                onPress={() => router.push({ pathname: '/group-edit-jit/[id]', params: { id: id!, scheduleId: sch._id } })}
-              >
-                <Feather name="bell" size={18} color="#F59E0B" />
-              </TouchableOpacity>
-            </View>
-          ))}
-          {canAddSchedule && (
-            <TouchableOpacity
-              style={styles.optionButton}
-              activeOpacity={0.7}
-              onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: 'new' } })}
-            >
-              <View style={styles.optionLeft}>
-                <View style={[styles.iconContainer, { backgroundColor: '#EEF2FF' }]}>
-                  <Feather name="plus" size={20} color="#6366F1" />
-                </View>
-                <Text style={styles.optionLabel}>Add Schedule</Text>
+            ))}
+          </View>
+        )}
+
+        {view === 'schedules' && (
+          <View style={styles.optionsContainer}>
+            {activeSchedules.map((sch) => (
+              <View key={sch._id} style={styles.optionButton}>
+                <TouchableOpacity
+                  style={styles.optionLeft}
+                  activeOpacity={0.7}
+                  onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: sch._id } })}
+                >
+                  <View style={[styles.iconContainer, { backgroundColor: '#EEF2FF' }]}>
+                    <Feather name="calendar" size={20} color="#6366F1" />
+                  </View>
+                  <View style={{ flexShrink: 1 }}>
+                    <Text style={styles.optionLabel}>{sch.name}</Text>
+                    <Text style={styles.optionSubLabel} numberOfLines={1}>{formatSchedule(sch)}</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ padding: 6 }}
+                  onPress={() => router.push({ pathname: '/group-edit-jit/[id]', params: { id: id!, scheduleId: sch._id } })}
+                >
+                  <Feather name="bell" size={18} color="#F59E0B" />
+                </TouchableOpacity>
               </View>
-            </TouchableOpacity>
-          )}
-        </View>
+            ))}
+            {canAddSchedule && (
+              <TouchableOpacity
+                style={styles.optionButton}
+                activeOpacity={0.7}
+                onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: 'new' } })}
+              >
+                <View style={styles.optionLeft}>
+                  <View style={[styles.iconContainer, { backgroundColor: '#EEF2FF' }]}>
+                    <Feather name="plus" size={20} color="#6366F1" />
+                  </View>
+                  <Text style={styles.optionLabel}>Add Schedule</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>

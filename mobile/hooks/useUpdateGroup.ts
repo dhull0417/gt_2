@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@clerk/expo";
 import { useApiClient, groupApi, Schedule } from "../utils/api";
 import { getErrorMessage } from "../utils/networkError";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
+import { broadcastGroupUpdate, broadcastMeetupUpdate } from "../utils/groupRealtime";
 
 interface UpdateGroupVariables {
   groupId: string;
@@ -16,11 +18,12 @@ export const useUpdateGroup = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const { getToken } = useAuth();
 
   return useMutation({
-    mutationFn: (variables: UpdateGroupVariables) => 
+    mutationFn: (variables: UpdateGroupVariables) =>
       groupApi.updateGroup(api, variables),
-    
+
     onSuccess: async (data, variables) => {
       Alert.alert("Success", "Group updated successfully!");
       await Promise.all([
@@ -28,6 +31,8 @@ export const useUpdateGroup = () => {
           queryClient.invalidateQueries({ queryKey: ['meetups'] }),
           queryClient.invalidateQueries({ queryKey: ['groupDetails', variables.groupId] })
       ]);
+      broadcastGroupUpdate(getToken, variables.groupId);
+      broadcastMeetupUpdate(getToken, variables.groupId);
       router.back();
     },
     onError: (error: any) => {

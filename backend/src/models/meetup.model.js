@@ -12,6 +12,7 @@ const meetupSchema = new mongoose.Schema({
   time: { type: String, required: true },
   timezone: { type: String, required: true },
   location: { type: String, trim: true, default: "" },
+  description: { type: String, trim: true, default: "" },
   status: { type: String, enum: ['scheduled', 'cancelled', 'expired'], default: 'scheduled' },
   isOverride: { type: Boolean, default: false },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
@@ -39,6 +40,24 @@ const meetupSchema = new mongoose.Schema({
     _id: false,
   }],
 }, { timestamps: true });
+
+// Guards against duplicate generation for the same series slot (e.g. two
+// overlapping requests — a manual edit racing the regen cron, or a
+// double-fired save — both deciding the same meetup is missing and
+// inserting it). Scoped to schedule-linked meetups only: one-off meetups
+// (schedule: null) aren't deduped by date/time since unrelated one-offs can
+// legitimately share a slot.
+//
+// Declared here for schema documentation, but NOT relied on to actually
+// create itself: autoIndex is off in production (see config/db.js) because
+// Mongo refuses to build a unique index over pre-existing duplicates and
+// mongoose only logs that failure rather than surfacing it. The real index
+// is created by migrations/20260919183000-dedupe-and-index-meetups.cjs,
+// which cleans up duplicates first — keep the name in sync with that file.
+meetupSchema.index(
+  { group: 1, schedule: 1, date: 1, time: 1 },
+  { unique: true, partialFilterExpression: { schedule: { $type: "objectId" } }, name: "uniq_group_schedule_date_time" }
+);
 
 const Meetup = mongoose.model("Meetup", meetupSchema);
 

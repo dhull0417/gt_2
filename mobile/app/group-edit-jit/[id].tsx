@@ -11,11 +11,13 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@clerk/expo";
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
 import { useApiClient, groupApi } from "../../utils/api";
+import { broadcastGroupUpdate, broadcastMeetupUpdate } from "../../utils/groupRealtime";
 import { getErrorMessage } from "../../utils/networkError";
 import NativeTimePicker, { timeStringToDate } from "@/components/NativeTimePicker";
 import InfoBubble from "@/components/InfoBubble";
@@ -68,6 +70,7 @@ const EditJitScreen = () => {
     const router = useRouter();
     const api = useApiClient();
     const queryClient = useQueryClient();
+    const { getToken } = useAuth();
 
     const { data: group, isLoading: loadingGroup } = useGetGroupDetails(id);
     const schedule = group?.schedules?.find(s => s._id === scheduleId) ?? null;
@@ -145,7 +148,10 @@ const EditJitScreen = () => {
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
                 queryClient.invalidateQueries({ queryKey: ['groups'] }),
+                queryClient.invalidateQueries({ queryKey: ['meetups'] }),
             ]);
+            broadcastGroupUpdate(getToken, id);
+            broadcastMeetupUpdate(getToken, id);
 
             Alert.alert("Saved", "RSVP settings updated.", [
                 { text: "OK", onPress: () => router.back() },

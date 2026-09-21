@@ -24,17 +24,22 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
   }
 
   let generatedCount = 0;
+  let failedCount = 0;
 
-  try {
-    for (const group of groups) {
+  // Per-group try/catch: one group throwing (e.g. a duplicate-key race
+  // against a concurrent manual edit) shouldn't skip generation for every
+  // other group due for this same run.
+  for (const group of groups) {
+    try {
       const { generatedCount: count } = await generateMeetupsForGroup(group);
       generatedCount += count;
+    } catch (err) {
+      failedCount++;
+      console.error(`[Regenerate] Error for group ${group._id}:`, err);
     }
-  } catch (err) {
-    console.error('[Regenerate] Error:', err);
   }
 
-  res.status(200).json({ generated: generatedCount, message: "Regeneration complete." });
+  res.status(200).json({ generated: generatedCount, failed: failedCount, message: "Regeneration complete." });
 });
 
 // Meetups stay "happening now" for this long after startsAt before expiring — mirrors MEETUP_ACTIVE_DURATION_MS in mobile/utils/meetupStatus.ts.

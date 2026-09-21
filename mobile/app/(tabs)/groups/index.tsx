@@ -7,7 +7,7 @@ import {
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect, usePathname } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { Group, User, useApiClient, userApi } from '@/utils/api';
 import { getDMDisplayName } from '@/utils/groupDisplay';
@@ -22,6 +22,7 @@ import { useContentTopInset } from '@/hooks/useContentTopInset';
 const GroupScreen = () => {
   const api = useApiClient();
   const router = useRouter();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const contentTopInset = useContentTopInset();
   const { promptNotifications } = useLocalSearchParams<{ promptNotifications?: string }>();
@@ -116,7 +117,7 @@ const GroupScreen = () => {
       style={{ paddingTop: contentTopInset }}
     >
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
-        <TouchableOpacity onPress={() => router.push('/notifications')}>
+        <TouchableOpacity onPress={() => { if (pathname !== '/notifications') router.push('/notifications'); }}>
           <Feather name="bell" size={26} color="#4A90E2" />
           {hasUnreadNotifications && (
             <View className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
