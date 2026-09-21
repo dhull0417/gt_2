@@ -26,6 +26,8 @@ import { useQueryClient } from '@tanstack/react-query';
 interface GroupPickerMode {
     /** Non-DM groups the current user belongs to. */
     groups: Group[];
+    /** Which group choice the wizard opens on. Defaults to the first existing group ('existing'), or 'new' if there are none. */
+    initialMode?: 'existing' | 'new';
     /** Fires after the meetup is successfully created, with the (existing or newly created) group's id. */
     onMeetupCreated: (groupId: string) => void;
 }
@@ -61,10 +63,15 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
 
     const [isSaving, setIsSaving] = useState(false);
 
-    // Group whose timezone/defaults seed the form's initial values. For groupPickerMode,
-    // that's the first group in the list (existing-group is the common case); "New Group"
-    // has no defaults to seed from.
-    const initialGroup: Group | undefined = groupDetails ?? groupPickerMode?.groups[0];
+    // Initial group choice: honors groupPickerMode.initialMode (set by which square the user
+    // tapped on the meetups tab), falling back to the first existing group, or 'new' if none.
+    const initialPickerChoice: 'new' | string = groupPickerMode
+        ? (groupPickerMode.initialMode !== 'new' && groupPickerMode.groups.length > 0 ? groupPickerMode.groups[0]._id : 'new')
+        : '';
+
+    // Group whose timezone/defaults seed the form's initial values; "New Group" has no
+    // defaults to seed from.
+    const initialGroup: Group | undefined = groupDetails ?? (groupPickerMode && initialPickerChoice !== 'new' ? groupPickerMode.groups[0] : undefined);
 
     // --- Data States ---
     const [meetupDate, setMeetupDate] = useState<string>(DateTime.now().toISODate()!);
@@ -78,14 +85,13 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
     );
     const [meetupLocation, setMeetupLocation] = useState(initialGroup?.defaultLocation || "");
     const [isLocationSearchActive, setIsLocationSearchActive] = useState(false);
+    const [meetupDescription, setMeetupDescription] = useState("");
 
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [showTZPicker, setShowTZPicker] = useState(false);
 
     // --- Group picker state (only relevant when groupPickerMode is set) ---
-    const [pickerChoice, setPickerChoice] = useState<'new' | string>(
-        groupPickerMode ? (groupPickerMode.groups.length > 0 ? groupPickerMode.groups[0]._id : 'new') : ''
-    );
+    const [pickerChoice, setPickerChoice] = useState<'new' | string>(initialPickerChoice);
     const [showGroupPicker, setShowGroupPicker] = useState(false);
     const [newGroupName, setNewGroupName] = useState('');
     const [newGroupImageUrl, setNewGroupImageUrl] = useState('');
@@ -203,6 +209,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                 timezone: meetupTZ,
                 capacity,
                 location: meetupLocation,
+                description: meetupDescription,
                 name: targetGroupName
             });
             Alert.alert("Success", "Meetup added!");
@@ -223,12 +230,13 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
         setShowTZPicker(false);
         setMaxAttendeesMode(initialGroup?.defaultCapacity ? "limited" : "unlimited");
         setMaxAttendeesInput(initialGroup?.defaultCapacity ? String(initialGroup.defaultCapacity) : "");
+        setMeetupDescription("");
         setShowGroupPicker(false);
         setNewGroupName('');
         setNewGroupImageUrl('');
         setNewGroupImageLocalUri(null);
         setJustCreatedGroup(null);
-        setPickerChoice(groupPickerMode ? (groupPickerMode.groups.length > 0 ? groupPickerMode.groups[0]._id : 'new') : '');
+        setPickerChoice(initialPickerChoice);
         onClose();
     };
 
@@ -418,6 +426,20 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                         value={meetupLocation}
                         onPress={() => setIsLocationSearchActive(true)}
                     />
+
+                    {/* Description */}
+                    <Text style={s.fieldLabel}>Description (optional)</Text>
+                    <View style={[s.inputRow, s.descriptionInputRow]}>
+                        <TextInput
+                            style={[s.inlineInput, s.descriptionInput]}
+                            placeholder="Add any extra details for this meetup..."
+                            placeholderTextColor="#C4C9D4"
+                            value={meetupDescription}
+                            onChangeText={setMeetupDescription}
+                            multiline
+                            textAlignVertical="top"
+                        />
+                    </View>
                 </ScrollView>
 
                 <View style={s.screenFooter}>
@@ -488,6 +510,8 @@ const s = StyleSheet.create({
     inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12 },
     inputRowError: { borderColor: "#EF4444" },
     inlineInput: { flex: 1, fontSize: 15, color: "#374151" },
+    descriptionInputRow: { alignItems: "flex-start", height: 90 },
+    descriptionInput: { height: "100%" },
     errorText: { fontSize: 12, fontWeight: "600", color: "#EF4444", marginTop: 6, marginLeft: 2 },
     primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
     primaryBtnDisabled: { backgroundColor: "#93C5FD" },

@@ -158,6 +158,8 @@ export const updateProfile = asyncHandler(async (req, res) => {
   if (req.body.zipCode !== undefined && !/^\d{5}$/.test(req.body.zipCode)) {
     return res.status(400).json({ error: "Zip code must be exactly 5 digits." });
   }
+  if (req.body.firstName !== undefined) req.body.firstName = req.body.firstName.trim();
+  if (req.body.lastName !== undefined) req.body.lastName = req.body.lastName.trim();
 
   let user;
   try {
@@ -183,7 +185,8 @@ export const syncUser = asyncHandler(async (req, res) => {
   const clerkUser = await clerkClient.users.getUser(userId);
 
   // prefer client-sent firstName/lastName — the backend Clerk API can lag on first sign-in
-  const { firstName: bodyFirstName, lastName: bodyLastName } = req.body;
+  const bodyFirstName = req.body.firstName?.trim();
+  const bodyLastName = req.body.lastName?.trim();
 
   // Apple only hands over the real name on the very first authorization ever; if it
   // wasn't captured then, Apple/Clerk never supply one again. Fall back to a generic
@@ -194,8 +197,8 @@ export const syncUser = asyncHandler(async (req, res) => {
     clerkId: userId,
     email: clerkUser.emailAddresses[0]?.emailAddress,
     phoneNumber: clerkUser.phoneNumbers[0]?.phoneNumber,
-    firstName: bodyFirstName || clerkUser.firstName || (isAppleUser ? "No Profile" : ""),
-    lastName: bodyLastName || clerkUser.lastName || (isAppleUser ? "Pat" : ""),
+    firstName: bodyFirstName || clerkUser.firstName || (isAppleUser ? "New Member" : ""),
+    lastName: bodyLastName || clerkUser.lastName || "",
     profilePicture: clerkUser.imageUrl || "",
   };
 

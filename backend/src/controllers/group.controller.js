@@ -17,6 +17,15 @@ import { notifyAndPersist } from "../utils/push.notifications.js";
 // unrestricted" (keep null) — a bare Number(null) would otherwise coerce to 0.
 const numOrNull = (v, fallback) => v === undefined ? fallback : (v === null ? null : Number(v));
 
+// A moderator/owner change lives on the Group doc, but clients cache a
+// populated `group` snapshot embedded on each Meetup for permission checks
+// (canManage, etc). That snapshot only gets re-fetched via the mobile app's
+// delta-sync, which is keyed off the meetup's own `updatedAt` — so without
+// this, a promoted moderator's embedded copy would never refresh. Only
+// touches upcoming meetups since past ones aren't actionable anyway.
+const touchGroupMeetups = (groupId) =>
+    Meetup.updateMany({ group: groupId, date: { $gte: new Date() } }, { $set: { updatedAt: new Date() } });
+
 // --- Multi-schedule helpers ---
 
 const MAX_ACTIVE_SCHEDULES = 5;
@@ -31,6 +40,7 @@ const normalizeScheduleInput = (input, fallbackName) => ({
     routines: input.routines || [],
     defaultLocation: input.defaultLocation || "",
     defaultCapacity: input.defaultCapacity || 0,
+    defaultDescription: input.defaultDescription || "",
     generationLeadDays: numOrNull(input.generationLeadDays, 1),
     generationLeadTime: input.generationLeadTime || "09:00 AM",
     generationDeadlineDays: numOrNull(input.generationDeadlineDays, null),
@@ -95,6 +105,7 @@ export const createGroup = asyncHandler(async (req, res) => {
     members,
     defaultCapacity,
     defaultLocation,
+    defaultDescription,
     generationLeadDays,
     generationLeadTime,
     generationDeadlineDays,
@@ -126,6 +137,7 @@ export const createGroup = asyncHandler(async (req, res) => {
           routines: schedule.routines,
           defaultLocation,
           defaultCapacity,
+          defaultDescription,
           generationLeadDays,
           generationLeadTime,
           generationDeadlineDays,
@@ -266,7 +278,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const { userId: clerkId } = getAuth(req);
     const {
-        name, startDate, routines, defaultLocation, defaultCapacity,
+        name, startDate, routines, defaultLocation, defaultCapacity, defaultDescription,
         generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
         timezone, // shared across the whole group, not per-schedule — see updateSchedule
     } = req.body;
@@ -280,6 +292,25 @@ export const createSchedule = asyncHandler(async (req, res) => {
         return res.status(400).json({ error: "Schedule name is required." });
     }
 
+    // Guards against a double-fired create (a mistimed double-tap, or a
+    // client-side retry) pushing two identical schedules: a legitimate second
+    // series with the same name+routines wouldn't be resubmitted seconds
+    // later, so a near-instant repeat is treated as the same request landing
+    // twice. Checked before the MAX_ACTIVE_SCHEDULES cap below so a retry that
+    // arrives after the original already filled the last slot doesn't get
+    // rejected with a false "too many schedules" error.
+    const trimmedName = String(name).trim();
+    const routinesKey = JSON.stringify(routines || []);
+    const recentDuplicate = group.schedules.find(s =>
+        s.active !== false &&
+        s.name === trimmedName &&
+        JSON.stringify(s.routines || []) === routinesKey &&
+        Date.now() - new Date(s.createdAt).getTime() < 10000
+    );
+    if (recentDuplicate) {
+        return res.status(200).json({ message: "Schedule created.", group: withLegacyScheduleMirror(group.toObject()), scheduleId: recentDuplicate._id });
+    }
+
     const activeCount = group.schedules.filter(s => s.active !== false).length;
     if (activeCount >= MAX_ACTIVE_SCHEDULES) {
         return res.status(400).json({ error: `A group can have at most ${MAX_ACTIVE_SCHEDULES} active schedules.` });
@@ -288,7 +319,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (timezone) group.timezone = timezone;
 
     group.schedules.push(normalizeScheduleInput(
-        { name, startDate, routines, defaultLocation, defaultCapacity, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
+        { name, startDate, routines, defaultLocation, defaultCapacity, defaultDescription, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
         name
     ));
     await group.save();
@@ -316,7 +347,7 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     const { groupId, scheduleId } = req.params;
     const { userId: clerkId } = getAuth(req);
     const {
-        name, startDate, routines, defaultLocation, defaultCapacity,
+        name, startDate, routines, defaultLocation, defaultCapacity, defaultDescription,
         generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
         timezone, // shared across the whole group — schedules don't carry their own
     } = req.body;
@@ -353,6 +384,19 @@ export const updateSchedule = asyncHandler(async (req, res) => {
                     $or: [{ isOverride: false }, { location: { $in: ["", null] } }],
                 },
                 { $set: { location: defaultLocation } }
+            );
+        }
+    }
+    if (defaultDescription !== undefined) {
+        target.defaultDescription = defaultDescription;
+        if (defaultDescription) {
+            await Meetup.updateMany(
+                {
+                    group: group._id,
+                    schedule: target._id,
+                    $or: [{ isOverride: false }, { description: { $in: ["", null] } }],
+                },
+                { $set: { description: defaultDescription } }
             );
         }
     }
@@ -517,6 +561,11 @@ export const updateGroup = asyncHandler(async (req, res) => {
     }
 
     const updatedGroup = await group.save();
+    // name/image aren't stored on the Meetup doc itself, but clients cache them
+    // as part of the meetup's populated `group` snapshot (see touchGroupMeetups) —
+    // capacity/location changes above already bump meetups via updateMany, so
+    // this only needs to cover the fields that don't.
+    if (name !== undefined || image !== undefined) await touchGroupMeetups(group._id);
     res.status(200).json({ group: withLegacyScheduleMirror(updatedGroup.toObject()), message: "Group and meetups updated successfully." });
 });
 
@@ -539,6 +588,7 @@ export const updateModerators = asyncHandler(async (req, res) => {
 
     group.moderators = validModeratorIds;
     await group.save();
+    await touchGroupMeetups(group._id);
     res.status(200).json({ message: "Moderator list updated successfully.", group });
 });
 
@@ -566,6 +616,7 @@ export const toggleModerator = asyncHandler(async (req, res) => {
     }
 
     await group.save();
+    await touchGroupMeetups(group._id);
     res.status(200).json({ message: isCurrentlyMod ? "Moderator removed." : "Moderator added.", group });
 });
 
@@ -608,6 +659,7 @@ export const transferOwnership = asyncHandler(async (req, res) => {
         { new: true }
     );
     if (!updated) return res.status(409).json({ error: "Ownership already changed. Please refresh and try again." });
+    await touchGroupMeetups(group._id);
 
     try {
         await notifyAndPersist([newOwner], {
@@ -775,13 +827,12 @@ export const removeMember = asyncHandler(async (req, res) => {
 export const createOneOffMeetup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
-    const { date, time, timezone, capacity, name, location, scheduleId } = req.body;
+    const { date, time, timezone, capacity, name, location, description, scheduleId } = req.body;
 
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
-    const isMember = group.members.some(id => id.toString() === requester._id.toString());
-    if (!isMember) return res.status(403).json({ error: "Permission denied." });
+    if (!canManageGroup(requester._id, group)) return res.status(403).json({ error: "Permission denied." });
 
     const meetupDate = calculateNextMeetupDate(date, time, timezone, 'once');
     if (meetupDate < new Date()) return res.status(400).json({ error: "Cannot schedule in the past." });
@@ -791,22 +842,35 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
     const linkedSchedule = scheduleId ? group.schedules.id(scheduleId) : null;
     const fallbackLocation = linkedSchedule ? linkedSchedule.defaultLocation : group.defaultLocation;
     const fallbackCapacity = linkedSchedule ? linkedSchedule.defaultCapacity : group.defaultCapacity;
+    const fallbackDescription = linkedSchedule ? linkedSchedule.defaultDescription : "";
 
-    const newMeetup = await Meetup.create({
-        group: group._id,
-        schedule: linkedSchedule ? linkedSchedule._id : null,
-        name: name || (linkedSchedule ? linkedSchedule.name : group.name),
-        date: meetupDate,
-        time: time,
-        timezone: timezone,
-        location: location !== undefined ? location : fallbackLocation,
-        members: group.members,
-        undecided: group.members,
-        capacity: capacity !== undefined ? capacity : fallbackCapacity,
-        isOverride: true,
-        startsAt: meetupDate,
-        createdBy: requester._id,
-    });
+    let newMeetup;
+    try {
+        newMeetup = await Meetup.create({
+            group: group._id,
+            schedule: linkedSchedule ? linkedSchedule._id : null,
+            name: name || (linkedSchedule ? linkedSchedule.name : group.name),
+            date: meetupDate,
+            time: time,
+            timezone: timezone,
+            location: location !== undefined ? location : fallbackLocation,
+            description: description !== undefined ? description : fallbackDescription,
+            members: group.members,
+            undecided: group.members,
+            capacity: capacity !== undefined ? capacity : fallbackCapacity,
+            isOverride: true,
+            startsAt: meetupDate,
+            createdBy: requester._id,
+        });
+    } catch (err) {
+        // Linked to a series slot that already has a meetup (the unique index
+        // on group+schedule+date+time caught it) — a real, if rare, case
+        // rather than a server error.
+        if (err.code === 11000) {
+            return res.status(409).json({ error: "This series already has a meetup at that date and time." });
+        }
+        throw err;
+    }
 
     // --- NOTIFICATION LOGIC ---
     const membersToNotify = await User.find({ _id: { $in: group.members } });

@@ -29,7 +29,7 @@ const UpdateNameScreen = () => {
             alert('Please enter both your first and last name.');
             return;
         }
-        updateProfile({ firstName, lastName });
+        updateProfile({ firstName: firstName.trim(), lastName: lastName.trim() });
     };
 
     if (isLoadingUser) {

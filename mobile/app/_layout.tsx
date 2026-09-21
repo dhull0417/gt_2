@@ -22,9 +22,11 @@ import { OfflineBanner } from '@/components/OfflineBanner';
 import { OfflineBannerHeightProvider } from '@/contexts/OfflineBannerContext';
 import { WelcomeModal } from '@/components/WelcomeModal';
 import { UpdateNameModal } from '@/components/UpdateNameModal';
-import { setClerkTokenGetter } from '@/utils/authToken';
+import { setClerkTokenGetter, getClerkToken } from '@/utils/authToken';
 import { registerChatMutationDefaults, SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
 import { registerOfflineMutationDefaults, RSVP_MUTATION_KEY, ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
+import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
+import type { Meetup } from '@/utils/api';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -84,9 +86,18 @@ const queryClient = new QueryClient({
           }
           break;
         }
-        case RSVP_MUTATION_KEY[0]:
+        case RSVP_MUTATION_KEY[0]: {
           queryClient.invalidateQueries({ queryKey: ['meetups'] });
+          // Ping other devices viewing this meetup so they pick up the RSVP
+          // right away instead of waiting on staleTime (mirrors the group
+          // realtime pattern in utils/groupRealtime.ts). Runs here rather
+          // than in useRsvp's onSuccess so it still fires for an RSVP that
+          // resumes after a reconnect/app restart with no screen mounted.
+          const meetup = (_data as { meetup?: Meetup } | undefined)?.meetup;
+          const groupId = meetup ? (typeof meetup.group === 'string' ? meetup.group : meetup.group._id) : undefined;
+          if (groupId) broadcastMeetupUpdate(getClerkToken, groupId);
           break;
+        }
         case ACCEPT_INVITE_MUTATION_KEY[0]:
           queryClient.invalidateQueries({ queryKey: ['notifications'] });
           queryClient.invalidateQueries({ queryKey: ['groups'] });

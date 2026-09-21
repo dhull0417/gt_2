@@ -94,7 +94,13 @@ const GroupChatScreen = () => {
   const { data: groups } = useGetGroups();
   const fallbackGroup = useMemo(() => groups?.find(g => g._id === id), [groups, id]);
 
-  const { data: groupDetails, isLoading: isLoadingDetails } = useGetGroupDetails(id ?? null);
+  const { data: groupDetails } = useGetGroupDetails(id ?? null);
+
+  // Full details come from a per-group network fetch that may never have completed while
+  // offline (and so was never persisted). The groups list is prefetched eagerly and persisted
+  // for every group, so it's a reliable cached stand-in for the fields it also carries
+  // (name/image/isDM/owner/moderators) until groupDetails resolves.
+  const effectiveGroup = groupDetails ?? fallbackGroup;
 
   const { data: currentUser } = useQuery<User, Error>({
     queryKey: ['currentUser'],
@@ -102,18 +108,18 @@ const GroupChatScreen = () => {
   });
 
   const canManageGroup = useMemo(() => {
-    if (!groupDetails || !currentUser) return false;
+    if (!effectiveGroup || !currentUser) return false;
     const userId = currentUser._id;
-    const g = groupDetails as any;
+    const g = effectiveGroup as any;
     const isOwner = (g.owner?._id || g.owner) === userId;
     const isMod = g.moderators?.some((m: any) => (m?._id || m) === userId);
     return isOwner || isMod;
-  }, [groupDetails, currentUser]);
+  }, [effectiveGroup, currentUser]);
 
-  const isDM = groupDetails?.isDM ?? fallbackGroup?.isDM ?? false;
+  const isDM = effectiveGroup?.isDM ?? false;
 
-  // Any group member (implicit by being in this chat) can create a one-off meetup or a poll.
-  const canCreateEvent = !isDM;
+  // Only the group owner/moderators can create a one-off meetup.
+  const canCreateEvent = !isDM && canManageGroup;
 
   const isMutedUntilNext = useMemo(() => {
     if (!id || !currentUser) return false;
@@ -150,9 +156,9 @@ const GroupChatScreen = () => {
     performMuteUpdate(type);
   };
 
-  const headerName = groupDetails?.isDM
-    ? getDMDisplayName(groupDetails as any, currentUser?.clerkId)
-    : (groupDetails?.name || fallbackGroup?.name || '');
+  const headerName = effectiveGroup?.isDM
+    ? getDMDisplayName(effectiveGroup as any, currentUser?.clerkId)
+    : (effectiveGroup?.name || '');
 
   const handleOpenDetails = () => {
     if (!id) return;
@@ -169,7 +175,7 @@ const GroupChatScreen = () => {
 
   // Always the groups list, regardless of entry point — chat has no consistent screen underneath it
   const handleBack = () => {
-    router.replace('/(tabs)/groups');
+    router.dismissTo('/(tabs)/groups');
   };
 
   // --- Message thread ---
@@ -277,6 +283,10 @@ const GroupChatScreen = () => {
   const [listHeight, setListHeight] = useState(0);
   // Gates first paint so a freshly opened chat never visibly animates down from the oldest message
   const [contentReady, setContentReady] = useState(false);
+  // Snapshot of message ids visible at first reveal, so their bubbles skip the entrance
+  // animation — animating a whole history's worth of bubbles in at once stalls the JS
+  // thread just long enough to make the header back button feel unresponsive.
+  const initialMessageIdsRef = useRef<Set<string> | null>(null);
 
   // --- Scroll-to-bottom FAB: only auto-scroll on new messages while already near the bottom;
   // otherwise surface the button with an unread count instead of yanking the view down.
@@ -303,6 +313,7 @@ const GroupChatScreen = () => {
 
   useEffect(() => {
     setContentReady(false);
+    initialMessageIdsRef.current = null;
   }, [id]);
 
   // scrollToLocation estimates offset from average cell height, unreliable with our variable
@@ -316,6 +327,7 @@ const GroupChatScreen = () => {
   useEffect(() => {
     if (contentReady || messages.length === 0) return;
     scrollToBottom(false);
+    initialMessageIdsRef.current = new Set(messages.map(m => m.id));
     requestAnimationFrame(() => requestAnimationFrame(() => setContentReady(true)));
   }, [messages.length, contentReady, scrollToBottom]);
 
@@ -461,7 +473,7 @@ const GroupChatScreen = () => {
     : typingNames.length === 2 ? `${typingNames[0]} and ${typingNames[1]} are typing…`
     : 'Several people are typing…';
 
-  const chatContentReady = contentReady && !isLoadingDetails && !!groupDetails && !!currentUser;
+  const chatContentReady = contentReady && !!effectiveGroup && !!currentUser;
 
   return (
     <SafeAreaView
@@ -477,7 +489,7 @@ const GroupChatScreen = () => {
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
           </TouchableOpacity>
           <View style={{ marginRight: 10 }}>
-            <GroupAvatar name={headerName} imageUrl={groupDetails?.image || fallbackGroup?.image} size={36} borderRadius={9} />
+            <GroupAvatar name={headerName} imageUrl={effectiveGroup?.image} size={36} borderRadius={9} />
           </View>
           <Text className="text-lg font-black text-gray-900 flex-1" numberOfLines={1}>
             {headerName}
@@ -543,6 +555,7 @@ const GroupChatScreen = () => {
                   onImagePress={(url, width, height) => setFullscreenImage({ url, width, height })}
                   onPendingPress={() => handlePendingPress(item)}
                   onSwipeReply={() => setReplyingTo(item)}
+                  skipEntrance={initialMessageIdsRef.current?.has(item.id) ?? false}
                 />
               )}
               renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}

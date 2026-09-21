@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@clerk/expo";
 import { useApiClient, groupApi } from "../utils/api";
 import { getErrorMessage } from "../utils/networkError";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
+import { broadcastMeetupUpdate } from "../utils/groupRealtime";
 
 interface CreateOneOffMeetupVariables {
   groupId: string;
@@ -15,14 +17,16 @@ export const useCreateOneOffMeetup = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const { getToken } = useAuth();
 
   return useMutation({
-    mutationFn: (variables: CreateOneOffMeetupVariables) => 
+    mutationFn: (variables: CreateOneOffMeetupVariables) =>
       groupApi.createOneOffMeetup(api, variables),
-    
-    onSuccess: () => {
+
+    onSuccess: (_data, variables) => {
       Alert.alert("Success", "One-off meetup has been scheduled!");
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
+      broadcastMeetupUpdate(getToken, variables.groupId);
       router.back();
     },
     onError: (error: any) => {

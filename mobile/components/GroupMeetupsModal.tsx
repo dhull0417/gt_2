@@ -35,6 +35,11 @@ const GroupMeetupsModal = ({ visible, onClose, groupId }: GroupMeetupsModalProps
 
     const dayGroups = useMemo(() => splitByDay(upcomingMeetups), [upcomingMeetups]);
 
+    // Fully unmounted (not just visible={false}) between opens — on Android, leaving this
+    // Modal permanently mounted and only toggling `visible` causes the native Dialog to
+    // stop re-presenting after the first reopen or two.
+    if (!visible) return null;
+
     return (
         <Modal
             visible={visible}
