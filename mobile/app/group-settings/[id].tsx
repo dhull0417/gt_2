@@ -527,7 +527,7 @@ const GroupSettings = () => {
                     deleteGroup({ groupId: id! }, {
                       onSuccess: () => {
                         queryClient.invalidateQueries({ queryKey: ['groups'] });
-                        router.replace('/(tabs)/groups');
+                        router.dismissTo('/(tabs)/groups');
                       }
                     });
                   }
@@ -550,7 +550,7 @@ const GroupSettings = () => {
           leaveGroup({ groupId: id! }, {
             onSuccess: () => {
               queryClient.invalidateQueries({ queryKey: ['groups'] });
-              router.replace('/(tabs)/groups');
+              router.dismissTo('/(tabs)/groups');
             },
           });
         }

@@ -175,7 +175,7 @@ const GroupChatScreen = () => {
 
   // Always the groups list, regardless of entry point — chat has no consistent screen underneath it
   const handleBack = () => {
-    router.replace('/(tabs)/groups');
+    router.dismissTo('/(tabs)/groups');
   };
 
   // --- Message thread ---

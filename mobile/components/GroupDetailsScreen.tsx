@@ -137,7 +137,10 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
 
   const handleOpenChat = () => {
     if (!id) return;
-    router.push({ pathname: '/group-chat/[id]', params: { id } });
+    // Pops back to an already-open chat for this group (correct back-slide animation,
+    // matching the chevron-left affordance); falls back to a push for entry points that
+    // never went through chat (groups list, notifications, DM creation, meetup modal).
+    router.dismissTo({ pathname: '/group-chat/[id]', params: { id } });
   };
 
   const headerName = groupDetails?.isDM
@@ -200,7 +203,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
               onSearchChange={setSearchQuery}
               searchResults={searchResults}
               onInvite={handleInvite}
-              onLeaveSuccess={() => router.replace('/(tabs)/groups')}
+              onLeaveSuccess={() => router.dismissTo('/(tabs)/groups')}
               onMemberPress={groupDetails.isDM ? undefined : handleMemberPress}
             />
           )}

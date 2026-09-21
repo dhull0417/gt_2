@@ -83,6 +83,7 @@ export interface LastMessage {
   text: string;
   user: {
     name: string;
+    clerkId?: string;
   };
   createdAt?: string;
 }

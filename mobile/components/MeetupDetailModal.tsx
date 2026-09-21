@@ -18,6 +18,7 @@ import {
     Share
 } from 'react-native';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import VideoServiceIcon from './VideoServiceIcon';
 import { detectVideoService, isHttpUrl } from '../utils/videoLinks';
 import { getUserDisplayName, getUserInitial } from '../utils/groupDisplay';
@@ -30,6 +31,7 @@ import Animated, {
     withRepeat,
     withSequence,
     withTiming,
+    withSpring,
     Easing,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -185,7 +187,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [swapIconNonce, setSwapIconNonce] = useState(0);
 
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-    const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
     const [newDate, setNewDate] = useState(new Date());
     const [tempDate, setTempDate] = useState(new Date());
     const [newTime, setNewTime] = useState('');
@@ -207,6 +208,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     useEffect(() => {
         setMeetup(initialMeetup);
+        setDescriptionExpanded(false);
+        descriptionChevronRotation.value = 0;
+        setLocationExpanded(false);
+        locationChevronRotation.value = 0;
     }, [initialMeetup]);
 
     useEffect(() => {
@@ -226,6 +231,21 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [localGuestCount, setLocalGuestCount] = useState(0);
     const [isSettingGuests, setIsSettingGuests] = useState(false);
     const [guestExpanded, setGuestExpanded] = useState(false);
+    const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+    const descriptionChevronRotation = useSharedValue(0);
+    const descriptionChevronStyle = useAnimatedStyle(() => ({
+        transform: [{ rotate: `${descriptionChevronRotation.value}deg` }],
+    }));
+    const descriptionPressScale = useSharedValue(1);
+    const descriptionPressStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: descriptionPressScale.value }],
+    }));
+    const [locationExpanded, setLocationExpanded] = useState(false);
+    const [locationTruncated, setLocationTruncated] = useState(false);
+    const locationChevronRotation = useSharedValue(0);
+    const locationChevronStyle = useAnimatedStyle(() => ({
+        transform: [{ rotate: `${locationChevronRotation.value}deg` }],
+    }));
     const [manualRsvpEdit, setManualRsvpEdit] = useState(false);
     const [isActionsMenuVisible, setIsActionsMenuVisible] = useState(false);
     const [actionsMenuAnchor, setActionsMenuAnchor] = useState<{ top: number; left: number; pointerLeft: number } | null>(null);
@@ -731,29 +751,63 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         <SafeAreaView style={[styles.container, { backgroundColor: modalBackgroundColor }]} edges={['top', 'bottom']}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                    <Feather name="chevron-down" size={32} color="#9CA3AF" />
+                    <Feather name="x" size={28} color="#9CA3AF" />
                 </TouchableOpacity>
-                <View style={styles.headerTitleContainer}>
+                <Animated.View layout={LinearTransition.duration(300).easing(Easing.out(Easing.cubic))} style={styles.headerTitleContainer}>
                     <Text style={styles.headerTitle}>
                         {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })} • {meetup.time}
                     </Text>
                     {!!resolvedLocation && (
-                        <TouchableOpacity
-                            onPress={() => handleOpenLocation(resolvedLocation)}
-                            activeOpacity={0.6}
-                            style={styles.headerLocationRow}
-                        >
-                            {!!headerVideoService && (
-                                <View style={styles.headerLocationIcon}>
-                                    <VideoServiceIcon service={headerVideoService} size={14} />
-                                </View>
-                            )}
-                            <Text style={styles.headerLocation} numberOfLines={1}>
+                        <View style={styles.headerLocationWrap}>
+                            {/* Off-screen measuring clone — its full, unlimited-line layout tells us
+                                whether the real (1-line) text below is actually being truncated. */}
+                            <Text
+                                style={[styles.headerLocation, styles.headerLocationMeasure]}
+                                onTextLayout={(e) => setLocationTruncated(e.nativeEvent.lines.length > 1)}
+                            >
                                 {resolvedLocation}
                             </Text>
-                        </TouchableOpacity>
+                            <Animated.View layout={LinearTransition.duration(300).easing(Easing.out(Easing.cubic))} style={styles.headerLocationRow}>
+                                <Pressable
+                                    onPress={() => handleOpenLocation(resolvedLocation)}
+                                    style={styles.headerLocationTextWrap}
+                                >
+                                    <View style={styles.headerLocationInnerRow}>
+                                        {!!headerVideoService && (
+                                            <View style={styles.headerLocationIcon}>
+                                                <VideoServiceIcon service={headerVideoService} size={14} />
+                                            </View>
+                                        )}
+                                        <Animated.Text
+                                            key={locationExpanded ? 'expanded' : 'collapsed'}
+                                            entering={FadeIn.duration(200).delay(80)}
+                                            exiting={FadeOut.duration(120)}
+                                            style={styles.headerLocation}
+                                            numberOfLines={locationExpanded ? undefined : 1}
+                                        >
+                                            {resolvedLocation}
+                                        </Animated.Text>
+                                    </View>
+                                </Pressable>
+                                {locationTruncated && (
+                                    <Pressable
+                                        onPress={() => {
+                                            const next = !locationExpanded;
+                                            setLocationExpanded(next);
+                                            locationChevronRotation.value = withSpring(next ? 180 : 0, { damping: 12, stiffness: 160 });
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        }}
+                                        hitSlop={8}
+                                    >
+                                        <Animated.View style={[styles.headerLocationChevron, locationChevronStyle]}>
+                                            <Feather name="chevron-down" size={14} color="#9CA3AF" />
+                                        </Animated.View>
+                                    </Pressable>
+                                )}
+                            </Animated.View>
+                        </View>
                     )}
-                </View>
+                </Animated.View>
                 <View style={{ width: 44 }} />
             </View>
 
@@ -785,22 +839,61 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         </View>
                     )}
 
-                    <View style={{ marginTop: 8, marginBottom: 18 }}>
+                    <Animated.View layout={LinearTransition.duration(350).easing(Easing.out(Easing.cubic))} style={{ marginTop: 8, marginBottom: 18 }}>
                         {isIn && (
                             <PulsingWatermark label="IN" style={styles.inWatermark} baseOpacity={0.32} peakOpacity={0.55} />
                         )}
                         {isOut && (
                             <PulsingWatermark label="OUT" style={styles.outWatermark} baseOpacity={0.32} peakOpacity={0.42} />
                         )}
-                        {!!frequencyLabel && (
-                            <Text style={styles.meetupFrequencyLabel}>{frequencyLabel}</Text>
-                        )}
-                        <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough]}>
-                            {meetup.name}
-                        </Text>
-                    </View>
+                        <Animated.View layout={LinearTransition.duration(350).easing(Easing.out(Easing.cubic))} style={styles.nameCard}>
+                            {!!frequencyLabel && (
+                                <Text style={styles.meetupFrequencyLabel}>{frequencyLabel}</Text>
+                            )}
+                            <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough]}>
+                                {meetup.name}
+                            </Text>
+                            {!!meetup.description?.trim() && (
+                                <Pressable
+                                    onPress={() => {
+                                        const next = !descriptionExpanded;
+                                        setDescriptionExpanded(next);
+                                        descriptionChevronRotation.value = withSpring(next ? 180 : 0, { damping: 12, stiffness: 160 });
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    }}
+                                    onPressIn={() => { descriptionPressScale.value = withTiming(0.96, { duration: 100 }); }}
+                                    onPressOut={() => { descriptionPressScale.value = withTiming(1, { duration: 150 }); }}
+                                >
+                                    <Animated.View
+                                        layout={LinearTransition.duration(350).easing(Easing.out(Easing.cubic))}
+                                        style={[
+                                            styles.meetupDescriptionChip,
+                                            descriptionExpanded && styles.meetupDescriptionChipExpanded,
+                                            descriptionPressStyle,
+                                        ]}
+                                    >
+                                        <View style={styles.meetupDescriptionRow}>
+                                            <Feather name="align-left" size={12} color="#9CA3AF" style={styles.meetupDescriptionIcon} />
+                                            <Animated.Text
+                                                key={descriptionExpanded ? 'expanded' : 'collapsed'}
+                                                entering={FadeIn.duration(200).delay(80)}
+                                                exiting={FadeOut.duration(120)}
+                                                style={styles.meetupDescriptionText}
+                                                numberOfLines={descriptionExpanded ? undefined : 1}
+                                            >
+                                                {meetup.description.trim()}
+                                            </Animated.Text>
+                                            <Animated.View style={[styles.meetupDescriptionChevron, descriptionChevronStyle]}>
+                                                <Feather name="chevron-down" size={14} color="#9CA3AF" />
+                                            </Animated.View>
+                                        </View>
+                                    </Animated.View>
+                                </Pressable>
+                            )}
+                        </Animated.View>
+                    </Animated.View>
 
-                    <View style={[styles.actionRow, { justifyContent: 'center' }]}>
+                    <Animated.View layout={LinearTransition.duration(350).easing(Easing.out(Easing.cubic))} style={[styles.actionRow, { justifyContent: 'center' }]}>
                         <TouchableOpacity
                             ref={moreBtnRef}
                             onPress={openActionsMenu}
@@ -823,7 +916,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <InOutSwapIcon burstNonce={swapIconNonce} />
                             </TouchableOpacity>
                         )}
-                    </View>
+                    </Animated.View>
                 </View>
 
                 {!isReadOnly && (
@@ -1087,38 +1180,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             </View>
                             <Text style={styles.actionsMenuLabel}>Invite to Meetup</Text>
                         </TouchableOpacity>
-                        <View style={styles.actionsMenuDivider} />
-                        <TouchableOpacity
-                            style={styles.actionsMenuItem}
-                            onPress={() => { setIsActionsMenuVisible(false); setIsDetailsModalVisible(true); }}
-                        >
-                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#F5F3FF' }]}>
-                                <Feather name="align-left" size={18} color="#7C3AED" />
-                            </View>
-                            <Text style={styles.actionsMenuLabel}>Meetup Description</Text>
-                        </TouchableOpacity>
                     </View>
                 </Pressable>
-            </Modal>
-
-            {/* Meetup Description Modal */}
-            <Modal transparent visible={isDetailsModalVisible} animationType="slide" onRequestClose={() => setIsDetailsModalVisible(false)}>
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeaderInner}>
-                            <Text style={styles.modalTitleInner}>Meetup Description</Text>
-                            <TouchableOpacity onPress={() => setIsDetailsModalVisible(false)}>
-                                <Feather name="x" size={24} color="#9CA3AF" />
-                            </TouchableOpacity>
-                        </View>
-
-                        <View style={styles.detailsCard}>
-                            <Text style={styles.detailValue}>
-                                {meetup.description || "No description added."}
-                            </Text>
-                        </View>
-                    </View>
-                </View>
             </Modal>
 
             {/* Start DM Confirmation Sheet */}
@@ -1341,14 +1404,35 @@ const styles = StyleSheet.create({
     headerTitleContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
     headerTitle: { fontSize: 14, fontWeight: '900', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
     headerLocationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, maxWidth: '100%', flexShrink: 1 },
+    headerLocationTextWrap: { flexShrink: 1 },
+    headerLocationInnerRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
     headerLocationIcon: { marginRight: 5, flexShrink: 0 },
     headerLocation: { fontSize: 14, fontWeight: '500', fontStyle: 'italic', color: '#B0B7C3', textTransform: 'none', letterSpacing: 0.2, textAlign: 'center', textDecorationLine: 'underline', flexShrink: 1 },
+    headerLocationWrap: { width: '100%', alignItems: 'center' },
+    // Absolutely positioned + invisible: exists only so onTextLayout can report
+    // the real (unlimited-line) layout, used to decide whether to show the chevron.
+    headerLocationMeasure: { position: 'absolute', opacity: 0, width: '100%' },
+    headerLocationChevron: { marginLeft: 4, flexShrink: 0 },
     content: { flex: 1, padding: 24 },
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
     reactivateBannerBtn: { backgroundColor: '#4A90E2', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12, marginLeft: 8 },
     reactivateBannerBtnText: { color: 'white', fontWeight: '800', fontSize: 11, textTransform: 'uppercase' },
+    nameCard: { alignItems: 'center' },
     meetupTitle: { fontSize: 26, fontWeight: '900', color: '#111827', letterSpacing: -0.5, lineHeight: 30, marginBottom: 4, textAlign: 'center' },
+    meetupDescriptionChip: {
+        marginTop: 10,
+        backgroundColor: '#F9FAFB',
+        borderRadius: 20,
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        maxWidth: 260,
+    },
+    meetupDescriptionChipExpanded: { maxWidth: '100%', borderRadius: 14 },
+    meetupDescriptionRow: { flexDirection: 'row', alignItems: 'center' },
+    meetupDescriptionIcon: { marginRight: 6 },
+    meetupDescriptionText: { flexShrink: 1, fontSize: 13, color: '#6B7280', textAlign: 'center' },
+    meetupDescriptionChevron: { marginLeft: 6 },
     meetupFrequencyLabel: {
         position: 'absolute',
         top: -16,
@@ -1414,13 +1498,6 @@ const styles = StyleSheet.create({
     actionsMenuDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginLeft: 14 + 32 + 12 },
     inOutActionBtn: { borderColor: '#4FD1C5', overflow: 'hidden' },
     strikeThrough: { textDecorationLine: 'line-through', color: '#D1D5DB' },
-    detailsCard: { backgroundColor: '#F9FAFB', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#F3F4F6' },
-    detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
-    detailItem: {},
-    detailLabel: { fontSize: 11, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 0 },
-    detailValue: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
-    detailLocationRow: { flexDirection: 'row', alignItems: 'center' },
-    detailLocationIcon: { marginRight: 6 },
     detailSeparator: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 12 },
     guestAvatarPlaceholder: { backgroundColor: '#4FD1C5', alignItems: 'center', justifyContent: 'center' },
     rsvpLockedBanner: { 

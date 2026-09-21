@@ -74,7 +74,9 @@ const GroupScreen = () => {
       const isMuted = currentUser?.mutedGroups?.includes(group._id) || currentUser?.mutedUntilNextMeetup?.includes(group._id);
       const displayName = group.isDM ? getDMDisplayName(group, currentUser?.clerkId) : group.name;
       const lastReadAt = currentUser?.lastReadAt?.[group._id];
-      const isUnread = !!group.lastMessage?.createdAt &&
+      const isOwnLastMessage = !!group.lastMessage?.user?.clerkId &&
+        group.lastMessage.user.clerkId === currentUser?.clerkId;
+      const isUnread = !isOwnLastMessage && !!group.lastMessage?.createdAt &&
         (!lastReadAt || new Date(lastReadAt) < new Date(group.lastMessage.createdAt));
       return (
         <TouchableOpacity

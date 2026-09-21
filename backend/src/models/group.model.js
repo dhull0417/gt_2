@@ -90,7 +90,7 @@ const groupSchema = new mongoose.Schema({
   moderators: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   lastMessage: {
     text: { type: String },
-    user: { name: { type: String } },
+    user: { name: { type: String }, clerkId: { type: String } },
     createdAt: { type: Date },
   },
   isDM: { type: Boolean, default: false },

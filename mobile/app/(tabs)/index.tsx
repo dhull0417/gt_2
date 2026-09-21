@@ -635,31 +635,31 @@ const DashboardScreen = () => {
             <View style={{ width: '100%', maxWidth: 340, gap: 12 }}>
               <TouchableOpacity
                 activeOpacity={0.8}
-                style={{ backgroundColor: '#fff', borderRadius: 32, borderWidth: 1.5, borderColor: '#E5E7EB', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}
+                style={{ flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
                 onPress={() => { setShowAddChoicePicker(false); router.push('/create-group'); }}
               >
-                <Feather name="users" size={28} color="#4A90E2" />
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginTop: 10, textAlign: 'center' }}>Create New Group</Text>
+                <Feather name="users" size={22} color="#4A90E2" />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginLeft: 14 }}>Create New Group</Text>
               </TouchableOpacity>
 
               {meetupCapableGroups.length > 0 && (
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  style={{ backgroundColor: '#fff', borderRadius: 32, borderWidth: 1.5, borderColor: '#E5E7EB', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}
+                  style={{ flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
                   onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('existing'); setAddMeetupVisible(true); }}
                 >
-                  <Feather name="calendar" size={28} color="#4A90E2" />
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginTop: 10, textAlign: 'center' }}>Add Meetup to Existing Group</Text>
+                  <Feather name="calendar" size={22} color="#4A90E2" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginLeft: 14 }}>Add Meetup to Existing Group</Text>
                 </TouchableOpacity>
               )}
 
               <TouchableOpacity
                 activeOpacity={0.8}
-                style={{ backgroundColor: '#fff', borderRadius: 32, borderWidth: 1.5, borderColor: '#E5E7EB', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}
+                style={{ flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
                 onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('new'); setAddMeetupVisible(true); }}
               >
-                <Feather name="plus-circle" size={28} color="#4A90E2" />
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginTop: 10, textAlign: 'center' }}>Create One-Time Meetup</Text>
+                <Feather name="plus-circle" size={22} color="#4A90E2" />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginLeft: 14 }}>Create One-Time Meetup</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
