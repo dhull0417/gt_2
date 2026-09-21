@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     View,
     Text,
@@ -119,6 +119,20 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
     }, [calendarMonth]);
 
     const minDT = DateTime.now().startOf('day');
+
+    // This wizard is a single long-lived instance that just toggles `visible` (see the
+    // meetups tab), so `useState(initialPickerChoice)` only seeds the group choice on the
+    // very first mount. Without this, reopening with a different groupPickerMode.initialMode
+    // would keep showing whichever group was picked last time. Re-sync on every open instead.
+    useEffect(() => {
+        if (!visible) return;
+        setPickerChoice(initialPickerChoice);
+        setMeetupTZ(initialGroup?.timezone || "America/Denver");
+        setMaxAttendeesMode(initialGroup?.defaultCapacity ? "limited" : "unlimited");
+        setMaxAttendeesInput(initialGroup?.defaultCapacity ? String(initialGroup.defaultCapacity) : "");
+        setMeetupLocation(initialGroup?.defaultLocation || "");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [visible]);
 
     const maxAttendeesError = getMaxAttendeesError(maxAttendeesMode, maxAttendeesInput);
     const needsNewGroupName = !!groupPickerMode && pickerChoice === 'new' && !justCreatedGroup && newGroupName.trim().length === 0;
