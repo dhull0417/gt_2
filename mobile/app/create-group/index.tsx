@@ -16,7 +16,6 @@ import {
     Keyboard,
     Animated,
     Modal,
-    Pressable,
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -505,7 +504,16 @@ const MembersScreen = ({ groupId, groupName, onDone }: {
                 <Text style={s.shareBtnText}>Invite Friends</Text>
             </TouchableOpacity>
 
-            <View style={{ flex: 1 }} />
+            <View style={{ flex: 1, paddingHorizontal: 24 }}>
+                <View style={s.multiScheduleInfoCard}>
+                    <View style={s.multiScheduleInfoIcon}>
+                        <Feather name="info" size={14} color="#fff" />
+                    </View>
+                    <Text style={s.multiScheduleInfoText}>
+                        A group can have <Text style={{ fontWeight: "700" }}>multiple schedules</Text> for different types of meetups. Add more schedules to this group from {groupName ? `${groupName}'s` : "the group's"} Group Settings.
+                    </Text>
+                </View>
+            </View>
 
             <View style={s.screenFooter}>
                 <TouchableOpacity style={s.skipBtn} onPress={onDone}>
@@ -534,7 +542,6 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
     // only stores one Group.timezone), so it lives outside the tabbed array.
     const [timezone, setTimezone] = useState(initialTimezone ?? "America/Denver");
     const [showTZPicker, setShowTZPicker] = useState(false);
-    const [showMultiScheduleInfo, setShowMultiScheduleInfo] = useState(false);
     const scrollViewRef = useRef<ScrollView>(null);
 
     // Starts with one blank series already in place so its fields are
@@ -1487,37 +1494,12 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                 </TouchableOpacity>
 
                 <TouchableOpacity style={[s.reviewBtnGhost, !canProceed() && s.reviewBtnGhostDisabled]}
-                    onPress={() => canProceed() && setShowMultiScheduleInfo(true)}
+                    onPress={() => canProceed() && onNext(schedules.filter(sch => sch.frequency), timezone)}
                     disabled={!canProceed()}>
                     <Text style={s.reviewBtnGhostText}>Review</Text>
                     <Feather name="arrow-right" size={16} color="#4A90E2" style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
             </View>
-
-            <Modal visible={showMultiScheduleInfo} transparent animationType="fade" onRequestClose={() => {
-                setShowMultiScheduleInfo(false);
-                onNext(schedules.filter(sch => sch.frequency), timezone);
-            }}>
-                <Pressable style={s.multiScheduleInfoBackdrop} onPress={() => {
-                    setShowMultiScheduleInfo(false);
-                    onNext(schedules.filter(sch => sch.frequency), timezone);
-                }}>
-                    <Pressable style={s.multiScheduleInfoCard} onPress={() => {}}>
-                        <Text style={s.multiScheduleInfoText}>
-                            A group can have multiple schedules for different types of meetups. Add more schedules to this group from {groupName ? `${groupName}'s` : "the group's"} Group Settings.
-                        </Text>
-                        <TouchableOpacity
-                            style={s.multiScheduleInfoBtn}
-                            onPress={() => {
-                                setShowMultiScheduleInfo(false);
-                                onNext(schedules.filter(sch => sch.frequency), timezone);
-                            }}
-                        >
-                            <Text style={s.multiScheduleInfoBtnText}>Got it</Text>
-                        </TouchableOpacity>
-                    </Pressable>
-                </Pressable>
-            </Modal>
 
             <LocationSearchModal
                 visible={isLocationSearchOpen}
@@ -1812,14 +1794,9 @@ const s = StyleSheet.create({
     screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#F3F4F6", backgroundColor: "#fff", position: "relative" },
     screenTitle: { fontSize: 26, fontWeight: "900", color: "#111827", marginBottom: 4 },
     screenSub: { fontSize: 14, color: "#9CA3AF", marginBottom: 20 },
-    multiScheduleInfoBackdrop: { flex: 1, backgroundColor: "rgba(17,24,39,0.45)", alignItems: "center", justifyContent: "center", padding: 28 },
-    multiScheduleInfoCard: {
-        backgroundColor: "#fff", borderRadius: 18, padding: 20, width: "100%", maxWidth: 360,
-        shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 6,
-    },
-    multiScheduleInfoText: { fontSize: 14, color: "#4B5563", lineHeight: 20, marginBottom: 16 },
-    multiScheduleInfoBtn: { backgroundColor: "#4A90E2", borderRadius: 12, paddingVertical: 12, alignItems: "center" },
-    multiScheduleInfoBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+    multiScheduleInfoCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: "#F3F4F6", borderRadius: 18, padding: 20 },
+    multiScheduleInfoIcon: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#4A90E2", alignItems: "center", justifyContent: "center", marginRight: 12 },
+    multiScheduleInfoText: { flex: 1, fontSize: 14, color: "#4B5563", lineHeight: 20 },
     iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
     dots: { flexDirection: "row", alignItems: "center", width: "50%", alignSelf: "center" },
     dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: "#E5E7EB", backgroundColor: "#fff" },
