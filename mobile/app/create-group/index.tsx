@@ -540,7 +540,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
     // Starts with one blank series already in place so its fields are
     // immediately visible — no tap required to begin filling it out.
     const [schedules, setSchedules] = useState<ScheduleData[]>(
-        initialSchedules && initialSchedules.length > 0 ? initialSchedules : [defaultSchedule()]
+        initialSchedules && initialSchedules.length > 0 ? initialSchedules : [defaultSchedule(groupName ?? "")]
     );
     const [activeIndex, setActiveIndexState] = useState(0);
     // Mirrors activeIndex so `setD` (defined once, empty deps) always targets
@@ -554,7 +554,6 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
     }, []);
 
     const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
-    const [nameInputFocused, setNameInputFocused] = useState(false);
     const [dayPickerRowId, setDayPickerRowId] = useState<string | null>(null);
     const [calendarPickerRowId, setCalendarPickerRowId] = useState<string | null>(null);
 
@@ -1176,30 +1175,16 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                     </View>
                 ) : (
                 <>
-                {/* Name — a hero-style field instead of a standard card, so it
-                    reads unmistakably as "you're naming this series" rather
-                    than blending in with the other form sections below. */}
-                <View style={[s.nameHero, { borderLeftWidth: 3, borderLeftColor: "#4A90E2" }]}>
+                {/* Description — the series takes on the group's name automatically,
+                    so this card only collects optional extra detail. */}
+                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#4A90E2" }]}>
                     <View style={s.sectionHeaderRow}>
                         <View style={s.sectionIconChip}>
-                            <Feather name="tag" size={19} color="#4A90E2" />
+                            <Feather name="align-left" size={19} color="#4A90E2" />
                         </View>
-                        <Text style={s.sectionTitle}>Series Name</Text>
+                        <Text style={s.sectionTitle}>Description</Text>
                     </View>
-                    <TextInput
-                        style={s.nameHeroInput}
-                        value={d.name}
-                        onChangeText={t => upd({ name: t })}
-                        onFocus={() => setNameInputFocused(true)}
-                        onBlur={() => setNameInputFocused(false)}
-                        placeholder={nameInputFocused ? "" : '"Sunday Dinner"'}
-                        textAlign="center"
-                        placeholderTextColor="#C4C9D4"
-                        maxLength={60}
-                    />
-                    <View style={s.nameHeroUnderline} />
-
-                    <Text style={[s.fieldLabel, { marginTop: 35 }]}>Description (optional)</Text>
+                    <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Description (optional)</Text>
                     <View style={[s.inputRow, s.descriptionInputRow, { marginBottom: 0 }]}>
                         <TextInput
                             style={[s.inlineInput, s.descriptionInput]}
