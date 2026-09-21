@@ -50,6 +50,7 @@ const namedScheduleSchema = new mongoose.Schema({
 
   defaultLocation: { type: String, trim: true, default: "" },
   defaultCapacity: { type: Number, default: 0 },
+  defaultDescription: { type: String, trim: true, default: "" },
 
   generationLeadDays: { type: Number, min: 0, default: null },
   generationLeadTime: { type: String, default: "09:00 AM" },
@@ -89,7 +90,7 @@ const groupSchema = new mongoose.Schema({
   moderators: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   lastMessage: {
     text: { type: String },
-    user: { name: { type: String } },
+    user: { name: { type: String }, clerkId: { type: String } },
     createdAt: { type: Date },
   },
   isDM: { type: Boolean, default: false },

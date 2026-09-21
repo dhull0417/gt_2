@@ -50,7 +50,7 @@ const ProfileSetupScreen = () => {
             : {};
         const profileData = isAppleUser
             ? { ...appleNameOverride, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) }
-            : { firstName, lastName, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) };
+            : { firstName: firstName.trim(), lastName: lastName.trim(), ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) };
 
         setIsSaving(true);
         try {

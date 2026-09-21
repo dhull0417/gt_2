@@ -17,6 +17,7 @@ export function OfflineBanner() {
 
   return (
     <View
+      pointerEvents="none"
       style={[styles.banner, { paddingTop: insets.top + 4 }]}
       onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
     >

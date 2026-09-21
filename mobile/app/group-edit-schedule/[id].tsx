@@ -18,8 +18,10 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { DateTime } from "luxon";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@clerk/expo";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
 import { useApiClient, groupApi, GroupDetails, NamedSchedule, Frequency, DayTime, Routine } from "../../utils/api";
+import { broadcastGroupUpdate, broadcastMeetupUpdate } from "../../utils/groupRealtime";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
 import NativeTimePicker, { timeStringToDate } from "../../components/NativeTimePicker";
 import OptionPickerModal from "../../components/OptionPickerModal";
@@ -171,6 +173,7 @@ interface BuiltRoutine {
 interface ScheduleData {
     name: string;
     location: string;
+    description: string;
     maxAttendeesMode: "unlimited" | "limited";
     maxAttendeesInput: string;
     rsvpRestricted: boolean;
@@ -205,6 +208,7 @@ interface ScheduleData {
 const defaultSchedule = (): ScheduleData => ({
     name: "",
     location: "",
+    description: "",
     maxAttendeesMode: "unlimited",
     maxAttendeesInput: "",
     rsvpRestricted: false,
@@ -295,6 +299,7 @@ const buildSchedulePayload = (d: ScheduleData) => {
         routines,
         defaultLocation: d.location.trim(),
         defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
+        defaultDescription: d.description.trim(),
         generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
         generationLeadTime: d.leadTime,
         generationDeadlineDays: d.rsvpRestricted && d.deadlineEnabled ? d.deadlineDays : null,
@@ -373,6 +378,7 @@ const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSchedule | n
     const common = {
         name: sched.name,
         location: sched.defaultLocation || "",
+        description: sched.defaultDescription || "",
         maxAttendeesMode: (sched.defaultCapacity > 0 ? "limited" : "unlimited") as "unlimited" | "limited",
         maxAttendeesInput: sched.defaultCapacity ? String(sched.defaultCapacity) : "",
         rsvpRestricted: sched.generationLeadDays != null || sched.generationDeadlineDays != null,
@@ -524,11 +530,18 @@ const EditScheduleScreen = () => {
     const router = useRouter();
     const api = useApiClient();
     const queryClient = useQueryClient();
+    const { getToken } = useAuth();
 
     const { data: group, isLoading } = useGetGroupDetails(id);
     const [isSaving, setIsSaving] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
+    // Belt-and-suspenders alongside the `disabled` prop below: that only takes
+    // effect once React re-renders with isSaving/isDeleting true, and a second
+    // tap landing in the same tick (more common on Android, where touch events
+    // can queue up ahead of a state-driven re-render) would otherwise still
+    // fire a second request before the button visually disables.
+    const inFlightRef = useRef(false);
 
     const targetSchedule = useMemo(
         () => group?.schedules?.find(s => s._id === scheduleId) ?? null,
@@ -759,6 +772,8 @@ const EditScheduleScreen = () => {
     const handleSave = async () => {
         const payload = buildSchedulePayload(d);
         if (!payload || !id) return;
+        if (inFlightRef.current) return;
+        inFlightRef.current = true;
         setIsSaving(true);
         try {
             if (isNew) {
@@ -771,6 +786,8 @@ const EditScheduleScreen = () => {
                 queryClient.invalidateQueries({ queryKey: ["meetups"] }),
                 queryClient.invalidateQueries({ queryKey: ["groups"] }),
             ]);
+            broadcastGroupUpdate(getToken, id);
+            broadcastMeetupUpdate(getToken, id);
             Alert.alert(
                 isNew ? "Schedule created" : "Schedule updated",
                 isNew ? "Meetups will start generating shortly." : "Future meetups have been regenerated.",
@@ -779,6 +796,7 @@ const EditScheduleScreen = () => {
         } catch (err: any) {
             Alert.alert("Error", err?.response?.data?.error || "Failed to save schedule.");
         } finally {
+            inFlightRef.current = false;
             setIsSaving(false);
         }
     };
@@ -794,6 +812,8 @@ const EditScheduleScreen = () => {
                     text: "Remove",
                     style: "destructive",
                     onPress: async () => {
+                        if (inFlightRef.current) return;
+                        inFlightRef.current = true;
                         setIsDeleting(true);
                         try {
                             await groupApi.deleteSchedule(api, id, scheduleId);
@@ -802,10 +822,13 @@ const EditScheduleScreen = () => {
                                 queryClient.invalidateQueries({ queryKey: ["meetups"] }),
                                 queryClient.invalidateQueries({ queryKey: ["groups"] }),
                             ]);
+                            broadcastGroupUpdate(getToken, id);
+                            broadcastMeetupUpdate(getToken, id);
                             router.navigate("/(tabs)/groups");
                         } catch (err: any) {
                             Alert.alert("Error", err?.response?.data?.error || "Failed to remove schedule.");
                         } finally {
+                            inFlightRef.current = false;
                             setIsDeleting(false);
                         }
                     },
@@ -1270,6 +1293,19 @@ const EditScheduleScreen = () => {
                                 maxLength={60}
                             />
                         </View>
+
+                        <Text style={[s.fieldLabel, { marginTop: 35 }]}>Description (optional)</Text>
+                        <View style={[s.inputRow, s.descriptionInputRow, { marginBottom: 0 }]}>
+                            <TextInput
+                                style={[s.inlineInput, s.descriptionInput]}
+                                placeholder="Add any extra details for this series..."
+                                placeholderTextColor="#9CA3AF"
+                                value={d.description}
+                                onChangeText={t => setD(prev => ({ ...prev, description: t }))}
+                                multiline
+                                textAlignVertical="top"
+                            />
+                        </View>
                     </View>
 
                     {/* Where */}
@@ -1626,6 +1662,8 @@ const s = StyleSheet.create({
     inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
     inputRowError: { borderColor: "#EF4444" },
     inlineInput: { flex: 1, fontSize: 15, color: "#374151" },
+    descriptionInputRow: { alignItems: "flex-start", height: 90 },
+    descriptionInput: { height: "100%" },
     errorText: { fontSize: 12, fontWeight: "600", color: "#EF4444", marginTop: 6, marginLeft: 2 },
     primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
     primaryBtnDisabled: { backgroundColor: "#93C5FD" },

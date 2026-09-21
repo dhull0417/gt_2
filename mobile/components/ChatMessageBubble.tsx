@@ -31,6 +31,10 @@ interface Props {
   onPendingPress?: () => void;
   onSwipeReply?: () => void;
   isHighlighted?: boolean;
+  // Initial history load renders every bubble at once — animating all of them in
+  // together stalls the JS thread just long enough to make the header back button
+  // feel unresponsive. Skip the entrance spring for that first batch.
+  skipEntrance?: boolean;
 }
 
 const MAX_IMAGE_WIDTH = 240;
@@ -71,6 +75,7 @@ export function ChatMessageBubble({
   onPendingPress,
   onSwipeReply,
   isHighlighted,
+  skipEntrance,
 }: Props) {
   const isDeleted = !!message.deleted_at;
   const isEdited = !!message.edited_at && !isDeleted;
@@ -97,10 +102,11 @@ export function ChatMessageBubble({
   };
 
   // --- Entrance: slides + fades + scales in from the sender's side, once, on mount ---
-  const entrance = useSharedValue(0);
+  const entrance = useSharedValue(skipEntrance ? 1 : 0);
   useEffect(() => {
+    if (skipEntrance) return;
     entrance.value = withSpring(1, { damping: 16, stiffness: 180 });
-  }, [entrance]);
+  }, [entrance, skipEntrance]);
 
   const entranceStyle = useAnimatedStyle(() => ({
     opacity: entrance.value,

@@ -141,6 +141,7 @@ interface BuiltRoutine {
 interface ScheduleData {
     name: string;
     location: string;
+    description: string;
     startDate: string;
     frequency: Frequency | null;
     rsvpRestricted: boolean;
@@ -208,6 +209,7 @@ const isScheduleTabValid = (sch: ScheduleData): boolean => {
 const defaultSchedule = (name = ""): ScheduleData => ({
     name,
     location: "",
+    description: "",
     startDate: DateTime.now().toISODate()!,
     frequency: null,
     rsvpRestricted: false,
@@ -1196,6 +1198,19 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                         maxLength={60}
                     />
                     <View style={s.nameHeroUnderline} />
+
+                    <Text style={[s.fieldLabel, { marginTop: 35 }]}>Description (optional)</Text>
+                    <View style={[s.inputRow, s.descriptionInputRow, { marginBottom: 0 }]}>
+                        <TextInput
+                            style={[s.inlineInput, s.descriptionInput]}
+                            placeholder="Add any extra details for this series..."
+                            placeholderTextColor="#C4C9D4"
+                            value={d.description}
+                            onChangeText={t => upd({ description: t })}
+                            multiline
+                            textAlignVertical="top"
+                        />
+                    </View>
                 </View>
 
                 {/* Where */}
@@ -1583,6 +1598,7 @@ const buildSchedulePayload = (d: ScheduleData) => {
         routines,
         defaultLocation: d.location,
         defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
+        defaultDescription: d.description,
         generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
         generationLeadTime: d.leadTime,
         generationDeadlineDays: d.rsvpRestricted && d.deadlineEnabled ? d.deadlineDays : null,
@@ -1829,6 +1845,8 @@ const s = StyleSheet.create({
     inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
     inputRowError: { borderColor: "#EF4444" },
     inlineInput: { flex: 1, fontSize: 15, color: "#374151" },
+    descriptionInputRow: { alignItems: "flex-start", height: 90 },
+    descriptionInput: { height: "100%" },
     errorText: { fontSize: 12, fontWeight: "600", color: "#EF4444", marginTop: 6, marginLeft: 2 },
     searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8 },
     searchInput: { flex: 1, marginLeft: 8, fontSize: 15, color: "#374151" },

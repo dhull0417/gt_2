@@ -47,6 +47,7 @@ export interface NamedSchedule extends Schedule {
   name: string;
   defaultLocation: string;
   defaultCapacity: number;
+  defaultDescription: string;
   generationLeadDays: number | null;
   generationLeadTime: string;
   generationDeadlineDays: number | null;
@@ -82,6 +83,7 @@ export interface LastMessage {
   text: string;
   user: {
     name: string;
+    clerkId?: string;
   };
   createdAt?: string;
 }
@@ -140,6 +142,7 @@ export interface Meetup {
   time: string;
   timezone: string;
   location: string;
+  description: string;
   status: 'scheduled' | 'cancelled' | 'expired';
   capacity: number;
   isOverride: boolean;
@@ -214,6 +217,7 @@ export interface ScheduleInput {
   routines?: Routine[];
   defaultLocation?: string;
   defaultCapacity?: number;
+  defaultDescription?: string;
   generationLeadDays?: number | null;
   generationLeadTime?: string;
   generationDeadlineDays?: number | null;
@@ -267,6 +271,7 @@ interface UpdateMeetupPayload {
   timezone?: string;
   capacity?: number;
   location?: string;
+  description?: string;
 }
 
 
@@ -283,7 +288,8 @@ interface CreateOneOffMeetupPayload {
   capacity?: number;
   name?: string;
   location?: string;
-  /** Borrows an existing named schedule's location/capacity defaults, if provided. */
+  description?: string;
+  /** Borrows an existing named schedule's location/capacity/description defaults, if provided. */
   scheduleId?: string;
 }
 
