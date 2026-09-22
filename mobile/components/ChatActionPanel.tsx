@@ -7,6 +7,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withDelay, withSpring, with
 import type { BubbleLayout } from './ChatMessageBubble';
 
 const PANEL_WIDTH = 244;
+const REACTIONS_PANEL_WIDTH = 300;
 const ESTIMATED_PANEL_HEIGHT = 220;
 const SAFE_MARGIN = 14;
 const REACTIONS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
@@ -19,6 +20,8 @@ interface Props {
   onOpenEmojiPicker: () => void;
   showReply: boolean;
   onReply: () => void;
+  showCopy: boolean;
+  onCopy: () => void;
   showEdit: boolean;
   onEdit: () => void;
   showDelete: boolean;
@@ -38,7 +41,7 @@ function ReactionButton({ emoji, index, onPress }: { emoji: string; index: numbe
   return (
     <Animated.View style={style}>
       <TouchableOpacity style={styles.emojiBtn} onPress={onPress} activeOpacity={0.7}>
-        <Text style={{ fontSize: 26 }}>{emoji}</Text>
+        <Text style={{ fontSize: 24 }}>{emoji}</Text>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -52,6 +55,8 @@ export function ChatActionPanel({
   onOpenEmojiPicker,
   showReply,
   onReply,
+  showCopy,
+  onCopy,
   showEdit,
   onEdit,
   showDelete,
@@ -74,6 +79,7 @@ export function ChatActionPanel({
   if (!anchor) return null;
 
   const { width: screenW, height: screenH } = Dimensions.get('window');
+  const panelWidth = showReactions ? Math.min(REACTIONS_PANEL_WIDTH, screenW - SAFE_MARGIN * 2) : PANEL_WIDTH;
 
   let top = anchor.y + anchor.height + 10;
   if (top + ESTIMATED_PANEL_HEIGHT > screenH - SAFE_MARGIN) {
@@ -81,8 +87,8 @@ export function ChatActionPanel({
   }
   top = Math.max(SAFE_MARGIN, Math.min(top, screenH - ESTIMATED_PANEL_HEIGHT - SAFE_MARGIN));
 
-  let left = isOwn ? anchor.x + anchor.width - PANEL_WIDTH : anchor.x;
-  left = Math.max(SAFE_MARGIN, Math.min(left, screenW - PANEL_WIDTH - SAFE_MARGIN));
+  let left = isOwn ? anchor.x + anchor.width - panelWidth : anchor.x;
+  left = Math.max(SAFE_MARGIN, Math.min(left, screenW - panelWidth - SAFE_MARGIN));
 
   const handleReact = (emoji: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -95,7 +101,7 @@ export function ChatActionPanel({
         <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
       </Pressable>
 
-      <Animated.View style={[styles.panel, { top, left, width: PANEL_WIDTH }, panelStyle]}>
+      <Animated.View style={[styles.panel, { top, left, width: panelWidth }, panelStyle]}>
         {showReactions && (
           <View style={styles.emojiRow}>
             {REACTIONS.map((emoji, i) => (
@@ -105,13 +111,21 @@ export function ChatActionPanel({
           </View>
         )}
 
-        {showReply && (
+        {(showReply || showCopy) && (
           <>
             {showReactions && <View style={styles.divider} />}
-            <TouchableOpacity style={styles.actionRow} onPress={onReply}>
-              <Feather name="corner-up-left" size={17} color="#111827" />
-              <Text style={styles.actionLabel}>Reply</Text>
-            </TouchableOpacity>
+            {showReply && (
+              <TouchableOpacity style={styles.actionRow} onPress={onReply}>
+                <Feather name="corner-up-left" size={17} color="#111827" />
+                <Text style={styles.actionLabel}>Reply</Text>
+              </TouchableOpacity>
+            )}
+            {showCopy && (
+              <TouchableOpacity style={styles.actionRow} onPress={onCopy}>
+                <Feather name="copy" size={16} color="#111827" />
+                <Text style={styles.actionLabel}>Copy</Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
 
@@ -149,8 +163,8 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 10,
   },
-  emojiRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', paddingHorizontal: 6, paddingVertical: 10 },
-  emojiBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  emojiRow: { flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 10 },
+  emojiBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E7EB' },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, paddingHorizontal: 16 },
   actionLabel: { fontSize: 15, color: '#111827', fontWeight: '600' },
