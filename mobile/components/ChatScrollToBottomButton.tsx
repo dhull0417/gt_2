@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 interface Props {
   visible: boolean;
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function ChatScrollToBottomButton({ visible, unreadCount, onPress }: Props) {
+  const colors = useThemeColors();
   const entrance = useSharedValue(0);
 
   useEffect(() => {
@@ -32,8 +34,8 @@ export function ChatScrollToBottomButton({ visible, unreadCount, onPress }: Prop
 
   return (
     <Animated.View style={[styles.wrap, style]} pointerEvents={visible ? 'auto' : 'none'}>
-      <Pressable onPress={handlePress} style={styles.button}>
-        <Feather name="chevron-down" size={20} color="#4A90E2" />
+      <Pressable onPress={handlePress} style={[styles.button, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Feather name="chevron-down" size={20} color={colors.brand} />
         {unreadCount > 0 && (
           <Animated.View style={styles.badge}>
             <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>

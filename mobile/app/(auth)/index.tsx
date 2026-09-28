@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from '@expo/vector-icons';
 import * as AppleAuthentication from "expo-apple-authentication";
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -14,6 +15,7 @@ export default function Index() {
   const { handleAppleAuth, isLoading: appleIsLoading } = useAppleAuth();
   const isAnyLoading = isLoading || appleIsLoading;
   const router = useRouter();
+  const colors = useThemeColors();
   const [showOtherOptions, setShowOtherOptions] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
 
@@ -43,7 +45,7 @@ export default function Index() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
           <View style={styles.logoContainer}>
             <View style={styles.logoBox}>
@@ -65,25 +67,25 @@ export default function Index() {
                 pointerEvents={showOtherOptions ? 'none' : 'auto'}
               >
                 <TouchableOpacity
-                  style={[styles.button, styles.shadow]}
+                  style={[styles.button, styles.shadow, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
                   onPress={() => handleSocialAuth("oauth_google")}
                   disabled={isAnyLoading}
                 >
-                  {isLoading ? <ActivityIndicator size="small" color="#000" /> : (
+                  {isLoading ? <ActivityIndicator size="small" color={colors.textPrimary} /> : (
                     <View style={styles.buttonContent}>
                       <Image source={require("../../assets/images/google-logo.png")} style={styles.iconImage} resizeMode="contain" />
-                      <Text style={styles.buttonText} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Google</Text>
+                      <Text style={[styles.buttonText, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Google</Text>
                     </View>
                   )}
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.button, styles.shadow]}
+                  style={[styles.button, styles.shadow, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
                   onPress={() => router.push('/(auth)/sign-in')}
                 >
                   <View style={styles.buttonContent}>
-                      <Feather name="mail" size={24} color="#000" style={{ marginRight: 12 }} />
-                      <Text style={styles.buttonText} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Email</Text>
+                      <Feather name="mail" size={24} color={colors.textPrimary} style={{ marginRight: 12 }} />
+                      <Text style={[styles.buttonText, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Email</Text>
                   </View>
                 </TouchableOpacity>
               </Animated.View>
@@ -94,10 +96,12 @@ export default function Index() {
                 pointerEvents={showOtherOptions ? 'auto' : 'none'}
               >
                 {appleIsLoading ? (
+                  // Mirrors AppleAuthenticationButton's mandated black BLACK style below — kept black in both themes
                   <View style={[styles.appleButton, styles.shadow]}>
                     <ActivityIndicator size="small" color="#fff" />
                   </View>
                 ) : (
+                  // Apple's own branded button — buttonStyle is Apple's brand guideline, left as-is regardless of theme
                   <AppleAuthentication.AppleAuthenticationButton
                     buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
                     buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
@@ -108,13 +112,13 @@ export default function Index() {
                 )}
 
                 <TouchableOpacity
-                  style={[styles.button, styles.shadow]}
+                  style={[styles.button, styles.shadow, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
                   onPress={() => router.push('/(auth)/phone-login')}
                   disabled={isAnyLoading}
                 >
                   <View style={styles.buttonContent}>
-                    <Feather name="phone" size={22} color="#000" style={{ marginRight: 12 }} />
-                    <Text style={styles.buttonText} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Phone</Text>
+                    <Feather name="phone" size={22} color={colors.textPrimary} style={{ marginRight: 12 }} />
+                    <Text style={[styles.buttonText, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Phone</Text>
                   </View>
                 </TouchableOpacity>
               </Animated.View>
@@ -125,17 +129,17 @@ export default function Index() {
               style={styles.otherOptionsToggle}
               onPress={toggleOtherOptions}
             >
-              <Text style={styles.otherOptionsText}>Other Options</Text>
-              <Feather name={showOtherOptions ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" style={{ marginLeft: 4 }} />
+              <Text style={[styles.otherOptionsText, { color: colors.textMuted }]}>Other Options</Text>
+              <Feather name={showOtherOptions ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} style={{ marginLeft: 4 }} />
             </TouchableOpacity>
           </View>
 
           <View style={{ flex: 1 }} />
 
           <View>
-            <Text style={styles.footerText}>
+            <Text style={[styles.footerText, { color: colors.textMuted }]}>
               By signing up, you agree to our
-              <Text style={styles.linkText} onPress={handleOpenPrivacyPolicy}> Privacy Policy</Text>
+              <Text style={[styles.linkText, { color: colors.brand }]} onPress={handleOpenPrivacyPolicy}> Privacy Policy</Text>
             </Text>
           </View>
       </View>

@@ -1,5 +1,6 @@
 import React from "react";
 import { Image, View, Text } from "react-native";
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const COLORS = ["#C7D2FE", "#FDE68A", "#F9A8D4", "#FDBA74", "#A5B4FC", "#86EFAC", "#BAE6FD"];
 
@@ -17,7 +18,11 @@ interface Props {
   borderRadius?: number;
 }
 
+// Avatar fill colors are fixed pastel badges independent of app theme (the initial's
+// dark text stays readable on them regardless of light/dark mode), so only the
+// image-loading placeholder background is theme-aware.
 export const GroupAvatar: React.FC<Props> = ({ name, imageUrl, size = 44, borderRadius }) => {
+  const colors = useThemeColors();
   const radius = borderRadius ?? size / 2;
   const initial = (name?.trim()?.[0] ?? "?").toUpperCase();
   const bg = pickColor(name ?? "");
@@ -26,7 +31,7 @@ export const GroupAvatar: React.FC<Props> = ({ name, imageUrl, size = 44, border
     return (
       <Image
         source={{ uri: imageUrl }}
-        style={{ width: size, height: size, borderRadius: radius, backgroundColor: "#F3F4F6" }}
+        style={{ width: size, height: size, borderRadius: radius, backgroundColor: colors.backgroundAlt }}
       />
     );
   }

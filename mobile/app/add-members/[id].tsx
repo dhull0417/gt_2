@@ -17,9 +17,13 @@ import { useInviteUser } from '@/hooks/useInviteUser';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useContactMatching, ContactEntry } from '@/hooks/useContactMatching';
 import { User, useApiClient, groupApi } from '@/utils/api';
+import { useThemeColors, useAppearance } from '@/contexts/AppearanceContext';
 
 const AddMembersScreen = () => {
     const { id: groupId } = useLocalSearchParams<{ id: string }>();
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const isDark = scheme === 'dark';
 
     const api = useApiClient();
     const { data: groupDetails } = useGetGroupDetails(groupId);
@@ -74,28 +78,28 @@ const AddMembersScreen = () => {
     const renderContact = ({ item }: { item: ContactEntry }) => {
         const isOnApp = !!item.appUser;
         return (
-            <View style={styles.resultRow}>
+            <View style={[styles.resultRow, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                 <View style={styles.resultInfo}>
-                    <Text style={styles.resultName}>{item.name}</Text>
-                    <Text style={[styles.contactStatus, isOnApp ? styles.statusOnApp : styles.statusNotOnApp]}>
+                    <Text style={[styles.resultName, { color: colors.textSecondary }]}>{item.name}</Text>
+                    <Text style={[styles.contactStatus, { color: isOnApp ? colors.success : colors.textFaint }]}>
                         {isOnApp ? 'On GroupThat' : 'Invite to GroupThat'}
                     </Text>
                 </View>
                 {isOnApp ? (
                     <TouchableOpacity
-                        style={styles.inviteButton}
+                        style={[styles.inviteButton, { backgroundColor: isDark ? '#1A2A42' : '#EEF2FF' }]}
                         onPress={() => handleInvite(item.appUser!)}
                         disabled={isInviting}
                     >
-                        <Text style={styles.inviteButtonText}>Invite</Text>
+                        <Text style={[styles.inviteButtonText, { color: colors.brand }]}>Invite</Text>
                     </TouchableOpacity>
                 ) : (
                     <TouchableOpacity
-                        style={styles.smsButton}
+                        style={[styles.smsButton, { backgroundColor: colors.backgroundAlt }]}
                         onPress={() => handleSmsInvite(item)}
                     >
-                        <Feather name="send" size={14} color="#6B7280" />
-                        <Text style={styles.smsButtonText}>SMS</Text>
+                        <Feather name="send" size={14} color={colors.textMuted} />
+                        <Text style={[styles.smsButtonText, { color: colors.textMuted }]}>SMS</Text>
                     </TouchableOpacity>
                 )}
             </View>
@@ -103,24 +107,32 @@ const AddMembersScreen = () => {
     };
 
     return (
-        <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-            <TouchableOpacity style={[styles.shareLinkBtn, !inviteLink && styles.shareLinkBtnDisabled]} onPress={handleShareInvite} disabled={!inviteLink}>
-                <Feather name="share-2" size={20} color={inviteLink ? "#4A90E2" : "#9CA3AF"} />
-                <Text style={[styles.shareLinkText, !inviteLink && styles.shareLinkTextDisabled]}>Share Invite Link</Text>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom', 'left', 'right']}>
+            <TouchableOpacity
+                style={[
+                    styles.shareLinkBtn,
+                    { backgroundColor: isDark ? '#1A2A42' : '#F5F7FF', borderColor: colors.brand },
+                    !inviteLink && { backgroundColor: colors.backgroundAlt, borderColor: colors.borderStrong },
+                ]}
+                onPress={handleShareInvite}
+                disabled={!inviteLink}
+            >
+                <Feather name="share-2" size={20} color={inviteLink ? colors.brand : colors.textFaint} />
+                <Text style={[styles.shareLinkText, { color: inviteLink ? colors.brand : colors.textFaint }]}>Share Invite Link</Text>
             </TouchableOpacity>
 
             <View style={{ flex: 1, marginTop: 16 }}>
                 {isLoadingContacts ? (
-                    <ActivityIndicator size="small" color="#4A90E2" style={{ marginTop: 20 }} />
+                    <ActivityIndicator size="small" color={colors.brand} style={{ marginTop: 20 }} />
                 ) : permissionDenied ? (
-                    <Text style={styles.emptyText}>Enable contacts permission to see friends on GroupThat.</Text>
+                    <Text style={[styles.emptyText, { color: colors.textMuted }]}>Enable contacts permission to see friends on GroupThat.</Text>
                 ) : (
                     <FlatList
                         data={contacts}
                         keyExtractor={item => item.id}
                         renderItem={renderContact}
                         ListEmptyComponent={
-                            <Text style={styles.emptyText}>No contacts found.</Text>
+                            <Text style={[styles.emptyText, { color: colors.textMuted }]}>No contacts found.</Text>
                         }
                     />
                 )}

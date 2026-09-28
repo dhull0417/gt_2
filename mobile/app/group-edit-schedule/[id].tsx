@@ -28,6 +28,7 @@ import OptionPickerModal from "../../components/OptionPickerModal";
 import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
 import InfoBubble from "@/components/InfoBubble";
+import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -45,8 +46,12 @@ const DAYS_OF_WEEK = [
     { label: "Saturday",  short: "Sat", value: 6 },
 ];
 
-// One accent color per weekday so day rows/cards are distinguishable at a glance
-const DAY_COLORS: { bg: string; fg: string }[] = [
+// One accent color per weekday so day rows/cards are distinguishable at a glance.
+// Dark variants swap the pastel background for a muted, low-saturation version of
+// the same hue (mirrors the pastel icon-chip treatment used elsewhere in the app);
+// the foreground stays the same saturated color in both themes since it still reads
+// fine against the much darker background.
+const DAY_COLORS_LIGHT: { bg: string; fg: string }[] = [
     { bg: "#FEE2E2", fg: "#DC2626" }, // Sunday
     { bg: "#DBEAFE", fg: "#2563EB" }, // Monday
     { bg: "#EDE9FE", fg: "#7C3AED" }, // Tuesday
@@ -54,6 +59,17 @@ const DAY_COLORS: { bg: string; fg: string }[] = [
     { bg: "#FEF3C7", fg: "#D97706" }, // Thursday
     { bg: "#FCE7F3", fg: "#DB2777" }, // Friday
     { bg: "#CFFAFE", fg: "#0891B2" }, // Saturday
+];
+// Friday (pink) has no established pastel-chip dark equivalent elsewhere in the
+// app; #3D1530 extrapolates the same treatment used for the other named hues.
+const DAY_COLORS_DARK: { bg: string; fg: string }[] = [
+    { bg: "#3B1E1E", fg: "#DC2626" }, // Sunday (red)
+    { bg: "#1A2A42", fg: "#2563EB" }, // Monday (blue)
+    { bg: "#241B3D", fg: "#7C3AED" }, // Tuesday (purple)
+    { bg: "#132A1E", fg: "#059669" }, // Wednesday (green)
+    { bg: "#3A2E12", fg: "#D97706" }, // Thursday (amber)
+    { bg: "#3D1530", fg: "#DB2777" }, // Friday (pink, extrapolated)
+    { bg: "#123338", fg: "#0891B2" }, // Saturday (cyan)
 ];
 
 const ORDINAL_OCCURRENCES = ["1st", "2nd", "3rd", "4th", "5th", "Last"];
@@ -109,6 +125,7 @@ const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): str
 const ToggleSwitch = ({ value, onValueChange, activeColor = "#7C3AED" }: {
     value: boolean; onValueChange: (v: boolean) => void; activeColor?: string;
 }) => {
+    const colors = useThemeColors();
     const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
     const scale = useRef(new Animated.Value(1)).current;
     useEffect(() => {
@@ -118,7 +135,7 @@ const ToggleSwitch = ({ value, onValueChange, activeColor = "#7C3AED" }: {
             Animated.spring(scale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: false }),
         ]).start();
     }, [value]);
-    const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["#E5E7EB", activeColor] });
+    const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: [colors.border, activeColor] });
     const thumbLeft = anim.interpolate({ inputRange: [0, 1], outputRange: [2, 20] });
     return (
         <TouchableOpacity activeOpacity={0.8} onPress={() => onValueChange(!value)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -470,6 +487,7 @@ const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSchedule | n
 const InlineCalendar = ({ value, onChange, minDate }: {
     value: string; onChange: (iso: string) => void; minDate?: string;
 }) => {
+    const colors = useThemeColors();
     const [month, setMonth] = useState(
         value ? DateTime.fromISO(value).startOf("month") : DateTime.now().startOf("month")
     );
@@ -483,19 +501,19 @@ const InlineCalendar = ({ value, onChange, minDate }: {
     }, [month]);
     const minDT = minDate ? DateTime.fromISO(minDate) : DateTime.now().startOf("day");
     return (
-        <View style={cal.container}>
+        <View style={[cal.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={cal.nav}>
-                <TouchableOpacity onPress={() => setMonth(m => m.minus({ months: 1 }))} style={cal.navBtn}>
-                    <Feather name="chevron-left" size={18} color="#4A90E2" />
+                <TouchableOpacity onPress={() => setMonth(m => m.minus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
+                    <Feather name="chevron-left" size={18} color={colors.brand} />
                 </TouchableOpacity>
-                <Text style={cal.monthLabel}>{month.toFormat("MMMM yyyy")}</Text>
-                <TouchableOpacity onPress={() => setMonth(m => m.plus({ months: 1 }))} style={cal.navBtn}>
-                    <Feather name="chevron-right" size={18} color="#4A90E2" />
+                <Text style={[cal.monthLabel, { color: colors.textPrimary }]}>{month.toFormat("MMMM yyyy")}</Text>
+                <TouchableOpacity onPress={() => setMonth(m => m.plus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
+                    <Feather name="chevron-right" size={18} color={colors.brand} />
                 </TouchableOpacity>
             </View>
             <View style={cal.grid}>
                 {["S","M","T","W","T","F","S"].map((d, i) => (
-                    <Text key={i} style={cal.dayHeader}>{d}</Text>
+                    <Text key={i} style={[cal.dayHeader, { color: colors.textFaint }]}>{d}</Text>
                 ))}
                 {grid.map((day, i) => {
                     if (!day) return <View key={`e-${i}`} style={cal.cell} />;
@@ -505,11 +523,11 @@ const InlineCalendar = ({ value, onChange, minDate }: {
                     return (
                         <TouchableOpacity
                             key={iso}
-                            style={[cal.cell, selected && cal.cellSelected, disabled && cal.cellDisabled]}
+                            style={[cal.cell, selected && cal.cellSelected, selected && { backgroundColor: colors.brand }, disabled && cal.cellDisabled]}
                             onPress={() => !disabled && onChange(iso)}
                             disabled={disabled}
                         >
-                            <Text style={[cal.cellText, selected && cal.cellTextSelected, disabled && cal.cellTextDisabled]}>
+                            <Text style={[cal.cellText, { color: colors.textSecondary }, selected && cal.cellTextSelected, disabled && { color: colors.borderStrong }]}>
                                 {day.day}
                             </Text>
                         </TouchableOpacity>
@@ -524,6 +542,32 @@ const InlineCalendar = ({ value, onChange, minDate }: {
 
 const EditScheduleScreen = () => {
     const { id, scheduleId: rawScheduleId } = useLocalSearchParams<{ id: string; scheduleId?: string }>();
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const isDark = scheme === "dark";
+    // Pastel icon-chip backgrounds adapt by scheme while keeping the same hue family
+    // (exact dark equivalents established elsewhere in the app for these named hues).
+    const chipBlueBg = isDark ? "#1A2A42" : "#EFF6FF";
+    const chipBlueBorder = isDark ? "#2C4870" : "#BFDBFE";
+    const chipAmberBg = isDark ? "#3A2E12" : "#FFFBEB";
+    const chipAmberBorder = isDark ? "#5C4A1E" : "#FDE68A";
+    const chipPurpleBg = isDark ? "#241B3D" : "#F5F3FF";
+    const chipPurpleBorder = isDark ? "#3B2E63" : "#DDD6FE";
+    const chipTealBg = isDark ? "#123330" : "#ECFDF9";
+    const chipTealBorder = isDark ? "#1F5B54" : "#99E6DA";
+    const chipIndigoBg = isDark ? "#1E2340" : "#EEF2FF";
+    const chipIndigoBorder = isDark ? "#333B6B" : "#C7D2FE";
+    const deleteChipBg = isDark ? "#3B1E1E" : "#FEF2F2";
+    const deleteChipBorder = isDark ? "#5C2E2E" : "#FECACA";
+    // Blue border/text used for the "highlighted" recurrence panels and active blue
+    // labels below — extrapolated dark equivalents (no exact dark token exists for
+    // these particular light blues elsewhere in the app).
+    const blueBorder = isDark ? "#2C4870" : "#BFDBFE";
+    const blueTextActive = isDark ? "#93C5FD" : "#1D4ED8";
+    const mutedBlueText = isDark ? "#6B93C4" : "#93C5FD";
+    const primaryDisabledBg = isDark ? "#2A3A52" : "#93C5FD";
+    // Per-weekday accent colors: dark mode swaps in the muted background variant
+    const DAY_COLORS = isDark ? DAY_COLORS_DARK : DAY_COLORS_LIGHT;
     // "new" (or no param at all) means creating a schedule rather than editing one.
     const scheduleId = rawScheduleId && rawScheduleId !== "new" ? rawScheduleId : null;
     const isNew = !scheduleId;
@@ -840,28 +884,28 @@ const EditScheduleScreen = () => {
     // ── Sub-renderers ─────────────────────────────────────────────────────────
 
     const renderDailyOptions = () => (
-        <View style={s.expandBox}>
-            <Text style={s.expandBoxTitle}>Daily Options</Text>
-            <Text style={s.fieldLabel}>Same time every day?</Text>
+        <View style={[s.expandBox, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]}>
+            <Text style={[s.expandBoxTitle, { color: blueTextActive }]}>Daily Options</Text>
+            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Same time every day?</Text>
             <View style={s.boolRow}>
-                <TouchableOpacity style={[s.boolBtn, d.dailySameTime === true && s.boolBtnActive]}
+                <TouchableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.dailySameTime === true && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                     onPress={() => upd({ dailySameTime: true })}>
-                    <Text style={[s.boolBtnText, d.dailySameTime === true && s.boolBtnTextActive]}>Yes</Text>
+                    <Text style={[s.boolBtnText, { color: colors.textMuted }, d.dailySameTime === true && { color: colors.brand }]}>Yes</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.boolBtn, d.dailySameTime === false && s.boolBtnActive]}
+                <TouchableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.dailySameTime === false && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                     onPress={() => upd({ dailySameTime: false })}>
-                    <Text style={[s.boolBtnText, d.dailySameTime === false && s.boolBtnTextActive]}>No, varies</Text>
+                    <Text style={[s.boolBtnText, { color: colors.textMuted }, d.dailySameTime === false && { color: colors.brand }]}>No, varies</Text>
                 </TouchableOpacity>
             </View>
 
             {d.dailySameTime === true && (
                 <View style={{ marginTop: 12 }}>
-                    <Text style={s.fieldLabel}>Time</Text>
-                    <TouchableOpacity style={s.dateFieldRow}
+                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
+                    <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => upd({ showDailySameTimePicker: !d.showDailySameTimePicker })}>
-                        <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
-                        <Text style={s.dateFieldText}>{d.dailySharedTime}</Text>
-                        <Feather name={d.showDailySameTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
+                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{d.dailySharedTime}</Text>
+                        <Feather name={d.showDailySameTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     {d.showDailySameTimePicker && (
                         <NativeTimePicker value={d.dailySharedTime} onChange={t => upd({ dailySharedTime: t })}
@@ -875,7 +919,7 @@ const EditScheduleScreen = () => {
                     {d.dailyRows.map(row => (
                         <View key={row.id}>
                             <Text style={s.dayRowLabel}>{DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label}</Text>
-                            <TouchableOpacity style={s.dateFieldRow}
+                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                 onPress={() => setD(prev => ({
                                     ...prev,
                                     dailyRows: prev.dailyRows.map(r =>
@@ -884,9 +928,9 @@ const EditScheduleScreen = () => {
                                             : { ...r, showTimePicker: false }
                                     ),
                                 }))}>
-                                <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
-                                <Text style={s.dateFieldText}>{row.time}</Text>
-                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
+                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{row.time}</Text>
+                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
                             {row.showTimePicker && (
                                 <NativeTimePicker value={row.time}
@@ -907,25 +951,25 @@ const EditScheduleScreen = () => {
     );
 
     const renderWeekdayRows = (isBiweekly = false) => (
-        <View style={s.expandBox}>
-            <Text style={s.expandBoxTitle}>{isBiweekly ? "Bi-Weekly Options" : "Weekly Options"}</Text>
+        <View style={[s.expandBox, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]}>
+            <Text style={[s.expandBoxTitle, { color: blueTextActive }]}>{isBiweekly ? "Bi-Weekly Options" : "Weekly Options"}</Text>
             {d.weekdayRows.map(row => (
-                <View key={row.id} style={[s.dayCard, row.day !== null && { borderLeftColor: DAY_COLORS[row.day].fg }]}>
-                    {isBiweekly && <Text style={s.fieldLabel}>Day of Week</Text>}
+                <View key={row.id} style={[s.dayCard, { backgroundColor: colors.surface, borderColor: colors.border }, row.day !== null && { borderLeftColor: DAY_COLORS[row.day].fg }]}>
+                    {isBiweekly && <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Day of Week</Text>}
                     <View style={s.dayRow}>
-                        <TouchableOpacity style={s.dayPickerTrigger}
+                        <TouchableOpacity style={[s.dayPickerTrigger, { backgroundColor: colors.surface, borderColor: colors.border }]}
                             onPress={() => updWeekdayRow(row.id, { showDayPicker: !row.showDayPicker, showTimePicker: false, showStartDatePicker: false })}>
                             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                                <View style={[s.dayBadge, { backgroundColor: row.day !== null ? DAY_COLORS[row.day].bg : "#F3F4F6" }]}>
+                                <View style={[s.dayBadge, { backgroundColor: row.day !== null ? DAY_COLORS[row.day].bg : colors.backgroundAlt }]}>
                                     {row.day !== null
                                         ? <Text style={[s.dayBadgeText, { color: DAY_COLORS[row.day].fg }]}>{DAYS_OF_WEEK[row.day].short.slice(0, 2)}</Text>
-                                        : <Feather name="calendar" size={12} color="#9CA3AF" />}
+                                        : <Feather name="calendar" size={12} color={colors.textFaint} />}
                                 </View>
-                                <Text style={row.day !== null ? s.dayPickerText : s.dayPickerPlaceholder}>
+                                <Text style={row.day !== null ? [s.dayPickerText, { color: colors.textSecondary }] : [s.dayPickerPlaceholder, { color: colors.textFaint }]}>
                                     {row.day !== null ? DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label : "Select day"}
                                 </Text>
                             </View>
-                            <Feather name={row.showDayPicker ? "chevron-up" : "chevron-down"} size={14} color="#9CA3AF" />
+                            <Feather name={row.showDayPicker ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} />
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => removeWeekdayRow(row.id)} style={{ marginLeft: 8 }}>
                             <Feather name="trash-2" size={16} color="#F87171" />
@@ -942,12 +986,12 @@ const EditScheduleScreen = () => {
 
                     {row.day !== null && (
                         <View style={{ marginTop: 8 }}>
-                            <Text style={s.fieldLabel}>Time</Text>
-                            <TouchableOpacity style={s.dateFieldRow}
+                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
+                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                 onPress={() => updWeekdayRow(row.id, { showTimePicker: !row.showTimePicker, showDayPicker: false, showStartDatePicker: false })}>
-                                <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
-                                <Text style={s.dateFieldText}>{row.time}</Text>
-                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
+                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{row.time}</Text>
+                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
                         </View>
                     )}
@@ -960,14 +1004,14 @@ const EditScheduleScreen = () => {
 
                     {isBiweekly && row.day !== null && (
                         <View style={{ marginTop: 8 }}>
-                            <Text style={s.fieldLabel}>Start Date</Text>
-                            <TouchableOpacity style={s.dateFieldRow}
+                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Start Date</Text>
+                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                 onPress={() => updWeekdayRow(row.id, { showStartDatePicker: !row.showStartDatePicker, showTimePicker: false, showDayPicker: false })}>
-                                <Feather name="calendar" size={14} color="#4A90E2" style={{ marginRight: 6 }} />
-                                <Text style={s.dateFieldText}>
+                                <Feather name="calendar" size={14} color={colors.brand} style={{ marginRight: 6 }} />
+                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>
                                     {row.startDate ? DateTime.fromISO(row.startDate).toLocaleString(DateTime.DATE_MED) : "Set start date"}
                                 </Text>
-                                <Feather name={row.showStartDatePicker ? "chevron-up" : "chevron-down"} size={14} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                <Feather name={row.showStartDatePicker ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
                             {row.showStartDatePicker && (
                                 <InlineCalendar value={row.startDate || DateTime.now().toISODate()!}
@@ -979,19 +1023,19 @@ const EditScheduleScreen = () => {
                 </View>
             ))}
             <TouchableOpacity style={s.addRowBtn} onPress={addWeekdayRow}>
-                <Feather name="plus-circle" size={16} color="#4A90E2" style={{ marginRight: 6 }} />
-                <Text style={s.addRowBtnText}>Add day</Text>
+                <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
+                <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add day</Text>
             </TouchableOpacity>
         </View>
     );
 
     const renderMonthlyDateEntry = (entry: MonthlyDateEntry) => (
-        <View key={entry.id} style={s.ordinalCard}>
+        <View key={entry.id} style={[s.ordinalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {!entry.expanded ? (
                 <TouchableOpacity style={s.collapsedRuleRow} onPress={() => updMonthlyDate(entry.id, { expanded: true })}>
-                    <Text style={s.collapsedRuleText}>{entry.date}{ordSfx(entry.date)} of month · {entry.time}</Text>
+                    <Text style={[s.collapsedRuleText, { color: blueTextActive }]}>{entry.date}{ordSfx(entry.date)} of month · {entry.time}</Text>
                     <View style={s.collapsedRuleActions}>
-                        <Feather name="edit-2" size={14} color="#4A90E2" style={{ marginRight: 10 }} />
+                        <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
                         <TouchableOpacity onPress={() => removeMonthlyDate(entry.id)}>
                             <Feather name="trash-2" size={14} color="#F87171" />
                         </TouchableOpacity>
@@ -1000,27 +1044,27 @@ const EditScheduleScreen = () => {
             ) : (
                 <View>
                     <View style={s.ordinalRow}>
-                        <Text style={s.fieldLabel}>Select date of month</Text>
+                        <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Select date of month</Text>
                         <TouchableOpacity onPress={() => removeMonthlyDate(entry.id)}>
                             <Feather name="trash-2" size={16} color="#F87171" />
                         </TouchableOpacity>
                     </View>
                     <View style={s.dateGrid}>
                         {Array.from({ length: 31 }, (_, i) => i + 1).map(n => (
-                            <TouchableOpacity key={n} style={[s.dateBox, entry.date === n && s.dateBoxActive]}
+                            <TouchableOpacity key={n} style={[s.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }, entry.date === n && { backgroundColor: colors.brand, borderColor: colors.brand }]}
                                 onPress={() => updMonthlyDate(entry.id, { date: n })}>
-                                <Text style={[s.dateBoxText, entry.date === n && s.dateBoxTextActive]}>{n}</Text>
+                                <Text style={[s.dateBoxText, { color: colors.textSecondary }, entry.date === n && s.dateBoxTextActive]}>{n}</Text>
                             </TouchableOpacity>
                         ))}
                     </View>
-                    <Text style={s.fieldLabel}>Time</Text>
-                    <TouchableOpacity style={s.dateFieldRow}
+                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
+                    <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => updMonthlyDate(entry.id, { showTimePicker: !entry.showTimePicker })}>
-                        <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
-                        <Text style={s.dateFieldText}>{entry.time}</Text>
-                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
+                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.time}</Text>
+                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10 }]}
+                    <TouchableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10, backgroundColor: colors.brand }]}
                         onPress={() => updMonthlyDate(entry.id, { expanded: false, showTimePicker: false })}>
                         <Text style={s.doneBtnText}>Done</Text>
                     </TouchableOpacity>
@@ -1035,14 +1079,14 @@ const EditScheduleScreen = () => {
     );
 
     const renderOrdinalEntry = (entry: OrdinalEntry) => (
-        <View key={entry.id} style={s.ordinalCard}>
+        <View key={entry.id} style={[s.ordinalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {!entry.expanded ? (
                 <TouchableOpacity style={s.collapsedRuleRow} onPress={() => updOrdinal(entry.id, { expanded: true })}>
-                    <Text style={s.collapsedRuleText}>
+                    <Text style={[s.collapsedRuleText, { color: blueTextActive }]}>
                         {entry.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label} · {entry.time}
                     </Text>
                     <View style={s.collapsedRuleActions}>
-                        <Feather name="edit-2" size={14} color="#4A90E2" style={{ marginRight: 10 }} />
+                        <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
                         <TouchableOpacity onPress={() => removeOrdinal(entry.id)}>
                             <Feather name="trash-2" size={14} color="#F87171" />
                         </TouchableOpacity>
@@ -1051,29 +1095,29 @@ const EditScheduleScreen = () => {
             ) : (
                 <View>
                     <View style={s.ordinalRow}>
-                        <Text style={s.fieldLabel}>Occurrence &amp; day</Text>
+                        <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Occurrence &amp; day</Text>
                         <TouchableOpacity onPress={() => removeOrdinal(entry.id)}>
                             <Feather name="trash-2" size={16} color="#F87171" />
                         </TouchableOpacity>
                     </View>
-                    <TouchableOpacity style={s.dateFieldRow}
+                    <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => updOrdinal(entry.id, { showOccurrencePicker: true, showDayOfWeekPicker: false, showTimePicker: false })}>
-                        <Text style={s.dateFieldText}>{entry.occurrence}</Text>
-                        <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.occurrence}</Text>
+                        <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={s.dateFieldRow}
+                    <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => updOrdinal(entry.id, { showDayOfWeekPicker: true, showOccurrencePicker: false, showTimePicker: false })}>
-                        <Text style={s.dateFieldText}>{DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label}</Text>
-                        <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label}</Text>
+                        <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
-                    <Text style={s.fieldLabel}>Time</Text>
-                    <TouchableOpacity style={s.dateFieldRow}
+                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
+                    <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => updOrdinal(entry.id, { showTimePicker: !entry.showTimePicker, showOccurrencePicker: false, showDayOfWeekPicker: false })}>
-                        <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
-                        <Text style={s.dateFieldText}>{entry.time}</Text>
-                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
+                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.time}</Text>
+                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10 }]}
+                    <TouchableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10, backgroundColor: colors.brand }]}
                         onPress={() => updOrdinal(entry.id, { expanded: false, showTimePicker: false })}>
                         <Text style={s.doneBtnText}>Done</Text>
                     </TouchableOpacity>
@@ -1102,34 +1146,34 @@ const EditScheduleScreen = () => {
     );
 
     const renderMonthlyOptions = () => (
-        <View style={s.expandBox}>
-            <Text style={s.expandBoxTitle}>Monthly Options</Text>
-            <Text style={s.fieldLabel}>Recur by</Text>
+        <View style={[s.expandBox, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]}>
+            <Text style={[s.expandBoxTitle, { color: blueTextActive }]}>Monthly Options</Text>
+            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Recur by</Text>
             <View style={s.monthlyModeList}>
-                <TouchableOpacity style={[s.monthlyModeCard, d.monthlyMode === "date" && s.monthlyModeCardActive]}
+                <TouchableOpacity style={[s.monthlyModeCard, { backgroundColor: colors.surface, borderColor: colors.border }, d.monthlyMode === "date" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                     onPress={() => upd({ monthlyMode: "date" })}>
-                    <View style={[s.monthlyModeRadio, d.monthlyMode === "date" && s.monthlyModeRadioActive]}>
-                        {d.monthlyMode === "date" && <View style={s.monthlyModeRadioDot} />}
+                    <View style={[s.monthlyModeRadio, { borderColor: colors.borderStrong }, d.monthlyMode === "date" && { borderColor: colors.brand }]}>
+                        {d.monthlyMode === "date" && <View style={[s.monthlyModeRadioDot, { backgroundColor: colors.brand }]} />}
                     </View>
-                    <View style={[s.monthlyModeIcon, d.monthlyMode === "date" && s.monthlyModeIconActive]}>
-                        <Feather name="hash" size={16} color={d.monthlyMode === "date" ? "#fff" : "#9CA3AF"} />
+                    <View style={[s.monthlyModeIcon, { backgroundColor: colors.backgroundAlt }, d.monthlyMode === "date" && { backgroundColor: colors.brand }]}>
+                        <Feather name="hash" size={16} color={d.monthlyMode === "date" ? "#fff" : colors.textFaint} />
                     </View>
                     <View style={s.monthlyModeCopy}>
-                        <Text style={[s.monthlyModeTitle, d.monthlyMode === "date" && s.monthlyModeTitleActive]}>Same date every month</Text>
-                        <Text style={s.monthlyModeExample}>e.g. the 15th</Text>
+                        <Text style={[s.monthlyModeTitle, { color: colors.textSecondary }, d.monthlyMode === "date" && { color: blueTextActive }]}>Same date every month</Text>
+                        <Text style={[s.monthlyModeExample, { color: colors.textFaint }]}>e.g. the 15th</Text>
                     </View>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.monthlyModeCard, d.monthlyMode === "ordinal" && s.monthlyModeCardActive]}
+                <TouchableOpacity style={[s.monthlyModeCard, { backgroundColor: colors.surface, borderColor: colors.border }, d.monthlyMode === "ordinal" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                     onPress={() => upd({ monthlyMode: "ordinal" })}>
-                    <View style={[s.monthlyModeRadio, d.monthlyMode === "ordinal" && s.monthlyModeRadioActive]}>
-                        {d.monthlyMode === "ordinal" && <View style={s.monthlyModeRadioDot} />}
+                    <View style={[s.monthlyModeRadio, { borderColor: colors.borderStrong }, d.monthlyMode === "ordinal" && { borderColor: colors.brand }]}>
+                        {d.monthlyMode === "ordinal" && <View style={[s.monthlyModeRadioDot, { backgroundColor: colors.brand }]} />}
                     </View>
-                    <View style={[s.monthlyModeIcon, d.monthlyMode === "ordinal" && s.monthlyModeIconActive]}>
-                        <Feather name="repeat" size={16} color={d.monthlyMode === "ordinal" ? "#fff" : "#9CA3AF"} />
+                    <View style={[s.monthlyModeIcon, { backgroundColor: colors.backgroundAlt }, d.monthlyMode === "ordinal" && { backgroundColor: colors.brand }]}>
+                        <Feather name="repeat" size={16} color={d.monthlyMode === "ordinal" ? "#fff" : colors.textFaint} />
                     </View>
                     <View style={s.monthlyModeCopy}>
-                        <Text style={[s.monthlyModeTitle, d.monthlyMode === "ordinal" && s.monthlyModeTitleActive]}>Same weekday every month</Text>
-                        <Text style={s.monthlyModeExample}>e.g. the 2nd Tuesday</Text>
+                        <Text style={[s.monthlyModeTitle, { color: colors.textSecondary }, d.monthlyMode === "ordinal" && { color: blueTextActive }]}>Same weekday every month</Text>
+                        <Text style={[s.monthlyModeExample, { color: colors.textFaint }]}>e.g. the 2nd Tuesday</Text>
                     </View>
                 </TouchableOpacity>
             </View>
@@ -1137,8 +1181,8 @@ const EditScheduleScreen = () => {
                 <View style={{ marginTop: 12, gap: 8 }}>
                     {d.monthlyDates.map(renderMonthlyDateEntry)}
                     <TouchableOpacity style={s.addRowBtn} onPress={addMonthlyDate}>
-                        <Feather name="plus-circle" size={16} color="#4A90E2" style={{ marginRight: 6 }} />
-                        <Text style={s.addRowBtnText}>Add date</Text>
+                        <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
+                        <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add date</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -1146,8 +1190,8 @@ const EditScheduleScreen = () => {
                 <View style={{ marginTop: 12, gap: 8 }}>
                     {d.ordinalEntries.map(renderOrdinalEntry)}
                     <TouchableOpacity style={s.addRowBtn} onPress={addOrdinalEntry}>
-                        <Feather name="plus-circle" size={16} color="#4A90E2" style={{ marginRight: 6 }} />
-                        <Text style={s.addRowBtnText}>Add pattern</Text>
+                        <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
+                        <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add pattern</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -1155,21 +1199,21 @@ const EditScheduleScreen = () => {
     );
 
     const renderCustomSubBuilder = () => (
-        <View style={[s.ordinalCard, { marginTop: 8 }]}>
-            <Text style={s.fieldLabel}>Rule type</Text>
-            <TouchableOpacity style={s.dateFieldRow}
+        <View style={[s.ordinalCard, { marginTop: 8, backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Rule type</Text>
+            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 onPress={() => upd({ customShowFreqPicker: !d.customShowFreqPicker })}>
-                <Text style={d.customFreq ? s.dateFieldText : s.dayPickerPlaceholder}>
+                <Text style={d.customFreq ? [s.dateFieldText, { color: colors.textSecondary }] : [s.dayPickerPlaceholder, { color: colors.textFaint }]}>
                     {d.customFreq ? FREQ_LABELS[d.customFreq] : "Select frequency"}
                 </Text>
-                <Feather name={d.customShowFreqPicker ? "chevron-up" : "chevron-down"} size={14} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                <Feather name={d.customShowFreqPicker ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} style={{ marginLeft: "auto" }} />
             </TouchableOpacity>
             {d.customShowFreqPicker && (
-                <View style={s.inlineDayPicker}>
+                <View style={[s.inlineDayPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                     {(["daily", "weekly", "biweekly", "monthly"] as Frequency[]).map(f => (
-                        <TouchableOpacity key={f} style={[s.dayOption, d.customFreq === f && s.dayOptionActive]}
+                        <TouchableOpacity key={f} style={[s.dayOption, { borderBottomColor: colors.border }, d.customFreq === f && { backgroundColor: colors.brandSoft }]}
                             onPress={() => { animate(); setD(prev => ({ ...prev, customFreq: f, customShowFreqPicker: false, weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null })); }}>
-                            <Text style={[s.dayOptionText, d.customFreq === f && s.dayOptionTextActive]}>{FREQ_LABELS[f]}</Text>
+                            <Text style={[s.dayOptionText, { color: colors.textSecondary }, d.customFreq === f && { color: colors.brand }]}>{FREQ_LABELS[f]}</Text>
                         </TouchableOpacity>
                     ))}
                 </View>
@@ -1181,9 +1225,9 @@ const EditScheduleScreen = () => {
             <View style={[s.boolRow, { marginTop: 14 }]}>
                 <TouchableOpacity style={s.skipBtn}
                     onPress={() => { animate(); upd({ customBuilding: false, customFreq: null, builtRoutines: d.builtRoutines.map(r => ({ ...r, editing: false })) }); }}>
-                    <Text style={s.skipBtnText}>Cancel</Text>
+                    <Text style={[s.skipBtnText, { color: colors.textFaint }]}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.primaryBtn}
+                <TouchableOpacity style={[s.primaryBtn, { backgroundColor: colors.brand }]}
                     onPress={() => editingRoutineId ? saveEditedRoutine(editingRoutineId) : finishCustomRoutine()}>
                     <Text style={s.primaryBtnText}>{editingRoutineId ? "Save changes" : "Add rule"}</Text>
                 </TouchableOpacity>
@@ -1192,16 +1236,16 @@ const EditScheduleScreen = () => {
     );
 
     const renderCustomOptions = () => (
-        <View style={s.expandBox}>
-            <Text style={s.expandBoxTitle}>Multiple Rules</Text>
+        <View style={[s.expandBox, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]}>
+            <Text style={[s.expandBoxTitle, { color: blueTextActive }]}>Multiple Rules</Text>
             {d.builtRoutines.map(r =>
                 r.editing ? (
                     <View key={r.id}>{renderCustomSubBuilder()}</View>
                 ) : (
-                    <TouchableOpacity key={r.id} style={s.routineCard} onPress={() => startEditingRoutine(r.id)}>
+                    <TouchableOpacity key={r.id} style={[s.routineCard, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]} onPress={() => startEditingRoutine(r.id)}>
                         <View style={{ flex: 1 }}>
-                            <Text style={s.routineCardLabel}>{r.label}</Text>
-                            <Text style={s.routineCardSub}>Tap to edit</Text>
+                            <Text style={[s.routineCardLabel, { color: blueTextActive }]}>{r.label}</Text>
+                            <Text style={[s.routineCardSub, { color: mutedBlueText }]}>Tap to edit</Text>
                         </View>
                         <TouchableOpacity onPress={() => removeBuiltRoutine(r.id)}>
                             <Feather name="x-circle" size={18} color="#F87171" />
@@ -1211,8 +1255,8 @@ const EditScheduleScreen = () => {
             )}
             {d.builtRoutines.length < 5 && !d.customBuilding && (
                 <TouchableOpacity style={s.addRowBtn} onPress={() => upd({ customBuilding: true, customFreq: null })}>
-                    <Feather name="plus-circle" size={16} color="#4A90E2" style={{ marginRight: 6 }} />
-                    <Text style={s.addRowBtnText}>Add rule</Text>
+                    <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
+                    <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add rule</Text>
                 </TouchableOpacity>
             )}
             {d.customBuilding && !editingRoutineId && renderCustomSubBuilder()}
@@ -1223,7 +1267,7 @@ const EditScheduleScreen = () => {
 
     if (isLoading || !group) {
         return (
-            <SafeAreaView style={s.safe}>
+            <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
                 <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
                     <LoadingAnimation />
                 </View>
@@ -1234,13 +1278,13 @@ const EditScheduleScreen = () => {
     // ── Render ────────────────────────────────────────────────────────────────
 
     return (
-        <SafeAreaView style={s.safe}>
+        <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
             <View style={s.screen}>
-                <View style={s.screenHeader}>
+                <View style={[s.screenHeader, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                     <TouchableOpacity onPress={() => router.back()} style={s.iconBtn}>
-                        <Feather name="arrow-left" size={24} color="#6B7280" />
+                        <Feather name="arrow-left" size={24} color={colors.textMuted} />
                     </TouchableOpacity>
-                    <Text style={s.headerTitle}>{isNew ? "New Schedule" : "Edit Schedule"}</Text>
+                    <Text style={[s.headerTitle, { color: colors.textPrimary }]}>{isNew ? "New Schedule" : "Edit Schedule"}</Text>
                     <View style={{ width: 36 }} />
                 </View>
 
@@ -1250,7 +1294,7 @@ const EditScheduleScreen = () => {
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
                 >
-                    <Text style={s.screenSub}>
+                    <Text style={[s.screenSub, { color: colors.textFaint }]}>
                         {isNew
                             ? "Give this schedule a name (e.g. \"Monthly Camping\") and set its recurrence — it shares this group's members and chat."
                             : "Changes will delete future meetups and regenerate them from the updated schedule."}
@@ -1260,46 +1304,46 @@ const EditScheduleScreen = () => {
                         so it's a standalone field rather than part of the form below. */}
                     <View style={s.tzSection}>
                         <View style={s.tzRow}>
-                            <Text style={[s.fieldLabel, s.fieldLabelFirst, { marginBottom: 0 }]}>Timezone</Text>
-                            <TouchableOpacity style={s.tzPill} onPress={() => upd({
+                            <Text style={[s.fieldLabel, s.fieldLabelFirst, { marginBottom: 0, color: colors.textFaint }]}>Timezone</Text>
+                            <TouchableOpacity style={[s.tzPill, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]} onPress={() => upd({
                                 showTZPicker: !d.showTZPicker,
                                 showFreqPicker: false, showStartDatePicker: false, showLeadTimePicker: false, showDeadlineTimePicker: false,
                             })}>
-                                <Feather name="globe" size={13} color="#4A90E2" />
-                                <Text style={s.tzPillText}>{TZ_ABBR[d.timezone] ?? d.timezone}</Text>
-                                <Feather name={d.showTZPicker ? "chevron-up" : "chevron-down"} size={13} color="#4A90E2" />
+                                <Feather name="globe" size={13} color={colors.brand} />
+                                <Text style={[s.tzPillText, { color: colors.brand }]}>{TZ_ABBR[d.timezone] ?? d.timezone}</Text>
+                                <Feather name={d.showTZPicker ? "chevron-up" : "chevron-down"} size={13} color={colors.brand} />
                             </TouchableOpacity>
                         </View>
                     </View>
 
                     {/* Name */}
-                    <View style={s.sectionCard}>
+                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, s.sectionIconChipIndigo]}>
+                            <View style={[s.sectionIconChip, { backgroundColor: chipIndigoBg, borderColor: chipIndigoBorder }]}>
                                 <Feather name="tag" size={16} color="#6366F1" />
                             </View>
-                            <Text style={s.sectionTitle}>Name</Text>
+                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Name</Text>
                         </View>
 
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Schedule name</Text>
-                        <View style={s.dateFieldRow}>
-                            <Feather name="tag" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>Schedule name</Text>
+                        <View style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                            <Feather name="tag" size={16} color={colors.brand} style={{ marginRight: 8 }} />
                             <TextInput
-                                style={s.textInputField}
+                                style={[s.textInputField, { color: colors.textSecondary }]}
                                 value={d.name}
                                 onChangeText={t => setD(prev => ({ ...prev, name: t }))}
                                 placeholder="e.g. Sunday Dinner"
-                                placeholderTextColor="#9CA3AF"
+                                placeholderTextColor={colors.placeholder}
                                 maxLength={60}
                             />
                         </View>
 
-                        <Text style={[s.fieldLabel, { marginTop: 35 }]}>Description (optional)</Text>
-                        <View style={[s.inputRow, s.descriptionInputRow, { marginBottom: 0 }]}>
+                        <Text style={[s.fieldLabel, { marginTop: 35, color: colors.textFaint }]}>Description (optional)</Text>
+                        <View style={[s.inputRow, s.descriptionInputRow, { marginBottom: 0, backgroundColor: colors.surface, borderColor: colors.border }]}>
                             <TextInput
-                                style={[s.inlineInput, s.descriptionInput]}
+                                style={[s.inlineInput, s.descriptionInput, { color: colors.textSecondary }]}
                                 placeholder="Add any extra details for this series..."
-                                placeholderTextColor="#9CA3AF"
+                                placeholderTextColor={colors.placeholder}
                                 value={d.description}
                                 onChangeText={t => setD(prev => ({ ...prev, description: t }))}
                                 multiline
@@ -1309,15 +1353,15 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* Where */}
-                    <View style={s.sectionCard}>
+                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, s.sectionIconChipBlue]}>
-                                <Feather name="map-pin" size={16} color="#4A90E2" />
+                            <View style={[s.sectionIconChip, { backgroundColor: chipBlueBg, borderColor: chipBlueBorder }]}>
+                                <Feather name="map-pin" size={16} color={colors.brand} />
                             </View>
-                            <Text style={s.sectionTitle}>Where</Text>
+                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Where</Text>
                         </View>
 
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Location or link</Text>
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>Location or link</Text>
                         <LocationField
                             variant="wizard"
                             placeholder="e.g. 123 Main St or zoom.us/j/..."
@@ -1327,29 +1371,29 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* When */}
-                    <View style={s.sectionCard}>
+                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, s.sectionIconChipAmber]}>
+                            <View style={[s.sectionIconChip, { backgroundColor: chipAmberBg, borderColor: chipAmberBorder }]}>
                                 <Feather name="calendar" size={16} color="#F59E0B" />
                             </View>
-                            <Text style={s.sectionTitle}>When</Text>
+                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>When</Text>
                         </View>
 
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>How often?</Text>
-                        <TouchableOpacity style={s.dateFieldRow}
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>How often?</Text>
+                        <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                             onPress={() => upd({ showFreqPicker: !d.showFreqPicker, showStartDatePicker: false, showTZPicker: false })}>
-                            <Feather name="repeat" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                            <Text style={d.frequency ? s.dateFieldText : s.dayPickerPlaceholder}>
+                            <Feather name="repeat" size={16} color={colors.brand} style={{ marginRight: 8 }} />
+                            <Text style={d.frequency ? [s.dateFieldText, { color: colors.textSecondary }] : [s.dayPickerPlaceholder, { color: colors.textFaint }]}>
                                 {d.frequency ? FREQ_LABELS[d.frequency] : "Select frequency"}
                             </Text>
-                            <Feather name={d.showFreqPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                            <Feather name={d.showFreqPicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                         </TouchableOpacity>
                         {d.showFreqPicker && (
-                            <View style={s.inlineDayPicker}>
+                            <View style={[s.inlineDayPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                                 {(["daily", "weekly", "biweekly", "monthly", "custom"] as Frequency[]).map(f => (
-                                    <TouchableOpacity key={f} style={[s.dayOption, d.frequency === f && s.dayOptionActive]}
+                                    <TouchableOpacity key={f} style={[s.dayOption, { borderBottomColor: colors.border }, d.frequency === f && { backgroundColor: colors.brandSoft }]}
                                         onPress={() => selectFreq(f)}>
-                                        <Text style={[s.dayOptionText, d.frequency === f && s.dayOptionTextActive]}>{FREQ_LABELS[f]}</Text>
+                                        <Text style={[s.dayOptionText, { color: colors.textSecondary }, d.frequency === f && { color: colors.brand }]}>{FREQ_LABELS[f]}</Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
@@ -1364,12 +1408,12 @@ const EditScheduleScreen = () => {
                         {/* Start Date — hidden for biweekly, where each day already asks for its own start date */}
                         {d.frequency !== "biweekly" && (
                             <>
-                                <Text style={s.fieldLabel}>Start date</Text>
-                                <TouchableOpacity style={s.dateFieldRow}
+                                <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Start date</Text>
+                                <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                     onPress={() => upd({ showStartDatePicker: !d.showStartDatePicker, showFreqPicker: false, showTZPicker: false })}>
-                                    <Feather name="calendar" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                                    <Text style={s.dateFieldText}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
-                                    <Feather name={d.showStartDatePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                    <Feather name="calendar" size={16} color={colors.brand} style={{ marginRight: 8 }} />
+                                    <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
+                                    <Feather name={d.showStartDatePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                                 </TouchableOpacity>
                                 {d.showStartDatePicker && (
                                     <InlineCalendar value={d.startDate}
@@ -1381,23 +1425,23 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* RSVP Rules */}
-                    <View style={s.sectionCard}>
+                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, s.sectionIconChipViolet]}>
+                            <View style={[s.sectionIconChip, { backgroundColor: chipPurpleBg, borderColor: chipPurpleBorder }]}>
                                 <Feather name="bell" size={16} color="#7C3AED" />
                             </View>
-                            <Text style={s.sectionTitle}>RSVP Rules</Text>
+                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>RSVP Rules</Text>
                         </View>
 
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Limit when people can RSVP?</Text>
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>Limit when people can RSVP?</Text>
                         <View style={s.boolRow}>
-                            <TouchableOpacity style={[s.boolBtn, !d.rsvpRestricted && s.boolBtnActive]}
+                            <TouchableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, !d.rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => upd({ rsvpRestricted: false })}>
-                                <Text style={[s.boolBtnText, !d.rsvpRestricted && s.boolBtnTextActive]}>Allow anytime</Text>
+                                <Text style={[s.boolBtnText, { color: colors.textMuted }, !d.rsvpRestricted && { color: colors.brand }]}>Allow anytime</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={[s.boolBtn, d.rsvpRestricted && s.boolBtnActive]}
+                            <TouchableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => upd({ rsvpRestricted: true })}>
-                                <Text style={[s.boolBtnText, d.rsvpRestricted && s.boolBtnTextActive]}>Limit RSVPs</Text>
+                                <Text style={[s.boolBtnText, { color: colors.textMuted }, d.rsvpRestricted && { color: colors.brand }]}>Limit RSVPs</Text>
                             </TouchableOpacity>
                         </View>
 
@@ -1406,7 +1450,7 @@ const EditScheduleScreen = () => {
                                 <View>
                                     <View style={s.toggleRow}>
                                         <View style={s.toggleRowLabelWrap}>
-                                            <Text style={s.toggleRowLabel}>Earliest time to RSVP</Text>
+                                            <Text style={[s.toggleRowLabel, { color: colors.textSecondary }]}>Earliest time to RSVP</Text>
                                             <InfoBubble
                                                 title="Earliest time to RSVP"
                                                 description={"This sets the earliest time and day people can respond.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs as soon as the meetup is created."}
@@ -1424,28 +1468,28 @@ const EditScheduleScreen = () => {
                                     </View>
                                     {d.leadEnabled && (
                                         <View style={{ marginTop: 10 }}>
-                                            <View style={s.leadRow}>
-                                                <TouchableOpacity style={s.stepperBtn} onPress={() => {
+                                            <View style={[s.leadRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                                <TouchableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => {
                                                     const leadDays = Math.max(d.deadlineEnabled ? d.deadlineDays : 0, d.leadDays - 1);
                                                     const sameDayViolation = d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
                                                     upd({ leadDays, ...(sameDayViolation ? { leadTime: d.deadlineTime } : {}) });
                                                 }}>
-                                                    <Feather name="minus" size={18} color="#4A90E2" />
+                                                    <Feather name="minus" size={18} color={colors.brand} />
                                                 </TouchableOpacity>
                                                 <View style={s.leadCenter}>
-                                                    <Text style={s.leadVal}>{d.leadDays}</Text>
-                                                    <Text style={s.leadSub}>days before</Text>
+                                                    <Text style={[s.leadVal, { color: colors.textPrimary }]}>{d.leadDays}</Text>
+                                                    <Text style={[s.leadSub, { color: colors.textFaint }]}>days before</Text>
                                                 </View>
-                                                <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ leadDays: d.leadDays + 1 })}>
-                                                    <Feather name="plus" size={18} color="#4A90E2" />
+                                                <TouchableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => upd({ leadDays: d.leadDays + 1 })}>
+                                                    <Feather name="plus" size={18} color={colors.brand} />
                                                 </TouchableOpacity>
                                             </View>
-                                            <Text style={s.fieldLabel}>Time</Text>
-                                            <TouchableOpacity style={s.dateFieldRow}
+                                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
+                                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                                 onPress={() => upd({ showLeadTimePicker: !d.showLeadTimePicker, showDeadlineTimePicker: false, showStartDatePicker: false, showFreqPicker: false, showTZPicker: false })}>
-                                                <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
-                                                <Text style={s.dateFieldText}>{d.leadTime}</Text>
-                                                <Feather name={d.showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                                <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
+                                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{d.leadTime}</Text>
+                                                <Feather name={d.showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                                             </TouchableOpacity>
                                         </View>
                                     )}
@@ -1467,7 +1511,7 @@ const EditScheduleScreen = () => {
                                 <View>
                                     <View style={s.toggleRow}>
                                         <View style={s.toggleRowLabelWrap}>
-                                            <Text style={s.toggleRowLabel}>Latest time to RSVP</Text>
+                                            <Text style={[s.toggleRowLabel, { color: colors.textSecondary }]}>Latest time to RSVP</Text>
                                             <InfoBubble
                                                 title="Latest time to RSVP"
                                                 description={"This sets the cutoff for responding.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs right up until the meetup starts."}
@@ -1485,28 +1529,28 @@ const EditScheduleScreen = () => {
                                     </View>
                                     {d.deadlineEnabled && (
                                         <View style={{ marginTop: 10 }}>
-                                            <View style={s.leadRow}>
-                                                <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ deadlineDays: Math.max(0, d.deadlineDays - 1) })}>
-                                                    <Feather name="minus" size={18} color="#4A90E2" />
+                                            <View style={[s.leadRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                                <TouchableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => upd({ deadlineDays: Math.max(0, d.deadlineDays - 1) })}>
+                                                    <Feather name="minus" size={18} color={colors.brand} />
                                                 </TouchableOpacity>
                                                 <View style={s.leadCenter}>
-                                                    <Text style={s.leadVal}>{d.deadlineDays}</Text>
-                                                    <Text style={s.leadSub}>days before</Text>
+                                                    <Text style={[s.leadVal, { color: colors.textPrimary }]}>{d.deadlineDays}</Text>
+                                                    <Text style={[s.leadSub, { color: colors.textFaint }]}>days before</Text>
                                                 </View>
-                                                <TouchableOpacity style={s.stepperBtn} onPress={() => {
+                                                <TouchableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => {
                                                     const deadlineDays = d.leadEnabled ? Math.min(d.leadDays, d.deadlineDays + 1) : d.deadlineDays + 1;
                                                     const sameDayViolation = d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
                                                     upd({ deadlineDays, ...(sameDayViolation ? { deadlineTime: d.leadTime } : {}) });
                                                 }}>
-                                                    <Feather name="plus" size={18} color="#4A90E2" />
+                                                    <Feather name="plus" size={18} color={colors.brand} />
                                                 </TouchableOpacity>
                                             </View>
-                                            <Text style={s.fieldLabel}>Time</Text>
-                                            <TouchableOpacity style={s.dateFieldRow}
+                                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
+                                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                                 onPress={() => upd({ showDeadlineTimePicker: !d.showDeadlineTimePicker, showLeadTimePicker: false, showStartDatePicker: false, showFreqPicker: false, showTZPicker: false })}>
-                                                <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
-                                                <Text style={s.dateFieldText}>{d.deadlineTime}</Text>
-                                                <Feather name={d.showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                                <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
+                                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{d.deadlineTime}</Text>
+                                                <Feather name={d.showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                                             </TouchableOpacity>
                                         </View>
                                     )}
@@ -1529,45 +1573,45 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* Capacity */}
-                    <View style={[s.sectionCard, { marginBottom: 8 }]}>
+                    <View style={[s.sectionCard, { marginBottom: 8, backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, s.sectionIconChipTeal]}>
+                            <View style={[s.sectionIconChip, { backgroundColor: chipTealBg, borderColor: chipTealBorder }]}>
                                 <Feather name="users" size={16} color="#0D9488" />
                             </View>
-                            <Text style={s.sectionTitle}>Capacity</Text>
+                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Capacity</Text>
                         </View>
 
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Max Attendees</Text>
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>Max Attendees</Text>
                         <View style={s.boolRow}>
                             <TouchableOpacity
-                                style={[s.boolBtn, d.maxAttendeesMode === "unlimited" && s.boolBtnActive]}
+                                style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.maxAttendeesMode === "unlimited" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => upd({ maxAttendeesMode: "unlimited", maxAttendeesInput: "" })}
                             >
-                                <Text style={[s.boolBtnText, d.maxAttendeesMode === "unlimited" && s.boolBtnTextActive]}>Unlimited</Text>
+                                <Text style={[s.boolBtnText, { color: colors.textMuted }, d.maxAttendeesMode === "unlimited" && { color: colors.brand }]}>Unlimited</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={[s.boolBtn, d.maxAttendeesMode === "limited" && s.boolBtnActive]}
+                                style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.maxAttendeesMode === "limited" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => upd({ maxAttendeesMode: "limited" })}
                             >
-                                <Text style={[s.boolBtnText, d.maxAttendeesMode === "limited" && s.boolBtnTextActive]}>Limited</Text>
+                                <Text style={[s.boolBtnText, { color: colors.textMuted }, d.maxAttendeesMode === "limited" && { color: colors.brand }]}>Limited</Text>
                             </TouchableOpacity>
                         </View>
                         {d.maxAttendeesMode === "limited" && (() => {
                             const maxAttendeesError = getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput);
                             return (
                                 <View style={{ marginTop: 10 }}>
-                                    <View style={[s.inputRow, { marginBottom: 0 }, maxAttendeesError && s.inputRowError]}>
-                                        <Feather name="users" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                                    <View style={[s.inputRow, { marginBottom: 0, backgroundColor: colors.surface, borderColor: colors.border }, maxAttendeesError && { borderColor: colors.danger }]}>
+                                        <Feather name="users" size={16} color={colors.textFaint} style={{ marginRight: 8 }} />
                                         <TextInput
-                                            style={s.inlineInput}
+                                            style={[s.inlineInput, { color: colors.textSecondary }]}
                                             placeholder="How many?"
-                                            placeholderTextColor="#C4C9D4"
+                                            placeholderTextColor={colors.placeholder}
                                             keyboardType="number-pad"
                                             value={d.maxAttendeesInput}
                                             onChangeText={v => upd({ maxAttendeesInput: v })}
                                         />
                                     </View>
-                                    {maxAttendeesError && <Text style={s.errorText}>{maxAttendeesError}</Text>}
+                                    {maxAttendeesError && <Text style={[s.errorText, { color: colors.danger }]}>{maxAttendeesError}</Text>}
                                 </View>
                             );
                         })()}
@@ -1592,20 +1636,20 @@ const EditScheduleScreen = () => {
                     />
                 )}
 
-                <View style={s.screenFooter}>
+                <View style={[s.screenFooter, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
                     {!isNew && (
-                        <TouchableOpacity style={s.deleteBtn} onPress={handleDelete} disabled={isDeleting}>
+                        <TouchableOpacity style={[s.deleteBtn, { backgroundColor: deleteChipBg, borderColor: deleteChipBorder }]} onPress={handleDelete} disabled={isDeleting}>
                             {isDeleting
-                                ? <ActivityIndicator color="#EF4444" size="small" />
-                                : <Feather name="trash-2" size={18} color="#EF4444" />
+                                ? <ActivityIndicator color={colors.danger} size="small" />
+                                : <Feather name="trash-2" size={18} color={colors.danger} />
                             }
                         </TouchableOpacity>
                     )}
                     {!hasChanged && isScheduleValid() && (
-                        <Text style={s.noChangeHint}>No changes yet</Text>
+                        <Text style={[s.noChangeHint, { color: colors.textFaint }]}>No changes yet</Text>
                     )}
                     <TouchableOpacity
-                        style={[s.primaryBtn, !saveEnabled && s.primaryBtnDisabled]}
+                        style={[s.primaryBtn, { backgroundColor: colors.brand }, !saveEnabled && { backgroundColor: primaryDisabledBg }]}
                         onPress={handleSave}
                         disabled={!saveEnabled}
                     >

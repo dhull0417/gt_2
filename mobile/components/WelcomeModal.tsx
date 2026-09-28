@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, Modal, StyleSheet, Platform } from 'react
 import React, { useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { useAppearance } from '@/contexts/AppearanceContext';
 
 // Recorded separately per platform (status bar/nav chrome differs) — see assets/videos/README.md
 const WELCOME_VIDEO = Platform.select({
@@ -16,6 +17,8 @@ interface WelcomeModalProps {
 
 // Shown once for hasSeenWelcome === false (see showWelcomeModal in app/_layout.tsx); onClose doesn't navigate.
 export function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
+  const { scheme } = useAppearance();
+  const isDark = scheme === 'dark';
   const player = useVideoPlayer(WELCOME_VIDEO, (p) => {
     p.loop = true;
     p.muted = true;
@@ -33,19 +36,19 @@ export function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
 
   return (
     <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
-      <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
+      <SafeAreaView className="flex-1 bg-white dark:bg-gray-900" edges={['top', 'bottom']}>
         <View className="flex-1 px-8 justify-center">
           <Text className="text-3xl font-black text-center">
-            <Text className="text-gray-900">Welcome to </Text>
-            <Text style={{ color: '#64748B' }}>Group</Text>
+            <Text className="text-gray-900 dark:text-gray-100">Welcome to </Text>
+            <Text style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Group</Text>
             <Text style={{ color: '#4A90E2' }}>That</Text>
-            <Text className="text-gray-900">!</Text>
+            <Text className="text-gray-900 dark:text-gray-100">!</Text>
           </Text>
-          <Text className="text-base text-gray-600 text-center mt-2 mb-6">
+          <Text className="text-base text-gray-600 dark:text-gray-400 text-center mt-2 mb-6">
             Groups are where the planning happens. Here&apos;s how to start yours.
           </Text>
 
-          <View className="rounded-2xl overflow-hidden bg-gray-100 self-center items-center justify-center border-4 border-[#4A90E2]" style={styles.videoWrap}>
+          <View className="rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 self-center items-center justify-center border-4 border-[#4A90E2]" style={styles.videoWrap}>
             <VideoView
               style={StyleSheet.absoluteFill}
               player={player}

@@ -26,6 +26,8 @@ export function OfflineBanner() {
   );
 }
 
+// This banner is intentionally a fixed amber alert color in both themes (like a toast),
+// so it isn't tokenized.
 const styles = StyleSheet.create({
   banner: {
     position: 'absolute',

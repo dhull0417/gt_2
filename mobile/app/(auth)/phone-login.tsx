@@ -3,11 +3,13 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityInd
 import { useSignIn, useSignUp } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 export default function PhoneLogin() {
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
   const router = useRouter();
+  const colors = useThemeColors();
 
   const [phoneNumber, setPhoneNumber] = useState("");
   const [code, setCode] = useState("");
@@ -94,7 +96,7 @@ export default function PhoneLogin() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={{ flex: 1 }}>
@@ -106,16 +108,16 @@ export default function PhoneLogin() {
         >
           <Feather name="arrow-left" size={24} color="#FF7A6E" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Phone Login</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Phone Login</Text>
       </View>
 
       <View style={styles.content}>
         {!pendingVerification ? (
           // === STEP 1: ENTER PHONE ===
           <>
-            <Text style={styles.label}>Enter your phone number</Text>
-            <Text style={styles.subLabel}>We'll send you a code to verify your account.</Text>
-            
+            <Text style={[styles.label, { color: colors.textPrimary }]}>Enter your phone number</Text>
+            <Text style={[styles.subLabel, { color: colors.textMuted }]}>We'll send you a code to verify your account.</Text>
+
             <TextInput
               ref={phoneInputRef}
               autoFocus
@@ -128,13 +130,13 @@ export default function PhoneLogin() {
               }
               placeholder="+1 555 555 5555"
               keyboardType="phone-pad"
-              style={styles.input}
-              placeholderTextColor="#9CA3AF"
+              style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textPrimary }]}
+              placeholderTextColor={colors.placeholder}
             />
 
-            <TouchableOpacity 
-              onPress={onSendCodePress} 
-              style={[styles.button, isLoading && styles.buttonDisabled]}
+            <TouchableOpacity
+              onPress={onSendCodePress}
+              style={[styles.button, { backgroundColor: colors.brand }, isLoading && styles.buttonDisabled]}
               disabled={isLoading}
             >
               {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Send Code</Text>}
@@ -143,30 +145,30 @@ export default function PhoneLogin() {
         ) : (
           // === STEP 2: ENTER CODE ===
           <>
-            <Text style={styles.label}>Enter verification code</Text>
-            <Text style={styles.subLabel}>Sent to {phoneNumber}</Text>
-            
+            <Text style={[styles.label, { color: colors.textPrimary }]}>Enter verification code</Text>
+            <Text style={[styles.subLabel, { color: colors.textMuted }]}>Sent to {phoneNumber}</Text>
+
             <TextInput
               autoFocus
               value={code}
               onChangeText={setCode}
               placeholder="123456"
               keyboardType="number-pad"
-              style={styles.input}
-              placeholderTextColor="#9CA3AF"
+              style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textPrimary }]}
+              placeholderTextColor={colors.placeholder}
               maxLength={6}
             />
 
-            <TouchableOpacity 
-              onPress={onVerifyPress} 
-              style={[styles.button, isLoading && styles.buttonDisabled]}
+            <TouchableOpacity
+              onPress={onVerifyPress}
+              style={[styles.button, { backgroundColor: colors.brand }, isLoading && styles.buttonDisabled]}
               disabled={isLoading}
             >
                {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Verify & Continue</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setPendingVerification(false)} style={styles.secondaryButton}>
-               <Text style={styles.secondaryButtonText}>Change Phone Number</Text>
+               <Text style={[styles.secondaryButtonText, { color: colors.brand }]}>Change Phone Number</Text>
             </TouchableOpacity>
           </>
         )}

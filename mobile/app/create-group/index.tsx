@@ -34,6 +34,8 @@ import LocationField from "../../components/LocationField";
 import LocationSearchModal from "../../components/LocationSearchModal";
 import InfoBubble from "../../components/InfoBubble";
 import { Frequency, DayTime, useApiClient, groupApi } from "../../utils/api";
+import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
+import type { ThemeColors } from "@/constants/theme";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -51,8 +53,10 @@ const DAYS_OF_WEEK = [
     { label: "Saturday",  short: "Sat", value: 6 },
 ];
 
-// One accent color per weekday so day rows/cards are distinguishable at a glance
-const DAY_COLORS: { bg: string; fg: string }[] = [
+// One accent color per weekday so day rows/cards are distinguishable at a glance.
+// Dark-mode pairs swap in muted, low-saturation versions of the same hues (mirroring
+// the pastel icon-chip treatment used elsewhere) so they don't blow out on a dark card.
+const DAY_COLORS_LIGHT: { bg: string; fg: string }[] = [
     { bg: "#FEE2E2", fg: "#DC2626" }, // Sunday
     { bg: "#DBEAFE", fg: "#2563EB" }, // Monday
     { bg: "#EDE9FE", fg: "#7C3AED" }, // Tuesday
@@ -61,6 +65,16 @@ const DAY_COLORS: { bg: string; fg: string }[] = [
     { bg: "#FCE7F3", fg: "#DB2777" }, // Friday
     { bg: "#CFFAFE", fg: "#0891B2" }, // Saturday
 ];
+const DAY_COLORS_DARK: { bg: string; fg: string }[] = [
+    { bg: "#3B1E1E", fg: "#F87171" }, // Sunday (red)
+    { bg: "#1A2A42", fg: "#60A5FA" }, // Monday (blue)
+    { bg: "#241B3D", fg: "#A78BFA" }, // Tuesday (purple)
+    { bg: "#132A1E", fg: "#34D399" }, // Wednesday (green)
+    { bg: "#3A2E12", fg: "#FBBF24" }, // Thursday (amber)
+    { bg: "#3A1F2E", fg: "#F472B6" }, // Friday (pink — no exact spec given, approximated to match the pattern)
+    { bg: "#123338", fg: "#22D3EE" }, // Saturday (cyan)
+];
+const getDayColors = (isDark: boolean) => isDark ? DAY_COLORS_DARK : DAY_COLORS_LIGHT;
 
 const ORDINAL_OCCURRENCES = ["1st", "2nd", "3rd", "4th", "5th", "Last"];
 
@@ -246,6 +260,8 @@ const defaultSchedule = (name = ""): ScheduleData => ({
 const InlineCalendar = ({ value, onChange, minDate, maxDate, bare, large }: {
     value: string; onChange: (iso: string) => void; minDate?: string; maxDate?: string; bare?: boolean; large?: boolean;
 }) => {
+    const colors = useThemeColors();
+    const cal = useMemo(() => makeCalStyles(colors), [colors]);
     const [month, setMonth] = useState(
         value ? DateTime.fromISO(value).startOf("month") : DateTime.now().startOf("month")
     );
@@ -269,7 +285,7 @@ const InlineCalendar = ({ value, onChange, minDate, maxDate, bare, large }: {
         <View style={bare ? cal.containerBare : cal.container}>
             <View style={[cal.nav, large && cal.navLarge]}>
                 <TouchableOpacity onPress={() => setMonth(m => m.minus({ months: 1 }))} style={[cal.navBtn, large && cal.navBtnLarge]}>
-                    <Feather name="chevron-left" size={large ? 22 : 18} color="#4A90E2" />
+                    <Feather name="chevron-left" size={large ? 22 : 18} color={colors.brand} />
                 </TouchableOpacity>
                 <Text style={[cal.monthLabel, large && cal.monthLabelLarge]}>{month.toFormat("MMMM yyyy")}</Text>
                 <TouchableOpacity
@@ -277,7 +293,7 @@ const InlineCalendar = ({ value, onChange, minDate, maxDate, bare, large }: {
                     disabled={!canGoNext}
                     style={[cal.navBtn, large && cal.navBtnLarge, !canGoNext && cal.navBtnDisabled]}
                 >
-                    <Feather name="chevron-right" size={large ? 22 : 18} color={canGoNext ? "#4A90E2" : "#C4C9D4"} />
+                    <Feather name="chevron-right" size={large ? 22 : 18} color={canGoNext ? colors.brand : colors.textFaint} />
                 </TouchableOpacity>
             </View>
             <View style={[cal.weekRow, large && cal.weekRowLarge]}>
@@ -316,7 +332,10 @@ const InlineCalendar = ({ value, onChange, minDate, maxDate, bare, large }: {
 
 const CalendarPickerModal = ({ visible, value, minDate, maxDate, onChange, onCancel }: {
     visible: boolean; value: string; minDate?: string; maxDate?: string; onChange: (iso: string) => void; onCancel: () => void;
-}) => (
+}) => {
+    const colors = useThemeColors();
+    const s = useMemo(() => makeStyles(colors), [colors]);
+    return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
         <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
         <View style={s.dayPickerPopupWrap}>
@@ -324,7 +343,7 @@ const CalendarPickerModal = ({ visible, value, minDate, maxDate, onChange, onCan
                 <View style={s.dayPickerPopupHeader}>
                     <Text style={s.dayPickerPopupTitle}>Start Date</Text>
                     <TouchableOpacity onPress={onCancel} style={{ padding: 4 }} activeOpacity={0.7}>
-                        <Feather name="x" size={20} color="#9CA3AF" />
+                        <Feather name="x" size={20} color={colors.textFaint} />
                     </TouchableOpacity>
                 </View>
                 <View style={{ padding: 8 }}>
@@ -333,13 +352,16 @@ const CalendarPickerModal = ({ visible, value, minDate, maxDate, onChange, onCan
             </View>
         </View>
     </Modal>
-);
+    );
+};
 
 // ─── ToggleSwitch ─────────────────────────────────────────────────────────────
 
 const ToggleSwitch = ({ value, onValueChange, activeColor = "#7C3AED" }: {
     value: boolean; onValueChange: (v: boolean) => void; activeColor?: string;
 }) => {
+    const colors = useThemeColors();
+    const s = useMemo(() => makeStyles(colors), [colors]);
     const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
     const scale = useRef(new Animated.Value(1)).current;
     useEffect(() => {
@@ -349,7 +371,7 @@ const ToggleSwitch = ({ value, onValueChange, activeColor = "#7C3AED" }: {
             Animated.spring(scale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: false }),
         ]).start();
     }, [value]);
-    const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["#E5E7EB", activeColor] });
+    const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: [colors.border, activeColor] });
     const thumbLeft = anim.interpolate({ inputRange: [0, 1], outputRange: [2, 20] });
     return (
         <TouchableOpacity activeOpacity={0.8} onPress={() => onValueChange(!value)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -362,22 +384,28 @@ const ToggleSwitch = ({ value, onValueChange, activeColor = "#7C3AED" }: {
 
 // ─── StepDots ─────────────────────────────────────────────────────────────────
 
-const StepDots = ({ total, current }: { total: number; current: number }) => (
-    <View style={s.dots}>
-        {Array.from({ length: total }).map((_, i) => (
-            <React.Fragment key={i}>
-                <View style={[s.dot, i <= current && s.dotActive]} />
-                {i < total - 1 && (
-                    <View style={[s.dotLine, i < current && s.dotLineFilled]} />
-                )}
-            </React.Fragment>
-        ))}
-    </View>
-);
+const StepDots = ({ total, current }: { total: number; current: number }) => {
+    const colors = useThemeColors();
+    const s = useMemo(() => makeStyles(colors), [colors]);
+    return (
+        <View style={s.dots}>
+            {Array.from({ length: total }).map((_, i) => (
+                <React.Fragment key={i}>
+                    <View style={[s.dot, i <= current && s.dotActive]} />
+                    {i < total - 1 && (
+                        <View style={[s.dotLine, i < current && s.dotLineFilled]} />
+                    )}
+                </React.Fragment>
+            ))}
+        </View>
+    );
+};
 
 // ─── SCREEN 1: Name ───────────────────────────────────────────────────────────
 
 const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: string) => void; onClose: () => void }) => {
+    const colors = useThemeColors();
+    const s = useMemo(() => makeStyles(colors), [colors]);
     const [name, setName] = useState("");
     const [nameFocused, setNameFocused] = useState(false);
     const [localUri, setLocalUri] = useState<string | null>(null);
@@ -408,7 +436,7 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
         <View style={s.screen}>
             <View style={s.screenHeader}>
                 <TouchableOpacity onPress={onClose} style={s.iconBtn}>
-                    <Feather name="x" size={24} color="#6B7280" />
+                    <Feather name="x" size={24} color={colors.textMuted} />
                 </TouchableOpacity>
                 <StepDots total={4} current={0} />
                 <View style={{ width: 36 }} />
@@ -419,7 +447,7 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
                 <TextInput
                     style={s.bigInput}
                     placeholder={nameFocused ? "" : '"Basketball Squad"'}
-                    placeholderTextColor="#C4C9D4"
+                    placeholderTextColor={colors.placeholder}
                     textAlign="center"
                     value={name}
                     onChangeText={setName}
@@ -430,7 +458,7 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
                 />
                 <TouchableOpacity onPress={handlePickImage} disabled={uploading} style={s.imagePicker}>
                     {uploading ? (
-                        <ActivityIndicator color="#4A90E2" />
+                        <ActivityIndicator color={colors.brand} />
                     ) : localUri ? (
                         <>
                             <Image source={{ uri: localUri }} style={s.imagePreview} />
@@ -440,7 +468,7 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
                         </>
                     ) : (
                         <>
-                            <Feather name="image" size={36} color="#9CA3AF" />
+                            <Feather name="image" size={36} color={colors.textFaint} />
                             <Text style={s.imagePickerText}>Add group photo</Text>
                         </>
                     )}
@@ -466,6 +494,8 @@ const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: stri
 const MembersScreen = ({ groupId, groupName, onDone }: {
     groupId: string; groupName: string; onDone: () => void;
 }) => {
+    const colors = useThemeColors();
+    const s = useMemo(() => makeStyles(colors), [colors]);
     const api = useApiClient();
     const { data: inviteLinkData } = useQuery({
         queryKey: ['inviteLink', groupId],
@@ -500,7 +530,7 @@ const MembersScreen = ({ groupId, groupName, onDone }: {
             </View>
 
             <TouchableOpacity style={[s.shareBtn, { marginHorizontal: 24, marginBottom: 12 }]} onPress={handleShare}>
-                <Feather name="share-2" size={16} color="#4A90E2" />
+                <Feather name="share-2" size={16} color={colors.brand} />
                 <Text style={s.shareBtnText}>Invite Friends</Text>
             </TouchableOpacity>
 
@@ -538,6 +568,11 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
     onBack: () => void;
     onSkip: () => void;
 }) => {
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const isDark = scheme === 'dark';
+    const s = useMemo(() => makeStyles(colors), [colors]);
+    const dayColors = useMemo(() => getDayColors(isDark), [isDark]);
     // One shared timezone for the whole group — not per-schedule (the backend
     // only stores one Group.timezone), so it lives outside the tabbed array.
     const [timezone, setTimezone] = useState(initialTimezone ?? "America/Denver");
@@ -784,9 +819,9 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                     <Text style={s.fieldLabel}>Time</Text>
                     <TouchableOpacity style={s.dateFieldRow}
                         onPress={() => upd({ showDailySameTimePicker: !d.showDailySameTimePicker })}>
-                        <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                        <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                         <Text style={s.dateFieldText}>{d.dailySharedTime}</Text>
-                        <Feather name={d.showDailySameTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name={d.showDailySameTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     {d.showDailySameTimePicker && (
                         <NativeTimePicker value={d.dailySharedTime} onChange={t => upd({ dailySharedTime: t })}
@@ -809,9 +844,9 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                                             : { ...r, showTimePicker: false }
                                     ),
                                 }))}>
-                                <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                                <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                                 <Text style={s.dateFieldText}>{row.time}</Text>
-                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
                             {row.showTimePicker && (
                                 <NativeTimePicker value={row.time}
@@ -835,22 +870,22 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
         <View style={s.expandBox}>
             <Text style={s.expandBoxTitle}>{isBiweekly ? "Bi-Weekly Options" : "Weekly Options"}</Text>
             {d.weekdayRows.map(row => (
-                <View key={row.id} style={[s.dayCard, row.day !== null && { borderLeftColor: DAY_COLORS[row.day].fg }]}>
+                <View key={row.id} style={[s.dayCard, row.day !== null && { borderLeftColor: dayColors[row.day].fg }]}>
                     {isBiweekly && <Text style={s.startDateLabel}>Day of Week</Text>}
                     <View style={s.dayRow}>
                         <TouchableOpacity style={s.dayPickerTrigger}
                             onPress={() => { updWeekdayRow(row.id, { showTimePicker: false }); setDayPickerRowId(row.id); }}>
                             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                                <View style={[s.dayBadge, { backgroundColor: row.day !== null ? DAY_COLORS[row.day].bg : "#F3F4F6" }]}>
+                                <View style={[s.dayBadge, { backgroundColor: row.day !== null ? dayColors[row.day].bg : colors.backgroundAlt }]}>
                                     {row.day !== null
-                                        ? <Text style={[s.dayBadgeText, { color: DAY_COLORS[row.day].fg }]}>{DAYS_OF_WEEK[row.day].short.slice(0, 2)}</Text>
-                                        : <Feather name="calendar" size={12} color="#9CA3AF" />}
+                                        ? <Text style={[s.dayBadgeText, { color: dayColors[row.day].fg }]}>{DAYS_OF_WEEK[row.day].short.slice(0, 2)}</Text>
+                                        : <Feather name="calendar" size={12} color={colors.textFaint} />}
                                 </View>
                                 <Text style={row.day !== null ? s.dayPickerText : s.dayPickerPlaceholder}>
                                     {row.day !== null ? DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label : "Select day"}
                                 </Text>
                             </View>
-                            <Feather name={dayPickerRowId === row.id ? "chevron-up" : "chevron-down"} size={14} color="#9CA3AF" />
+                            <Feather name={dayPickerRowId === row.id ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} />
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => removeWeekdayRow(row.id)} style={{ marginLeft: 8 }}>
                             <Feather name="trash-2" size={16} color="#F87171" />
@@ -862,9 +897,9 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                             <Text style={s.fieldLabel}>Time</Text>
                             <TouchableOpacity style={s.dateFieldRow}
                                 onPress={() => updWeekdayRow(row.id, { showTimePicker: !row.showTimePicker })}>
-                                <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                                <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                                 <Text style={s.dateFieldText}>{row.time}</Text>
-                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
                         </View>
                     )}
@@ -880,7 +915,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                             <Text style={s.startDateLabel}>Start Date</Text>
                             <TouchableOpacity style={s.dateFieldRow}
                                 onPress={() => setCalendarPickerRowId(row.id)}>
-                                <Feather name="calendar" size={14} color="#4A90E2" style={{ marginRight: 6 }} />
+                                <Feather name="calendar" size={14} color={colors.brand} style={{ marginRight: 6 }} />
                                 <Text style={s.dateFieldText}>
                                     {row.startDate ? DateTime.fromISO(row.startDate).toLocaleString(DateTime.DATE_MED) : "Set start date"}
                                 </Text>
@@ -890,7 +925,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                 </View>
             ))}
             <TouchableOpacity style={s.addRowBtn} onPress={addWeekdayRow}>
-                <Feather name="plus-circle" size={16} color="#4A90E2" style={{ marginRight: 6 }} />
+                <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
                 <Text style={s.addRowBtnText}>Add day</Text>
             </TouchableOpacity>
 
@@ -925,7 +960,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                 <TouchableOpacity style={s.collapsedRuleRow} onPress={() => updMonthlyDate(entry.id, { expanded: true })}>
                     <Text style={s.collapsedRuleText}>{entry.date}{ordSfx(entry.date)} of month · {entry.time}</Text>
                     <View style={s.collapsedRuleActions}>
-                        <Feather name="edit-2" size={14} color="#4A90E2" style={{ marginRight: 10 }} />
+                        <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
                         <TouchableOpacity onPress={() => removeMonthlyDate(entry.id)}>
                             <Feather name="trash-2" size={14} color="#F87171" />
                         </TouchableOpacity>
@@ -950,9 +985,9 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                     <Text style={s.fieldLabel}>Time</Text>
                     <TouchableOpacity style={s.dateFieldRow}
                         onPress={() => updMonthlyDate(entry.id, { showTimePicker: !entry.showTimePicker })}>
-                        <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                        <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                         <Text style={s.dateFieldText}>{entry.time}</Text>
-                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     <TouchableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10 }]}
                         onPress={() => updMonthlyDate(entry.id, { expanded: false, showTimePicker: false })}>
@@ -976,7 +1011,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                         {entry.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label} · {entry.time}
                     </Text>
                     <View style={s.collapsedRuleActions}>
-                        <Feather name="edit-2" size={14} color="#4A90E2" style={{ marginRight: 10 }} />
+                        <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
                         <TouchableOpacity onPress={() => removeOrdinal(entry.id)}>
                             <Feather name="trash-2" size={14} color="#F87171" />
                         </TouchableOpacity>
@@ -993,19 +1028,19 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                     <TouchableOpacity style={s.dateFieldRow}
                         onPress={() => updOrdinal(entry.id, { showOccurrencePicker: true, showDayOfWeekPicker: false, showTimePicker: false })}>
                         <Text style={s.dateFieldText}>{entry.occurrence}</Text>
-                        <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     <TouchableOpacity style={s.dateFieldRow}
                         onPress={() => updOrdinal(entry.id, { showDayOfWeekPicker: true, showOccurrencePicker: false, showTimePicker: false })}>
                         <Text style={s.dateFieldText}>{DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label}</Text>
-                        <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     <Text style={s.fieldLabel}>Time</Text>
                     <TouchableOpacity style={s.dateFieldRow}
                         onPress={() => updOrdinal(entry.id, { showTimePicker: !entry.showTimePicker, showOccurrencePicker: false, showDayOfWeekPicker: false })}>
-                        <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                        <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                         <Text style={s.dateFieldText}>{entry.time}</Text>
-                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     <TouchableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10 }]}
                         onPress={() => updOrdinal(entry.id, { expanded: false, showTimePicker: false })}>
@@ -1046,7 +1081,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                         {d.monthlyMode === "date" && <View style={s.monthlyModeRadioDot} />}
                     </View>
                     <View style={[s.monthlyModeIcon, d.monthlyMode === "date" && s.monthlyModeIconActive]}>
-                        <Feather name="hash" size={16} color={d.monthlyMode === "date" ? "#fff" : "#9CA3AF"} />
+                        <Feather name="hash" size={16} color={d.monthlyMode === "date" ? "#fff" : colors.textFaint} />
                     </View>
                     <View style={s.monthlyModeCopy}>
                         <Text style={[s.monthlyModeTitle, d.monthlyMode === "date" && s.monthlyModeTitleActive]}>Same date every month</Text>
@@ -1059,7 +1094,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                         {d.monthlyMode === "ordinal" && <View style={s.monthlyModeRadioDot} />}
                     </View>
                     <View style={[s.monthlyModeIcon, d.monthlyMode === "ordinal" && s.monthlyModeIconActive]}>
-                        <Feather name="repeat" size={16} color={d.monthlyMode === "ordinal" ? "#fff" : "#9CA3AF"} />
+                        <Feather name="repeat" size={16} color={d.monthlyMode === "ordinal" ? "#fff" : colors.textFaint} />
                     </View>
                     <View style={s.monthlyModeCopy}>
                         <Text style={[s.monthlyModeTitle, d.monthlyMode === "ordinal" && s.monthlyModeTitleActive]}>Same weekday every month</Text>
@@ -1071,7 +1106,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                 <View style={{ marginTop: 12, gap: 8 }}>
                     {d.monthlyDates.map(renderMonthlyDateEntry)}
                     <TouchableOpacity style={s.addRowBtn} onPress={addMonthlyDate}>
-                        <Feather name="plus-circle" size={16} color="#4A90E2" style={{ marginRight: 6 }} />
+                        <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
                         <Text style={s.addRowBtnText}>Add date</Text>
                     </TouchableOpacity>
                 </View>
@@ -1080,7 +1115,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                 <View style={{ marginTop: 12, gap: 8 }}>
                     {d.ordinalEntries.map(renderOrdinalEntry)}
                     <TouchableOpacity style={s.addRowBtn} onPress={addOrdinalEntry}>
-                        <Feather name="plus-circle" size={16} color="#4A90E2" style={{ marginRight: 6 }} />
+                        <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
                         <Text style={s.addRowBtnText}>Add pattern</Text>
                     </TouchableOpacity>
                 </View>
@@ -1096,7 +1131,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                 <Text style={d.customFreq ? s.dateFieldText : s.dayPickerPlaceholder}>
                     {d.customFreq ? FREQ_LABELS[d.customFreq] : "Select frequency"}
                 </Text>
-                <Feather name={d.customShowFreqPicker ? "chevron-up" : "chevron-down"} size={14} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                <Feather name={d.customShowFreqPicker ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} style={{ marginLeft: "auto" }} />
             </TouchableOpacity>
             {d.customShowFreqPicker && (
                 <View style={s.inlineDayPicker}>
@@ -1147,7 +1182,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
             )}
             {d.builtRoutines.length < 5 && !d.customBuilding && (
                 <TouchableOpacity style={s.addRowBtn} onPress={() => upd({ customBuilding: true, customFreq: null })}>
-                    <Feather name="plus-circle" size={16} color="#4A90E2" style={{ marginRight: 6 }} />
+                    <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
                     <Text style={s.addRowBtnText}>Add rule</Text>
                 </TouchableOpacity>
             )}
@@ -1159,7 +1194,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
         <View style={s.screen}>
             <View style={s.screenHeader}>
                 <TouchableOpacity onPress={onBack} style={s.iconBtn}>
-                    <Feather name="arrow-left" size={24} color="#6B7280" />
+                    <Feather name="arrow-left" size={24} color={colors.textMuted} />
                 </TouchableOpacity>
                 <StepDots total={4} current={1} />
                 <View style={{ width: 36 }} />
@@ -1177,17 +1212,17 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
 
                 {schedules.length === 0 ? (
                     <View style={s.reviewEmptyCard}>
-                        <Feather name="calendar" size={18} color="#9CA3AF" />
+                        <Feather name="calendar" size={18} color={colors.textFaint} />
                         <Text style={s.reviewMuted}>No series — tap "Add More Series" below to add one, or continue without any</Text>
                     </View>
                 ) : (
                 <>
                 {/* Description — the series takes on the group's name automatically,
                     so this card only collects optional extra detail. */}
-                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#4A90E2" }]}>
+                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: colors.brand }]}>
                     <View style={s.sectionHeaderRow}>
                         <View style={s.sectionIconChip}>
-                            <Feather name="align-left" size={19} color="#4A90E2" />
+                            <Feather name="align-left" size={19} color={colors.brand} />
                         </View>
                         <Text style={s.sectionTitle}>Description</Text>
                     </View>
@@ -1196,7 +1231,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                         <TextInput
                             style={[s.inlineInput, s.descriptionInput]}
                             placeholder="Add any extra details for this series..."
-                            placeholderTextColor="#C4C9D4"
+                            placeholderTextColor={colors.placeholder}
                             value={d.description}
                             onChangeText={t => upd({ description: t })}
                             multiline
@@ -1206,10 +1241,10 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                 </View>
 
                 {/* Where */}
-                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#EF4444" }]}>
+                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: colors.danger }]}>
                     <View style={s.sectionHeaderRow}>
                         <View style={s.sectionIconChip}>
-                            <Feather name="map-pin" size={19} color="#EF4444" />
+                            <Feather name="map-pin" size={19} color={colors.danger} />
                         </View>
                         <Text style={s.sectionTitle}>Where</Text>
                     </View>
@@ -1224,10 +1259,10 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                 </View>
 
                 {/* When */}
-                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#F59E0B" }]}>
+                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: colors.warning }]}>
                     <View style={s.sectionHeaderRow}>
                         <View style={s.sectionIconChip}>
-                            <Feather name="calendar" size={19} color="#F59E0B" />
+                            <Feather name="calendar" size={19} color={colors.warning} />
                         </View>
                         <Text style={s.sectionTitle}>When</Text>
                     </View>
@@ -1236,11 +1271,11 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                     <Text style={[s.fieldLabel, s.fieldLabelFirst]}>How often?</Text>
                     <TouchableOpacity style={s.dateFieldRow}
                         onPress={() => { setShowTZPicker(false); upd({ showFreqPicker: true, showStartDatePicker: false, showLeadTimePicker: false }); }}>
-                        <Feather name="repeat" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                        <Feather name="repeat" size={16} color={colors.brand} style={{ marginRight: 8 }} />
                         <Text style={d.frequency ? s.dateFieldText : s.dayPickerPlaceholder}>
                             {d.frequency ? FREQ_LABELS[d.frequency] : "Select frequency"}
                         </Text>
-                        <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     {d.showFreqPicker && (
                         <OptionPickerModal title="How often?"
@@ -1262,9 +1297,9 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                             <Text style={s.fieldLabel}>Start date</Text>
                             <TouchableOpacity style={s.dateFieldRow}
                                 onPress={() => { setShowTZPicker(false); upd({ showStartDatePicker: true, showFreqPicker: false, showLeadTimePicker: false }); }}>
-                                <Feather name="calendar" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                                <Feather name="calendar" size={16} color={colors.brand} style={{ marginRight: 8 }} />
                                 <Text style={s.dateFieldText}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
-                                <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
                             <CalendarPickerModal
                                 visible={d.showStartDatePicker}
@@ -1287,9 +1322,9 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                             setShowTZPicker(v => !v);
                             upd({ showFreqPicker: false, showStartDatePicker: false, showLeadTimePicker: false, showDeadlineTimePicker: false });
                         }}>
-                        <Feather name="globe" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
+                        <Feather name="globe" size={16} color={colors.brand} style={{ marginRight: 8 }} />
                         <Text style={s.dateFieldText}>{TZ_ABBR[timezone] ?? timezone}</Text>
-                        <Feather name={showTZPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name={showTZPicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                 </View>
 
@@ -1343,22 +1378,22 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                                                 const sameDayViolation = d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
                                                 upd({ leadDays, ...(sameDayViolation ? { leadTime: d.deadlineTime } : {}) });
                                             }}>
-                                                <Feather name="minus" size={18} color="#4A90E2" />
+                                                <Feather name="minus" size={18} color={colors.brand} />
                                             </TouchableOpacity>
                                             <View style={s.leadCenter}>
                                                 <Text style={s.leadVal}>{d.leadDays}</Text>
                                                 <Text style={s.leadSub}>days before</Text>
                                             </View>
                                             <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ leadDays: d.leadDays + 1 })}>
-                                                <Feather name="plus" size={18} color="#4A90E2" />
+                                                <Feather name="plus" size={18} color={colors.brand} />
                                             </TouchableOpacity>
                                         </View>
                                         <Text style={s.fieldLabel}>Time</Text>
                                         <TouchableOpacity style={s.dateFieldRow}
                                             onPress={() => { setShowTZPicker(false); upd({ showLeadTimePicker: !d.showLeadTimePicker, showDeadlineTimePicker: false, showStartDatePicker: false, showFreqPicker: false }); }}>
-                                            <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                                            <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                                             <Text style={s.dateFieldText}>{d.leadTime}</Text>
-                                            <Feather name={d.showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                            <Feather name={d.showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                                         </TouchableOpacity>
                                     </View>
                                 )}
@@ -1400,7 +1435,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                                     <View style={{ marginTop: 10 }}>
                                         <View style={s.leadRow}>
                                             <TouchableOpacity style={s.stepperBtn} onPress={() => upd({ deadlineDays: Math.max(0, d.deadlineDays - 1) })}>
-                                                <Feather name="minus" size={18} color="#4A90E2" />
+                                                <Feather name="minus" size={18} color={colors.brand} />
                                             </TouchableOpacity>
                                             <View style={s.leadCenter}>
                                                 <Text style={s.leadVal}>{d.deadlineDays}</Text>
@@ -1411,15 +1446,15 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                                                 const sameDayViolation = d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
                                                 upd({ deadlineDays, ...(sameDayViolation ? { deadlineTime: d.leadTime } : {}) });
                                             }}>
-                                                <Feather name="plus" size={18} color="#4A90E2" />
+                                                <Feather name="plus" size={18} color={colors.brand} />
                                             </TouchableOpacity>
                                         </View>
                                         <Text style={s.fieldLabel}>Time</Text>
                                         <TouchableOpacity style={s.dateFieldRow}
                                             onPress={() => { setShowTZPicker(false); upd({ showDeadlineTimePicker: !d.showDeadlineTimePicker, showLeadTimePicker: false, showStartDatePicker: false, showFreqPicker: false }); }}>
-                                            <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
+                                            <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                                             <Text style={s.dateFieldText}>{d.deadlineTime}</Text>
-                                            <Feather name={d.showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                            <Feather name={d.showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                                         </TouchableOpacity>
                                     </View>
                                 )}
@@ -1470,11 +1505,11 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                         return (
                             <View style={{ marginTop: 10 }}>
                                 <View style={[s.inputRow, { marginBottom: 0 }, maxAttendeesError && s.inputRowError]}>
-                                    <Feather name="users" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                                    <Feather name="users" size={16} color={colors.textFaint} style={{ marginRight: 8 }} />
                                     <TextInput
                                         style={s.inlineInput}
                                         placeholder="How many?"
-                                        placeholderTextColor="#C4C9D4"
+                                        placeholderTextColor={colors.placeholder}
                                         keyboardType="number-pad"
                                         value={d.maxAttendeesInput}
                                         onChangeText={v => upd({ maxAttendeesInput: v })}
@@ -1497,7 +1532,7 @@ const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, 
                     onPress={() => canProceed() && onNext(schedules.filter(sch => sch.frequency), timezone)}
                     disabled={!canProceed()}>
                     <Text style={s.reviewBtnGhostText}>Review</Text>
-                    <Feather name="arrow-right" size={16} color="#4A90E2" style={{ marginLeft: 4 }} />
+                    <Feather name="arrow-right" size={16} color={colors.brand} style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
             </View>
 
@@ -1579,11 +1614,13 @@ const ReviewScreen = ({ groupName, groupImage, members, schedules, timezone, onC
     groupName: string; groupImage?: string; members: UserStub[]; schedules: ScheduleData[]; timezone: string;
     onConfirm: () => void; onBack: () => void; isPending: boolean;
 }) => {
+    const colors = useThemeColors();
+    const s = useMemo(() => makeStyles(colors), [colors]);
     return (
         <View style={s.screen}>
             <View style={s.screenHeader}>
                 <TouchableOpacity onPress={onBack} style={s.iconBtn}>
-                    <Feather name="arrow-left" size={24} color="#6B7280" />
+                    <Feather name="arrow-left" size={24} color={colors.textMuted} />
                 </TouchableOpacity>
                 <StepDots total={4} current={2} />
                 <View style={{ width: 36 }} />
@@ -1601,20 +1638,20 @@ const ReviewScreen = ({ groupName, groupImage, members, schedules, timezone, onC
                 {/* Schedule(s) */}
                 <View style={s.reviewSectionHeaderRow}>
                     <View style={[s.reviewIconChip, s.reviewIconChipAmber]}>
-                        <Feather name="calendar" size={15} color="#F59E0B" />
+                        <Feather name="calendar" size={15} color={colors.warning} />
                     </View>
                     <Text style={s.reviewSectionTitle}>Series</Text>
                 </View>
 
                 {schedules.length === 0 ? (
                     <View style={s.reviewEmptyCard}>
-                        <Feather name="calendar" size={18} color="#9CA3AF" />
+                        <Feather name="calendar" size={18} color={colors.textFaint} />
                         <Text style={s.reviewMuted}>No series set — you can add one later</Text>
                     </View>
                 ) : (
                     <>
                         <View style={s.reviewInlineRow}>
-                            <Feather name="globe" size={13} color="#9CA3AF" />
+                            <Feather name="globe" size={13} color={colors.textFaint} />
                             <Text style={s.reviewInlineText}>{USA_TIMEZONES.find(t => t.value === timezone)?.label}</Text>
                         </View>
                         {schedules.map((schedule, idx) => {
@@ -1629,36 +1666,36 @@ const ReviewScreen = ({ groupName, groupImage, members, schedules, timezone, onC
                                     <View style={{ marginTop: 10, gap: 7 }}>
                                         {schedule.location ? (
                                             <View style={s.reviewInlineRow}>
-                                                <Feather name="map-pin" size={13} color="#9CA3AF" />
+                                                <Feather name="map-pin" size={13} color={colors.textFaint} />
                                                 <Text style={s.reviewInlineText}>{schedule.location}</Text>
                                             </View>
                                         ) : null}
                                         {schedule.frequency !== "biweekly" && (
                                             <View style={s.reviewInlineRow}>
-                                                <Feather name="clock" size={13} color="#9CA3AF" />
+                                                <Feather name="clock" size={13} color={colors.textFaint} />
                                                 <Text style={s.reviewInlineText}>Starts {DateTime.fromISO(schedule.startDate).toLocaleString(DateTime.DATE_MED)}</Text>
                                             </View>
                                         )}
                                         <View style={s.reviewInlineRow}>
-                                            <Feather name="users" size={13} color="#9CA3AF" />
+                                            <Feather name="users" size={13} color={colors.textFaint} />
                                             <Text style={s.reviewInlineText}>Max attendees: {maxAttendeesLabel}</Text>
                                         </View>
                                         {!schedule.rsvpRestricted || (!schedule.leadEnabled && !schedule.deadlineEnabled) ? (
                                             <View style={s.reviewInlineRow}>
-                                                <Feather name="bell" size={13} color="#9CA3AF" />
+                                                <Feather name="bell" size={13} color={colors.textFaint} />
                                                 <Text style={s.reviewInlineText}>RSVPs open anytime</Text>
                                             </View>
                                         ) : (
                                             <>
                                                 {schedule.leadEnabled && (
                                                     <View style={s.reviewInlineRow}>
-                                                        <Feather name="unlock" size={13} color="#9CA3AF" />
+                                                        <Feather name="unlock" size={13} color={colors.textFaint} />
                                                         <Text style={s.reviewInlineText}>Earliest time to RSVP: {schedule.leadDays} days before at {schedule.leadTime}</Text>
                                                     </View>
                                                 )}
                                                 {schedule.deadlineEnabled && (
                                                     <View style={s.reviewInlineRow}>
-                                                        <Feather name="lock" size={13} color="#9CA3AF" />
+                                                        <Feather name="lock" size={13} color={colors.textFaint} />
                                                         <Text style={s.reviewInlineText}>Latest time to RSVP: {schedule.deadlineDays} days before at {schedule.deadlineTime}</Text>
                                                     </View>
                                                 )}
@@ -1731,6 +1768,8 @@ const ReviewScreen = ({ groupName, groupImage, members, schedules, timezone, onC
 type Step = "name" | "schedule" | "review" | "invite";
 
 const CreateGroupScreen = () => {
+    const colors = useThemeColors();
+    const s = useMemo(() => makeStyles(colors), [colors]);
     const router = useRouter();
     const { mutate, isPending } = useCreateGroup();
     const [step, setStep] = useState<Step>("name");
@@ -1786,122 +1825,124 @@ export default CreateGroupScreen;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-    safe: { flex: 1, backgroundColor: "#F9FAFB" },
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.background },
     screen: { flex: 1 },
     screenHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
     screenBody: { flex: 1, paddingHorizontal: 24, paddingTop: 16 },
-    screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#F3F4F6", backgroundColor: "#fff", position: "relative" },
-    screenTitle: { fontSize: 26, fontWeight: "900", color: "#111827", marginBottom: 4 },
-    screenSub: { fontSize: 14, color: "#9CA3AF", marginBottom: 20 },
-    multiScheduleInfoCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: "#F3F4F6", borderRadius: 18, padding: 20 },
-    multiScheduleInfoIcon: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#4A90E2", alignItems: "center", justifyContent: "center", marginRight: 12 },
-    multiScheduleInfoText: { flex: 1, fontSize: 14, color: "#4B5563", lineHeight: 20 },
+    screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, position: "relative" },
+    screenTitle: { fontSize: 26, fontWeight: "900", color: colors.textPrimary, marginBottom: 4 },
+    screenSub: { fontSize: 14, color: colors.textFaint, marginBottom: 20 },
+    multiScheduleInfoCard: { flexDirection: "row", alignItems: "flex-start", backgroundColor: colors.backgroundAlt, borderRadius: 18, padding: 20 },
+    multiScheduleInfoIcon: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center", marginRight: 12 },
+    multiScheduleInfoText: { flex: 1, fontSize: 14, color: colors.textMuted, lineHeight: 20 },
     iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
     dots: { flexDirection: "row", alignItems: "center", width: "50%", alignSelf: "center" },
-    dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: "#E5E7EB", backgroundColor: "#fff" },
-    dotActive: { backgroundColor: "#4A90E2", borderColor: "#4A90E2" },
-    dotLine: { flex: 1, height: 2, backgroundColor: "#E5E7EB" },
-    dotLineFilled: { backgroundColor: "#4A90E2" },
-    bigInput: { fontSize: 32, fontWeight: "800", color: "#111827", letterSpacing: -0.3, borderBottomWidth: 2, borderBottomColor: "#4A90E2", paddingVertical: 12, marginTop: 8 },
-    inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
-    inputRowError: { borderColor: "#EF4444" },
-    inlineInput: { flex: 1, fontSize: 15, color: "#374151" },
+    dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surface },
+    dotActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+    dotLine: { flex: 1, height: 2, backgroundColor: colors.border },
+    dotLineFilled: { backgroundColor: colors.brand },
+    bigInput: { fontSize: 32, fontWeight: "800", color: colors.textPrimary, letterSpacing: -0.3, borderBottomWidth: 2, borderBottomColor: colors.brand, paddingVertical: 12, marginTop: 8 },
+    inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
+    inputRowError: { borderColor: colors.danger },
+    inlineInput: { flex: 1, fontSize: 15, color: colors.textSecondary },
     descriptionInputRow: { alignItems: "flex-start", height: 90 },
     descriptionInput: { height: "100%" },
-    errorText: { fontSize: 12, fontWeight: "600", color: "#EF4444", marginTop: 6, marginLeft: 2 },
-    searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8 },
-    searchInput: { flex: 1, marginLeft: 8, fontSize: 15, color: "#374151" },
+    errorText: { fontSize: 12, fontWeight: "600", color: colors.danger, marginTop: 6, marginLeft: 2 },
+    // Leftover styles from an earlier member-search UI (no longer rendered by this screen) —
+    // tokenized for consistency in case they're reused, but not currently on-screen.
+    searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8 },
+    searchInput: { flex: 1, marginLeft: 8, fontSize: 15, color: colors.textSecondary },
     selectedChipsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingHorizontal: 24, paddingBottom: 8 },
-    chip: { flexDirection: "row", alignItems: "center", backgroundColor: "#EEF2FF", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: "#C7D2FE" },
-    chipText: { fontSize: 13, fontWeight: "600", color: "#3730A3" },
-    resultRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-    resultText: { fontSize: 15, fontWeight: "600", color: "#374151" },
+    chip: { flexDirection: "row", alignItems: "center", backgroundColor: colors.brandSoft, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: colors.border },
+    chipText: { fontSize: 13, fontWeight: "600", color: colors.brand },
+    resultRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
+    resultText: { fontSize: 15, fontWeight: "600", color: colors.textSecondary },
     resultSubText: { fontSize: 12, marginTop: 1 },
-    statusOnApp: { color: "#22C55E" },
-    statusNotOnApp: { color: "#9CA3AF" },
-    contactBtnAdd: { backgroundColor: "#EEF2FF", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-    contactBtnAddText: { color: "#4A90E2", fontWeight: "700", fontSize: 13 },
-    contactBtnSelected: { backgroundColor: "#DCFCE7", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-    contactBtnSelectedText: { color: "#16A34A", fontWeight: "700", fontSize: 13 },
-    contactBtnSms: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#F3F4F6", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
-    contactBtnSmsText: { color: "#6B7280", fontWeight: "600", fontSize: 13 },
-    shareBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderStyle: "dashed", borderColor: "#93C5FD", backgroundColor: "#EFF6FF" },
-    shareBtnText: { marginLeft: 8, color: "#4A90E2", fontWeight: "700", fontSize: 14 },
-    primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
-    primaryBtnDisabled: { backgroundColor: "#93C5FD" },
+    statusOnApp: { color: colors.success },
+    statusNotOnApp: { color: colors.textFaint },
+    contactBtnAdd: { backgroundColor: colors.brandSoft, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+    contactBtnAddText: { color: colors.brand, fontWeight: "700", fontSize: 13 },
+    contactBtnSelected: { backgroundColor: colors.brandSoft, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+    contactBtnSelectedText: { color: colors.success, fontWeight: "700", fontSize: 13 },
+    contactBtnSms: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.backgroundAlt, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+    contactBtnSmsText: { color: colors.textMuted, fontWeight: "600", fontSize: 13 },
+    shareBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.brand, backgroundColor: colors.brandSoft },
+    shareBtnText: { marginLeft: 8, color: colors.brand, fontWeight: "700", fontSize: 14 },
+    primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: colors.brand, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
+    primaryBtnDisabled: { backgroundColor: colors.borderStrong },
     // Review, in this footer, is a plain text+icon control (no button fill) so
-    // Skip / Add More Series / Review can all fit — colored to match the
-    // "I'm In" RSVP button's teal-green (#4FD1C5) rather than the app's usual blue.
+    // Skip / Add More Series / Review can all fit — colored to match the app's
+    // usual blue brand color.
     reviewBtnGhost: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 11 },
     reviewBtnGhostDisabled: { opacity: 0.4 },
-    reviewBtnGhostText: { color: "#4A90E2", fontWeight: "800", fontSize: 15 },
+    reviewBtnGhostText: { color: colors.brand, fontWeight: "800", fontSize: 15 },
     primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
     skipBtn: { paddingHorizontal: 16, paddingVertical: 14 },
-    skipBtnText: { color: "#9CA3AF", fontWeight: "700", fontSize: 15 },
-    doneBtn: { backgroundColor: "#4A90E2", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
+    skipBtnText: { color: colors.textFaint, fontWeight: "700", fontSize: 15 },
+    doneBtn: { backgroundColor: colors.brand, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
     doneBtnText: { color: "#fff", fontWeight: "800", fontSize: 13 },
-    fieldLabel: { fontSize: 11, fontWeight: "800", color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, marginTop: 16 },
+    fieldLabel: { fontSize: 11, fontWeight: "800", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, marginTop: 16 },
     fieldLabelFirst: { marginTop: 0 },
     // Groups related fields into bounded cards so the long form reads as scannable chunks
-    sectionCard: { backgroundColor: "#fff", borderRadius: 20, borderWidth: 1, borderColor: "#F3F4F6", padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
+    sectionCard: { backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
     sectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
     sectionIconChip: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
-    sectionTitle: { fontSize: 16, fontWeight: "900", color: "#111827", letterSpacing: -0.2 },
-    // Hero-style Series Name field — plain white like the rest of the page,
+    sectionTitle: { fontSize: 16, fontWeight: "900", color: colors.textPrimary, letterSpacing: -0.2 },
+    // Hero-style Series Name field — plain surface like the rest of the page,
     // but deliberately un-card-like (no border box, no icon chip header) so
     // the oversized headline input itself is what signals "name this."
-    nameHero: { backgroundColor: "#fff", borderRadius: 20, borderWidth: 1, borderColor: "#F3F4F6", padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
-    nameHeroInput: { fontSize: 32, fontWeight: "800", color: "#111827", padding: 0, letterSpacing: -0.3 },
-    nameHeroUnderline: { height: 3, borderRadius: 1.5, backgroundColor: "#4A90E2", marginTop: 14 },
-    dateFieldRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 13, marginBottom: 4 },
-    dateFieldText: { fontSize: 15, color: "#1F2937", fontWeight: "600" },
-    startDateLabel: { fontSize: 11, fontWeight: "700", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
-    expandBox: { backgroundColor: "#F0F7FF", borderRadius: 14, borderWidth: 1.5, borderColor: "#BFDBFE", padding: 14, marginTop: 8 },
-    expandBoxTitle: { fontSize: 12, fontWeight: "900", color: "#1D4ED8", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
+    nameHero: { backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
+    nameHeroInput: { fontSize: 32, fontWeight: "800", color: colors.textPrimary, padding: 0, letterSpacing: -0.3 },
+    nameHeroUnderline: { height: 3, borderRadius: 1.5, backgroundColor: colors.brand, marginTop: 14 },
+    dateFieldRow: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 4 },
+    dateFieldText: { fontSize: 15, color: colors.textSecondary, fontWeight: "600" },
+    startDateLabel: { fontSize: 11, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+    expandBox: { backgroundColor: colors.brandSoft, borderRadius: 14, borderWidth: 1.5, borderColor: colors.brand, padding: 14, marginTop: 8 },
+    expandBoxTitle: { fontSize: 12, fontWeight: "900", color: colors.brand, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
     boolRow: { flexDirection: "row", gap: 10 },
-    boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: "#E5E7EB", alignItems: "center", backgroundColor: "#fff" },
-    boolBtnActive: { borderColor: "#4A90E2", backgroundColor: "#EEF6FF" },
-    boolBtnText: { fontSize: 14, fontWeight: "700", color: "#6B7280" },
-    boolBtnTextActive: { color: "#4A90E2" },
+    boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", backgroundColor: colors.surface },
+    boolBtnActive: { borderColor: colors.brand, backgroundColor: colors.brandSoft },
+    boolBtnText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
+    boolBtnTextActive: { color: colors.brand },
 
     monthlyModeList: { gap: 10 },
-    monthlyModeCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderWidth: 1.5, borderColor: "#E5E7EB", borderRadius: 12, padding: 12 },
-    monthlyModeCardActive: { borderColor: "#4A90E2", backgroundColor: "#EEF6FF" },
-    monthlyModeRadio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: "#D1D5DB", alignItems: "center", justifyContent: "center" },
-    monthlyModeRadioActive: { borderColor: "#4A90E2" },
-    monthlyModeRadioDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: "#4A90E2" },
-    monthlyModeIcon: { width: 30, height: 30, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: "#F3F4F6", marginHorizontal: 10 },
-    monthlyModeIconActive: { backgroundColor: "#4A90E2" },
+    monthlyModeCard: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, borderRadius: 12, padding: 12 },
+    monthlyModeCardActive: { borderColor: colors.brand, backgroundColor: colors.brandSoft },
+    monthlyModeRadio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center" },
+    monthlyModeRadioActive: { borderColor: colors.brand },
+    monthlyModeRadioDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.brand },
+    monthlyModeIcon: { width: 30, height: 30, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: colors.backgroundAlt, marginHorizontal: 10 },
+    monthlyModeIconActive: { backgroundColor: colors.brand },
     monthlyModeCopy: { flex: 1 },
-    monthlyModeTitle: { fontSize: 14, fontWeight: "700", color: "#374151" },
-    monthlyModeTitleActive: { color: "#1D4ED8" },
-    monthlyModeExample: { fontSize: 12.5, color: "#9CA3AF", marginTop: 2 },
+    monthlyModeTitle: { fontSize: 14, fontWeight: "700", color: colors.textSecondary },
+    monthlyModeTitleActive: { color: colors.brand },
+    monthlyModeExample: { fontSize: 12.5, color: colors.textFaint, marginTop: 2 },
     toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     toggleRowLabelWrap: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, marginRight: 12 },
-    toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151" },
+    toggleRowLabel: { fontSize: 14, fontWeight: "700", color: colors.textSecondary },
     switchTrack: { width: 44, height: 26, borderRadius: 13, padding: 2, justifyContent: "center" },
     switchThumb: { position: "absolute", width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.25, shadowRadius: 2, elevation: 2 },
     dayRow: { flexDirection: "row", alignItems: "center" },
-    dayRowLabel: { flex: 1, fontSize: 14, fontWeight: "700", color: "#374151" },
-    dayCard: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", borderLeftWidth: 4, borderLeftColor: "#E5E7EB", padding: 14, marginBottom: 10 },
+    dayRowLabel: { flex: 1, fontSize: 14, fontWeight: "700", color: colors.textSecondary },
+    dayCard: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 4, borderLeftColor: colors.border, padding: 14, marginBottom: 10 },
     dayBadge: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", marginRight: 10 },
     dayBadgeText: { fontSize: 11, fontWeight: "800" },
-    inlineDayPicker: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", marginTop: 6, overflow: "hidden" },
-    dayPickerTrigger: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#fff", borderRadius: 10, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10 },
-    dayPickerText: { fontSize: 14, fontWeight: "600", color: "#374151" },
-    dayPickerPlaceholder: { fontSize: 14, color: "#C4C9D4" },
-    dayOption: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-    dayOptionActive: { backgroundColor: "#EEF6FF" },
-    dayOptionText: { fontSize: 15, color: "#374151" },
-    dayOptionTextActive: { color: "#4A90E2", fontWeight: "700" },
+    inlineDayPicker: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, marginTop: 6, overflow: "hidden" },
+    dayPickerTrigger: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 10 },
+    dayPickerText: { fontSize: 14, fontWeight: "600", color: colors.textSecondary },
+    dayPickerPlaceholder: { fontSize: 14, color: colors.placeholder },
+    dayOption: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+    dayOptionActive: { backgroundColor: colors.brandSoft },
+    dayOptionText: { fontSize: 15, color: colors.textSecondary },
+    dayOptionTextActive: { color: colors.brand, fontWeight: "700" },
     dayPickerPopupWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-    dayPickerPopupHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-    dayPickerPopupTitle: { fontSize: 16, fontWeight: "800", color: "#111827" },
+    dayPickerPopupHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
+    dayPickerPopupTitle: { fontSize: 16, fontWeight: "800", color: colors.textPrimary },
     calendarPopupCard: {
         width: "94%",
         borderRadius: 24,
-        backgroundColor: "#fff",
+        backgroundColor: colors.surface,
         overflow: "hidden",
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 8 },
@@ -1910,74 +1951,74 @@ const s = StyleSheet.create({
         elevation: 10,
     },
     addRowBtn: { flexDirection: "row", alignItems: "center", paddingVertical: 10, marginTop: 4 },
-    addRowBtnText: { fontSize: 14, fontWeight: "700", color: "#4A90E2" },
+    addRowBtnText: { fontSize: 14, fontWeight: "700", color: colors.brand },
     dateGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-    dateBox: { width: 38, height: 38, borderRadius: 8, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-    dateBoxActive: { backgroundColor: "#4A90E2", borderColor: "#4A90E2" },
-    dateBoxText: { fontSize: 13, fontWeight: "600", color: "#374151" },
+    dateBox: { width: 38, height: 38, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
+    dateBoxActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+    dateBoxText: { fontSize: 13, fontWeight: "600", color: colors.textSecondary },
     dateBoxTextActive: { color: "#fff" },
-    ordinalCard: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 14, marginBottom: 8 },
+    ordinalCard: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 8 },
     ordinalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
     collapsedRuleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    collapsedRuleText: { fontSize: 14, fontWeight: "700", color: "#1D4ED8", flex: 1 },
+    collapsedRuleText: { fontSize: 14, fontWeight: "700", color: colors.brand, flex: 1 },
     collapsedRuleActions: { flexDirection: "row", alignItems: "center" },
-    routineCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#EEF6FF", borderRadius: 12, borderWidth: 1, borderColor: "#93C5FD", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8 },
-    routineCardLabel: { fontSize: 14, fontWeight: "700", color: "#1D4ED8" },
-    routineCardSub: { fontSize: 11, color: "#93C5FD", marginTop: 2 },
-    leadRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
-    stepperBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
+    routineCard: { flexDirection: "row", alignItems: "center", backgroundColor: colors.brandSoft, borderRadius: 12, borderWidth: 1, borderColor: colors.brand, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8 },
+    routineCardLabel: { fontSize: 14, fontWeight: "700", color: colors.brand },
+    routineCardSub: { fontSize: 11, color: colors.textFaint, marginTop: 2 },
+    leadRow: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+    stepperBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" },
     leadCenter: { alignItems: "center", minWidth: 60 },
-    leadVal: { fontSize: 22, fontWeight: "900", color: "#111827" },
-    leadSub: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase" },
+    leadVal: { fontSize: 22, fontWeight: "900", color: colors.textPrimary },
+    leadSub: { fontSize: 10, color: colors.textFaint, fontWeight: "600", textTransform: "uppercase" },
     // Mirrors MeetupDetailModal's palette/section conventions for a consistent "confirm" feel
     reviewHero: { alignItems: "center", marginBottom: 24 },
-    reviewHeroName: { fontSize: 22, fontWeight: "900", color: "#111827", letterSpacing: -0.4, textAlign: "center", marginTop: 12 },
-    detailsCard: { backgroundColor: "#F9FAFB", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#F3F4F6", marginBottom: 24 },
+    reviewHeroName: { fontSize: 22, fontWeight: "900", color: colors.textPrimary, letterSpacing: -0.4, textAlign: "center", marginTop: 12 },
+    detailsCard: { backgroundColor: colors.backgroundAlt, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border, marginBottom: 24 },
     detailItem: {},
-    detailLabel: { fontSize: 11, fontWeight: "700", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
-    detailValue: { fontSize: 15, fontWeight: "700", color: "#1F2937" },
-    detailSeparator: { height: 1, backgroundColor: "#E5E7EB", marginVertical: 14 },
+    detailLabel: { fontSize: 11, fontWeight: "700", color: colors.textFaint, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+    detailValue: { fontSize: 15, fontWeight: "700", color: colors.textSecondary },
+    detailSeparator: { height: 1, backgroundColor: colors.border, marginVertical: 14 },
     reviewSectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
-    reviewSectionTitle: { fontSize: 13, fontWeight: "900", color: "#111827", textTransform: "uppercase", letterSpacing: 0.5 },
+    reviewSectionTitle: { fontSize: 13, fontWeight: "900", color: colors.textPrimary, textTransform: "uppercase", letterSpacing: 0.5 },
     reviewIconChip: { width: 30, height: 30, borderRadius: 9, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-    reviewIconChipAmber: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
-    reviewEmptyCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#F9FAFB", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", borderStyle: "dashed", padding: 16 },
-    reviewMuted: { fontSize: 14, color: "#6B7280" },
-    reviewMutedBullet: { fontSize: 13, color: "#6B7280", lineHeight: 19 },
-    reviewScheduleCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB", padding: 16 },
-    reviewScheduleName: { fontSize: 13, fontWeight: "800", color: "#4A90E2", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 },
-    reviewScheduleFreq: { fontSize: 17, fontWeight: "800", color: "#111827" },
-    reviewDetailSeparator: { height: 1, backgroundColor: "#F3F4F6", marginVertical: 14 },
+    reviewIconChipAmber: { backgroundColor: colors.warning + '22', borderColor: colors.warning + '55' },
+    reviewEmptyCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.backgroundAlt, borderRadius: 16, borderWidth: 1, borderColor: colors.border, borderStyle: "dashed", padding: 16 },
+    reviewMuted: { fontSize: 14, color: colors.textMuted },
+    reviewMutedBullet: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
+    reviewScheduleCard: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16 },
+    reviewScheduleName: { fontSize: 13, fontWeight: "800", color: colors.brand, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 },
+    reviewScheduleFreq: { fontSize: 17, fontWeight: "800", color: colors.textPrimary },
+    reviewDetailSeparator: { height: 1, backgroundColor: colors.border, marginVertical: 14 },
     reviewInlineRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    reviewInlineText: { fontSize: 14, fontWeight: "600", color: "#374151" },
-    reviewRoutineChip: { backgroundColor: "#EEF6FF", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: "flex-start", marginBottom: 4 },
-    reviewRoutineChipText: { fontSize: 13, fontWeight: "700", color: "#1D4ED8" },
-    imagePicker: { alignItems: "center", justifyContent: "center", marginTop: 24, width: 160, height: 160, borderRadius: 32, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "#E5E7EB", borderStyle: "dashed", alignSelf: "center" },
+    reviewInlineText: { fontSize: 14, fontWeight: "600", color: colors.textSecondary },
+    reviewRoutineChip: { backgroundColor: colors.brandSoft, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: "flex-start", marginBottom: 4 },
+    reviewRoutineChipText: { fontSize: 13, fontWeight: "700", color: colors.brand },
+    imagePicker: { alignItems: "center", justifyContent: "center", marginTop: 24, width: 160, height: 160, borderRadius: 32, backgroundColor: colors.backgroundAlt, borderWidth: 1.5, borderColor: colors.border, borderStyle: "dashed", alignSelf: "center" },
     imagePreview: { width: 160, height: 160, borderRadius: 32 },
-    imageEditBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#4A90E2", borderRadius: 14, padding: 6 },
-    imagePickerText: { fontSize: 13, fontWeight: "600", color: "#6B7280", marginTop: 6, textAlign: "center" },
+    imageEditBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: colors.brand, borderRadius: 14, padding: 6 },
+    imagePickerText: { fontSize: 13, fontWeight: "600", color: colors.textMuted, marginTop: 6, textAlign: "center" },
 });
 
-const cal = StyleSheet.create({
-    container: { backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", padding: 12, marginTop: 6, marginBottom: 4 },
+const makeCalStyles = (colors: ThemeColors) => StyleSheet.create({
+    container: { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 12, marginTop: 6, marginBottom: 4 },
     containerBare: { padding: 14 },
     nav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
     navLarge: { marginBottom: 16 },
-    navBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
+    navBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" },
     navBtnLarge: { width: 42, height: 42, borderRadius: 21 },
-    navBtnDisabled: { backgroundColor: "#F3F4F6" },
-    monthLabel: { fontSize: 15, fontWeight: "800", color: "#111827" },
+    navBtnDisabled: { backgroundColor: colors.backgroundAlt },
+    monthLabel: { fontSize: 15, fontWeight: "800", color: colors.textPrimary },
     monthLabelLarge: { fontSize: 20 },
     weekRow: { flexDirection: "row" },
     weekRowLarge: { marginBottom: 4 },
-    dayHeader: { width: `${100 / 7}%`, textAlign: "center", fontSize: 11, fontWeight: "800", color: "#9CA3AF", marginBottom: 4 },
+    dayHeader: { width: `${100 / 7}%`, textAlign: "center", fontSize: 11, fontWeight: "800", color: colors.textFaint, marginBottom: 4 },
     dayHeaderLarge: { fontSize: 14, marginBottom: 10 },
     cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: "center", justifyContent: "center" },
     cellLarge: { paddingVertical: 4 },
-    cellSelected: { backgroundColor: "#4A90E2", borderRadius: 100 },
+    cellSelected: { backgroundColor: colors.brand, borderRadius: 100 },
     cellDisabled: { opacity: 0.3 },
-    cellText: { fontSize: 14, color: "#374151" },
+    cellText: { fontSize: 14, color: colors.textSecondary },
     cellTextLarge: { fontSize: 18 },
     cellTextSelected: { color: "#fff", fontWeight: "800" },
-    cellTextDisabled: { color: "#D1D5DB" },
+    cellTextDisabled: { color: colors.borderStrong },
 });

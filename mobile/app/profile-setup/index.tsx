@@ -7,12 +7,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as SecureStore from 'expo-secure-store';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const ProfileSetupScreen = () => {
     const { user: clerkUser } = useUser();
     const router = useRouter();
     const api = useApiClient();
     const queryClient = useQueryClient();
+    const colors = useThemeColors();
     // This app never writes the name back to Clerk (only to our own backend via
     // syncUser/updateProfile — see useAppleAuth.ts), so clerkUser.firstName is never
     // populated for Apple sign-in. The saved name lives on our own currentUser record,
@@ -82,15 +84,15 @@ const ProfileSetupScreen = () => {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-gray-50">
+        <SafeAreaView className="flex-1 bg-gray-50 dark:bg-black">
             <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1">
                 <ScrollView
                     contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
                     keyboardShouldPersistTaps="handled"
                 >
                 <View className="p-8">
-                    <Text className="text-3xl font-bold text-gray-800 text-center">Welcome!</Text>
-                    <Text className="text-lg text-gray-600 text-center mt-2 mb-8">Let's set up your profile.</Text>
+                    <Text className="text-3xl font-bold text-gray-800 dark:text-white text-center">Welcome!</Text>
+                    <Text className="text-lg text-gray-600 dark:text-gray-400 text-center mt-2 mb-8">Let's set up your profile.</Text>
 
                     {!isAppleUser && (
                         <>
@@ -98,17 +100,17 @@ const ProfileSetupScreen = () => {
                                 placeholder="First Name"
                                 value={firstName}
                                 onChangeText={setFirstName}
-                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-                                placeholderTextColor="#999"
+                                className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
+                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
+                                placeholderTextColor={colors.placeholder}
                             />
                             <TextInput
                                 placeholder="Last Name"
                                 value={lastName}
                                 onChangeText={setLastName}
-                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-                                placeholderTextColor="#999"
+                                className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
+                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
+                                placeholderTextColor={colors.placeholder}
                             />
                         </>
                     )}
@@ -119,36 +121,39 @@ const ProfileSetupScreen = () => {
                         onChangeText={(text) => setZipCode(text.replace(/\D/g, '').slice(0, 5))}
                         keyboardType="numeric"
                         maxLength={5}
-                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                        style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-                        placeholderTextColor="#999"
+                        className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
+                        style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
+                        placeholderTextColor={colors.placeholder}
                     />
 
                     {needsName && (
-                        <View className="w-full bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                            <Text className="text-base font-bold text-gray-800 mb-1">Update Name!</Text>
-                            <Text className="text-sm text-gray-600 mb-4">Make sure your friends know who you are.</Text>
+                        <View
+                            className="w-full rounded-lg p-4 mb-6 border"
+                            style={{ backgroundColor: colors.brandSoft, borderColor: colors.border }}
+                        >
+                            <Text className="text-base font-bold text-gray-800 dark:text-white mb-1">Update Name!</Text>
+                            <Text className="text-sm text-gray-600 dark:text-gray-400 mb-4">Make sure your friends know who you are.</Text>
                             <TextInput
                                 placeholder="First Name"
                                 value={firstName}
                                 onChangeText={setFirstName}
-                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-3"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-                                placeholderTextColor="#999"
+                                className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-3"
+                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
+                                placeholderTextColor={colors.placeholder}
                             />
                             <TextInput
                                 placeholder="Last Name"
                                 value={lastName}
                                 onChangeText={setLastName}
-                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-                                placeholderTextColor="#999"
+                                className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base"
+                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
+                                placeholderTextColor={colors.placeholder}
                             />
                         </View>
                     )}
 
                     {isAppleUser && !needsName && (
-                        <Text className="text-sm text-gray-500 text-center mb-6">
+                        <Text className="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">
                             If you would like to modify your name, visit the Profile Tab {`>`} Update Account Info.
                         </Text>
                     )}
@@ -158,7 +163,8 @@ const ProfileSetupScreen = () => {
                     <TouchableOpacity
                         onPress={handleSaveProfile}
                         disabled={isSaving}
-                        className={`w-full py-4 rounded-lg items-center shadow ${isSaving ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
+                        className="w-full py-4 rounded-lg items-center shadow"
+                        style={{ backgroundColor: colors.brand }}
                     >
                         {isSaving ? (
                             <ActivityIndicator color="#fff" />

@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ViewStyle, TextStyle } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
 
 export type LocationFieldVariant = 'wizard' | 'card' | 'modal';
 
@@ -13,35 +15,35 @@ interface VariantStyle {
   iconMarginRight: number;
 }
 
-const VARIANT_STYLES: Record<LocationFieldVariant, VariantStyle> = {
+const getVariantStyles = (colors: ThemeColors): Record<LocationFieldVariant, VariantStyle> => ({
   // create-group/index.tsx, AddMeetupWizard.tsx
   wizard: {
-    container: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 14, paddingVertical: 12 },
-    text: { flex: 1, fontSize: 15, color: '#374151' },
+    container: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12 },
+    text: { flex: 1, fontSize: 15, color: colors.textSecondary },
     iconName: 'map-pin',
     iconSize: 16,
-    iconColor: '#9CA3AF',
+    iconColor: colors.textFaint,
     iconMarginRight: 8,
   },
   // MeetupDetailModal.tsx edit modal
   card: {
-    container: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
-    text: { flex: 1, marginLeft: 12, fontSize: 16, color: '#374151' },
+    container: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.backgroundAlt, borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: colors.border },
+    text: { flex: 1, marginLeft: 12, fontSize: 16, color: colors.textSecondary },
     iconName: 'map-pin',
     iconSize: 18,
-    iconColor: '#4A90E2',
+    iconColor: colors.brand,
     iconMarginRight: 0,
   },
   // group-settings/[id].tsx edit-location modal
   modal: {
-    container: { backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 16 },
-    text: { fontSize: 16, color: '#111827' },
+    container: { backgroundColor: colors.backgroundAlt, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 16 },
+    text: { fontSize: 16, color: colors.textPrimary },
     iconName: null,
     iconSize: 0,
     iconColor: 'transparent',
     iconMarginRight: 0,
   },
-};
+});
 
 interface LocationFieldProps {
   value: string;
@@ -51,7 +53,8 @@ interface LocationFieldProps {
 }
 
 const LocationField = ({ value, placeholder, onPress, variant = 'wizard' }: LocationFieldProps) => {
-  const style = VARIANT_STYLES[variant];
+  const colors = useThemeColors();
+  const style = getVariantStyles(colors)[variant];
   const hasValue = value.trim().length > 0;
 
   return (
@@ -59,7 +62,7 @@ const LocationField = ({ value, placeholder, onPress, variant = 'wizard' }: Loca
       {style.iconName && (
         <Feather name={style.iconName} size={style.iconSize} color={style.iconColor} style={{ marginRight: style.iconMarginRight }} />
       )}
-      <Text style={[style.text, !hasValue && { color: '#C4C9D4' }]} numberOfLines={1}>
+      <Text style={[style.text, !hasValue && { color: colors.placeholder }]} numberOfLines={1}>
         {hasValue ? value : (placeholder ?? '')}
       </Text>
     </TouchableOpacity>

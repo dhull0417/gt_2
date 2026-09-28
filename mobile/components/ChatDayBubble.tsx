@@ -3,12 +3,14 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
+import { useAppearance } from '@/contexts/AppearanceContext';
 
 interface Props {
   label: string;
 }
 
 export function ChatDayBubble({ label }: Props) {
+  const { scheme } = useAppearance();
   const entrance = useSharedValue(0);
   const press = useSharedValue(1);
 
@@ -38,9 +40,9 @@ export function ChatDayBubble({ label }: Props) {
     <View style={styles.wrap} pointerEvents="box-none">
       <Pressable onPress={handlePress} onPressIn={handlePressIn} onPressOut={handlePressOut} hitSlop={6}>
         <Animated.View style={[styles.shadowWrap, animatedStyle]}>
-          <BlurView intensity={50} tint="light" style={styles.pill}>
-            <View style={styles.tint} />
-            <Text style={styles.label}>{label}</Text>
+          <BlurView intensity={50} tint={scheme === 'dark' ? 'dark' : 'light'} style={styles.pill}>
+            <View style={[styles.tint, scheme === 'dark' && styles.tintDark]} />
+            <Text style={[styles.label, scheme === 'dark' && styles.labelDark]}>{label}</Text>
           </BlurView>
         </Animated.View>
       </Pressable>
@@ -72,10 +74,16 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255,255,255,0.4)',
   },
+  tintDark: {
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
   label: {
     fontSize: 12,
     fontWeight: '700',
     color: '#374151',
     letterSpacing: 0.3,
+  },
+  labelDark: {
+    color: '#F3F4F6',
   },
 });

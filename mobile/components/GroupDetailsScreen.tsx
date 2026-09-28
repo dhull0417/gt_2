@@ -28,6 +28,7 @@ import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { GroupCalendarButton } from '@/components/GroupCalendarButton';
 import { TAB_BAR_HEIGHT } from '@/utils/layout';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const styles = StyleSheet.create({
   settingsButton: {
@@ -46,6 +47,7 @@ interface GroupDetailsScreenProps {
 
 export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsScreenProps) => {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const colors = useThemeColors();
 
   const insets = useSafeAreaInsets();
   const api = useApiClient();
@@ -149,10 +151,10 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
 
   return (
     <SafeAreaView
-      style={{ flex: 1, backgroundColor: 'white' }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       edges={showsTabBarBeneath ? ['top', 'left', 'right'] : ['top', 'left', 'right', 'bottom']}
     >
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
+      <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
         <View className="flex-row items-center flex-1">
           {/* Always back to chat — its only meaningful parent, regardless of nav stack */}
           <TouchableOpacity onPress={handleOpenChat} className="mr-2 p-1">
@@ -161,7 +163,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
           <View style={{ marginRight: 10 }}>
             <GroupAvatar name={headerName} imageUrl={groupDetails?.image || fallbackGroup?.image} size={36} borderRadius={9} />
           </View>
-          <Text className="text-lg font-black text-gray-900 flex-1" numberOfLines={1}>
+          <Text className="text-lg font-black text-gray-900 dark:text-white flex-1" numberOfLines={1}>
             {headerName}
           </Text>
         </View>
@@ -174,17 +176,18 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
           {canManageGroup && (
             <TouchableOpacity
               onPress={handleSettingsPress}
-              style={styles.settingsButton}
+              style={[styles.settingsButton, { backgroundColor: colors.backgroundAlt, borderColor: colors.border }]}
               activeOpacity={0.7}
             >
-              <Feather name="settings" size={22} color="#374151" />
+              <Feather name="settings" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
       <ScrollView
-        className="flex-1 bg-gray-50"
+        style={{ backgroundColor: colors.backgroundAlt }}
+        className="flex-1"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ flexGrow: 1, paddingBottom: showsTabBarBeneath ? insets.bottom + TAB_BAR_HEIGHT : 0 }}
       >
@@ -218,19 +221,19 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
         onRequestClose={() => setDmTargetMember(null)}
       >
         <Pressable style={dmStyles.backdrop} onPress={() => setDmTargetMember(null)}>
-          <Pressable style={dmStyles.sheet} onPress={() => {}}>
-            <View style={dmStyles.dragHandle} />
+          <Pressable style={[dmStyles.sheet, { backgroundColor: colors.surface }]} onPress={() => {}}>
+            <View style={[dmStyles.dragHandle, { backgroundColor: colors.borderStrong }]} />
             {dmTargetMember && (
               <>
                 <Image
                   source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${getUserInitial(dmTargetMember)}` }}
-                  style={dmStyles.avatar}
+                  style={[dmStyles.avatar, { backgroundColor: colors.backgroundAlt }]}
                 />
-                <Text style={dmStyles.name}>
+                <Text style={[dmStyles.name, { color: colors.textPrimary }]}>
                   {getUserDisplayName(dmTargetMember)}
                 </Text>
                 <TouchableOpacity
-                  style={dmStyles.dmBtn}
+                  style={[dmStyles.dmBtn, { backgroundColor: colors.brand }]}
                   onPress={handleSendDM}
                   disabled={isCreatingDM}
                   activeOpacity={0.8}

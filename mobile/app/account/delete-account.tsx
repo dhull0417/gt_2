@@ -5,11 +5,15 @@ import { useAuth } from '@clerk/expo';
 import { useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { useApiClient, userApi } from '@/utils/api';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 
 const DeleteAccountScreen = () => {
     const { signOut } = useAuth();
     const api = useApiClient();
     const queryClient = useQueryClient();
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const isDark = scheme === 'dark';
     const [deleteLoading, setDeleteLoading] = useState(false);
 
     const handleDeleteAccount = () => {
@@ -39,12 +43,15 @@ const DeleteAccountScreen = () => {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-gray-100">
+        <SafeAreaView className="flex-1 bg-gray-100 dark:bg-black">
             <View className="p-6">
-                <View style={styles.warningBox}>
-                    <Feather name="alert-triangle" size={22} color="#EF4444" style={{ marginBottom: 10 }} />
-                    <Text style={styles.warningTitle}>Delete Account</Text>
-                    <Text style={styles.warningText}>
+                <View style={[
+                    styles.warningBox,
+                    { backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2', borderColor: isDark ? '#5C2E2E' : '#FCA5A5' },
+                ]}>
+                    <Feather name="alert-triangle" size={22} color={colors.danger} style={{ marginBottom: 10 }} />
+                    <Text style={[styles.warningTitle, { color: colors.danger }]}>Delete Account</Text>
+                    <Text style={[styles.warningText, { color: isDark ? '#FCA5A5' : '#7F1D1D' }]}>
                         Are you sure you want to permanently delete your account? This cannot be undone.
                         {'\n\n'}
                         All your data, messages, and any groups you own will be deleted or transferred.
@@ -54,12 +61,15 @@ const DeleteAccountScreen = () => {
                 <TouchableOpacity
                     onPress={handleDeleteAccount}
                     disabled={deleteLoading}
-                    style={styles.deleteBtn}
+                    style={[
+                        styles.deleteBtn,
+                        { borderColor: colors.danger, backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2' },
+                    ]}
                     activeOpacity={0.7}
                 >
                     {deleteLoading
-                        ? <ActivityIndicator size="small" color="#EF4444" />
-                        : <Text style={styles.deleteText}>Delete Account</Text>}
+                        ? <ActivityIndicator size="small" color={colors.danger} />
+                        : <Text style={[styles.deleteText, { color: colors.danger }]}>Delete Account</Text>}
                 </TouchableOpacity>
             </View>
         </SafeAreaView>

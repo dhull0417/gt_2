@@ -8,6 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useApiClient, groupApi } from '@/utils/api';
 import { broadcastGroupUpdate } from '@/utils/groupRealtime';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 export const PENDING_INVITE_KEY = 'GROUPTHAT_PENDING_INVITE';
 
@@ -22,6 +23,7 @@ const Logo = () => (
 );
 
 const JoinGroupScreen = () => {
+    const colors = useThemeColors();
     const { token } = useLocalSearchParams<{ token: string }>();
     const { isSignedIn, getToken } = useAuth();
     const router = useRouter();
@@ -56,13 +58,13 @@ const JoinGroupScreen = () => {
             router.replace('/(auth)');
         };
         return (
-            <SafeAreaView style={styles.container}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
                 <Logo />
                 <View style={styles.content}>
-                    <Feather name="users" size={48} color="#4A90E2" style={styles.icon} />
-                    <Text style={styles.title}>You're invited!</Text>
-                    <Text style={styles.subtitle}>Sign in to GroupThat to join this group.</Text>
-                    <TouchableOpacity style={styles.button} onPress={handleSignIn}>
+                    <Feather name="users" size={48} color={colors.brand} style={styles.icon} />
+                    <Text style={[styles.title, { color: colors.textPrimary }]}>You're invited!</Text>
+                    <Text style={[styles.subtitle, { color: colors.textMuted }]}>Sign in to GroupThat to join this group.</Text>
+                    <TouchableOpacity style={[styles.button, { backgroundColor: colors.brand }]} onPress={handleSignIn}>
                         <Text style={styles.buttonText}>Sign In / Sign Up</Text>
                     </TouchableOpacity>
                 </View>
@@ -72,11 +74,11 @@ const JoinGroupScreen = () => {
 
     if (state === 'loading') {
         return (
-            <SafeAreaView style={styles.container}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
                 <Logo />
                 <View style={styles.content}>
                     <LoadingAnimation />
-                    <Text style={styles.subtitle}>Joining group...</Text>
+                    <Text style={[styles.subtitle, { color: colors.textMuted }]}>Joining group...</Text>
                 </View>
             </SafeAreaView>
         );
@@ -84,13 +86,13 @@ const JoinGroupScreen = () => {
 
     if (state === 'error') {
         return (
-            <SafeAreaView style={styles.container}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
                 <Logo />
                 <View style={styles.content}>
-                    <Feather name="alert-circle" size={48} color="#EF4444" style={styles.icon} />
-                    <Text style={styles.title}>Invite Invalid</Text>
-                    <Text style={styles.subtitle}>{errorMessage}</Text>
-                    <TouchableOpacity style={styles.button} onPress={() => router.replace('/(tabs)')}>
+                    <Feather name="alert-circle" size={48} color={colors.danger} style={styles.icon} />
+                    <Text style={[styles.title, { color: colors.textPrimary }]}>Invite Invalid</Text>
+                    <Text style={[styles.subtitle, { color: colors.textMuted }]}>{errorMessage}</Text>
+                    <TouchableOpacity style={[styles.button, { backgroundColor: colors.brand }]} onPress={() => router.replace('/(tabs)')}>
                         <Text style={styles.buttonText}>Go to Groups</Text>
                     </TouchableOpacity>
                 </View>
@@ -99,19 +101,19 @@ const JoinGroupScreen = () => {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <Logo />
             <View style={styles.content}>
-                <Feather name="check-circle" size={48} color="#22C55E" style={styles.icon} />
-                <Text style={styles.title}>
+                <Feather name="check-circle" size={48} color={colors.success} style={styles.icon} />
+                <Text style={[styles.title, { color: colors.textPrimary }]}>
                     {state === 'already_member' ? 'Already a member!' : 'You joined!'}
                 </Text>
-                <Text style={styles.subtitle}>
+                <Text style={[styles.subtitle, { color: colors.textMuted }]}>
                     {state === 'already_member'
                         ? `You're already in "${groupName}".`
                         : `Welcome to "${groupName}"!`}
                 </Text>
-                <TouchableOpacity style={styles.button} onPress={goToMeetups}>
+                <TouchableOpacity style={[styles.button, { backgroundColor: colors.brand }]} onPress={goToMeetups}>
                     <Text style={styles.buttonText}>See Upcoming Meetups</Text>
                 </TouchableOpacity>
             </View>

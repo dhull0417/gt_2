@@ -4,10 +4,12 @@ import { useSignUp } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const SignUpScreen = () => {
   const router = useRouter();
   const { signUp } = useSignUp();
+  const colors = useThemeColors();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -40,7 +42,7 @@ const SignUpScreen = () => {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView className="flex-1 bg-white dark:bg-gray-900">
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
@@ -55,64 +57,65 @@ const SignUpScreen = () => {
             className="p-8"
             keyboardShouldPersistTaps="handled"
         >
-            <Text className="text-3xl font-black text-gray-900 mb-8">Create Account</Text>
+            <Text className="text-3xl font-black text-gray-900 dark:text-white mb-8">Create Account</Text>
             <TextInput
                 autoCapitalize="none"
                 keyboardType="email-address"
                 value={email}
                 onChangeText={setEmail}
                 placeholder="Email Address"
-                placeholderTextColor="#9CA3AF"
-                className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
-                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
+                placeholderTextColor={colors.placeholder}
+                className="w-full bg-gray-100 dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
+                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
             />
-            <View className="w-full flex-row items-center bg-gray-100 border border-gray-300 rounded-lg text-base mb-4 pr-4">
+            <View className="w-full flex-row items-center bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4 pr-4">
                 <TextInput
                     value={password}
                     onChangeText={setPassword}
                     placeholder="Password"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.placeholder}
                     secureTextEntry={!isPasswordVisible}
                     className="flex-1 p-4 text-base"
-                    style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
+                    style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
                 />
                 <TouchableOpacity onPress={() => setPasswordVisible(!isPasswordVisible)}>
                     <Feather
                         name={isPasswordVisible ? 'eye-off' : 'eye'}
                         size={22}
-                        color="#6B7280"
+                        color={colors.textMuted}
                     />
                 </TouchableOpacity>
             </View>
-            <View className="w-full flex-row items-center bg-gray-100 border border-gray-300 rounded-lg text-base mb-6 pr-4">
+            <View className="w-full flex-row items-center bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-6 pr-4">
                 <TextInput
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     placeholder="Confirm Password"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.placeholder}
                     secureTextEntry={!isConfirmPasswordVisible}
                     className="flex-1 p-4 text-base"
-                    style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
+                    style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
                 />
                 <TouchableOpacity onPress={() => setConfirmPasswordVisible(!isConfirmPasswordVisible)}>
-                    <Feather 
-                        name={isConfirmPasswordVisible ? 'eye-off' : 'eye'} 
-                        size={22} 
-                        color="#6B7280" 
+                    <Feather
+                        name={isConfirmPasswordVisible ? 'eye-off' : 'eye'}
+                        size={22}
+                        color={colors.textMuted}
                     />
                 </TouchableOpacity>
             </View>
             <TouchableOpacity
                 onPress={onSignUpPress}
                 disabled={isLoading}
-                className={`w-full py-4 rounded-lg items-center shadow ${isLoading ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
+                className="w-full py-4 rounded-lg items-center shadow"
+                style={{ backgroundColor: colors.brand }}
             >
                 <Text className="text-white text-lg font-bold">Create Account</Text>
             </TouchableOpacity>
             <View className="flex-row justify-center mt-6">
-                <Text className="text-base text-gray-600">Already have an account? </Text>
+                <Text className="text-base text-gray-600 dark:text-gray-400">Already have an account? </Text>
                 <Link href="/(auth)/sign-in">
-                    <Text className="text-base text-[#4A90E2] font-bold">Sign In</Text>
+                    <Text className="text-base font-bold" style={{ color: colors.brand }}>Sign In</Text>
                 </Link>
             </View>
         </ScrollView>

@@ -20,6 +20,7 @@ import { MeetupCard } from '@/components/MeetupCard';
 import { DayHeader, splitByDay } from '@/components/MeetupDayGroups';
 import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { getMeetupStatus } from '@/utils/meetupStatus';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 
 type GroupedMeetups = {
   'Upcoming': Meetup[];
@@ -100,6 +101,7 @@ const FILTER_TABS: { key: RsvpFilter; label: string }[] = [
 
 // Pulses to 110% scale on tap (not just a color change) before invoking onPress.
 const FilterPill = ({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) => {
+  const colors = useThemeColors();
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePress = () => {
@@ -120,11 +122,11 @@ const FilterPill = ({ label, active, onPress }: { label: string; active: boolean
           paddingVertical: 8,
           borderRadius: 999,
           borderWidth: 1.5,
-          borderColor: active ? '#4A90E2' : '#E5E7EB',
-          backgroundColor: active ? '#4A90E2' : 'white',
+          borderColor: active ? colors.brand : colors.border,
+          backgroundColor: active ? colors.brand : colors.surface,
         }}
       >
-        <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.5, color: active ? 'white' : '#6B7280' }}>
+        <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.5, color: active ? 'white' : colors.textMuted }}>
           {label}
         </Text>
       </TouchableOpacity>
@@ -141,6 +143,8 @@ const DashboardScreen = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const contentTopInset = useContentTopInset();
+  const { scheme } = useAppearance();
+  const colors = useThemeColors();
   const { openMeetupId } = useLocalSearchParams<{ openMeetupId?: string }>();
   const [selectedMeetup, setSelectedMeetup] = useState<Meetup | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -348,20 +352,25 @@ const DashboardScreen = () => {
     }
   };
 
+  // The "tap to see more" hint bubble reuses the warning token's hue but needs its own
+  // (lighter-weight) fill/border, so it's kept local instead of adding a one-off theme token.
+  const hintBg = scheme === 'dark' ? '#3A2E12' : '#FFFBEB';
+  const hintBorder = scheme === 'dark' ? '#5B4A1E' : '#FDE68A';
+
   return (
     <SafeAreaView
-      className="flex-1 bg-gray-50"
+      className="flex-1 bg-gray-50 dark:bg-black"
       edges={['left', 'right']}
       style={{ paddingTop: contentTopInset }}
     >
-      <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
+      <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
         <View style={{ width: 26 }} />
-        <Text className="text-xl font-black text-gray-900">Meetups</Text>
+        <Text className="text-xl font-black text-gray-900 dark:text-gray-100">Meetups</Text>
         <TouchableOpacity
           onPress={() => setShowAddChoicePicker(true)}
           style={{ alignItems: 'center', justifyContent: 'center' }}
         >
-          <Feather name="plus-circle" size={26} color="#4A90E2" />
+          <Feather name="plus-circle" size={26} color={colors.brand} />
         </TouchableOpacity>
       </View>
 
@@ -369,24 +378,24 @@ const DashboardScreen = () => {
         {isLoading ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
         ) : isError ? (
-          <Text style={{ textAlign: 'center', color: '#ef4444', marginTop: 32 }}>
+          <Text style={{ textAlign: 'center', color: colors.danger, marginTop: 32 }}>
             Failed to load meetups.
           </Text>
         ) : (
           <>
             <View className="pb-10">
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 }}>
-                <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', letterSpacing: -1 }}>
+                <Text style={{ fontSize: 32, fontWeight: '900', color: colors.brand, letterSpacing: -1 }}>
                   Upcoming Meetups
                 </Text>
                 {uniqueGroups.length > 1 && (
                   <TouchableOpacity
                     onPress={() => setFilterOpen(prev => !prev)}
-                    style={{ backgroundColor: 'white', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 10, position: 'relative' }}
+                    style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, position: 'relative' }}
                   >
-                    <Feather name="sliders" size={18} color="#1D4ED8" />
+                    <Feather name="sliders" size={18} color={colors.brand} />
                     {hiddenGroupIds.size > 0 && (
-                      <View style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF7A6E' }} />
+                      <View style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentCoral }} />
                     )}
                   </TouchableOpacity>
                 )}
@@ -404,17 +413,17 @@ const DashboardScreen = () => {
               </View>
 
               <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, marginBottom: 8, gap: 6 }}>
-                <Text style={{ fontSize: 13, color: '#9CA3AF', fontWeight: '500' }}>
+                <Text style={{ fontSize: 13, color: colors.textFaint, fontWeight: '500' }}>
                   Tap
                 </Text>
                 <View style={{
                   width: 36, height: 36, borderRadius: 10,
                   alignItems: 'center', justifyContent: 'center',
-                  borderWidth: 1, backgroundColor: '#FFFBEB', borderColor: '#FDE68A',
+                  borderWidth: 1, backgroundColor: hintBg, borderColor: hintBorder,
                 }}>
-                  <Feather name="calendar" size={18} color="#D97706" />
+                  <Feather name="calendar" size={18} color={colors.warning} />
                 </View>
-                <Text style={{ fontSize: 13, color: '#9CA3AF', fontWeight: '500' }}>
+                <Text style={{ fontSize: 13, color: colors.textFaint, fontWeight: '500' }}>
                   in your Group Chat to see more meetups!
                 </Text>
               </View>
@@ -424,14 +433,14 @@ const DashboardScreen = () => {
                   <TouchableOpacity
                     onPress={toggleAll}
                     activeOpacity={0.7}
-                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10, borderBottomWidth: 0.5, borderBottomColor: '#E5E7EB', marginBottom: 2 }}
+                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10, borderBottomWidth: 0.5, borderBottomColor: colors.border, marginBottom: 2 }}
                   >
-                    <Text style={{ flex: 1, fontSize: 15, color: '#111827', fontWeight: '700' }}>All</Text>
+                    <Text style={{ flex: 1, fontSize: 15, color: colors.textPrimary, fontWeight: '700' }}>All</Text>
                     <View style={{
                       width: 20, height: 20, borderRadius: 5,
                       borderWidth: 1.5,
-                      borderColor: hiddenGroupIds.size === 0 ? '#4A90E2' : '#D1D5DB',
-                      backgroundColor: hiddenGroupIds.size === 0 ? '#4A90E2' : 'transparent',
+                      borderColor: hiddenGroupIds.size === 0 ? colors.brand : colors.borderStrong,
+                      backgroundColor: hiddenGroupIds.size === 0 ? colors.brand : 'transparent',
                       justifyContent: 'center', alignItems: 'center',
                     }}>
                       {hiddenGroupIds.size === 0 && <Feather name="check" size={12} color="#fff" />}
@@ -448,12 +457,12 @@ const DashboardScreen = () => {
                         style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10 }}
                       >
                         <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
-                        <Text style={{ flex: 1, fontSize: 15, color: '#374151', fontWeight: '500' }}>{group.name}</Text>
+                        <Text style={{ flex: 1, fontSize: 15, color: colors.textSecondary, fontWeight: '500' }}>{group.name}</Text>
                         <View style={{
                           width: 20, height: 20, borderRadius: 5,
                           borderWidth: 1.5,
-                          borderColor: isVisible ? '#4A90E2' : '#D1D5DB',
-                          backgroundColor: isVisible ? '#4A90E2' : 'transparent',
+                          borderColor: isVisible ? colors.brand : colors.borderStrong,
+                          backgroundColor: isVisible ? colors.brand : 'transparent',
                           justifyContent: 'center', alignItems: 'center',
                         }}>
                           {isVisible && <Feather name="check" size={12} color="#fff" />}
@@ -465,16 +474,16 @@ const DashboardScreen = () => {
               )}
 
               {meetups?.length === 0 && (
-                <View className="bg-white p-5 my-2 rounded-2xl items-center border border-gray-100">
-                  <Text style={{ fontSize: 16, color: '#4A90E2' }}>
+                <View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
+                  <Text style={{ fontSize: 16, color: colors.brand }}>
                     You have no upcoming meetups.
                   </Text>
                 </View>
               )}
 
               {groupedMeetups['Upcoming'].length > 0 && filteredUpcomingMeetups.length === 0 && (
-                <View className="bg-white p-5 my-2 rounded-2xl items-center border border-gray-100">
-                  <Text style={{ fontSize: 14, color: '#9CA3AF', fontWeight: '500' }}>
+                <View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
+                  <Text style={{ fontSize: 14, color: colors.textFaint, fontWeight: '500' }}>
                     {rsvpFilter === 'in' ? "You're not marked In for any upcoming meetup." :
                      rsvpFilter === 'out' ? "You're not marked Out for any upcoming meetup." :
                      "Nothing undecided — you're all caught up."}
@@ -502,7 +511,7 @@ const DashboardScreen = () => {
 
               {groupedMeetups['Past Week'].length > 0 && (
                 <View>
-                  <Text style={{ fontSize: 12, fontWeight: '900', color: '#FF7A6E', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: colors.accentCoral, marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
                     Past Week
                   </Text>
                   {splitByDay(groupedMeetups['Past Week']).map(day => (
@@ -549,34 +558,34 @@ const DashboardScreen = () => {
         onRequestClose={() => setZipCardDismissed(true)}
       >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 28 }}>
-          <View style={{ backgroundColor: 'white', borderRadius: 24, padding: 28 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 6 }}>
+          <View style={{ backgroundColor: colors.surface, borderRadius: 24, padding: 28 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary, marginBottom: 6 }}>
               One quick thing
             </Text>
-            <Text style={{ fontSize: 15, color: '#6B7280', marginBottom: 20, lineHeight: 22 }}>
+            <Text style={{ fontSize: 15, color: colors.textMuted, marginBottom: 20, lineHeight: 22 }}>
               Add your zip code so we can improve your experience.
             </Text>
             <TextInput
               value={zipCodeInput}
               onChangeText={text => { setZipCodeInput(text.replace(/\D/g, '').slice(0, 5)); setZipCodeError(''); }}
               placeholder="Zip Code"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={colors.placeholder}
               keyboardType="numeric"
               maxLength={5}
               style={{
-                backgroundColor: '#F9FAFB', borderWidth: 1,
-                borderColor: zipCodeError ? '#EF4444' : '#E5E7EB',
+                backgroundColor: colors.surfaceAlt, borderWidth: 1,
+                borderColor: zipCodeError ? colors.danger : colors.border,
                 borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13,
-                fontSize: 16, color: '#111827', marginBottom: zipCodeError ? 6 : 16,
+                fontSize: 16, color: colors.textPrimary, marginBottom: zipCodeError ? 6 : 16,
               }}
             />
             {!!zipCodeError && (
-              <Text style={{ color: '#EF4444', fontSize: 13, marginBottom: 12 }}>{zipCodeError}</Text>
+              <Text style={{ color: colors.danger, fontSize: 13, marginBottom: 12 }}>{zipCodeError}</Text>
             )}
             <TouchableOpacity
               onPress={handleSaveZipCode}
               disabled={isSavingZip}
-              style={{ backgroundColor: '#4A90E2', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 }}
+              style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 }}
             >
               {isSavingZip
                 ? <ActivityIndicator color="white" />
@@ -587,7 +596,7 @@ const DashboardScreen = () => {
               onPress={() => setZipCardDismissed(true)}
               style={{ alignItems: 'center', paddingVertical: 8 }}
             >
-              <Text style={{ color: '#9CA3AF', fontSize: 14 }}>Skip for now</Text>
+              <Text style={{ color: colors.textFaint, fontSize: 14 }}>Skip for now</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -635,31 +644,31 @@ const DashboardScreen = () => {
             <View style={{ width: '100%', maxWidth: 340, gap: 12 }}>
               <TouchableOpacity
                 activeOpacity={0.8}
-                style={{ flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
+                style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
                 onPress={() => { setShowAddChoicePicker(false); router.push('/create-group'); }}
               >
-                <Feather name="users" size={22} color="#4A90E2" />
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginLeft: 14 }}>Create New Group</Text>
+                <Feather name="users" size={22} color={colors.brand} />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginLeft: 14 }}>Create New Group</Text>
               </TouchableOpacity>
 
               {meetupCapableGroups.length > 0 && (
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  style={{ flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
+                  style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
                   onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('existing'); setAddMeetupVisible(true); }}
                 >
-                  <Feather name="calendar" size={22} color="#4A90E2" />
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginLeft: 14 }}>Add Meetup to Existing Group</Text>
+                  <Feather name="calendar" size={22} color={colors.brand} />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginLeft: 14 }}>Add Meetup to Existing Group</Text>
                 </TouchableOpacity>
               )}
 
               <TouchableOpacity
                 activeOpacity={0.8}
-                style={{ flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
+                style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
                 onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('new'); setAddMeetupVisible(true); }}
               >
-                <Feather name="plus-circle" size={22} color="#4A90E2" />
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginLeft: 14 }}>Create One-Time Meetup</Text>
+                <Feather name="plus-circle" size={22} color={colors.brand} />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginLeft: 14 }}>Create One-Time Meetup</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, FlatList, Alert } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Schedule } from '@/utils/api';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 interface SchedulePickerProps {
     onScheduleChange: (schedule: Schedule) => void;
@@ -19,6 +20,7 @@ const daysOfWeek = [
 ];
 
 const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange, initialValue }) => {
+    const colors = useThemeColors();
     // Defaults to 'weekly' unless initialValue specifies otherwise
     const [frequency, setFrequency] = useState<Schedule['frequency']>(initialValue?.frequency || 'weekly');
     const [selectedDays, setSelectedDays] = useState<number[]>(initialValue?.days || []);
@@ -28,10 +30,10 @@ const SchedulePicker: React.FC<SchedulePickerProps> = ({ onScheduleChange, initi
 
 useEffect(() => {
         const newSchedule: Schedule = {
-            frequency, 
-            days: [] 
+            frequency,
+            days: []
         };
-        
+
         if (frequency === 'weekly' || frequency === 'biweekly') {
             newSchedule.days = selectedDays;
         } else if (frequency === 'monthly') {
@@ -39,13 +41,13 @@ useEffect(() => {
         } else if (frequency === 'daily') {
             // Send all 7 days, matching create-group convention
             newSchedule.days = [0, 1, 2, 3, 4, 5, 6];
-        } 
+        }
 
         onScheduleChange(newSchedule);
     }, [frequency, selectedDays, selectedDates]);
 
     const toggleDay = (dayIndex: number) => {
-        setSelectedDays(prev => 
+        setSelectedDays(prev =>
             prev.includes(dayIndex) ? prev.filter(d => d !== dayIndex) : [...prev, dayIndex]
         );
     };
@@ -66,12 +68,12 @@ useEffect(() => {
             {/* Frequency Selector */}
             <View style={styles.row}>
                 {(['daily', 'weekly', 'biweekly', 'monthly'] as const).map((freq) => (
-                    <TouchableOpacity 
-                        key={freq} 
-                        style={[styles.freqButton, frequency === freq && styles.freqActive]}
+                    <TouchableOpacity
+                        key={freq}
+                        style={[styles.freqButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }, frequency === freq && { backgroundColor: colors.brand, borderColor: colors.brand }]}
                         onPress={() => setFrequency(freq)}
                     >
-                        <Text style={[styles.freqText, frequency === freq && styles.textActive]}>
+                        <Text style={[styles.freqText, { color: colors.textSecondary }, frequency === freq && styles.textActive]}>
                             {freq.charAt(0).toUpperCase() + freq.slice(1)}
                         </Text>
                     </TouchableOpacity>
@@ -82,12 +84,12 @@ useEffect(() => {
             {(frequency === 'weekly' || frequency === 'biweekly') && (
                 <View style={styles.daysContainer}>
                     {daysOfWeek.map((day) => (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             key={day.value}
-                            style={[styles.dayButton, selectedDays.includes(day.value) && styles.dayActive]}
+                            style={[styles.dayButton, { backgroundColor: colors.surface, borderColor: colors.border }, selectedDays.includes(day.value) && { backgroundColor: colors.brand, borderColor: colors.brand }]}
                             onPress={() => toggleDay(day.value)}
                         >
-                            <Text style={[styles.dayText, selectedDays.includes(day.value) && styles.textActive]}>
+                            <Text style={[styles.dayText, { color: colors.textSecondary }, selectedDays.includes(day.value) && styles.textActive]}>
                                 {day.label.slice(0, 3)}
                             </Text>
                         </TouchableOpacity>
@@ -99,20 +101,20 @@ useEffect(() => {
             {frequency === 'monthly' && (
                 <View style={styles.calendarGrid}>
                     {Array.from({ length: 31 }, (_, i) => i + 1).map((date) => (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             key={date}
-                            style={[styles.dateBox, selectedDates.includes(date) && styles.dayActive]}
+                            style={[styles.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }, selectedDates.includes(date) && { backgroundColor: colors.brand, borderColor: colors.brand }]}
                             onPress={() => toggleDate(date)}
                         >
-                            <Text style={[styles.dateText, selectedDates.includes(date) && styles.textActive]}>{date}</Text>
+                            <Text style={[styles.dateText, { color: colors.textSecondary }, selectedDates.includes(date) && styles.textActive]}>{date}</Text>
                         </TouchableOpacity>
                     ))}
                 </View>
             )}
-            
+
             {/* Daily UI */}
             {frequency === 'daily' && (
-                <Text style={styles.infoText}>Meetup will occur every day.</Text>
+                <Text style={[styles.infoText, { color: colors.textMuted }]}>Meetup will occur every day.</Text>
             )}
         </View>
     );
@@ -121,19 +123,17 @@ useEffect(() => {
 const styles = StyleSheet.create({
     row: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 16 },
     freqButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#D1D5DB', marginRight: 8, marginBottom: 8, backgroundColor: '#FFF' },
-    freqActive: { backgroundColor: '#4A90E2', borderColor: '#4A90E2' },
     freqText: { color: '#374151', fontSize: 14, fontWeight: '500' },
     textActive: { color: '#FFF' },
-    
+
     daysContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
     dayButton: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', margin: 4, backgroundColor: '#FFF' },
-    dayActive: { backgroundColor: '#4A90E2', borderColor: '#4A90E2' },
     dayText: { fontSize: 12, color: '#374151' },
 
     calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
     dateBox: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', margin: 3, backgroundColor: '#FFF' },
     dateText: { fontSize: 12, color: '#374151' },
-    
+
     infoText: { textAlign: 'center', color: '#6B7280', marginTop: 8, fontStyle: 'italic' }
 });
 

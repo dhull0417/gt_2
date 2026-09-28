@@ -2,12 +2,22 @@ import { Stack, useRouter } from 'expo-router';
 import React from 'react';
 import { Platform, TouchableOpacity } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const AccountLayout = () => {
     const router = useRouter();
+    const colors = useThemeColors();
 
     return (
-        <Stack screenOptions={{ headerTitleAlign: 'center' }}>
+        <Stack
+            screenOptions={{
+                headerTitleAlign: 'center',
+                contentStyle: { backgroundColor: colors.background },
+                headerStyle: { backgroundColor: colors.surface },
+                headerTintColor: colors.textPrimary,
+                headerTitleStyle: { color: colors.textPrimary },
+            }}
+        >
             <Stack.Screen
                 name="index"
                 options={{
@@ -18,7 +28,7 @@ const AccountLayout = () => {
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
                         >
-                            <Feather name="x" size={24} color="#374151" style={{ transform: [{ translateX: 2 }] }} />
+                            <Feather name="x" size={24} color={colors.textSecondary} style={{ transform: [{ translateX: 2 }] }} />
                         </TouchableOpacity>
                     ),
                 }}
@@ -32,19 +42,19 @@ const AccountLayout = () => {
                     presentation: Platform.OS === 'ios' ? 'modal' : undefined,
                 }}
             />
-            <Stack.Screen 
-                name="update-email" 
-                options={{ 
+            <Stack.Screen
+                name="update-email"
+                options={{
                     headerTitle: 'Update Email',
                     presentation: 'modal',
-                }} 
+                }}
             />
-            <Stack.Screen 
-                name="verify-email" 
-                options={{ 
+            <Stack.Screen
+                name="verify-email"
+                options={{
                     headerTitle: 'Verify New Email',
                     presentation: 'modal',
-                }} 
+                }}
             />
             <Stack.Screen
                 name="change-password"

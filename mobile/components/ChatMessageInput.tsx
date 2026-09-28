@@ -6,6 +6,7 @@ import { useAuth } from '@clerk/expo';
 import { ensurePhotoLibraryPermission, uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
 import { useApiClient } from '@/utils/api';
 import type { PendingImage } from '@/types/chat';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll }: Props) {
+  const colors = useThemeColors();
   const { getToken } = useAuth();
   const api = useApiClient();
   const [text, setText] = useState('');
@@ -110,7 +112,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
             </View>
           )}
           <TouchableOpacity
-            style={styles.removeBtn}
+            style={[styles.removeBtn, { backgroundColor: colors.textSecondary }]}
             onPress={() => setPendingImage(null)}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
@@ -120,16 +122,16 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
       )}
 
       {attachMenuOpen && (
-        <View style={styles.tray}>
+        <View style={[styles.tray, { backgroundColor: colors.surface }]}>
           <View style={styles.trayRow}>
             <TouchableOpacity
               style={styles.trayItem}
               onPress={() => { closeAttachMenu(); pickImage(); }}
             >
-              <View style={[styles.trayIconWrap, { backgroundColor: '#EFF6FF' }]}>
-                <Feather name="image" size={20} color="#4A90E2" />
+              <View style={[styles.trayIconWrap, { backgroundColor: colors.brand + '20' }]}>
+                <Feather name="image" size={20} color={colors.brand} />
               </View>
-              <Text style={styles.trayItemLabel}>Photos</Text>
+              <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Photos</Text>
             </TouchableOpacity>
 
             {onCreateEvent && (
@@ -137,10 +139,10 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
                 style={styles.trayItem}
                 onPress={() => { closeAttachMenu(); onCreateEvent(); }}
               >
-                <View style={[styles.trayIconWrap, { backgroundColor: '#ECFDF5' }]}>
+                <View style={[styles.trayIconWrap, { backgroundColor: '#10B98120' }]}>
                   <Feather name="calendar" size={20} color="#10B981" />
                 </View>
-                <Text style={styles.trayItemLabel}>Event</Text>
+                <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Event</Text>
               </TouchableOpacity>
             )}
 
@@ -149,17 +151,17 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
                 style={styles.trayItem}
                 onPress={() => { closeAttachMenu(); onCreatePoll(); }}
               >
-                <View style={[styles.trayIconWrap, { backgroundColor: '#F5F3FF' }]}>
+                <View style={[styles.trayIconWrap, { backgroundColor: '#7C3AED20' }]}>
                   <Feather name="bar-chart-2" size={20} color="#7C3AED" />
                 </View>
-                <Text style={styles.trayItemLabel}>Poll</Text>
+                <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Poll</Text>
               </TouchableOpacity>
             )}
           </View>
         </View>
       )}
 
-      <View style={styles.container}>
+      <View style={[styles.container, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
         <TouchableOpacity
           style={styles.photoBtn}
           onPress={toggleAttachMenu}
@@ -167,24 +169,24 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
           <Animated.View style={{ transform: [{ rotate: plusRotation }] }}>
-            <Feather name="plus-circle" size={24} color={uploading ? '#D1D5DB' : '#4A90E2'} />
+            <Feather name="plus-circle" size={24} color={uploading ? colors.borderStrong : colors.brand} />
           </Animated.View>
         </TouchableOpacity>
 
         <TextInput
-          style={styles.input}
+          style={[styles.input, { backgroundColor: colors.backgroundAlt, color: colors.textPrimary }]}
           value={text}
           onChangeText={(val) => { setText(val); if (val) onTyping?.(); }}
           onFocus={closeAttachMenu}
           placeholder="Message..."
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={colors.placeholder}
           multiline
           maxLength={2000}
           returnKeyType="default"
         />
 
         <TouchableOpacity
-          style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+          style={[styles.sendBtn, { backgroundColor: colors.brand }, !canSend && { backgroundColor: colors.borderStrong }]}
           onPress={handleSend}
           disabled={!canSend}
         >

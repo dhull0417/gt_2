@@ -5,9 +5,11 @@ import { NativeTabs, Icon, Label, VectorIcon } from 'expo-router/unstable-native
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@clerk/expo';
 import { AndroidTabBar } from '@/components/AndroidTabBar';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const TabsLayout = () => {
   const { isLoaded, isSignedIn } = useAuth();
+  const colors = useThemeColors();
 
   // Show nothing until Clerk is ready
   if (!isLoaded) {
@@ -32,12 +34,12 @@ const TabsLayout = () => {
 
   return (
     <NativeTabs
-      tintColor="#4A90E2"
-      indicatorColor="#4A90E2"
+      tintColor={colors.brand}
+      indicatorColor={colors.brand}
       rippleColor="rgba(74, 144, 226, 0.15)"
       labelVisibilityMode="unlabeled"
       blurEffect="none"
-      backgroundColor="white"
+      backgroundColor={colors.surface}
       disableTransparentOnScrollEdge
     >
       <NativeTabs.Trigger name="index">

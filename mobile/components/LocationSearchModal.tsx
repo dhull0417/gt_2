@@ -3,6 +3,7 @@ import { View, Modal, KeyboardAvoidingView, Platform, StyleSheet } from 'react-n
 import { BlurView } from 'expo-blur';
 import LocationSearchPanel from './LocationSearchPanel';
 import { PlaceDetails } from '@/utils/api';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 interface LocationSearchModalProps {
   visible: boolean;
@@ -18,6 +19,7 @@ interface LocationSearchModalProps {
 }
 
 const LocationSearchModal = ({ visible, initialValue, placeholder, onDone, onCancel, asOverlay }: LocationSearchModalProps) => {
+  const colors = useThemeColors();
   // Backdrop blur fills the whole window; only the card shifts for the keyboard
   const content = (
     <>
@@ -26,7 +28,7 @@ const LocationSearchModal = ({ visible, initialValue, placeholder, onDone, onCan
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.centerWrap}
       >
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.surface }]}>
           {visible && (
             <LocationSearchPanel
               initialValue={initialValue}

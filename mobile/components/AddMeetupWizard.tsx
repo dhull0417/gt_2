@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -9,7 +9,8 @@ import {
     ActivityIndicator,
     Alert,
     ScrollView,
-    Image
+    Image,
+    KeyboardAvoidingView
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +23,7 @@ import LocationField from './LocationField';
 import LocationSearchModal from './LocationSearchModal';
 import OptionPickerModal from './OptionPickerModal';
 import { useQueryClient } from '@tanstack/react-query';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 interface GroupPickerMode {
     /** Non-DM groups the current user belongs to. */
@@ -57,11 +59,13 @@ const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): str
 
 // Single-screen form for one-off meetups; styled to match create-group/index.tsx
 const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMeetupCreated }: AddMeetupWizardProps) => {
+    const colors = useThemeColors();
     const api = useApiClient();
     const queryClient = useQueryClient();
     const { getToken } = useAuth();
 
     const [isSaving, setIsSaving] = useState(false);
+    const scrollRef = useRef<ScrollView>(null);
 
     // Initial group choice: honors groupPickerMode.initialMode (set by which square the user
     // tapped on the meetups tab), falling back to the first existing group, or 'new' if none.
@@ -262,61 +266,63 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
             onRequestClose={resetAndClose}
         >
             {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
-            <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
+            <SafeAreaView style={[s.screen, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
                 <View style={s.screenHeader}>
                     <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>
-                        <Feather name="x" size={24} color="#6B7280" />
+                        <Feather name="x" size={24} color={colors.textMuted} />
                     </TouchableOpacity>
                     <View style={{ width: 36 }} />
                 </View>
 
+                {/* Android edge-to-edge doesn't resize Modal windows for the keyboard, so pad manually on both platforms */}
+                <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
                 <ScrollView
+                    ref={scrollRef}
                     style={{ flex: 1 }}
                     contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
-                    automaticallyAdjustKeyboardInsets
                 >
-                    <Text style={s.screenTitle}>Add Meetup</Text>
-                    <Text style={s.screenSub}>Set the date, time, and details</Text>
+                    <Text style={[s.screenTitle, { color: colors.textPrimary }]}>Add Meetup</Text>
+                    <Text style={[s.screenSub, { color: colors.textFaint }]}>Set the date, time, and details</Text>
 
                     {/* Which group? (only in groupPickerMode) */}
                     {groupPickerMode && groupPickerMode.groups.length > 0 && !justCreatedGroup && (
                         <>
-                            <Text style={s.fieldLabel}>Which group?</Text>
-                            <TouchableOpacity style={s.dateFieldRow} onPress={() => setShowGroupPicker(true)}>
-                                <Feather name="users" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                                <Text style={s.dateFieldText}>
+                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Which group?</Text>
+                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => setShowGroupPicker(true)}>
+                                <Feather name="users" size={16} color={colors.brand} style={{ marginRight: 8 }} />
+                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>
                                     {pickerChoice === 'new' ? 'New Group' : groupPickerMode.groups.find(g => g._id === pickerChoice)?.name}
                                 </Text>
-                                <Feather name="chevron-down" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                                <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                             </TouchableOpacity>
                         </>
                     )}
 
                     {groupPickerMode && (pickerChoice === 'new') && !justCreatedGroup && (
                         <>
-                            <Text style={s.fieldLabel}>Group Name</Text>
-                            <View style={s.inputRow}>
+                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Group Name</Text>
+                            <View style={[s.inputRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                                 <TextInput
-                                    style={s.inlineInput}
+                                    style={[s.inlineInput, { color: colors.textSecondary }]}
                                     placeholder="e.g. Basketball Squad"
-                                    placeholderTextColor="#C4C9D4"
+                                    placeholderTextColor={colors.placeholder}
                                     value={newGroupName}
                                     onChangeText={setNewGroupName}
                                 />
                             </View>
 
-                            <Text style={s.fieldLabel}>Group Photo (optional)</Text>
-                            <TouchableOpacity onPress={handlePickGroupImage} disabled={isUploadingGroupImage} style={s.groupImagePicker}>
+                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Group Photo (optional)</Text>
+                            <TouchableOpacity onPress={handlePickGroupImage} disabled={isUploadingGroupImage} style={[s.groupImagePicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                                 {isUploadingGroupImage ? (
-                                    <ActivityIndicator color="#4A90E2" />
+                                    <ActivityIndicator color={colors.brand} />
                                 ) : newGroupImageLocalUri ? (
                                     <Image source={{ uri: newGroupImageLocalUri }} style={s.groupImagePreview} />
                                 ) : (
                                     <>
-                                        <Feather name="image" size={24} color="#9CA3AF" />
-                                        <Text style={s.groupImagePickerText}>Add group photo</Text>
+                                        <Feather name="image" size={24} color={colors.textFaint} />
+                                        <Text style={[s.groupImagePickerText, { color: colors.textFaint }]}>Add group photo</Text>
                                     </>
                                 )}
                             </TouchableOpacity>
@@ -324,20 +330,20 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                     )}
 
                     {/* Date */}
-                    <Text style={s.fieldLabel}>Date</Text>
-                    <View style={cal.container}>
+                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Date</Text>
+                    <View style={[cal.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={cal.nav}>
-                            <TouchableOpacity onPress={() => setCalendarMonth(m => m.minus({ months: 1 }))} style={cal.navBtn}>
-                                <Feather name="chevron-left" size={18} color="#4A90E2" />
+                            <TouchableOpacity onPress={() => setCalendarMonth(m => m.minus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
+                                <Feather name="chevron-left" size={18} color={colors.brand} />
                             </TouchableOpacity>
-                            <Text style={cal.monthLabel}>{calendarMonth.toFormat('MMMM yyyy')}</Text>
-                            <TouchableOpacity onPress={() => setCalendarMonth(m => m.plus({ months: 1 }))} style={cal.navBtn}>
-                                <Feather name="chevron-right" size={18} color="#4A90E2" />
+                            <Text style={[cal.monthLabel, { color: colors.textPrimary }]}>{calendarMonth.toFormat('MMMM yyyy')}</Text>
+                            <TouchableOpacity onPress={() => setCalendarMonth(m => m.plus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
+                                <Feather name="chevron-right" size={18} color={colors.brand} />
                             </TouchableOpacity>
                         </View>
                         <View style={cal.weekRow}>
                             {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-                                <Text key={i} style={cal.dayHeader}>{d}</Text>
+                                <Text key={i} style={[cal.dayHeader, { color: colors.textFaint }]}>{d}</Text>
                             ))}
                         </View>
                         {calendarWeeks.map((week, wi) => (
@@ -350,11 +356,16 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                                     return (
                                         <TouchableOpacity
                                             key={iso}
-                                            style={[cal.cell, selected && cal.cellSelected, disabled && cal.cellDisabled]}
+                                            style={[cal.cell, selected && { backgroundColor: colors.brand, borderRadius: 100 }, disabled && cal.cellDisabled]}
                                             onPress={() => !disabled && setMeetupDate(iso)}
                                             disabled={disabled}
                                         >
-                                            <Text style={[cal.cellText, selected && cal.cellTextSelected, disabled && cal.cellTextDisabled]}>
+                                            <Text style={[
+                                                cal.cellText,
+                                                { color: colors.textSecondary },
+                                                selected && cal.cellTextSelected,
+                                                disabled && { color: colors.borderStrong },
+                                            ]}>
                                                 {day.day}
                                             </Text>
                                         </TouchableOpacity>
@@ -365,75 +376,75 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                     </View>
 
                     {/* Time */}
-                    <Text style={s.fieldLabel}>Time</Text>
+                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
                     <TouchableOpacity
-                        style={s.dateFieldRow}
+                        style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => { setShowTimePicker(v => !v); setShowTZPicker(false); }}
                     >
-                        <Feather name="clock" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <Text style={s.dateFieldText}>{meetupTime}</Text>
-                        <Feather name={showTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name="clock" size={16} color={colors.brand} style={{ marginRight: 8 }} />
+                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{meetupTime}</Text>
+                        <Feather name={showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
 
                     {/* Timezone */}
-                    <Text style={s.fieldLabel}>Timezone</Text>
+                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Timezone</Text>
                     <TouchableOpacity
-                        style={s.dateFieldRow}
+                        style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => { setShowTZPicker(v => !v); setShowTimePicker(false); }}
                     >
-                        <Feather name="globe" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                        <Text style={s.dateFieldText}>{usaTimezones.find(tz => tz.value === meetupTZ)?.label || meetupTZ}</Text>
-                        <Feather name={showTZPicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
+                        <Feather name="globe" size={16} color={colors.brand} style={{ marginRight: 8 }} />
+                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{usaTimezones.find(tz => tz.value === meetupTZ)?.label || meetupTZ}</Text>
+                        <Feather name={showTZPicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </TouchableOpacity>
                     {showTZPicker && (
-                        <View style={s.inlineDayPicker}>
+                        <View style={[s.inlineDayPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                             {usaTimezones.map(tz => (
                                 <TouchableOpacity
                                     key={tz.value}
-                                    style={[s.dayOption, meetupTZ === tz.value && s.dayOptionActive]}
+                                    style={[s.dayOption, { borderBottomColor: colors.border }, meetupTZ === tz.value && { backgroundColor: colors.brandSoft }]}
                                     onPress={() => { setMeetupTZ(tz.value); setShowTZPicker(false); }}
                                 >
-                                    <Text style={[s.dayOptionText, meetupTZ === tz.value && s.dayOptionTextActive]}>{tz.label}</Text>
+                                    <Text style={[s.dayOptionText, { color: colors.textSecondary }, meetupTZ === tz.value && { color: colors.brand, fontWeight: '700' }]}>{tz.label}</Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
                     )}
 
                     {/* Max Attendees */}
-                    <Text style={s.fieldLabel}>Max Attendees</Text>
+                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Max Attendees</Text>
                     <View style={s.boolRow}>
                         <TouchableOpacity
-                            style={[s.boolBtn, maxAttendeesMode === "unlimited" && s.boolBtnActive]}
+                            style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, maxAttendeesMode === "unlimited" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                             onPress={() => { setMaxAttendeesMode("unlimited"); setMaxAttendeesInput(""); }}
                         >
-                            <Text style={[s.boolBtnText, maxAttendeesMode === "unlimited" && s.boolBtnTextActive]}>Unlimited</Text>
+                            <Text style={[s.boolBtnText, { color: colors.textMuted }, maxAttendeesMode === "unlimited" && { color: colors.brand }]}>Unlimited</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[s.boolBtn, maxAttendeesMode === "limited" && s.boolBtnActive]}
+                            style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, maxAttendeesMode === "limited" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                             onPress={() => setMaxAttendeesMode("limited")}
                         >
-                            <Text style={[s.boolBtnText, maxAttendeesMode === "limited" && s.boolBtnTextActive]}>Limited</Text>
+                            <Text style={[s.boolBtnText, { color: colors.textMuted }, maxAttendeesMode === "limited" && { color: colors.brand }]}>Limited</Text>
                         </TouchableOpacity>
                     </View>
                     {maxAttendeesMode === "limited" && (
                         <View style={{ marginTop: 10 }}>
-                            <View style={[s.inputRow, maxAttendeesError && s.inputRowError]}>
-                                <Feather name="users" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                            <View style={[s.inputRow, { backgroundColor: colors.surface, borderColor: colors.border }, maxAttendeesError && { borderColor: colors.danger }]}>
+                                <Feather name="users" size={16} color={colors.textFaint} style={{ marginRight: 8 }} />
                                 <TextInput
-                                    style={s.inlineInput}
+                                    style={[s.inlineInput, { color: colors.textSecondary }]}
                                     placeholder="How many?"
-                                    placeholderTextColor="#C4C9D4"
+                                    placeholderTextColor={colors.placeholder}
                                     keyboardType="number-pad"
                                     value={maxAttendeesInput}
                                     onChangeText={setMaxAttendeesInput}
                                 />
                             </View>
-                            {maxAttendeesError && <Text style={s.errorText}>{maxAttendeesError}</Text>}
+                            {maxAttendeesError && <Text style={[s.errorText, { color: colors.danger }]}>{maxAttendeesError}</Text>}
                         </View>
                     )}
 
                     {/* Location */}
-                    <Text style={s.fieldLabel}>Location or link</Text>
+                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Location or link</Text>
                     <LocationField
                         variant="wizard"
                         placeholder="e.g. Starbucks or Zoom link..."
@@ -442,23 +453,24 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                     />
 
                     {/* Description */}
-                    <Text style={s.fieldLabel}>Description (optional)</Text>
-                    <View style={[s.inputRow, s.descriptionInputRow]}>
+                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Description (optional)</Text>
+                    <View style={[s.inputRow, s.descriptionInputRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <TextInput
-                            style={[s.inlineInput, s.descriptionInput]}
+                            style={[s.inlineInput, s.descriptionInput, { color: colors.textSecondary }]}
                             placeholder="Add any extra details for this meetup..."
-                            placeholderTextColor="#C4C9D4"
+                            placeholderTextColor={colors.placeholder}
                             value={meetupDescription}
                             onChangeText={setMeetupDescription}
                             multiline
                             textAlignVertical="top"
+                            onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 250)}
                         />
                     </View>
                 </ScrollView>
 
-                <View style={s.screenFooter}>
+                <View style={[s.screenFooter, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
                     <View style={{ flex: 1 }} />
-                    <TouchableOpacity style={[s.primaryBtn, !canSubmit && s.primaryBtnDisabled]} onPress={handleCreateMeetup} disabled={isSaving || !canSubmit}>
+                    <TouchableOpacity style={[s.primaryBtn, { backgroundColor: colors.brand }, !canSubmit && { backgroundColor: colors.borderStrong }]} onPress={handleCreateMeetup} disabled={isSaving || !canSubmit}>
                         {isSaving ? (
                             <ActivityIndicator color="#fff" size="small" />
                         ) : (
@@ -469,6 +481,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                         )}
                     </TouchableOpacity>
                 </View>
+                </KeyboardAvoidingView>
 
                 <LocationSearchModal
                     visible={isLocationSearchActive}

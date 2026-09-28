@@ -11,6 +11,8 @@ import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { getNotificationIcon } from '@/utils/notificationIcons';
 import { ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
 import { getUserDisplayName } from '@/utils/groupDisplay';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
 
 const timeAgo = (date: string) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
@@ -49,8 +51,9 @@ const formatMeetupDateTime = (meetup?: { date?: string; time?: string; timezone?
     return meetup.time ? `${dateStr} at ${meetup.time}` : dateStr;
 };
 
-const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAccepting, isDeclining }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, isAccepting: boolean, isDeclining: boolean }) => {
+const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAccepting, isDeclining, colors, unreadBg }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, isAccepting: boolean, isDeclining: boolean, colors: ThemeColors, unreadBg: string }) => {
     const router = useRouter();
+    const styles = useMemoStyles(colors);
 
     const getMessage = () => {
         const senderName = notification.sender ? getUserDisplayName(notification.sender) : '';
@@ -146,7 +149,7 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
     const icon = getNotificationIcon(notification.type);
 
     return (
-        <TouchableOpacity style={[styles.itemContainer, !notification.read && styles.unread]} onPress={handlePress} activeOpacity={0.7}>
+        <TouchableOpacity style={[styles.itemContainer, !notification.read && { backgroundColor: unreadBg, borderLeftWidth: 3, borderLeftColor: colors.brand }]} onPress={handlePress} activeOpacity={0.7}>
             <View style={styles.iconContainer}>
                 <Feather name={icon.name as any} size={24} color={icon.color} />
             </View>
@@ -178,6 +181,10 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
 
 const NotificationsScreen = () => {
     const api = useApiClient();
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const unreadBg = scheme === 'dark' ? '#152238' : '#EFF6FF';
+    const styles = useMemoStyles(colors);
     const { data: notifications, isLoading, refetch } = useGetNotifications();
     const { mutate: markAsRead } = useMarkNotificationsAsRead();
     const { data: currentUser } = useQuery<User>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
@@ -209,7 +216,7 @@ const NotificationsScreen = () => {
     if (!notifications || notifications.length === 0) {
         return (
             <View style={styles.center}>
-                <Feather name="bell-off" size={48} color="#D1D5DB" />
+                <Feather name="bell-off" size={48} color={colors.textFaint} />
                 <Text style={styles.emptyText}>No notifications yet.</Text>
             </View>
         );
@@ -227,6 +234,8 @@ const NotificationsScreen = () => {
                         onDecline={handleDecline}
                         isAccepting={acceptMutation.isPending && acceptMutation.variables === item._id}
                         isDeclining={declineMutation.isPending && declineMutation.variables === item._id}
+                        colors={colors}
+                        unreadBg={unreadBg}
                     />
                 )}
                 keyExtractor={item => item._id}
@@ -236,24 +245,36 @@ const NotificationsScreen = () => {
     );
 };
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F9FAFB' },
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' },
-    emptyText: { marginTop: 16, fontSize: 16, color: '#6B7280' },
-    itemContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: 'white' },
-    unread: { backgroundColor: '#EFF6FF', borderLeftWidth: 3, borderLeftColor: '#4A90E2' },
-    iconContainer: { marginRight: 16, marginTop: 2 },
-    textContainer: { flex: 1 },
-    messageText: { fontSize: 15, color: '#374151', lineHeight: 22 },
-    bold: { fontWeight: 'bold' },
-    timeText: { fontSize: 12, color: '#9CA3AF', marginTop: 4 },
-    actionContainer: { flexDirection: 'row', marginTop: 12, gap: 12 },
-    actionButton: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
-    actionButtonDisabled: { opacity: 0.5 },
-    acceptButton: { backgroundColor: '#10B981' },
-    declineButton: { backgroundColor: '#F3F4F6' },
-    actionTextAccept: { color: 'white', fontWeight: 'bold' },
-    actionTextDecline: { color: '#4B5563', fontWeight: 'bold' },
-});
+// Small factory so both the screen and the row component share one token-driven
+// stylesheet without recreating it on every render (memoized by theme identity).
+const styleCache = new Map<ThemeColors, ReturnType<typeof buildStyles>>();
+function buildStyles(colors: ThemeColors) {
+    return StyleSheet.create({
+        container: { flex: 1, backgroundColor: colors.background },
+        center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+        emptyText: { marginTop: 16, fontSize: 16, color: colors.textMuted },
+        itemContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.surface },
+        iconContainer: { marginRight: 16, marginTop: 2 },
+        textContainer: { flex: 1 },
+        messageText: { fontSize: 15, color: colors.textSecondary, lineHeight: 22 },
+        bold: { fontWeight: 'bold' as const },
+        timeText: { fontSize: 12, color: colors.textFaint, marginTop: 4 },
+        actionContainer: { flexDirection: 'row' as const, marginTop: 12, gap: 12 },
+        actionButton: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
+        actionButtonDisabled: { opacity: 0.5 },
+        acceptButton: { backgroundColor: colors.success },
+        declineButton: { backgroundColor: colors.backgroundAlt },
+        actionTextAccept: { color: 'white', fontWeight: 'bold' as const },
+        actionTextDecline: { color: colors.textSecondary, fontWeight: 'bold' as const },
+    });
+}
+function useMemoStyles(colors: ThemeColors) {
+    let s = styleCache.get(colors);
+    if (!s) {
+        s = buildStyles(colors);
+        styleCache.set(colors, s);
+    }
+    return s;
+}
 
 export default NotificationsScreen;
