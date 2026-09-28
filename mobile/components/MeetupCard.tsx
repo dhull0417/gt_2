@@ -94,6 +94,7 @@ export const MeetupCard = ({
   const outFilled = !outUnselected || isUndecided;
 
   const isReadOnly = isCancelled || isExpired;
+  const hasRsvpResponse = isIn || isOut || isWaitlisted;
 
   // Tint matches detail modal: amber until responded, green (in), blue (waitlisted), red (out).
   const rsvpBackgroundColor = isOut ? '#FEF2F2' : isWaitlisted ? '#EFF6FF' : isIn ? '#EDF5F0' : '#FFFEFA';
@@ -201,7 +202,7 @@ export const MeetupCard = ({
         </View>
       </TouchableOpacity>
 
-      {showRsvpButtons && !isReadOnly && (
+      {showRsvpButtons && !isReadOnly && (isRsvpLocked || isRsvpDeadlinePassed || !hasRsvpResponse) && (
         <View className="mt-4 pt-4 border-t border-gray-100">
           {isRsvpLocked ? (
             <View className="bg-gray-100 py-3 rounded-xl items-center border border-gray-200">

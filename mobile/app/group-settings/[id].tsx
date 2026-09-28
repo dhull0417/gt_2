@@ -34,16 +34,6 @@ import { broadcastGroupUpdate, broadcastMeetupUpdate } from '@/utils/groupRealti
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import LocationSearchModal from '@/components/LocationSearchModal';
-
-// Mirrors the group-creation and Add Meetup wizard validation so all "attendee limit" entry points agree
-const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
-  if (mode !== "limited" || input === "") return null;
-  if (!/^\d+$/.test(input)) return "Numbers only, please.";
-  const n = parseInt(input, 10);
-  if (n < 1 || n > 200) return "Enter a number between 1 and 200.";
-  return null;
-};
 
 // Access restricted to the group owner and designated moderators
 const GroupSettings = () => {
@@ -82,16 +72,6 @@ const GroupSettings = () => {
   const nameFlyAnim = useRef(new Animated.Value(0)).current;
   const heartRiseAnim = useRef(new Animated.Value(0)).current;
   const heartPopScale = useRef(new Animated.Value(1)).current;
-
-  const [isEditingCapacity, setIsEditingCapacity] = useState(false);
-  const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
-  const [tempCapacity, setTempCapacity] = useState("");
-  const [isSavingCapacity, setIsSavingCapacity] = useState(false);
-
-  const capacityError = getMaxAttendeesError(capacityMode, tempCapacity);
-  const canSaveCapacity = capacityMode !== "limited" || (tempCapacity !== "" && !capacityError);
-
-  const [isEditingLocation, setIsEditingLocation] = useState(false);
 
   // --- State for Moderator Management ---
   const [isEditingMods, setIsEditingMods] = useState(false);
@@ -146,16 +126,14 @@ const GroupSettings = () => {
   const settingsOptions = [
     { id: 'image', label: 'Edit Group Photo', icon: 'camera', color: '#4A90E2', bg: '#EFF6FF' },
     { id: 'name', label: 'Edit Group Name', icon: 'type', color: '#3B82F6', bg: '#EFF6FF' },
-    { id: 'capacity', label: 'Default Attendee Limit', icon: 'users', color: '#A855F7', bg: '#F5F3FF' },
-    { id: 'location', label: 'Default Location', icon: 'map-pin', color: '#10B981', bg: '#ECFDF5' },
     { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: '#ECFEFF' },
     { id: 'members', label: 'Remove Members', icon: 'user-minus', color: '#F97316', bg: '#FFF7ED' },
     ...(isUserOwner ? [{ id: 'transfer', label: 'Transfer Ownership', icon: 'repeat', color: '#8B5CF6', bg: '#F5F3FF' }] : []),
   ];
 
   const mainOptions = [
-    { id: 'group', label: 'Edit Group', icon: 'edit-2', color: '#4A90E2', bg: '#EFF6FF' },
-    { id: 'schedules', label: 'Edit Schedule', icon: 'calendar', color: '#6366F1', bg: '#EEF2FF' },
+    { id: 'group', label: 'Edit Group Info', icon: 'edit-2', color: '#4A90E2', bg: '#EFF6FF' },
+    { id: 'schedules', label: 'Edit Meetup Schedules', icon: 'calendar', color: '#6366F1', bg: '#EEF2FF' },
     { id: 'terminate', label: isUserOwner ? 'Delete Group' : 'Leave Group', icon: isUserOwner ? 'trash-2' : 'log-out', color: '#EF4444', bg: '#FEF2F2', destructive: true },
   ];
 
@@ -175,16 +153,6 @@ const GroupSettings = () => {
       case 'name':
         setTempName(group?.name || "");
         setIsEditingName(true);
-        break;
-      case 'capacity': {
-        const currentCapacity = group?.defaultCapacity || 0;
-        setCapacityMode(currentCapacity > 0 ? "limited" : "unlimited");
-        setTempCapacity(currentCapacity > 0 ? currentCapacity.toString() : "");
-        setIsEditingCapacity(true);
-        break;
-      }
-      case 'location':
-        setIsEditingLocation(true);
         break;
       case 'mods':
         const currentModIds = (group?.moderators || []).map((m: any) => 
@@ -350,55 +318,6 @@ const GroupSettings = () => {
         Alert.alert("Error", getErrorMessage(error, "Failed to update group name."));
     } finally {
         setIsSavingName(false);
-    }
-  };
-
-  const handleSaveCapacity = async () => {
-    if (!id || !canSaveCapacity) return;
-    const capacityNum = capacityMode === "limited" ? parseInt(tempCapacity, 10) : 0;
-    if (capacityNum === (group?.defaultCapacity || 0)) {
-      setIsEditingCapacity(false);
-      return;
-    }
-
-    setIsSavingCapacity(true);
-    try {
-        await groupApi.updateGroup(api, { groupId: id, defaultCapacity: capacityNum });
-        await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
-            queryClient.invalidateQueries({ queryKey: ['groups'] }),
-            queryClient.invalidateQueries({ queryKey: ['meetups'] })
-        ]);
-        broadcastGroupUpdate(getToken, id);
-        broadcastMeetupUpdate(getToken, id);
-        setIsEditingCapacity(false);
-        Alert.alert("Success", "Attendee limit and associated meetups updated.");
-    } catch (error: any) {
-        Alert.alert("Error", getErrorMessage(error, "Failed to update attendee limit."));
-    } finally {
-        setIsSavingCapacity(false);
-    }
-  };
-
-  // Closes immediately like the other Set Location popups; save happens in the background
-  // and a failure surfaces via Alert after the fact rather than blocking the popup.
-  const handleSaveLocation = async (locationText: string) => {
-    if (!id) return;
-    const trimmedLoc = locationText.trim();
-    if (trimmedLoc === group?.defaultLocation) return;
-
-    try {
-        await groupApi.updateGroup(api, { groupId: id, defaultLocation: trimmedLoc });
-        await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
-            queryClient.invalidateQueries({ queryKey: ['groups'] }),
-            queryClient.invalidateQueries({ queryKey: ['meetups'] })
-        ]);
-        broadcastGroupUpdate(getToken, id);
-        broadcastMeetupUpdate(getToken, id);
-        Alert.alert("Success", "Default location and future meetups updated.");
-    } catch (error: any) {
-        Alert.alert("Error", getErrorMessage(error, "Failed to update location."));
     }
   };
 
@@ -582,7 +501,7 @@ const GroupSettings = () => {
           </TouchableOpacity>
         )}
         <Text style={styles.headerTitle}>
-          {view === 'main' ? 'Group Settings' : view === 'group' ? 'Edit Group' : 'Edit Schedule'}
+          {view === 'main' ? 'Group Settings' : view === 'group' ? 'Edit Group Info' : 'Edit Meetup Schedules'}
         </Text>
         <View style={{ width: 44 }} />
       </View>
@@ -642,16 +561,6 @@ const GroupSettings = () => {
                     {option.id === 'name' && (
                       <Text style={styles.optionSubLabel} numberOfLines={1}>
                         {group?.name || '—'}
-                      </Text>
-                    )}
-                    {option.id === 'location' && (
-                      <Text style={styles.optionSubLabel} numberOfLines={1}>
-                         {group?.defaultLocation || 'No default location set'} · for one-off meetups
-                      </Text>
-                    )}
-                    {option.id === 'capacity' && (
-                      <Text style={styles.optionSubLabel}>
-                        {group?.defaultCapacity === 0 ? 'Unlimited' : group?.defaultCapacity} · for one-off meetups
                       </Text>
                     )}
                     {option.id === 'mods' && (
@@ -823,61 +732,6 @@ const GroupSettings = () => {
             </View>
         </KeyboardAvoidingView>
       </Modal>
-
-      {/* Edit Capacity Modal */}
-      <Modal visible={isEditingCapacity} transparent animationType="fade" onRequestClose={() => setIsEditingCapacity(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Attendee Limit</Text>
-                <View style={[styles.boolRow, { marginTop: 16 }]}>
-                    <TouchableOpacity
-                        style={[styles.boolBtn, capacityMode === "unlimited" && styles.boolBtnActive]}
-                        onPress={() => { setCapacityMode("unlimited"); setTempCapacity(""); }}
-                    >
-                        <Text style={[styles.boolBtnText, capacityMode === "unlimited" && styles.boolBtnTextActive]}>Unlimited</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.boolBtn, capacityMode === "limited" && styles.boolBtnActive]}
-                        onPress={() => setCapacityMode("limited")}
-                    >
-                        <Text style={[styles.boolBtnText, capacityMode === "limited" && styles.boolBtnTextActive]}>Limited</Text>
-                    </TouchableOpacity>
-                </View>
-                {capacityMode === "limited" && (
-                    <View style={{ marginTop: 14 }}>
-                        <View style={[styles.inputRow, capacityError && styles.inputRowError]}>
-                            <Feather name="users" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
-                            <TextInput
-                                style={styles.inlineInput}
-                                placeholder="How many?"
-                                placeholderTextColor="#C4C9D4"
-                                keyboardType="number-pad"
-                                value={tempCapacity}
-                                onChangeText={setTempCapacity}
-                                autoFocus
-                            />
-                        </View>
-                        {capacityError && <Text style={styles.errorText}>{capacityError}</Text>}
-                    </View>
-                )}
-                <View style={[styles.modalButtons, { marginTop: 20 }]}>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingCapacity(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
-                    <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave, !canSaveCapacity && styles.modalBtnDisabled]} onPress={handleSaveCapacity} disabled={isSavingCapacity || !canSaveCapacity}>
-                        {isSavingCapacity ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Edit Location Modal */}
-      <LocationSearchModal
-        visible={isEditingLocation}
-        initialValue={group?.defaultLocation || ""}
-        placeholder="e.g. Starbucks or Zoom link..."
-        onDone={(text) => { setIsEditingLocation(false); handleSaveLocation(text); }}
-        onCancel={() => setIsEditingLocation(false)}
-      />
 
       {/* Edit Moderators Modal */}
       <Modal
@@ -1085,15 +939,6 @@ const styles = StyleSheet.create({
   nameCelebrationHeartText: { fontSize: 56 },
   nameCelebrationNameRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', paddingHorizontal: 16 },
   nameCelebrationLetter: { fontSize: 30, fontWeight: '800', color: '#111827' },
-  boolRow: { flexDirection: 'row', gap: 10 },
-  boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', backgroundColor: '#fff' },
-  boolBtnActive: { borderColor: '#4A90E2', backgroundColor: '#EEF6FF' },
-  boolBtnText: { fontSize: 14, fontWeight: '700', color: '#6B7280' },
-  boolBtnTextActive: { color: '#4A90E2' },
-  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 14, paddingVertical: 12 },
-  inputRowError: { borderColor: '#EF4444' },
-  inlineInput: { flex: 1, fontSize: 15, color: '#374151' },
-  errorText: { fontSize: 12, fontWeight: '600', color: '#EF4444', marginTop: 6, marginLeft: 2 },
   fullModalContainer: { flex: 1, backgroundColor: 'white' },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   modalTitleLarge: { fontSize: 20, fontWeight: '900', color: '#111827' },

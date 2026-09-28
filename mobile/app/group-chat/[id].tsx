@@ -48,6 +48,7 @@ import {
 import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
 import type { ChatMessage, PendingImage } from '@/types/chat';
 import EmojiPicker from 'rn-emoji-keyboard';
+import * as Clipboard from 'expo-clipboard';
 
 interface ChatDaySection {
   key: string;
@@ -435,6 +436,12 @@ const GroupChatScreen = () => {
     closeActionPanel();
   };
 
+  const handleCopy = async () => {
+    if (!selectedMessage) return;
+    await Clipboard.setStringAsync(selectedMessage.content);
+    closeActionPanel();
+  };
+
   const handleEditOpen = () => {
     if (!selectedMessage) return;
     setEditText(selectedMessage.content);
@@ -685,6 +692,8 @@ const GroupChatScreen = () => {
           onOpenEmojiPicker={() => setEmojiPickerVisible(true)}
           showReply={!isDeletedSelected}
           onReply={handleReplyOpen}
+          showCopy={!isDeletedSelected && !!selectedMessage?.content?.trim()}
+          onCopy={handleCopy}
           showEdit={isOwnSelected && !isDeletedSelected}
           onEdit={handleEditOpen}
           showDelete={isOwnSelected}
