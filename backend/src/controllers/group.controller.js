@@ -10,6 +10,7 @@ import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { generateMeetupsForGroup, generateMeetupsForSchedule } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
+import { hasPremium } from "../utils/premium.js";
 
 // --- Helpers ---
 
@@ -661,14 +662,21 @@ export const transferOwnership = asyncHandler(async (req, res) => {
     if (!updated) return res.status(409).json({ error: "Ownership already changed. Please refresh and try again." });
     await touchGroupMeetups(group._id);
 
+    // Premium belongs to the owner's subscription, so it does not follow the
+    // group: if the outgoing owner was covering it and the new owner isn't
+    // subscribed, the group's Premium features pause. Tell the new owner.
+    const premiumPaused = hasPremium(requester) && !hasPremium(newOwner);
+
     try {
         await notifyAndPersist([newOwner], {
             title: "You're Now the Owner",
-            body: `${requester.firstName} made you the owner of "${group.name}".`,
+            body: `${requester.firstName} made you the owner of "${group.name}".` +
+                (premiumPaused ? " Its Premium features are paused until you have your own Premium subscription." : ""),
             data: { groupId: group._id.toString(), type: 'ownership-transferred' },
             type: 'ownership-transferred',
             sender: requester._id,
             group: group._id,
+            meta: premiumPaused ? { premiumPaused: true } : undefined,
         });
     } catch (err) { console.error(err); }
 

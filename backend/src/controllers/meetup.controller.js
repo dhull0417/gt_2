@@ -10,6 +10,7 @@ import { parseTimeString } from "../utils/date.utils.js";
 import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
 import { canManageGroup, canManageMember } from "./group.controller.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
+import { groupHasPremium, withGroupPremium } from "../utils/premium.js";
 
 /**
  * @desc    Get all meetups for the current user
@@ -45,7 +46,7 @@ export const getMeetups = asyncHandler(async (req, res) => {
         ]);
 
         return res.status(200).json({
-            changed,
+            changed: await withGroupPremium(changed),
             validIds: validIds.map((id) => id.toString()),
             syncedAt: now.toISOString(),
         });
@@ -56,7 +57,7 @@ export const getMeetups = asyncHandler(async (req, res) => {
         .populate('members', 'firstName lastName profilePicture clerkId')
         .sort({ date: 1 });
 
-    res.status(200).json(meetups);
+    res.status(200).json(await withGroupPremium(meetups));
 });
 
 /**
@@ -103,6 +104,17 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     let promotedUserId = null;
     let statusUnchanged = false;
 
+    // Waitlist + auto-promotion is a Premium feature of the group's owner.
+    // Looked up lazily (and once) since most RSVPs never touch it.
+    let waitlistEnabled;
+    const getWaitlistEnabled = async () => {
+        if (waitlistEnabled === undefined) {
+            const groupDoc = await Group.findById(meetup.group).select('owner').lean();
+            waitlistEnabled = await groupHasPremium(groupDoc);
+        }
+        return waitlistEnabled;
+    };
+
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         meetup = await Meetup.findById(meetupId);
         if (!meetup) return res.status(404).json({ error: "Meetup not found." });
@@ -120,7 +132,11 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         const wasIn = meetup.in.some(id => id.equals(user._id));
         const wasOut = meetup.out.some(id => id.equals(user._id));
         const wasWaitlisted = meetup.waitlist.some(id => id.equals(user._id));
-        statusUnchanged = status === 'in' ? (wasIn || wasWaitlisted) : wasOut;
+        // A waitlisted user's repeat "in" tap is a no-op only while the meetup is
+        // still full; once a spot is open (e.g. the owner isn't Premium, so there
+        // is no auto-promotion) the tap moves them in.
+        const wasAtCapacity = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
+        statusUnchanged = status === 'in' ? (wasIn || (wasWaitlisted && wasAtCapacity)) : wasOut;
         if (statusUnchanged) break;
 
         // pull from all arrays first to avoid duplicates
@@ -135,13 +151,23 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             meetup.out.push(user._id);
 
             // Auto-promote the first person in the waitlist if capacity allows
-            if (meetup.capacity > 0 && meetup.waitlist.length > 0 && meetup.in.length < meetup.capacity) {
+            // (Premium only; without it people already waitlisted stay put and
+            // can tap "I'm In" themselves once a spot is open).
+            if (meetup.capacity > 0 && meetup.waitlist.length > 0 && meetup.in.length < meetup.capacity
+                && await getWaitlistEnabled()) {
                 promotedUserId = meetup.waitlist.shift();
                 meetup.in.push(promotedUserId);
             }
         } else if (status === 'in') {
-            // Push to waitlist if at capacity, otherwise 'in'
+            // Push to waitlist if at capacity (Premium), otherwise 'in'
             if (meetup.capacity > 0 && meetup.in.length >= meetup.capacity) {
+                if (!(await getWaitlistEnabled())) {
+                    // Nothing has been saved yet, so bailing out here changes no state.
+                    return res.status(409).json({
+                        error: "meetup_full",
+                        message: "This meetup is full.",
+                    });
+                }
                 meetup.waitlist.push(user._id);
             } else {
                 meetup.in.push(user._id);
@@ -246,7 +272,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         .populate('group', 'name owner moderators timezone defaultLocation')
         .populate('members', 'firstName lastName profilePicture clerkId');
 
-    res.status(200).json({ message: "RSVP updated successfully.", meetup: updatedMeetup });
+    res.status(200).json({ message: "RSVP updated successfully.", meetup: await withGroupPremium(updatedMeetup) });
 });
 
 
@@ -402,7 +428,7 @@ export const updateMeetup = asyncHandler(async (req, res) => {
             { path: 'waitlist', select: 'firstName lastName _id profilePicture' }
         ]);
 
-    res.status(200).json({ message: "Meetup updated successfully.", meetup: populatedMeetup });
+    res.status(200).json({ message: "Meetup updated successfully.", meetup: await withGroupPremium(populatedMeetup) });
 });
 
 
@@ -449,7 +475,7 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
         });
     }
 
-    res.status(200).json({ message: "Meetup cancelled successfully.", meetup });
+    res.status(200).json({ message: "Meetup cancelled successfully.", meetup: await withGroupPremium(meetup) });
 });
 
 /**
@@ -496,7 +522,7 @@ export const restoreMeetup = asyncHandler(async (req, res) => {
         });
     }
 
-    res.status(200).json({ message: "Meetup restored successfully.", meetup });
+    res.status(200).json({ message: "Meetup restored successfully.", meetup: await withGroupPremium(meetup) });
 });
 
 /**

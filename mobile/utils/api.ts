@@ -77,6 +77,8 @@ export interface User {
     photoLibrary: 'granted' | 'denied' | 'undetermined';
   };
   createdAt?: string;
+  /** Computed by the server; true while the user has active Premium. */
+  isPremium?: boolean;
 }
 
 export interface LastMessage {
@@ -132,6 +134,8 @@ export interface Meetup {
     owner: string;
     name: string;
     image?: string;
+    /** Computed by the server: true while the group's owner has Premium. Absent = unknown (treat as enabled; the server enforces). */
+    isPremium?: boolean;
   };
   /** The named schedule (Group.schedules[i]._id) this was generated from — null for one-off meetups. */
   schedule?: string | null;
@@ -205,7 +209,12 @@ export interface Notification {
   poll?: { _id: string; prompt: string };
   status: 'pending' | 'accepted' | 'declined' | 'read';
   read: boolean;
-  meta?: { changedFields?: ('schedule' | 'location' | 'capacity')[] };
+  meta?: {
+    changedFields?: ('schedule' | 'location' | 'capacity')[];
+    /** ownership-transferred: the group's Premium features paused with the change of owner. */
+    premiumPaused?: boolean;
+    reason?: 'owner-deleted-account';
+  };
   createdAt: string;
 }
 

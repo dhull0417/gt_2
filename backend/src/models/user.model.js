@@ -33,6 +33,20 @@ const userSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        // Premium subscription entitlement. Written ONLY by the server (the
+        // RevenueCat webhook / admin tooling), never from client input; see
+        // utils/premium.js. Users created before this field existed simply
+        // have no `premium` key, which hasPremium() treats as free.
+        premium: {
+            type: {
+                active: { type: Boolean, default: false },
+                expiresAt: { type: Date, default: null },
+                store: { type: String, default: null },      // app_store | play_store | manual
+                productId: { type: String, default: null },
+                updatedAt: { type: Date, default: null },
+            },
+            default: {},
+        },
         profilePicture: {
             type: String,
             default: "",

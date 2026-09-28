@@ -86,6 +86,10 @@ export const MeetupCard = ({
   const isWaitlisted = currentUser ? meetup.waitlist.some(u => getUserId(u) === currentUser._id) : false;
   const isIn = currentUser ? meetup.in.some(u => getUserId(u) === currentUser._id) : false;
   const isOut = currentUser ? meetup.out.some(u => getUserId(u) === currentUser._id) : false;
+  // Waitlists are a Premium feature of the group owner: on a full meetup in a
+  // non-Premium group there is nothing to join, so the button reads "Full".
+  // (Only `=== false` counts, so a missing flag never blocks; the server enforces.)
+  const waitlistLocked = isFull && !isIn && !isWaitlisted && meetup.group?.isPremium === false;
   const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
   const outUnselected = !isOut;
   const isUndecided = inUnselected && outUnselected;
@@ -230,7 +234,7 @@ export const MeetupCard = ({
                     {/* Split I'm In button: left 70% = RSVP in, right 30% = open guest counter */}
                     <View style={{
                       flex: 1, borderRadius: 12, overflow: 'hidden', height: 48,
-                      backgroundColor: isWaitlisted ? '#2563EB' : (isFull && !isIn) ? '#F97316' : inFilled ? '#4FD1C5' : 'white',
+                      backgroundColor: isWaitlisted ? '#2563EB' : waitlistLocked ? '#9CA3AF' : (isFull && !isIn) ? '#F97316' : inFilled ? '#4FD1C5' : 'white',
                     }}>
                       <ReanimatedAnimated.View style={[{
                         flex: 1, flexDirection: 'row', borderRadius: 12,
@@ -239,17 +243,17 @@ export const MeetupCard = ({
                       }, boxStyle]}>
                         <TouchableOpacity
                           onPress={() => { setGuestExpanded(false); onRsvp('in', 0); }}
-                          disabled={isRsvping}
+                          disabled={isRsvping || waitlistLocked}
                           style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                         >
                           <ReanimatedAnimated.Text style={[{ color: inFilled ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 16 }, inTextStyle]}>
-                            {isWaitlisted ? "Waitlisted" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+                            {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
                           </ReanimatedAnimated.Text>
                         </TouchableOpacity>
                         <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />
                         <TouchableOpacity
                           onPress={() => { setLocalGuestCount(0); setGuestExpanded(v => !v); }}
-                          disabled={isRsvping}
+                          disabled={isRsvping || waitlistLocked}
                           style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                         >
                           {guestExpanded

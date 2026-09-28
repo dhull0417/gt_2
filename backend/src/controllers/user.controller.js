@@ -4,6 +4,8 @@ import Group from "../models/group.model.js";
 import Meetup from "../models/meetup.model.js";
 import Notification from "../models/notification.model.js";
 import { getAuth, clerkClient } from "@clerk/express";
+import { serializeUser, hasPremium } from "../utils/premium.js";
+import { notifyAndPersist } from "../utils/push.notifications.js";
 
 /**
  * @desc    Toggle mute status for a specific group's chat
@@ -158,6 +160,11 @@ export const updateProfile = asyncHandler(async (req, res) => {
   if (req.body.zipCode !== undefined && !/^\d{5}$/.test(req.body.zipCode)) {
     return res.status(400).json({ error: "Zip code must be exactly 5 digits." });
   }
+  // Server-owned fields: never accept these from the client (a client-supplied
+  // `premium` would let anyone grant themselves a subscription).
+  delete req.body.premium;
+  delete req.body.isPremium;
+  delete req.body.clerkId;
   if (req.body.firstName !== undefined) req.body.firstName = req.body.firstName.trim();
   if (req.body.lastName !== undefined) req.body.lastName = req.body.lastName.trim();
 
@@ -172,14 +179,14 @@ export const updateProfile = asyncHandler(async (req, res) => {
   }
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  res.status(200).json({ user });
+  res.status(200).json({ user: serializeUser(user) });
 });
 
 export const syncUser = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   let user = await User.findOne({ clerkId: userId });
   if (user) {
-    return res.status(200).json({ user, message: "User already exists" });
+    return res.status(200).json({ user: serializeUser(user), message: "User already exists" });
   }
 
   const clerkUser = await clerkClient.users.getUser(userId);
@@ -204,7 +211,7 @@ export const syncUser = asyncHandler(async (req, res) => {
 
   user = await User.create(userData);
 
-  res.status(201).json({ user, message: "User created successfully" });
+  res.status(201).json({ user: serializeUser(user), message: "User created successfully" });
 });
 
 export const getCurrentUser = asyncHandler(async (req, res) => {
@@ -212,7 +219,7 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
   const user = await User.findOne({ clerkId }).lean();
   if (!user) return res.status(404).json({ error: "User not found in database." });
 
-  res.status(200).json({ user });
+  res.status(200).json({ user: serializeUser(user) });
 });
 
 export const deleteAccount = asyncHandler(async (req, res) => {
@@ -238,19 +245,36 @@ export const deleteAccount = asyncHandler(async (req, res) => {
       // prefer moderators over members; tiebreak by oldest account (no join dates stored)
       const otherModerators = group.moderators.filter(id => id.toString() !== userId.toString());
 
-      let newOwnerId;
+      let newOwnerUser;
       if (otherModerators.length > 0) {
         const modUsers = await User.find({ _id: { $in: otherModerators } }).sort({ createdAt: 1 });
-        newOwnerId = modUsers[0]._id;
+        newOwnerUser = modUsers[0];
       } else {
         const memberUsers = await User.find({ _id: { $in: otherMembers } }).sort({ createdAt: 1 });
-        newOwnerId = memberUsers[0]._id;
+        newOwnerUser = memberUsers[0];
       }
+      const newOwnerId = newOwnerUser._id;
 
       await Group.findByIdAndUpdate(group._id, {
         owner: newOwnerId,
         $pull: { members: userId, moderators: userId },
       });
+
+      // Premium is tied to the owner's subscription and doesn't follow the
+      // group. If the leaving owner was covering it and the new owner isn't
+      // subscribed, tell the new owner (they'd otherwise never find out).
+      if (hasPremium(user) && !hasPremium(newOwnerUser)) {
+        try {
+          await notifyAndPersist([newOwnerUser], {
+            title: "You're Now the Owner",
+            body: `The previous owner of "${group.name}" left GroupThat, so you're now the owner. Its Premium features are paused until you have your own Premium subscription.`,
+            data: { groupId: group._id.toString(), type: 'ownership-transferred' },
+            type: 'ownership-transferred',
+            group: group._id,
+            meta: { premiumPaused: true, reason: 'owner-deleted-account' },
+          });
+        } catch (err) { console.error(err); }
+      }
     }
   }
 

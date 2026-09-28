@@ -5,17 +5,22 @@ import { useAuth } from '@clerk/expo';
 import { useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { useApiClient, userApi } from '@/utils/api';
+import { usePremium } from '@/hooks/usePremium';
 
 const DeleteAccountScreen = () => {
     const { signOut } = useAuth();
     const api = useApiClient();
+    const { isPremium } = usePremium();
     const queryClient = useQueryClient();
     const [deleteLoading, setDeleteLoading] = useState(false);
 
     const handleDeleteAccount = () => {
         Alert.alert(
             'Final Confirmation',
-            'This will permanently delete your account from GroupThat. There is no way to recover it.',
+            'This will permanently delete your account from GroupThat. There is no way to recover it.' +
+                (isPremium
+                    ? '\n\nYour Premium subscription is not cancelled by deleting your account. Cancel it in your App Store or Google Play subscription settings to avoid further charges.'
+                    : ''),
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -48,6 +53,9 @@ const DeleteAccountScreen = () => {
                         Are you sure you want to permanently delete your account? This cannot be undone.
                         {'\n\n'}
                         All your data, messages, and any groups you own will be deleted or transferred.
+                        {isPremium
+                            ? '\n\nPremium features are tied to the group owner\'s subscription. If a group you own is transferred to someone else, its Premium features will be paused unless the new owner has their own Premium subscription.'
+                            : ''}
                     </Text>
                 </View>
 

@@ -71,6 +71,15 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> has been added to <Text style={styles.bold}>{groupName}</Text>!</Text>;
             case 'group-removed':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> removed you from <Text style={styles.bold}>{groupName}</Text>.</Text>;
+            case 'ownership-transferred': {
+                const premiumNote = notification.meta?.premiumPaused
+                    ? ' Its Premium features are paused until you have your own Premium subscription.'
+                    : '';
+                if (!notification.sender || notification.meta?.reason === 'owner-deleted-account') {
+                    return <Text style={styles.messageText}>The previous owner of <Text style={styles.bold}>{groupName}</Text> left GroupThat, so you're now the owner.{premiumNote}</Text>;
+                }
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> made you the owner of <Text style={styles.bold}>{groupName}</Text>.{premiumNote}</Text>;
+            }
             case 'group-updated':
                 return <Text style={styles.messageText}>The group <Text style={styles.bold}>{groupName}</Text> was renamed.</Text>;
             case 'meetup-rsvp-in':

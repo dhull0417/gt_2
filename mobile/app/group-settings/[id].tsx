@@ -24,6 +24,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi, groupApi } from '@/utils/api';
+import { usePremium } from '@/hooks/usePremium';
 import { getErrorMessage } from '@/utils/networkError';
 import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { formatSchedule } from '@/utils/schedule';
@@ -40,6 +41,7 @@ const GroupSettings = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const api = useApiClient();
+  const { isPremium } = usePremium();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const contentTopInset = useContentTopInset();
@@ -391,7 +393,11 @@ const GroupSettings = () => {
   const handleTransferPress = (member: User) => {
     Alert.alert(
       "Transfer Ownership",
-      `Are you sure you want to make ${getUserDisplayName(member)} the new owner? You will become a moderator.`,
+      `Are you sure you want to make ${getUserDisplayName(member)} the new owner? You will become a moderator.` +
+        // Premium is tied to the owner's subscription, so it does not follow the group.
+        (isPremium
+          ? `\n\nHeads up: this group's Premium features are covered by your subscription. Once ${getUserDisplayName(member)} is the owner, they will be paused for this group unless the new owner has their own Premium subscription. Your data is kept.`
+          : ''),
       [
         { text: "Cancel", style: "cancel" },
         {
