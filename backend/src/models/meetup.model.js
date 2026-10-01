@@ -21,6 +21,12 @@ const meetupSchema = new mongoose.Schema({
   out: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   waitlist: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   capacity: { type: Number, default: 0 },
+  // Minimum headcount (Premium): copied from the series at generation. The
+  // cancel-under-minimum job evaluates it once, at rsvpCloseDate.
+  minAttendees: { type: Number, default: 0 },
+  minimumChecked: { type: Boolean, default: false },
+  // Why it was cancelled when the app (not a person) did it, e.g. 'minimum-headcount'.
+  cancelReason: { type: String, default: null },
   // generating routine's frequency (null for one-off); drives RSVP-reminder
   // stages and the display cap.
   frequency: { type: String, enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal'], default: null },

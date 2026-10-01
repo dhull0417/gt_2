@@ -50,6 +50,8 @@ const namedScheduleSchema = new mongoose.Schema({
 
   defaultLocation: { type: String, trim: true, default: "" },
   defaultCapacity: { type: Number, default: 0 },
+  // Premium: cancel a meetup if fewer than this many people are in by the RSVP deadline (0 = off).
+  defaultMinAttendees: { type: Number, min: 0, default: 0 },
   defaultDescription: { type: String, trim: true, default: "" },
 
   generationLeadDays: { type: Number, min: 0, default: null },

@@ -104,6 +104,16 @@ const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): str
     return null;
 };
 
+// Minimum headcount: optional, a whole number of at least 1, and no more than the max when there is one.
+const getMinAttendeesError = (minInput: string, maxMode: "unlimited" | "limited", maxInput: string): string | null => {
+    if (minInput === "") return null;
+    if (!/^\d+$/.test(minInput)) return "Numbers only, please.";
+    const n = parseInt(minInput, 10);
+    if (n < 1) return "Enter 1 or more, or leave blank for no minimum.";
+    if (maxMode === "limited" && /^\d+$/.test(maxInput) && n > parseInt(maxInput, 10)) return "Can't be more than the max attendees.";
+    return null;
+};
+
 // ─── ToggleSwitch ─────────────────────────────────────────────────────────────
 
 const ToggleSwitch = ({ value, onValueChange, activeColor = "#7C3AED" }: {
@@ -176,6 +186,7 @@ interface ScheduleData {
     description: string;
     maxAttendeesMode: "unlimited" | "limited";
     maxAttendeesInput: string;
+    minAttendeesInput: string; // Premium minimum headcount; "" = none
     rsvpRestricted: boolean;
     leadEnabled: boolean;
     leadDays: number;
@@ -211,6 +222,7 @@ const defaultSchedule = (): ScheduleData => ({
     description: "",
     maxAttendeesMode: "unlimited",
     maxAttendeesInput: "",
+    minAttendeesInput: "",
     rsvpRestricted: false,
     leadEnabled: true,
     leadDays: 5,
@@ -299,6 +311,8 @@ const buildSchedulePayload = (d: ScheduleData) => {
         routines,
         defaultLocation: d.location.trim(),
         defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
+        // The minimum is checked at the RSVP deadline, so without one it's sent as off.
+        defaultMinAttendees: d.rsvpRestricted && d.deadlineEnabled && d.minAttendeesInput !== "" ? parseInt(d.minAttendeesInput, 10) : 0,
         defaultDescription: d.description.trim(),
         generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
         generationLeadTime: d.leadTime,
@@ -381,6 +395,7 @@ const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSchedule | n
         description: sched.defaultDescription || "",
         maxAttendeesMode: (sched.defaultCapacity > 0 ? "limited" : "unlimited") as "unlimited" | "limited",
         maxAttendeesInput: sched.defaultCapacity ? String(sched.defaultCapacity) : "",
+        minAttendeesInput: sched.defaultMinAttendees ? String(sched.defaultMinAttendees) : "",
         rsvpRestricted: sched.generationLeadDays != null || sched.generationDeadlineDays != null,
         leadEnabled: sched.generationLeadDays != null,
         leadDays: sched.generationLeadDays ?? 5,
@@ -747,6 +762,7 @@ const EditScheduleScreen = () => {
     const isScheduleValid = (): boolean => {
         if (!d.name.trim()) return false;
         if (d.maxAttendeesMode === "limited" && (d.maxAttendeesInput === "" || getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput))) return false;
+        if (getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput)) return false;
         if (!d.frequency) return false;
         if (d.frequency === "daily") return d.dailySameTime !== null;
         if (d.frequency === "weekly" || d.frequency === "biweekly")
@@ -1571,6 +1587,46 @@ const EditScheduleScreen = () => {
                                 </View>
                             );
                         })()}
+
+                        {/* Minimum headcount (Premium) */}
+                        <Text style={s.fieldLabel}>Minimum to Play</Text>
+                        {group?.isPremium !== true ? (
+                            <View style={s.premiumLockRow}>
+                                <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={s.premiumLockTitle}>Premium</Text>
+                                    <Text style={s.premiumLockText}>
+                                        Cancel a meetup automatically if too few people are in by the RSVP deadline. Requires the group owner to have Premium.
+                                    </Text>
+                                </View>
+                            </View>
+                        ) : !(d.rsvpRestricted && d.deadlineEnabled) ? (
+                            <Text style={s.premiumLockText}>
+                                Turn on "Limit RSVPs" and set an RSVP deadline above to use a minimum headcount.
+                            </Text>
+                        ) : (() => {
+                            const minAttendeesError = getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput);
+                            return (
+                                <View>
+                                    <View style={[s.inputRow, { marginBottom: 0 }, minAttendeesError && s.inputRowError]}>
+                                        <Feather name="flag" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                                        <TextInput
+                                            style={s.inlineInput}
+                                            placeholder="No minimum"
+                                            placeholderTextColor="#C4C9D4"
+                                            keyboardType="number-pad"
+                                            value={d.minAttendeesInput}
+                                            onChangeText={v => upd({ minAttendeesInput: v })}
+                                        />
+                                    </View>
+                                    {minAttendeesError
+                                        ? <Text style={s.errorText}>{minAttendeesError}</Text>
+                                        : <Text style={s.premiumLockText}>
+                                            If fewer than this many people (counting guests) are in when RSVPs close, the meetup is cancelled and everyone is told.
+                                          </Text>}
+                                </View>
+                            );
+                        })()}
                     </View>
                 </ScrollView>
 
@@ -1665,6 +1721,9 @@ const s = StyleSheet.create({
     descriptionInputRow: { alignItems: "flex-start", height: 90 },
     descriptionInput: { height: "100%" },
     errorText: { fontSize: 12, fontWeight: "600", color: "#EF4444", marginTop: 6, marginLeft: 2 },
+    premiumLockRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: "#F9FAFB", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 12 },
+    premiumLockTitle: { fontSize: 13, fontWeight: "800", color: "#6B7280", marginBottom: 2 },
+    premiumLockText: { fontSize: 12, color: "#6B7280", lineHeight: 17, marginTop: 6 },
     primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
     primaryBtnDisabled: { backgroundColor: "#93C5FD" },
     primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },

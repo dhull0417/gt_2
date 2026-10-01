@@ -506,6 +506,7 @@ export const restoreMeetup = asyncHandler(async (req, res) => {
     }
 
     meetup.status = 'scheduled';
+    meetup.cancelReason = null;
     meetup.isOverride = true;
     await meetup.save();
 

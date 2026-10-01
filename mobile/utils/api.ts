@@ -47,6 +47,8 @@ export interface NamedSchedule extends Schedule {
   name: string;
   defaultLocation: string;
   defaultCapacity: number;
+  /** Premium: cancel a meetup if fewer than this many people are in by the RSVP deadline (0/absent = off). */
+  defaultMinAttendees?: number;
   defaultDescription: string;
   generationLeadDays: number | null;
   generationLeadTime: string;
@@ -125,6 +127,8 @@ export interface Group {
 export interface GroupDetails extends Group {
   members: User[];
   defaultCapacity: number;
+  /** Computed by the server: true while the group's owner has Premium. */
+  isPremium?: boolean;
 }
 
 export interface Meetup {
@@ -149,6 +153,10 @@ export interface Meetup {
   description: string;
   status: 'scheduled' | 'cancelled' | 'expired';
   capacity: number;
+  /** Premium minimum headcount copied from the series (0/absent = none). */
+  minAttendees?: number;
+  /** Set when the app (not a person) cancelled it, e.g. 'minimum-headcount'. */
+  cancelReason?: string | null;
   isOverride: boolean;
   members: User[];
   undecided: string[];
@@ -213,7 +221,10 @@ export interface Notification {
     changedFields?: ('schedule' | 'location' | 'capacity')[];
     /** ownership-transferred: the group's Premium features paused with the change of owner. */
     premiumPaused?: boolean;
-    reason?: 'owner-deleted-account';
+    reason?: 'owner-deleted-account' | 'minimum-headcount';
+    /** meetup-cancelled by minimum headcount: how many were needed / how many signed up. */
+    needed?: number;
+    count?: number;
   };
   createdAt: string;
 }
@@ -226,6 +237,7 @@ export interface ScheduleInput {
   routines?: Routine[];
   defaultLocation?: string;
   defaultCapacity?: number;
+  defaultMinAttendees?: number;
   defaultDescription?: string;
   generationLeadDays?: number | null;
   generationLeadTime?: string;

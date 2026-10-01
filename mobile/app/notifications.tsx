@@ -105,6 +105,9 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> updated the {changeSummary || 'details'} for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>{when ? <>{' — '}<Text style={styles.bold}>{when}</Text></> : null}.</Text>;
             }
             case 'meetup-cancelled':
+                if (notification.meta?.reason === 'minimum-headcount') {
+                    return <Text style={styles.messageText}><Text style={styles.bold}>{meetupName || 'A meetup'}</Text> was cancelled: only {notification.meta.count ?? 0} of the {notification.meta.needed ?? 0} needed signed up.</Text>;
+                }
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> cancelled <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-restored':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> restored <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;

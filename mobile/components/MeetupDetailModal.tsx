@@ -821,7 +821,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         <View style={[styles.cancelBanner, { justifyContent: 'space-between' }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                 <Feather name="alert-triangle" size={18} color="#B91C1C" />
-                                <Text style={styles.cancelBannerText}>Meetup Cancelled</Text>
+                                <Text style={styles.cancelBannerText}>
+                                    {meetup.cancelReason === 'minimum-headcount' ? 'Cancelled: minimum not met' : 'Meetup Cancelled'}
+                                </Text>
                             </View>
                             {canCancelOrRestore && (
                                 <TouchableOpacity onPress={handleCancelMeetup} style={styles.reactivateBannerBtn}>

@@ -136,6 +136,10 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         members: group.members,
         undecided: group.members,
         capacity: schedule.defaultCapacity || 0,
+        minAttendees: schedule.defaultMinAttendees || 0,
+        // A meetup created after its RSVP deadline already passed (e.g. a series
+        // edited late) is never evaluated against the minimum.
+        minimumChecked: !!(rsvpCloseDate && rsvpCloseDate <= new Date()),
         isOverride: false,
         frequency: routine.frequency,
         startsAt: nextDate,

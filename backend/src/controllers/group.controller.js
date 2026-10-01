@@ -10,7 +10,7 @@ import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { generateMeetupsForGroup, generateMeetupsForSchedule } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
-import { hasPremium } from "../utils/premium.js";
+import { hasPremium, groupHasPremium } from "../utils/premium.js";
 
 // --- Helpers ---
 
@@ -32,6 +32,30 @@ const touchGroupMeetups = (groupId) =>
 const MAX_ACTIVE_SCHEDULES = 5;
 
 /**
+ * Minimum headcount is checked at the RSVP deadline, so it needs one, and it
+ * can't exceed the capacity. Returns { status, body } to respond with, or
+ * null when the values are fine. (Premium is checked separately.)
+ */
+const minHeadcountProblem = ({ min, capacity, deadlineDays }) => {
+    if (!min) return null;
+    if (!Number.isInteger(min) || min < 1) {
+        return { status: 400, body: { error: "Minimum headcount must be a whole number of at least 1." } };
+    }
+    if (deadlineDays == null) {
+        return { status: 400, body: { error: "Set an RSVP deadline to use a minimum headcount." } };
+    }
+    if (capacity > 0 && min > capacity) {
+        return { status: 400, body: { error: "Minimum headcount can't be higher than the maximum attendees." } };
+    }
+    return null;
+};
+
+const MIN_HEADCOUNT_PREMIUM_REQUIRED = {
+    error: "premium_required",
+    message: "Minimum headcount requires GroupThat Premium.",
+};
+
+/**
  * Normalizes a request body into the namedSchedule shape stored on
  * Group.schedules; used by per-schedule endpoints and the legacy wrapper.
  */
@@ -41,6 +65,7 @@ const normalizeScheduleInput = (input, fallbackName) => ({
     routines: input.routines || [],
     defaultLocation: input.defaultLocation || "",
     defaultCapacity: input.defaultCapacity || 0,
+    defaultMinAttendees: Number(input.defaultMinAttendees) || 0,
     defaultDescription: input.defaultDescription || "",
     generationLeadDays: numOrNull(input.generationLeadDays, 1),
     generationLeadTime: input.generationLeadTime || "09:00 AM",
@@ -144,6 +169,18 @@ export const createGroup = asyncHandler(async (req, res) => {
           generationDeadlineDays,
           generationDeadlineTime,
       }, name)];
+  }
+
+  for (const s of initialSchedules) {
+      const problem = minHeadcountProblem({
+          min: s.defaultMinAttendees,
+          capacity: s.defaultCapacity,
+          deadlineDays: s.generationDeadlineDays,
+      });
+      if (problem) return res.status(problem.status).json(problem.body);
+      if (s.defaultMinAttendees > 0 && !hasPremium(owner)) {
+          return res.status(403).json(MIN_HEADCOUNT_PREMIUM_REQUIRED);
+      }
   }
 
   const groupData = {
@@ -279,7 +316,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const { userId: clerkId } = getAuth(req);
     const {
-        name, startDate, routines, defaultLocation, defaultCapacity, defaultDescription,
+        name, startDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription,
         generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
         timezone, // shared across the whole group, not per-schedule — see updateSchedule
     } = req.body;
@@ -288,6 +325,18 @@ export const createSchedule = asyncHandler(async (req, res) => {
     const user = await User.findOne({ clerkId });
     if (!group || !user) return res.status(404).json({ error: "Resource not found." });
     if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const minAttendees = Number(defaultMinAttendees) || 0;
+    const minProblem = minHeadcountProblem({
+        min: minAttendees,
+        capacity: Number(defaultCapacity) || 0,
+        deadlineDays: numOrNull(generationDeadlineDays, null),
+    });
+    if (minProblem) return res.status(minProblem.status).json(minProblem.body);
+    // Premium belongs to the group's owner, even when a moderator makes the edit.
+    if (minAttendees > 0 && !(await groupHasPremium(group))) {
+        return res.status(403).json(MIN_HEADCOUNT_PREMIUM_REQUIRED);
+    }
 
     if (!name || !String(name).trim()) {
         return res.status(400).json({ error: "Schedule name is required." });
@@ -320,7 +369,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (timezone) group.timezone = timezone;
 
     group.schedules.push(normalizeScheduleInput(
-        { name, startDate, routines, defaultLocation, defaultCapacity, defaultDescription, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
+        { name, startDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
         name
     ));
     await group.save();
@@ -348,7 +397,7 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     const { groupId, scheduleId } = req.params;
     const { userId: clerkId } = getAuth(req);
     const {
-        name, startDate, routines, defaultLocation, defaultCapacity, defaultDescription,
+        name, startDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription,
         generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
         timezone, // shared across the whole group — schedules don't carry their own
     } = req.body;
@@ -360,6 +409,24 @@ export const updateSchedule = asyncHandler(async (req, res) => {
 
     const target = group.schedules.id(scheduleId);
     if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
+
+    // Validate the minimum headcount against the values as they'll be AFTER this
+    // edit, before anything is changed. Premium is only required when the minimum
+    // itself is being turned on or raised, so a lapsed owner can still edit
+    // everything else (and turn the minimum off).
+    const currentMin = target.defaultMinAttendees || 0;
+    const newMin = defaultMinAttendees !== undefined ? (Number(defaultMinAttendees) || 0) : currentMin;
+    const minProblem = minHeadcountProblem({
+        min: newMin,
+        capacity: defaultCapacity !== undefined ? Number(defaultCapacity) : (target.defaultCapacity || 0),
+        deadlineDays: generationDeadlineDays !== undefined
+            ? numOrNull(generationDeadlineDays, null)
+            : (target.generationDeadlineDays ?? null),
+    });
+    if (minProblem) return res.status(minProblem.status).json(minProblem.body);
+    if (newMin > currentMin && !(await groupHasPremium(group))) {
+        return res.status(403).json(MIN_HEADCOUNT_PREMIUM_REQUIRED);
+    }
 
     if (timezone) group.timezone = timezone;
 
@@ -375,6 +442,7 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     if (startDate !== undefined) target.startDate = startDate;
     if (routines !== undefined) target.routines = routines;
     if (defaultCapacity !== undefined) target.defaultCapacity = Number(defaultCapacity);
+    if (defaultMinAttendees !== undefined) target.defaultMinAttendees = newMin;
     if (defaultLocation !== undefined) {
         target.defaultLocation = defaultLocation;
         if (defaultLocation) {
@@ -726,7 +794,7 @@ export const getGroupDetails = asyncHandler(async (req, res) => {
         .lean();
         
     if (!group) return res.status(404).json({ error: "Group not found." });
-    res.status(200).json(withLegacyScheduleMirror(group));
+    res.status(200).json({ ...withLegacyScheduleMirror(group), isPremium: await groupHasPremium(group) });
 });
 
 export const addMember = asyncHandler(async (req, res) => {

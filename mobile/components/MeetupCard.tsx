@@ -25,7 +25,9 @@ const RsvpCounts = ({ meetup }: { meetup: Meetup }) => {
     const totalGuests = (meetup.guests || []).reduce((sum, g) => sum + (g.count || 0), 0);
     const inCount = meetup.in.length + totalGuests;
     const spotsLeft = meetup.capacity > 0 ? Math.max(meetup.capacity - inCount, 0) : null;
+    const minAttendees = meetup.minAttendees ?? 0;
     return (
+      <>
         <View className="flex-row items-center justify-between mt-3 flex-wrap">
             <View className="flex-row items-center flex-wrap">
                 <View className="flex-row items-center mr-4">
@@ -47,6 +49,14 @@ const RsvpCounts = ({ meetup }: { meetup: Meetup }) => {
                 </Text>
             )}
         </View>
+        {minAttendees > 0 && (
+            <Text className="text-gray-400 mt-1" style={{ fontSize: 12 }}>
+                {inCount >= minAttendees
+                    ? `Minimum of ${minAttendees} met`
+                    : `Needs ${minAttendees - inCount} more to go ahead (minimum ${minAttendees})`}
+            </Text>
+        )}
+      </>
     );
 };
 
@@ -159,6 +169,9 @@ export const MeetupCard = ({
             <View className="bg-red-100 self-start px-2 py-0.5 rounded-md mt-1">
               <Text className="text-red-600 text-[10px] font-black uppercase">Cancelled</Text>
             </View>
+          )}
+          {isCancelled && meetup.cancelReason === 'minimum-headcount' && (
+            <Text className="text-gray-500 mt-1" style={{ fontSize: 12 }}>Minimum headcount wasn't met</Text>
           )}
           {isExpired && !isCancelled && (
             <View className="bg-gray-300 self-start px-2 py-0.5 rounded-md mt-1">
