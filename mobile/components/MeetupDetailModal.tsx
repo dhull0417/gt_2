@@ -819,11 +819,20 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 <View style={{ marginBottom: showRsvpSelector ? 32 : 14 }}>
                     {isCancelled && (
                         <View style={[styles.cancelBanner, { justifyContent: 'space-between' }]}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                                 <Feather name="alert-triangle" size={18} color="#B91C1C" />
-                                <Text style={styles.cancelBannerText}>
-                                    {meetup.cancelReason === 'minimum-headcount' ? 'Cancelled: minimum not met' : 'Meetup Cancelled'}
-                                </Text>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.cancelBannerText}>
+                                        {meetup.cancelReason === 'minimum-headcount' ? 'Cancelled: minimum not met' : 'Meetup Cancelled'}
+                                    </Text>
+                                    {meetup.cancelReason === 'minimum-headcount' && (
+                                        <Text style={styles.cancelBannerSubtext}>
+                                            {meetup.minAttendees
+                                                ? `The RSVP deadline has passed and fewer than ${meetup.minAttendees} people were in.`
+                                                : 'The RSVP deadline has passed and the minimum headcount wasn\'t met.'}
+                                        </Text>
+                                    )}
+                                </View>
                             </View>
                             {canCancelOrRestore && (
                                 <TouchableOpacity onPress={handleCancelMeetup} style={styles.reactivateBannerBtn}>
@@ -1422,6 +1431,7 @@ const styles = StyleSheet.create({
     content: { flex: 1, padding: 24 },
     cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
     cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
+    cancelBannerSubtext: { color: '#B91C1C', marginLeft: 8, marginTop: 3, fontSize: 12, lineHeight: 16 },
     reactivateBannerBtn: { backgroundColor: '#4A90E2', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12, marginLeft: 8 },
     reactivateBannerBtnText: { color: 'white', fontWeight: '800', fontSize: 11, textTransform: 'uppercase' },
     nameCard: { alignItems: 'center' },

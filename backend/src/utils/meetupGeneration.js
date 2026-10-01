@@ -210,3 +210,72 @@ export const generateMeetupsForGroup = async (group, { onMeetupCreated } = {}) =
 };
 
 export { generateMeetupsForSchedule };
+
+/**
+ * Re-derives the RSVP window (open/close dates) and minimum headcount of a
+ * series' upcoming OVERRIDE meetups from the series' current settings.
+ *
+ * A series edit deletes and regenerates only non-override meetups (overrides
+ * carry manual edits, e.g. a changed time or location), so without this an
+ * override keeps whatever deadline the series had when it was generated or last
+ * edited, even though nothing lets you set an RSVP window or minimum per
+ * meetup. Mirrors how generation and updateMeetup derive the window from the
+ * meetup's own start time. Cancelled meetups and past ones are left alone, and
+ * only meetups whose values actually change are written.
+ *
+ * `minimumChecked` follows the same rule as generation: a meetup whose
+ * deadline is already past is marked checked, so changing the settings never
+ * cancels a meetup retroactively; a deadline moved into the future re-arms it.
+ *
+ * @returns {Promise<number>} how many meetups were updated
+ */
+export const refreshOverrideMeetupWindows = async (group, schedule) => {
+  const now = new Date();
+  const meetups = await Meetup.find({
+    group: group._id,
+    schedule: schedule._id,
+    isOverride: true,
+    status: 'scheduled',
+    date: { $gte: now },
+  })
+    .select('startsAt date rsvpOpenDate rsvpCloseDate rsvpNotified minAttendees minimumChecked')
+    .lean();
+  if (meetups.length === 0) return 0;
+
+  const { hours: leadH, minutes: leadM } = parseTimeString(schedule.generationLeadTime || "09:00 AM");
+  const { hours: closeH, minutes: closeM } = parseTimeString(schedule.generationDeadlineTime || "09:00 AM");
+  const minAttendees = schedule.defaultMinAttendees || 0;
+  const sameTime = (a, b) => (a ? new Date(a).getTime() : null) === (b ? new Date(b).getTime() : null);
+
+  const ops = [];
+  for (const m of meetups) {
+    const startsAtDT = DateTime.fromJSDate(new Date(m.startsAt || m.date)).setZone(group.timezone);
+    const rsvpOpenDate = schedule.generationLeadDays != null
+      ? startsAtDT.minus({ days: schedule.generationLeadDays }).set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 }).toJSDate()
+      : null;
+    const rsvpCloseDate = schedule.generationDeadlineDays != null
+      ? startsAtDT.minus({ days: schedule.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
+      : null;
+    const minimumChecked = !!(rsvpCloseDate && rsvpCloseDate <= now);
+    // already-open (no gate, or open date past) skips the "RSVPs are open" ping; a future open date re-arms it
+    const rsvpNotified = !rsvpOpenDate || rsvpOpenDate <= now;
+
+    const unchanged =
+      sameTime(m.rsvpOpenDate, rsvpOpenDate) &&
+      sameTime(m.rsvpCloseDate, rsvpCloseDate) &&
+      (m.minAttendees || 0) === minAttendees &&
+      !!m.minimumChecked === minimumChecked &&
+      !!m.rsvpNotified === rsvpNotified;
+    if (unchanged) continue;
+
+    ops.push({
+      updateOne: {
+        filter: { _id: m._id, isOverride: true, status: 'scheduled' },
+        update: { $set: { rsvpOpenDate, rsvpCloseDate, minAttendees, minimumChecked, rsvpNotified } },
+      },
+    });
+  }
+
+  if (ops.length > 0) await Meetup.bulkWrite(ops);
+  return ops.length;
+};

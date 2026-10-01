@@ -171,7 +171,7 @@ export const MeetupCard = ({
             </View>
           )}
           {isCancelled && meetup.cancelReason === 'minimum-headcount' && (
-            <Text className="text-gray-500 mt-1" style={{ fontSize: 12 }}>Minimum headcount wasn't met</Text>
+            <Text className="text-gray-500 mt-1" style={{ fontSize: 12 }}>RSVP deadline passed; minimum headcount wasn't met</Text>
           )}
           {isExpired && !isCancelled && (
             <View className="bg-gray-300 self-start px-2 py-0.5 rounded-md mt-1">

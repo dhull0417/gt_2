@@ -8,7 +8,7 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
-import { generateMeetupsForGroup, generateMeetupsForSchedule } from "../utils/meetupGeneration.js";
+import { generateMeetupsForGroup, generateMeetupsForSchedule, refreshOverrideMeetupWindows } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { hasPremium, groupHasPremium } from "../utils/premium.js";
 
@@ -479,6 +479,14 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     await Meetup.deleteMany({ group: group._id, schedule: target._id, isOverride: false, date: { $gte: today } });
+
+    // Override meetups survive the regeneration above, so bring their RSVP window
+    // and minimum headcount in line with the series' new settings.
+    try {
+        await refreshOverrideMeetupWindows(group, target);
+    } catch (err) {
+        console.error("Update Schedule Override Window Error:", err);
+    }
 
     if (target.routines?.length) {
         try {
