@@ -6,7 +6,7 @@ import Poll from "../models/poll.model.js";
 import { RSVP_REMINDER_STAGES } from "../utils/date.utils.js";
 import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
-import { groupHasPremium } from "../utils/premium.js";
+import { evaluateDueMeetups } from "../utils/minimumHeadcount.js";
 
 /**
  * @desc    Generate meetups for groups whose nextGenerationAt is now due.
@@ -339,60 +339,6 @@ export const expirePolls = asyncHandler(async (req, res) => {
  * @route   POST /api/jobs/cancel-under-minimum
  */
 export const cancelUnderMinimum = asyncHandler(async (req, res) => {
-  const now = new Date();
-
-  const due = await Meetup.find({
-    status: 'scheduled',
-    minAttendees: { $gt: 0 },
-    minimumChecked: false,
-    rsvpCloseDate: { $lte: now },
-    startsAt: { $gte: now },
-  }).select('_id').lean();
-
-  let cancelled = 0;
-  for (const { _id } of due) {
-    try {
-      // Claim it first so two overlapping runs can't both act on the same meetup.
-      const meetup = await Meetup.findOneAndUpdate(
-        { _id, status: 'scheduled', minimumChecked: false },
-        { $set: { minimumChecked: true } },
-        { new: true }
-      ).lean();
-      if (!meetup) continue;
-
-      const group = await Group.findById(meetup.group).select('owner').lean();
-      if (!(await groupHasPremium(group))) continue;
-
-      const inUsers = await User.find({ _id: { $in: meetup.in } }).select('clerkId').lean();
-      const guestsByClerkId = new Map((meetup.guests || []).map((g) => [g.userId, g.count || 0]));
-      const headcount = inUsers.reduce((sum, u) => sum + 1 + (guestsByClerkId.get(u.clerkId) || 0), 0);
-      if (headcount >= meetup.minAttendees) continue;
-
-      await Meetup.updateOne(
-        { _id, status: 'scheduled' },
-        { $set: { status: 'cancelled', isOverride: true, cancelReason: 'minimum-headcount' } }
-      );
-      cancelled++;
-
-      const members = await User.find({ _id: { $in: meetup.members } });
-      if (members.length > 0) {
-        const dateStr = new Date(meetup.date).toLocaleDateString('en-US', {
-          weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone,
-        });
-        await notifyAndPersist(members, {
-          title: "Meetup Cancelled",
-          body: `"${meetup.name}" on ${dateStr} was cancelled: only ${headcount} of the ${meetup.minAttendees} needed signed up.`,
-          data: { meetupId: meetup._id.toString(), type: 'meetup_cancellation', groupId: meetup.group.toString() },
-          type: 'meetup-cancelled',
-          meetup: meetup._id,
-          group: meetup.group,
-          meta: { reason: 'minimum-headcount', needed: meetup.minAttendees, count: headcount },
-        });
-      }
-    } catch (err) {
-      console.error("cancelUnderMinimum failed for meetup", _id.toString(), err);
-    }
-  }
-
-  res.status(200).json({ message: `Checked ${due.length} meetup(s); cancelled ${cancelled}.` });
+  const { checked, cancelled } = await evaluateDueMeetups();
+  res.status(200).json({ message: `Checked ${checked} meetup(s); cancelled ${cancelled}.` });
 });

@@ -5,7 +5,7 @@ import ReanimatedAnimated from 'react-native-reanimated';
 import { Meetup, User } from '@/utils/api';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { RsvpBreather } from '@/components/RsvpBreather';
-import { getMeetupStatus } from '@/utils/meetupStatus';
+import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn } from '@/utils/meetupStatus';
 
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
@@ -90,7 +90,7 @@ export const MeetupCard = ({
 
   const { isCancelled, isExpired, isHappeningNow } = getMeetupStatus(meetup);
   const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
-  const isRsvpDeadlinePassed = meetup.rsvpCloseDate ? new Date(meetup.rsvpCloseDate) < new Date() : false;
+  const isRsvpDeadlinePassed = isRsvpDeadlinePassedFn(meetup);
 
   const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
   const isWaitlisted = currentUser ? meetup.waitlist.some(u => getUserId(u) === currentUser._id) : false;

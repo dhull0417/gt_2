@@ -11,6 +11,7 @@ import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
 import { canManageGroup, canManageMember } from "./group.controller.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { groupHasPremium, withGroupPremium } from "../utils/premium.js";
+import { evaluateMinimumHeadcount, evaluateDueMeetups } from "../utils/minimumHeadcount.js";
 
 /**
  * @desc    Get all meetups for the current user
@@ -28,6 +29,14 @@ export const getMeetups = asyncHandler(async (req, res) => {
     const memberFilter = { members: user._id };
 
     const { since } = req.query;
+
+    // Evaluate minimum headcount for any of this user's meetups whose deadline
+    // just passed, so they never see "RSVPs closed" and then a later cancel.
+    try {
+        await evaluateDueMeetups({ members: user._id });
+    } catch (err) {
+        console.error("getMeetups minimum check failed:", err);
+    }
 
     // Delta sync: returns what changed since last sync, plus valid ids so the
     // client can drop entries that are no longer visible.
@@ -118,6 +127,18 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         meetup = await Meetup.findById(meetupId);
         if (!meetup) return res.status(404).json({ error: "Meetup not found." });
+
+        // Deadline just passed and the minimum hasn't been evaluated: do it now,
+        // so the outcome is either "cancelled: minimum not met" or a normal close.
+        if (meetup.status === 'scheduled' && meetup.minAttendees > 0 && !meetup.minimumChecked
+            && meetup.rsvpCloseDate && new Date(meetup.rsvpCloseDate) <= new Date()) {
+            const outcome = await evaluateMinimumHeadcount(meetup._id);
+            if (outcome === 'cancelled') {
+                return res.status(400).json({ error: "This meetup was cancelled: the RSVP deadline passed and the minimum headcount wasn't met." });
+            }
+            meetup = await Meetup.findById(meetupId);
+            if (!meetup) return res.status(404).json({ error: "Meetup not found." });
+        }
 
         // Admin overrides bypass the open/deadline window by design.
         if (!actingAdmin && meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {

@@ -37,7 +37,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
 import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/utils/api';
-import { getMeetupStatus } from '@/utils/meetupStatus';
+import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn } from '@/utils/meetupStatus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
@@ -299,9 +299,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     ? new Date(meetup.rsvpOpenDate) > new Date()
     : false;
 
-    const isRsvpDeadlinePassed = meetup.rsvpCloseDate
-    ? new Date(meetup.rsvpCloseDate) < new Date()
-    : false;
+    const isRsvpDeadlinePassed = isRsvpDeadlinePassedFn(meetup);
 
     // Controls all "adjustment" UI
     const isReadOnly = isCancelled || isExpired;

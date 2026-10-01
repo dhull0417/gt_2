@@ -155,6 +155,7 @@ export interface Meetup {
   capacity: number;
   /** Premium minimum headcount copied from the series (0/absent = none). */
   minAttendees?: number;
+  minimumChecked?: boolean;
   /** Set when the app (not a person) cancelled it, e.g. 'minimum-headcount'. */
   cancelReason?: string | null;
   isOverride: boolean;

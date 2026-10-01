@@ -28,3 +28,18 @@ export const getMeetupStatus = (meetup: Meetup, now: Date = new Date()): MeetupS
 
   return { isCancelled, isPast, isExpired, isHappeningNow, isReadOnly };
 };
+
+// Grace for meetups with a minimum headcount: until the server has evaluated
+// the minimum, the deadline isn't treated as passed, so users never see
+// "RSVPs closed" and then a cancellation. Capped so a stalled check can't
+// leave RSVPs looking open.
+const MIN_CHECK_GRACE_MS = 5 * 60 * 1000;
+
+export const isRsvpDeadlinePassed = (meetup: Meetup, now: Date = new Date()): boolean => {
+  if (!meetup.rsvpCloseDate) return false;
+  const closeMs = new Date(meetup.rsvpCloseDate).getTime();
+  if (closeMs >= now.getTime()) return false;
+  const awaitingMinimumCheck = (meetup.minAttendees ?? 0) > 0 && meetup.minimumChecked === false;
+  if (awaitingMinimumCheck && now.getTime() - closeMs < MIN_CHECK_GRACE_MS) return false;
+  return true;
+};
