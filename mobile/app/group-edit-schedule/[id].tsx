@@ -12,6 +12,8 @@ import {
     LayoutAnimation,
     UIManager,
     Animated,
+    Switch,
+    KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -180,6 +182,29 @@ interface BuiltRoutine {
     snapshot: Partial<ScheduleData>;
 }
 
+interface BringItemDraft {
+    key: string;
+    _id?: string; // present for items already saved, so claims follow edits
+    name: string;
+    max: string; // "" = no limit
+}
+
+const newBringItemKey = () => `bi_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+const getBringItemsError = (items: BringItemDraft[]): string | null => {
+    const seen = new Set<string>();
+    for (const i of items) {
+        const name = i.name.trim();
+        if (!name) return "Give every item a name, or remove the empty row.";
+        if (name.length > 40) return "Item names can be at most 40 characters.";
+        if (seen.has(name.toLowerCase())) return `"${name}" is listed twice.`;
+        seen.add(name.toLowerCase());
+        if (i.max !== "" && !/^\d+$/.test(i.max)) return `Enter a whole number for "${name}", or leave it blank for no limit.`;
+        if (i.max !== "" && (parseInt(i.max, 10) < 1 || parseInt(i.max, 10) > 99)) return `The number for "${name}" must be 1 to 99.`;
+    }
+    return null;
+};
+
 interface ScheduleData {
     name: string;
     location: string;
@@ -187,6 +212,8 @@ interface ScheduleData {
     maxAttendeesMode: "unlimited" | "limited";
     maxAttendeesInput: string;
     minAttendeesInput: string; // Premium minimum headcount; "" = none
+    bringItems: BringItemDraft[]; // Premium assignments: things to bring
+    ridesEnabled: boolean; // Premium assignments: carpool coordination
     rsvpRestricted: boolean;
     leadEnabled: boolean;
     leadDays: number;
@@ -223,6 +250,8 @@ const defaultSchedule = (): ScheduleData => ({
     maxAttendeesMode: "unlimited",
     maxAttendeesInput: "",
     minAttendeesInput: "",
+    bringItems: [],
+    ridesEnabled: false,
     rsvpRestricted: false,
     leadEnabled: true,
     leadDays: 5,
@@ -313,6 +342,12 @@ const buildSchedulePayload = (d: ScheduleData) => {
         defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
         // The minimum is checked at the RSVP deadline, so without one it's sent as off.
         defaultMinAttendees: d.rsvpRestricted && d.deadlineEnabled && d.minAttendeesInput !== "" ? parseInt(d.minAttendeesInput, 10) : 0,
+        defaultBringItems: d.bringItems.map(i => ({
+            ...(i._id ? { _id: i._id } : {}),
+            name: i.name.trim(),
+            max: i.max === "" ? null : parseInt(i.max, 10),
+        })),
+        defaultRidesEnabled: d.ridesEnabled,
         defaultDescription: d.description.trim(),
         generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
         generationLeadTime: d.leadTime,
@@ -396,6 +431,8 @@ const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSchedule | n
         maxAttendeesMode: (sched.defaultCapacity > 0 ? "limited" : "unlimited") as "unlimited" | "limited",
         maxAttendeesInput: sched.defaultCapacity ? String(sched.defaultCapacity) : "",
         minAttendeesInput: sched.defaultMinAttendees ? String(sched.defaultMinAttendees) : "",
+        bringItems: (sched.defaultBringItems || []).map(i => ({ key: i._id, _id: i._id, name: i.name, max: i.max ? String(i.max) : "" })),
+        ridesEnabled: !!sched.defaultRidesEnabled,
         rsvpRestricted: sched.generationLeadDays != null || sched.generationDeadlineDays != null,
         leadEnabled: sched.generationLeadDays != null,
         leadDays: sched.generationLeadDays ?? 5,
@@ -763,6 +800,7 @@ const EditScheduleScreen = () => {
         if (!d.name.trim()) return false;
         if (d.maxAttendeesMode === "limited" && (d.maxAttendeesInput === "" || getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput))) return false;
         if (getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput)) return false;
+        if (getBringItemsError(d.bringItems)) return false;
         if (!d.frequency) return false;
         if (d.frequency === "daily") return d.dailySameTime !== null;
         if (d.frequency === "weekly" || d.frequency === "biweekly")
@@ -1260,10 +1298,12 @@ const EditScheduleScreen = () => {
                     <View style={{ width: 36 }} />
                 </View>
 
+                <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
                 <ScrollView
                     style={{ flex: 1 }}
-                    contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
+                    contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 120 }}
                     keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
                     showsVerticalScrollIndicator={false}
                 >
                     <Text style={s.screenSub}>
@@ -1627,8 +1667,75 @@ const EditScheduleScreen = () => {
                                 </View>
                             );
                         })()}
+
+                        {/* Meetup assignments (Premium) */}
+                        <Text style={s.fieldLabel}>Meetup Assignments</Text>
+                        {group?.isPremium !== true ? (
+                            <View style={s.premiumLockRow}>
+                                <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={s.premiumLockTitle}>Premium</Text>
+                                    <Text style={s.premiumLockText}>
+                                        Ask people what they're bringing and coordinate rides. Requires the group owner to have Premium.
+                                    </Text>
+                                </View>
+                            </View>
+                        ) : (
+                            <View>
+                                <Text style={[s.premiumLockText, { marginBottom: 10 }]}>
+                                    People who RSVP "I'm In" are asked what they're bringing. Add a number to limit how many people can bring an item.
+                                </Text>
+                                {d.bringItems.map(item => (
+                                    <View key={item.key} style={[s.inputRow, { marginBottom: 8, paddingVertical: 8 }]}>
+                                        <TextInput
+                                            style={[s.inlineInput, { flex: 1 }]}
+                                            placeholder="Item (e.g. Chips)"
+                                            placeholderTextColor="#C4C9D4"
+                                            maxLength={40}
+                                            value={item.name}
+                                            onChangeText={v => upd({ bringItems: d.bringItems.map(i => i.key === item.key ? { ...i, name: v } : i) })}
+                                        />
+                                        <TextInput
+                                            style={[s.inlineInput, { flex: 0, width: 74, textAlign: "center", borderLeftWidth: 1, borderLeftColor: "#E5E7EB" }]}
+                                            placeholder="No limit"
+                                            placeholderTextColor="#C4C9D4"
+                                            keyboardType="number-pad"
+                                            maxLength={2}
+                                            value={item.max}
+                                            onChangeText={v => upd({ bringItems: d.bringItems.map(i => i.key === item.key ? { ...i, max: v.replace(/[^0-9]/g, "") } : i) })}
+                                        />
+                                        <TouchableOpacity
+                                            onPress={() => upd({ bringItems: d.bringItems.filter(i => i.key !== item.key) })}
+                                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                            style={{ marginLeft: 10 }}
+                                        >
+                                            <Feather name="trash-2" size={16} color="#9CA3AF" />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                                {getBringItemsError(d.bringItems) && <Text style={s.errorText}>{getBringItemsError(d.bringItems)}</Text>}
+                                {d.bringItems.length < 20 && (
+                                    <TouchableOpacity
+                                        onPress={() => upd({ bringItems: [...d.bringItems, { key: newBringItemKey(), name: "", max: "" }] })}
+                                        style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8 }}
+                                    >
+                                        <Feather name="plus-circle" size={16} color="#4A90E2" />
+                                        <Text style={{ color: "#4A90E2", fontWeight: "700", fontSize: 14 }}>Add item to bring</Text>
+                                    </TouchableOpacity>
+                                )}
+
+                                <View style={[s.inputRow, { marginTop: 8, marginBottom: 0, justifyContent: "space-between" }]}>
+                                    <View style={{ flex: 1, paddingRight: 12 }}>
+                                        <Text style={{ fontSize: 15, fontWeight: "600", color: "#374151" }}>Coordinate rides</Text>
+                                        <Text style={s.premiumLockText}>Ask who's driving (and how many seats) and who needs a ride.</Text>
+                                    </View>
+                                    <Switch value={d.ridesEnabled} onValueChange={v => upd({ ridesEnabled: v })} trackColor={{ true: "#4FD1C5" }} />
+                                </View>
+                            </View>
+                        )}
                     </View>
                 </ScrollView>
+                </KeyboardAvoidingView>
 
                 <LocationSearchModal
                     visible={isLocationSearchOpen}

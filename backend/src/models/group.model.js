@@ -53,6 +53,13 @@ const namedScheduleSchema = new mongoose.Schema({
   // Premium: cancel a meetup if fewer than this many people are in by the RSVP deadline (0 = off).
   defaultMinAttendees: { type: Number, min: 0, default: 0 },
   defaultDescription: { type: String, trim: true, default: "" },
+  // Premium meetup assignments: things people can sign up to bring (max = how many
+  // can be claimed in total, null = unlimited) and whether to coordinate rides.
+  defaultBringItems: [{
+    name: { type: String, required: true, trim: true },
+    max: { type: Number, min: 1, default: null },
+  }],
+  defaultRidesEnabled: { type: Boolean, default: false },
 
   generationLeadDays: { type: Number, min: 0, default: null },
   generationLeadTime: { type: String, default: "09:00 AM" },

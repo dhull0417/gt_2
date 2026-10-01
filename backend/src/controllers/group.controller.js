@@ -8,7 +8,7 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
-import { generateMeetupsForGroup, generateMeetupsForSchedule, refreshOverrideMeetupWindows } from "../utils/meetupGeneration.js";
+import { generateMeetupsForGroup, generateMeetupsForSchedule, refreshOverrideMeetupWindows, refreshOverrideAssignments } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { hasPremium, groupHasPremium } from "../utils/premium.js";
 
@@ -55,6 +55,56 @@ const MIN_HEADCOUNT_PREMIUM_REQUIRED = {
     message: "Minimum headcount requires GroupThat Premium.",
 };
 
+const MAX_BRING_ITEMS = 20;
+
+const ASSIGNMENTS_PREMIUM_REQUIRED = {
+    error: "premium_required",
+    message: "Meetup assignments require GroupThat Premium.",
+};
+
+/**
+ * Validates the "things to bring" list from a request. `max` is optional (null =
+ * as many as people want to bring). Returns { items } or { error }.
+ */
+const parseBringItems = (raw) => {
+    if (raw == null) return { items: [] };
+    if (!Array.isArray(raw)) return { error: "Items to bring must be a list." };
+    if (raw.length > MAX_BRING_ITEMS) return { error: `You can list at most ${MAX_BRING_ITEMS} items.` };
+    const seen = new Set();
+    const items = [];
+    for (const r of raw) {
+        const name = String(r?.name ?? "").trim();
+        if (!name) return { error: "Each item needs a name." };
+        if (name.length > 40) return { error: "Item names can be at most 40 characters." };
+        const key = name.toLowerCase();
+        if (seen.has(key)) return { error: `"${name}" is listed twice.` };
+        seen.add(key);
+        let max = null;
+        if (r.max !== null && r.max !== undefined && r.max !== "") {
+            max = Number(r.max);
+            if (!Number.isInteger(max) || max < 1 || max > 99) {
+                return { error: `The number for "${name}" must be a whole number from 1 to 99.` };
+            }
+        }
+        items.push({ _id: r._id, name, max });
+    }
+    return { items };
+};
+
+// Keeps an item's _id only when it already exists on the series, so claims
+// follow edits to the same item and clients can't mint ids.
+const withExistingIds = (items, existing = []) => {
+    const known = new Set(existing.map((i) => i._id.toString()));
+    return items.map((i) => ({
+        ...(i._id && known.has(String(i._id)) ? { _id: i._id } : {}),
+        name: i.name,
+        max: i.max,
+    }));
+};
+
+const assignmentsSignature = (items, rides) =>
+    JSON.stringify([(items || []).map((i) => [i.name, i.max ?? null]), !!rides]);
+
 /**
  * Normalizes a request body into the namedSchedule shape stored on
  * Group.schedules; used by per-schedule endpoints and the legacy wrapper.
@@ -66,6 +116,8 @@ const normalizeScheduleInput = (input, fallbackName) => ({
     defaultLocation: input.defaultLocation || "",
     defaultCapacity: input.defaultCapacity || 0,
     defaultMinAttendees: Number(input.defaultMinAttendees) || 0,
+    defaultBringItems: withExistingIds(parseBringItems(input.defaultBringItems).items || []),
+    defaultRidesEnabled: !!input.defaultRidesEnabled,
     defaultDescription: input.defaultDescription || "",
     generationLeadDays: numOrNull(input.generationLeadDays, 1),
     generationLeadTime: input.generationLeadTime || "09:00 AM",
@@ -180,6 +232,9 @@ export const createGroup = asyncHandler(async (req, res) => {
       if (problem) return res.status(problem.status).json(problem.body);
       if (s.defaultMinAttendees > 0 && !hasPremium(owner)) {
           return res.status(403).json(MIN_HEADCOUNT_PREMIUM_REQUIRED);
+      }
+      if ((s.defaultBringItems.length > 0 || s.defaultRidesEnabled) && !hasPremium(owner)) {
+          return res.status(403).json(ASSIGNMENTS_PREMIUM_REQUIRED);
       }
   }
 
@@ -317,6 +372,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const {
         name, startDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription,
+        defaultBringItems, defaultRidesEnabled,
         generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
         timezone, // shared across the whole group, not per-schedule — see updateSchedule
     } = req.body;
@@ -336,6 +392,12 @@ export const createSchedule = asyncHandler(async (req, res) => {
     // Premium belongs to the group's owner, even when a moderator makes the edit.
     if (minAttendees > 0 && !(await groupHasPremium(group))) {
         return res.status(403).json(MIN_HEADCOUNT_PREMIUM_REQUIRED);
+    }
+
+    const parsedItems = parseBringItems(defaultBringItems);
+    if (parsedItems.error) return res.status(400).json({ error: parsedItems.error });
+    if ((parsedItems.items.length > 0 || defaultRidesEnabled) && !(await groupHasPremium(group))) {
+        return res.status(403).json(ASSIGNMENTS_PREMIUM_REQUIRED);
     }
 
     if (!name || !String(name).trim()) {
@@ -369,7 +431,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (timezone) group.timezone = timezone;
 
     group.schedules.push(normalizeScheduleInput(
-        { name, startDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
+        { name, startDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription, defaultBringItems, defaultRidesEnabled, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
         name
     ));
     await group.save();
@@ -398,6 +460,7 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const {
         name, startDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription,
+        defaultBringItems, defaultRidesEnabled,
         generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
         timezone, // shared across the whole group — schedules don't carry their own
     } = req.body;
@@ -428,6 +491,23 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         return res.status(403).json(MIN_HEADCOUNT_PREMIUM_REQUIRED);
     }
 
+    // Assignments (things to bring, rides): Premium is only required when the setup
+    // is being changed to something non-empty, so a lapsed owner can still clear it.
+    let newBringItems = null;
+    if (defaultBringItems !== undefined) {
+        const parsed = parseBringItems(defaultBringItems);
+        if (parsed.error) return res.status(400).json({ error: parsed.error });
+        newBringItems = withExistingIds(parsed.items, target.defaultBringItems);
+    }
+    const newRidesEnabled = defaultRidesEnabled !== undefined ? !!defaultRidesEnabled : !!target.defaultRidesEnabled;
+    const nextItems = newBringItems ?? target.defaultBringItems;
+    const assignmentsChanged =
+        assignmentsSignature(nextItems, newRidesEnabled) !==
+        assignmentsSignature(target.defaultBringItems, target.defaultRidesEnabled);
+    if (assignmentsChanged && (nextItems.length > 0 || newRidesEnabled) && !(await groupHasPremium(group))) {
+        return res.status(403).json(ASSIGNMENTS_PREMIUM_REQUIRED);
+    }
+
     if (timezone) group.timezone = timezone;
 
     if (name !== undefined) {
@@ -443,6 +523,8 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     if (routines !== undefined) target.routines = routines;
     if (defaultCapacity !== undefined) target.defaultCapacity = Number(defaultCapacity);
     if (defaultMinAttendees !== undefined) target.defaultMinAttendees = newMin;
+    if (newBringItems) target.defaultBringItems = newBringItems;
+    if (defaultRidesEnabled !== undefined) target.defaultRidesEnabled = newRidesEnabled;
     if (defaultLocation !== undefined) {
         target.defaultLocation = defaultLocation;
         if (defaultLocation) {
@@ -486,6 +568,11 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         await refreshOverrideMeetupWindows(group, target);
     } catch (err) {
         console.error("Update Schedule Override Window Error:", err);
+    }
+    try {
+        await refreshOverrideAssignments(group, target);
+    } catch (err) {
+        console.error("Update Schedule Override Assignments Error:", err);
     }
 
     if (target.routines?.length) {

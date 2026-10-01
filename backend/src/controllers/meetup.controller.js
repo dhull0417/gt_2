@@ -170,6 +170,9 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
 
         if (status === 'out') {
             meetup.out.push(user._id);
+            // Leaving frees up whatever they'd signed up to bring and their ride seat.
+            if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter(c => !c.user.equals(user._id));
+            if (meetup.rides?.length) meetup.rides = meetup.rides.filter(r => !r.user.equals(user._id));
 
             // Auto-promote the first person in the waitlist if capacity allows
             // (Premium only; without it people already waitlisted stay put and
@@ -669,4 +672,131 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
     }
 
     res.status(200).json({ message: "Meetup deleted successfully." });
+});
+
+/**
+ * @desc    Set what a member is bringing and/or their ride role for a meetup
+ *          (Premium). Members set their own; owners/moderators can set it for
+ *          members they manage by passing targetUserId.
+ * @route   PUT /api/meetups/:meetupId/assignments
+ * @body    { bring?: string[] (item ids), ride?: null | {role:'driver', seats:number} | {role:'passenger'}, targetUserId? }
+ */
+export const setAssignments = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { meetupId } = req.params;
+    const { bring, ride, targetUserId } = req.body;
+
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!requester) return res.status(404).json({ error: "User not found." });
+
+    if (bring !== undefined && !Array.isArray(bring)) {
+        return res.status(400).json({ error: "Invalid list of items." });
+    }
+    if (ride !== undefined && ride !== null) {
+        if (!['driver', 'passenger'].includes(ride?.role)) {
+            return res.status(400).json({ error: "Ride role must be driver or passenger." });
+        }
+        if (ride.role === 'driver') {
+            const seats = Number(ride.seats);
+            if (!Number.isInteger(seats) || seats < 0 || seats > 20) {
+                return res.status(400).json({ error: "Seats must be a whole number from 0 to 20." });
+            }
+        }
+    }
+
+    let user = requester;
+    let actingAdmin = null;
+    if (targetUserId && targetUserId !== requester._id.toString()) {
+        const [targetUser, meetupForPerm] = await Promise.all([
+            User.findById(targetUserId).lean(),
+            Meetup.findById(meetupId).populate('group'),
+        ]);
+        if (!targetUser || !meetupForPerm) return res.status(404).json({ error: "Resource not found." });
+        if (!canManageMember(requester._id, targetUser._id, meetupForPerm.group)) {
+            return res.status(403).json({ error: "Permission denied." });
+        }
+        user = targetUser;
+        actingAdmin = requester;
+    }
+
+    const MAX_RETRIES = 3;
+    let meetup;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        meetup = await Meetup.findById(meetupId);
+        if (!meetup) return res.status(404).json({ error: "Meetup not found." });
+        if (meetup.status !== 'scheduled') {
+            return res.status(400).json({ error: "This meetup is closed for changes." });
+        }
+        if (!meetup.members.some(id => id.equals(user._id))) {
+            return res.status(403).json({ error: "Not a member of this meetup." });
+        }
+        if (attempt === 1) {
+            const groupDoc = await Group.findById(meetup.group).select('owner').lean();
+            if (!(await groupHasPremium(groupDoc))) {
+                return res.status(403).json({ error: "premium_required", message: "Meetup assignments require GroupThat Premium." });
+            }
+        }
+        if (!meetup.in.some(id => id.equals(user._id))) {
+            return res.status(400).json({ error: "RSVP \"I'm In\" first to choose what you're bringing." });
+        }
+
+        if (bring !== undefined) {
+            const itemsById = new Map(meetup.bringItems.map(i => [i._id.toString(), i]));
+            const wanted = [...new Set(bring.map(String))];
+            for (const id of wanted) {
+                if (!itemsById.has(id)) return res.status(400).json({ error: "Unknown item." });
+            }
+            const alreadyMine = new Set(
+                meetup.bringClaims.filter(c => c.user.equals(user._id)).map(c => c.item.toString())
+            );
+            // Max applies to how many people have claimed an item; only newly
+            // added claims are checked, so keeping an existing one never fails.
+            for (const id of wanted) {
+                if (alreadyMine.has(id)) continue;
+                const item = itemsById.get(id);
+                const taken = meetup.bringClaims.filter(c => c.item.toString() === id).length;
+                if (item.max && taken >= item.max) {
+                    return res.status(409).json({
+                        error: "item_full",
+                        message: `"${item.name}" has already been taken.`,
+                        itemId: id,
+                    });
+                }
+            }
+            meetup.bringClaims = [
+                ...meetup.bringClaims.filter(c => !c.user.equals(user._id)),
+                ...wanted.map(id => ({ user: user._id, item: id })),
+            ];
+        }
+
+        if (ride !== undefined) {
+            if (!meetup.ridesEnabled) {
+                return res.status(400).json({ error: "Rides aren't set up for this meetup." });
+            }
+            meetup.rides = meetup.rides.filter(r => !r.user.equals(user._id));
+            if (ride !== null) {
+                meetup.rides.push({
+                    user: user._id,
+                    role: ride.role,
+                    seats: ride.role === 'driver' ? Number(ride.seats) : 0,
+                });
+            }
+        }
+
+        // Forces a version check so two people grabbing the last of an item can't both win.
+        meetup.increment();
+        try {
+            await meetup.save();
+            break;
+        } catch (err) {
+            if (err instanceof mongoose.Error.VersionError && attempt < MAX_RETRIES) continue;
+            throw err;
+        }
+    }
+
+    const updatedMeetup = await Meetup.findById(meetupId)
+        .populate('group', 'name owner moderators timezone defaultLocation')
+        .populate('members', 'firstName lastName profilePicture clerkId');
+
+    res.status(200).json({ message: "Assignments updated.", meetup: await withGroupPremium(updatedMeetup) });
 });

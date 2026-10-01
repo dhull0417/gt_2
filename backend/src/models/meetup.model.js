@@ -27,6 +27,26 @@ const meetupSchema = new mongoose.Schema({
   minimumChecked: { type: Boolean, default: false },
   // Why it was cancelled when the app (not a person) did it, e.g. 'minimum-headcount'.
   cancelReason: { type: String, default: null },
+  // Premium meetup assignments. bringItems/ridesEnabled are copied from the
+  // series (item _ids stay the same as the series' so claims survive refreshes).
+  bringItems: [{
+    name: { type: String, required: true },
+    max: { type: Number, default: null },
+  }],
+  ridesEnabled: { type: Boolean, default: false },
+  // who is bringing what (a user may claim several items)
+  bringClaims: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    item: { type: mongoose.Schema.Types.ObjectId },
+    _id: false,
+  }],
+  // carpool: drivers say how many passengers they can take; passengers just need a seat
+  rides: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    role: { type: String, enum: ['driver', 'passenger'] },
+    seats: { type: Number, default: 0, min: 0 },
+    _id: false,
+  }],
   // generating routine's frequency (null for one-off); drives RSVP-reminder
   // stages and the display cap.
   frequency: { type: String, enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal'], default: null },

@@ -36,6 +36,13 @@ export interface Schedule {
   days?: number[];       // Legacy/Support for simple schedules
 }
 
+export interface BringItem {
+  _id: string;
+  name: string;
+  /** How many people can claim it in total; null/absent = unlimited. */
+  max?: number | null;
+}
+
 /**
  * NamedSchedule: one independent recurring series on a group (e.g. "Monthly
  * Camping" or "Sunday Dinner"). A group can have several of these (max 5
@@ -49,6 +56,9 @@ export interface NamedSchedule extends Schedule {
   defaultCapacity: number;
   /** Premium: cancel a meetup if fewer than this many people are in by the RSVP deadline (0/absent = off). */
   defaultMinAttendees?: number;
+  /** Premium meetup assignments: things people can sign up to bring (max null = unlimited). */
+  defaultBringItems?: BringItem[];
+  defaultRidesEnabled?: boolean;
   defaultDescription: string;
   generationLeadDays: number | null;
   generationLeadTime: string;
@@ -168,6 +178,11 @@ export interface Meetup {
   rsvpOpenDate?: string;
   rsvpCloseDate?: string;
   guests?: { userId: string; count: number }[];
+  /** Premium meetup assignments (copied from the series). */
+  bringItems?: BringItem[];
+  ridesEnabled?: boolean;
+  bringClaims?: { user: string; item: string }[];
+  rides?: { user: string; role: 'driver' | 'passenger'; seats: number }[];
   updatedAt: string;
 }
 
@@ -239,6 +254,8 @@ export interface ScheduleInput {
   defaultLocation?: string;
   defaultCapacity?: number;
   defaultMinAttendees?: number;
+  defaultBringItems?: { _id?: string; name: string; max?: number | null }[];
+  defaultRidesEnabled?: boolean;
   defaultDescription?: string;
   generationLeadDays?: number | null;
   generationLeadTime?: string;
@@ -553,6 +570,14 @@ export const meetupApi = {
   },
   setGuestCount: async (api: AxiosInstance, meetupId: string, count: number): Promise<{ meetup: Meetup }> => {
     const response = await api.patch<{ meetup: Meetup }>(`/api/meetups/${meetupId}/guests`, { count });
+    return response.data;
+  },
+  setAssignments: async (
+    api: AxiosInstance,
+    meetupId: string,
+    body: { bring?: string[]; ride?: null | { role: 'driver'; seats: number } | { role: 'passenger' }; targetUserId?: string },
+  ): Promise<{ meetup: Meetup }> => {
+    const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}/assignments`, body);
     return response.data;
   },
   sendReminder: async (api: AxiosInstance, meetupId: string, userId?: string): Promise<{ message: string }> => {

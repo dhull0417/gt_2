@@ -40,6 +40,8 @@ import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/util
 import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn } from '@/utils/meetupStatus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
+import MeetupAssignments from '@/components/MeetupAssignments';
+import { assignmentsActive } from '@/utils/assignments';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
@@ -228,6 +230,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const { mutate: rsvp, isPending: isRsvping } = useRsvp();
 
+    const [assignmentsSignal, setAssignmentsSignal] = useState(0);
     const [localGuestCount, setLocalGuestCount] = useState(0);
     const [isSettingGuests, setIsSettingGuests] = useState(false);
     const [guestExpanded, setGuestExpanded] = useState(false);
@@ -373,6 +376,13 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 queryClient.invalidateQueries({ queryKey: ['meetups'] });
                 if (data.meetup) setMeetup(data.meetup);
                 setManualRsvpEdit(false);
+                // Newly "In" on a meetup with things to bring / rides: ask right away.
+                if (status === 'in' && data.meetup && assignmentsActive(data.meetup)
+                    && !data.meetup.bringClaims?.some((c: any) => c.user === currentUser._id)
+                    && !data.meetup.rides?.some((r: any) => r.user === currentUser._id)
+                    && !data.meetup.waitlist?.some((u: any) => (typeof u === 'string' ? u : u._id) === currentUser._id)) {
+                    setAssignmentsSignal((n) => n + 1);
+                }
             },
             onError: (error: any) => {
                 Alert.alert("RSVP Failed", error.response?.data?.error || "An error occurred while updating your RSVP.");
@@ -1091,7 +1101,20 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </Animated.View>
                 )}
 
-                <Animated.View layout={LinearTransition.duration(300)} style={{ marginBottom: 40 }}>
+                <MeetupAssignments
+                    meetup={meetup}
+                    currentUserId={currentUser._id}
+                    isIn={isIn && !isReadOnly}
+                    openSignal={assignmentsSignal}
+                    onUpdated={(m) => {
+                        setMeetup(m);
+                        queryClient.invalidateQueries({ queryKey: ['meetups'] });
+                        broadcastMeetupUpdate(getToken, meetupGroupId);
+                    }}
+                    onStale={() => queryClient.invalidateQueries({ queryKey: ['meetups'] })}
+                />
+
+                <Animated.View layout={LinearTransition.duration(300)} style={{ marginBottom: 40, marginTop: 8 }}>
                     {renderSectionHeader('In', goingUsers.length + totalGuestsForInTab, '#4FD1C5',
                         <Text style={[styles.sectionHeaderText, { color: '#4FD1C5', marginBottom: 0 }]}>
                             {meetup.capacity > 0 ? `Max: ${meetup.capacity}` : 'Unlimited'}

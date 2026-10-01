@@ -6,6 +6,7 @@ import {
     restoreMeetup,
     getMeetups,
     rsvpMeetup,
+    setAssignments,
     remindUndecided
 } from "../controllers/meetup.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
@@ -20,6 +21,7 @@ router.get("/", protectRoute, getMeetups);
 
 // --- Actions ---
 router.post("/:meetupId/rsvp", protectRoute, rsvpMeetup);
+router.put("/:meetupId/assignments", protectRoute, setAssignments);
 router.post("/:meetupId/remind", protectRoute, remindUndecided);
 
 router.patch("/:meetupId/guests", protectRoute, async (req, res) => {

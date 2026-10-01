@@ -137,6 +137,8 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         undecided: group.members,
         capacity: schedule.defaultCapacity || 0,
         minAttendees: schedule.defaultMinAttendees || 0,
+        bringItems: (schedule.defaultBringItems || []).map((i) => ({ _id: i._id, name: i.name, max: i.max ?? null })),
+        ridesEnabled: !!schedule.defaultRidesEnabled,
         // A meetup created after its RSVP deadline already passed (e.g. a series
         // edited late) is never evaluated against the minimum.
         minimumChecked: !!(rsvpCloseDate && rsvpCloseDate <= new Date()),
@@ -272,6 +274,51 @@ export const refreshOverrideMeetupWindows = async (group, schedule) => {
       updateOne: {
         filter: { _id: m._id, isOverride: true, status: 'scheduled' },
         update: { $set: { rsvpOpenDate, rsvpCloseDate, minAttendees, minimumChecked, rsvpNotified } },
+      },
+    });
+  }
+
+  if (ops.length > 0) await Meetup.bulkWrite(ops);
+  return ops.length;
+};
+
+/**
+ * Brings upcoming override meetups' assignment setup (items to bring, rides) in
+ * line with the series. Claims on items that still exist are kept; claims on
+ * removed items, and rides when rides are switched off, are dropped.
+ *
+ * @returns {Promise<number>} how many meetups were updated
+ */
+export const refreshOverrideAssignments = async (group, schedule) => {
+  const meetups = await Meetup.find({
+    group: group._id,
+    schedule: schedule._id,
+    isOverride: true,
+    status: 'scheduled',
+    date: { $gte: new Date() },
+  })
+    .select('bringItems ridesEnabled bringClaims rides')
+    .lean();
+
+  const items = (schedule.defaultBringItems || []).map((i) => ({ _id: i._id, name: i.name, max: i.max ?? null }));
+  const ridesEnabled = !!schedule.defaultRidesEnabled;
+  const itemIds = new Set(items.map((i) => i._id.toString()));
+  const sig = (list) => JSON.stringify((list || []).map((i) => [i._id.toString(), i.name, i.max ?? null]));
+
+  const ops = [];
+  for (const m of meetups) {
+    const claims = (m.bringClaims || []).filter((c) => itemIds.has(String(c.item)));
+    const rides = ridesEnabled ? (m.rides || []) : [];
+    const unchanged =
+      sig(m.bringItems) === sig(items) &&
+      !!m.ridesEnabled === ridesEnabled &&
+      claims.length === (m.bringClaims || []).length &&
+      rides.length === (m.rides || []).length;
+    if (unchanged) continue;
+    ops.push({
+      updateOne: {
+        filter: { _id: m._id, isOverride: true, status: 'scheduled' },
+        update: { $set: { bringItems: items, ridesEnabled, bringClaims: claims, rides } },
       },
     });
   }
