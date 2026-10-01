@@ -4,6 +4,7 @@ import * as Device from 'expo-device';
 import { Alert, Linking, Platform } from 'react-native';
 import { AxiosInstance } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '@/utils/api';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import Constants from 'expo-constants';
@@ -41,6 +42,7 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
   const responseListener = useRef<Notifications.Subscription | null>(null);
   
   const api = useApiClient();
+  const queryClient = useQueryClient();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
   const pendingNavigationData = useRef<any>(null);
@@ -98,6 +100,13 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
     // 2. Listen for notifications while app is in foreground
     notificationListener.current = Notifications.addNotificationReceivedListener(notif => {
       setNotification(notif);
+      // A cancellation (e.g. minimum headcount not met) changes a meetup the
+      // user may be looking at; refresh the list so it updates immediately.
+      const type = (notif.request.content.data as Record<string, any> | undefined)?.type;
+      if (type === 'meetup_cancellation') {
+        queryClient.invalidateQueries({ queryKey: ['meetups'] });
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      }
     });
 
     // 3. Listen for notification taps while app is in background/foreground

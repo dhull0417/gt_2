@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import { useAuth } from '@clerk/expo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -80,6 +81,32 @@ export const useGetMeetups = () => {
             channels.forEach((c) => supabase?.removeChannel(c));
         };
     }, [groupIdsKey, queryClient]);
+
+    // When a meetup with a minimum headcount hits its RSVP deadline, the server
+    // decides (on the next fetch) whether it's cancelled or just closes. Refetch
+    // right at the deadline so the card/modal flips to "cancelled" on its own
+    // instead of waiting for a tab switch. Also refetch when the app returns
+    // to the foreground, since timers don't fire while backgrounded.
+    const nextCheckAt = (query.data ?? []).reduce<number | null>((earliest, m) => {
+        if (m.status !== 'scheduled' || !(m.minAttendees && m.minAttendees > 0) || m.minimumChecked !== false || !m.rsvpCloseDate) return earliest;
+        const t = new Date(m.rsvpCloseDate).getTime();
+        return earliest === null || t < earliest ? t : earliest;
+    }, null);
+
+    useEffect(() => {
+        if (nextCheckAt === null) return;
+        const MAX_DELAY = 2 ** 31 - 1;
+        const delay = Math.max(nextCheckAt - Date.now(), 0) + 1500;
+        const timer = setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: MEETUPS_QUERY_KEY });
+        }, Math.min(delay, MAX_DELAY));
+        const sub = AppState.addEventListener('change', (state) => {
+            if (state === 'active' && Date.now() >= nextCheckAt) {
+                queryClient.invalidateQueries({ queryKey: MEETUPS_QUERY_KEY });
+            }
+        });
+        return () => { clearTimeout(timer); sub.remove(); };
+    }, [nextCheckAt, queryClient]);
 
     return query;
 };
