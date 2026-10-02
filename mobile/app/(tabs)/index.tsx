@@ -11,6 +11,8 @@ import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import AddMeetupWizard from '@/components/AddMeetupWizard';
 import { useFocusEffect, useRouter, useLocalSearchParams, Link } from 'expo-router';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
+import { AssignmentsSheet } from '@/components/MeetupAssignments';
+import { assignmentsActive } from '@/utils/assignments';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
@@ -143,6 +145,8 @@ const DashboardScreen = () => {
   const contentTopInset = useContentTopInset();
   const { openMeetupId } = useLocalSearchParams<{ openMeetupId?: string }>();
   const [selectedMeetup, setSelectedMeetup] = useState<Meetup | null>(null);
+  // Meetup whose items-to-bring / rides sheet is open (shown right after "I'm In" on a card).
+  const [assignmentsMeetup, setAssignmentsMeetup] = useState<Meetup | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
 
   const { data: meetups, isLoading, isError, refetch } = useGetMeetups();
@@ -303,7 +307,14 @@ const DashboardScreen = () => {
   const handleDashboardRsvp = (meetup: Meetup, status: 'in' | 'out', guestCount = 0, mute = false) => {
     if (!currentUser) return;
     rsvp({ meetupId: meetup._id, status, skipResponsePopup: mute }, {
-      onSuccess: () => {
+      onSuccess: (data: any) => {
+        const updated: Meetup | undefined = data?.meetup;
+        if (status === 'in' && updated && assignmentsActive(updated)) {
+          const me = currentUser._id;
+          const onWaitlist = updated.waitlist?.some(u => getUserId(u) === me);
+          const alreadyChose = updated.bringClaims?.some(c => c.user === me) || updated.rides?.some(r => r.user === me);
+          if (!onWaitlist && !alreadyChose) setAssignmentsMeetup(updated);
+        }
         if (status === 'in' && guestCount > 0) {
           meetupApi.setGuestCount(api, meetup._id, guestCount)
             .then(() => {
@@ -540,6 +551,21 @@ const DashboardScreen = () => {
         >
           <MeetupDetailModal meetup={selectedMeetup} onClose={handleCloseModal} />
         </Modal>
+      )}
+
+      {/* Unmounted when closed, for the same Android reason as above. */}
+      {assignmentsMeetup && currentUser && (
+        <AssignmentsSheet
+          visible
+          meetup={assignmentsMeetup}
+          currentUserId={currentUser._id}
+          onClose={() => setAssignmentsMeetup(null)}
+          onUpdated={() => {
+            queryClient.invalidateQueries({ queryKey: ['meetups'] });
+            broadcastMeetupUpdate(getToken, assignmentsMeetup.group._id);
+          }}
+          onStale={() => queryClient.invalidateQueries({ queryKey: ['meetups'] })}
+        />
       )}
 
       <Modal

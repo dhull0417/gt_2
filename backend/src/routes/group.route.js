@@ -13,6 +13,7 @@ import {
   updateGroupSchedule,
   createSchedule,
   updateSchedule,
+  updateSchedulePriority,
   deleteSchedule,
   updateModerators,
   toggleModerator,
@@ -93,6 +94,7 @@ router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
 // multi-schedule routes — a group can have several named schedules
 router.post("/:groupId/schedules", protectRoute, createSchedule);
 router.patch("/:groupId/schedules/:scheduleId", protectRoute, updateSchedule);
+router.put("/:groupId/schedules/:scheduleId/priority", protectRoute, updateSchedulePriority);
 router.delete("/:groupId/schedules/:scheduleId", protectRoute, deleteSchedule);
 router.post("/:groupId/meetups", protectRoute, createOneOffMeetup);
 

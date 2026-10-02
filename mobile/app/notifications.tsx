@@ -97,6 +97,8 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
                     return <Text style={styles.messageText}>You're in! A spot opened up for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
                 }
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> was promoted to "in" for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'priority-bumped':
+                return <Text style={styles.messageText}>A member with RSVP priority took a spot in <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>. You're first on the waitlist.</Text>;
             case 'meetup-created':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> scheduled a new meetup{groupName ? <> for <Text style={styles.bold}>{groupName}</Text></> : null}.</Text>;
             case 'meetup-updated': {

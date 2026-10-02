@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useApiClient, meetupApi, Meetup } from '@/utils/api';
 import { assignmentsActive, summarizeAssignments, memberName } from '@/utils/assignments';
 
@@ -19,6 +20,7 @@ interface Props {
 
 export default function MeetupAssignments({ meetup, currentUserId, isIn, openSignal = 0, onUpdated, onStale }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     if (openSignal > 0 && isIn && assignmentsActive(meetup)) setSheetOpen(true);
@@ -34,9 +36,17 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
   const names = (ids: string[]) => ids.map((id) => (id === currentUserId ? 'You' : memberName(meetup, id))).join(', ');
 
   return (
-    <View style={styles.card}>
+    <Animated.View layout={LinearTransition.duration(260)} style={[styles.card, { overflow: 'hidden' }]}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Assignments</Text>
+        <TouchableOpacity
+          onPress={() => setCollapsed((c) => !c)}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 0, right: 8 }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}
+        >
+          <Feather name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color="#9CA3AF" />
+          <Text style={styles.title}>Assignments</Text>
+        </TouchableOpacity>
         {isIn && (
           <TouchableOpacity onPress={() => setSheetOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.action}>{hasChoices ? 'Edit mine' : 'Choose'}</Text>
@@ -44,8 +54,12 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
         )}
       </View>
 
-      {summary.items.length > 0 && (
-        <View style={{ marginTop: 10 }}>
+      {!collapsed && summary.items.length > 0 && (
+        <Animated.View
+          entering={FadeIn.duration(200).delay(120)}
+          exiting={FadeOut.duration(100)}
+          style={{ marginTop: 10 }}
+        >
           <Text style={styles.sectionLabel}>Bringing</Text>
           {summary.items.map((item) => (
             <View key={item._id} style={styles.itemRow}>
@@ -58,11 +72,15 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
               </Text>
             </View>
           ))}
-        </View>
+        </Animated.View>
       )}
 
-      {meetup.ridesEnabled && (
-        <View style={{ marginTop: 12 }}>
+      {!collapsed && meetup.ridesEnabled && (
+        <Animated.View
+          entering={FadeIn.duration(200).delay(120)}
+          exiting={FadeOut.duration(100)}
+          style={{ marginTop: 12 }}
+        >
           <Text style={styles.sectionLabel}>Rides</Text>
           <View
             style={[
@@ -91,7 +109,7 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
           {summary.passengers.length > 0 && (
             <Text style={styles.rideLine}>Needs a ride: {names(summary.passengers)}</Text>
           )}
-        </View>
+        </Animated.View>
       )}
 
       <AssignmentsSheet
@@ -102,13 +120,19 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
         onUpdated={onUpdated}
         onStale={onStale}
       />
-    </View>
+    </Animated.View>
   );
 }
 
-function AssignmentsSheet({
-  visible, meetup, currentUserId, onClose, onUpdated, onStale,
-}: { visible: boolean; meetup: Meetup; currentUserId: string; onClose: () => void; onUpdated: (m: Meetup) => void; onStale?: () => void }) {
+export function AssignmentsSheet({
+  visible, meetup, currentUserId: viewerId, onClose, onUpdated, onStale, forUser,
+}: {
+  visible: boolean; meetup: Meetup; currentUserId: string; onClose: () => void;
+  onUpdated: (m: Meetup) => void; onStale?: () => void;
+  /** Owner/moderator filling this in on someone else's behalf. */
+  forUser?: { id: string; name: string };
+}) {
+  const currentUserId = forUser?.id ?? viewerId;
   const api = useApiClient();
   const [selected, setSelected] = useState<string[]>([]);
   const [role, setRole] = useState<'driver' | 'passenger' | null>(null);
@@ -136,6 +160,7 @@ function AssignmentsSheet({
     setSaving(true);
     try {
       const body: Parameters<typeof meetupApi.setAssignments>[2] = {};
+      if (forUser) body.targetUserId = forUser.id;
       if (hasItems) body.bring = selected;
       if (meetup.ridesEnabled) body.ride = role === 'driver' ? { role: 'driver', seats } : role === 'passenger' ? { role: 'passenger' } : null;
       const result = await meetupApi.setAssignments(api, meetup._id, body);
@@ -156,7 +181,7 @@ function AssignmentsSheet({
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>{meetup.name}</Text>
+            <Text style={styles.sheetTitle}>{forUser ? `${forUser.name}'s assignments` : meetup.name}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Feather name="x" size={22} color="#6B7280" />
             </TouchableOpacity>
@@ -165,7 +190,7 @@ function AssignmentsSheet({
           <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ paddingBottom: 8 }}>
             {hasItems && (
               <View>
-                <Text style={styles.sheetSection}>What are you bringing?</Text>
+                <Text style={styles.sheetSection}>{forUser ? `What is ${forUser.name} bringing?` : 'What are you bringing?'}</Text>
                 {summary.items.map((item) => {
                   const mine = selected.includes(item._id);
                   const alreadyMine = item.claimedBy.includes(currentUserId);
@@ -205,14 +230,14 @@ function AssignmentsSheet({
                       style={[styles.roleBtn, role === r && styles.roleBtnOn]}
                     >
                       <Feather name={r === 'driver' ? 'truck' : 'user'} size={16} color={role === r ? '#fff' : '#4FD1C5'} />
-                      <Text style={[styles.roleText, role === r && { color: '#fff' }]}>{r === 'driver' ? "I'm driving" : 'I need a ride'}</Text>
+                      <Text style={[styles.roleText, role === r && { color: '#fff' }]}>{r === 'driver' ? (forUser ? 'Driving' : "I'm driving") : (forUser ? 'Needs a ride' : 'I need a ride')}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
 
                 {role === 'driver' && (
                   <View style={{ alignItems: 'center', marginTop: 16 }}>
-                    <Text style={styles.sheetHint}>How many passengers can you bring?</Text>
+                    <Text style={styles.sheetHint}>{forUser ? 'How many passengers can they bring?' : 'How many passengers can you bring?'}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, marginTop: 10 }}>
                       <TouchableOpacity
                         onPress={() => setSeats((n) => Math.max(0, n - 1))}

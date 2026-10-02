@@ -36,6 +36,12 @@ export interface Schedule {
   days?: number[];       // Legacy/Support for simple schedules
 }
 
+/** One priority group: `size` people (in ranked order) get `windowMinutes` of exclusive RSVP time. */
+export interface PriorityTierDef {
+  size: number;
+  windowMinutes: number;
+}
+
 export interface BringItem {
   _id: string;
   name: string;
@@ -59,6 +65,11 @@ export interface NamedSchedule extends Schedule {
   /** Premium meetup assignments: things people can sign up to bring (max null = unlimited). */
   defaultBringItems?: BringItem[];
   defaultRidesEnabled?: boolean;
+  /** Premium priority RSVP: ranked members get RSVP windows before everyone else. */
+  priorityEnabled?: boolean;
+  priorityOrder?: string[];
+  priorityTiers?: PriorityTierDef[];
+  priorityQuiet?: { enabled: boolean; start: string; end: string };
   defaultDescription: string;
   generationLeadDays: number | null;
   generationLeadTime: string;
@@ -179,6 +190,8 @@ export interface Meetup {
   rsvpCloseDate?: string;
   guests?: { userId: string; count: number }[];
   /** Premium meetup assignments (copied from the series). */
+  /** Priority RSVP snapshot: groups of member ids and when each group's window opens. */
+  priorityTiers?: { members: string[]; opensAt: string }[];
   bringItems?: BringItem[];
   ridesEnabled?: boolean;
   bringClaims?: { user: string; item: string }[];
@@ -217,7 +230,7 @@ export interface Poll {
 
 export type NotificationType =
   | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-member-joined' | 'group-removed' | 'group-updated' | 'ownership-transferred'
-  | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion'
+  | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion' | 'priority-bumped'
   | 'meetup-rsvp-admin-in' | 'meetup-rsvp-admin-out'
   | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled' | 'meetup-restored'
   | 'meetup-rsvp-reminder' | 'meetup-rsvp-open' | 'meetup-starting-soon'
@@ -511,6 +524,15 @@ export const groupApi = {
   },
   updateSchedule: async (api: AxiosInstance, groupId: string, scheduleId: string, data: Partial<ScheduleInput>): Promise<{ message: string; group: Group }> => {
     const response = await api.patch<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}`, data);
+    return response.data;
+  },
+  updateSchedulePriority: async (
+    api: AxiosInstance,
+    groupId: string,
+    scheduleId: string,
+    data: { enabled: boolean; order?: string[]; tiers?: PriorityTierDef[]; quiet?: { enabled: boolean; start: string; end: string } },
+  ): Promise<{ message: string; group: Group }> => {
+    const response = await api.put<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}/priority`, data);
     return response.data;
   },
   deleteSchedule: async (api: AxiosInstance, groupId: string, scheduleId: string): Promise<{ message: string; group: Group }> => {

@@ -282,6 +282,7 @@ const AuthLayout = () => {
       'profile-setup',
       'account',
       'group-edit-schedule',
+      'group-priority',
       'group-edit-jit',
       'group-settings',
       'group-chat',
@@ -345,6 +346,7 @@ const AuthLayout = () => {
           <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
           <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: false }} />
           <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
+          <Stack.Screen name="group-priority" options={{ headerShown: false }} />
           <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
           <Stack.Screen name="group-settings" options={{ headerShown: false }} />
           <Stack.Screen name="group-chat" options={{ headerShown: false }} />

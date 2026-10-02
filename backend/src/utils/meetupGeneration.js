@@ -1,5 +1,6 @@
 import { DateTime } from "luxon";
 import Meetup from "../models/meetup.model.js";
+import { computePriorityTiers } from "./priorityRsvp.js";
 import { calculateNextMeetupDate, computeNextGenerationAt, getGenerationWindowDays, parseTimeString } from "./date.utils.js";
 
 const existenceKey = (date, time) => `${new Date(date).toISOString()}|${time}`;
@@ -124,6 +125,10 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         ? nextMeetupDT.minus({ days: schedule.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
         : null;
 
+      const priorityTiers = computePriorityTiers({
+        schedule, group, generalOpen: rsvpOpenDate && rsvpOpenDate > new Date() ? rsvpOpenDate : null,
+      });
+
       docsToCreate.push({
         group: group._id,
         schedule: schedule._id,
@@ -139,6 +144,8 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         minAttendees: schedule.defaultMinAttendees || 0,
         bringItems: (schedule.defaultBringItems || []).map((i) => ({ _id: i._id, name: i.name, max: i.max ?? null })),
         ridesEnabled: !!schedule.defaultRidesEnabled,
+        priorityTiers,
+        priorityOpened: priorityTiers.map((t, i) => (new Date(t.opensAt) <= new Date() ? i : null)).filter((i) => i !== null),
         // A meetup created after its RSVP deadline already passed (e.g. a series
         // edited late) is never evaluated against the minimum.
         minimumChecked: !!(rsvpCloseDate && rsvpCloseDate <= new Date()),

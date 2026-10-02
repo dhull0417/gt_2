@@ -10,6 +10,7 @@ import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { generateMeetupsForGroup, generateMeetupsForSchedule, refreshOverrideMeetupWindows, refreshOverrideAssignments } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
+import { refreshPriorityTiers, MAX_PRIORITY_TIERS, MAX_WINDOW_MINUTES } from "../utils/priorityRsvp.js";
 import { hasPremium, groupHasPremium } from "../utils/premium.js";
 
 // --- Helpers ---
@@ -568,6 +569,12 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         await refreshOverrideMeetupWindows(group, target);
     } catch (err) {
         console.error("Update Schedule Override Window Error:", err);
+    }
+    try {
+        // RSVP open times may have moved, so priority groups' times move with them.
+        await refreshPriorityTiers(group, target);
+    } catch (err) {
+        console.error("Update Schedule Priority Refresh Error:", err);
     }
     try {
         await refreshOverrideAssignments(group, target);
@@ -1155,4 +1162,87 @@ export const redeemInviteToken = asyncHandler(async (req, res) => {
     }
 
     res.status(200).json({ groupId: group._id, groupName: group.name, alreadyMember: false });
+});
+
+const TIME_RE = /^(0?[1-9]|1[0-2]):[0-5]\d (AM|PM)$/;
+
+/**
+ * @desc    Set a series' priority RSVP (Premium): who gets a head start, in what
+ *          groups, and for how long. Upcoming meetups are updated in place so
+ *          nobody's RSVP is lost.
+ * @route   PUT /api/groups/:groupId/schedules/:scheduleId/priority
+ * @body    { enabled, order: userId[], tiers: [{ size, windowMinutes }], quiet?: { enabled, start, end } }
+ */
+export const updateSchedulePriority = asyncHandler(async (req, res) => {
+    const { groupId, scheduleId } = req.params;
+    const { userId: clerkId } = getAuth(req);
+    const { enabled, order, tiers, quiet } = req.body;
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const target = group.schedules.id(scheduleId);
+    if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
+
+    if (!enabled) {
+        target.priorityEnabled = false;
+    } else {
+        if (!(await groupHasPremium(group))) {
+            return res.status(403).json({ error: "premium_required", message: "Priority RSVP requires GroupThat Premium." });
+        }
+        if (target.generationLeadDays == null) {
+            return res.status(400).json({ error: "Set when RSVPs open for this series to use priority RSVP." });
+        }
+        if (!Array.isArray(tiers) || tiers.length < 1 || tiers.length > MAX_PRIORITY_TIERS) {
+            return res.status(400).json({ error: `Add between 1 and ${MAX_PRIORITY_TIERS} priority groups.` });
+        }
+        const cleanTiers = [];
+        for (const t of tiers) {
+            const size = Number(t?.size);
+            const windowMinutes = Number(t?.windowMinutes);
+            if (!Number.isInteger(size) || size < 1 || size > 500) {
+                return res.status(400).json({ error: "Each group needs a size of at least 1 person." });
+            }
+            if (!Number.isInteger(windowMinutes) || windowMinutes < 1 || windowMinutes > MAX_WINDOW_MINUTES) {
+                return res.status(400).json({ error: "Each group's time must be between 1 minute and 7 days." });
+            }
+            cleanTiers.push({ size, windowMinutes });
+        }
+
+        if (!Array.isArray(order)) return res.status(400).json({ error: "Invalid priority order." });
+        const memberIds = new Set(group.members.map(m => m.toString()));
+        const seen = new Set();
+        const cleanOrder = [];
+        for (const id of order.map(String)) {
+            if (!memberIds.has(id) || seen.has(id)) continue;
+            seen.add(id);
+            cleanOrder.push(id);
+        }
+
+        const q = {
+            enabled: !!quiet?.enabled,
+            start: quiet?.start || target.priorityQuiet?.start || "10:00 PM",
+            end: quiet?.end || target.priorityQuiet?.end || "08:00 AM",
+        };
+        if (q.enabled) {
+            if (!TIME_RE.test(q.start) || !TIME_RE.test(q.end)) {
+                return res.status(400).json({ error: "Quiet hours need a start and end time." });
+            }
+            if (q.start === q.end) {
+                return res.status(400).json({ error: "Quiet hours can't start and end at the same time." });
+            }
+        }
+
+        target.priorityEnabled = true;
+        target.priorityOrder = cleanOrder;
+        target.priorityTiers = cleanTiers;
+        target.priorityQuiet = q;
+    }
+
+    await group.save();
+    await refreshPriorityTiers(group, target);
+
+    res.status(200).json({ message: "Priority RSVP updated.", group: withLegacyScheduleMirror(group.toObject()) });
 });

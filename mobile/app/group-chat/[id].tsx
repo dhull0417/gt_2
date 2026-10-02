@@ -49,7 +49,7 @@ import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
 import type { ChatMessage, PendingImage } from '@/types/chat';
 import EmojiPicker from 'rn-emoji-keyboard';
 import * as Clipboard from 'expo-clipboard';
-import { isRsvpDeadlinePassed as isRsvpDeadlinePassedFn } from '@/utils/meetupStatus';
+import { isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor } from '@/utils/meetupStatus';
 
 interface ChatDaySection {
   key: string;
@@ -210,7 +210,7 @@ const GroupChatScreen = () => {
     const isOut = nextMeetup.out?.some(u => getUserId(u) === currentUser._id) || false;
     const isIn = nextMeetup.in?.some(u => getUserId(u) === currentUser._id) || false;
     const isWaitlisted = nextMeetup.waitlist?.some(u => getUserId(u) === currentUser._id) || false;
-    const isRsvpLocked = nextMeetup.rsvpOpenDate ? new Date(nextMeetup.rsvpOpenDate) > new Date() : false;
+    const isRsvpLocked = isRsvpLockedFor(nextMeetup, currentUser._id);
     const isRsvpDeadlinePassed = isRsvpDeadlinePassedFn(nextMeetup);
     return { isIn, isOut, isWaitlisted, isRsvpLocked, isRsvpDeadlinePassed };
   }, [nextMeetup, currentUser]);

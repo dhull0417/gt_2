@@ -1733,6 +1733,38 @@ const EditScheduleScreen = () => {
                                 </View>
                             </View>
                         )}
+
+                        {/* Priority RSVP (Premium) — saved series only, since it ranks members and edits open meetups in place */}
+                        {!isNew && (
+                            <>
+                                <Text style={s.fieldLabel}>Priority RSVP</Text>
+                                {group?.isPremium !== true ? (
+                                    <View style={s.premiumLockRow}>
+                                        <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={s.premiumLockTitle}>Premium</Text>
+                                            <Text style={s.premiumLockText}>
+                                                Let your longest-standing members RSVP first, in groups you set. Requires the group owner to have Premium.
+                                            </Text>
+                                        </View>
+                                    </View>
+                                ) : (
+                                    <TouchableOpacity
+                                        style={[s.inputRow, { marginBottom: 0, justifyContent: "space-between" }]}
+                                        onPress={() => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId! } })}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={{ flex: 1, paddingRight: 12 }}>
+                                            <Text style={{ fontSize: 15, fontWeight: "600", color: "#374151" }}>
+                                                {targetSchedule?.priorityEnabled ? "On — manage groups and order" : "Set up priority groups"}
+                                            </Text>
+                                            <Text style={s.premiumLockText}>Rank members and give each group an RSVP head start.</Text>
+                                        </View>
+                                        <Feather name="chevron-right" size={20} color="#9CA3AF" />
+                                    </TouchableOpacity>
+                                )}
+                            </>
+                        )}
                     </View>
                 </ScrollView>
                 </KeyboardAvoidingView>

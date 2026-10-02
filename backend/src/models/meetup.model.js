@@ -47,6 +47,15 @@ const meetupSchema = new mongoose.Schema({
     seats: { type: Number, default: 0, min: 0 },
     _id: false,
   }],
+  // Premium priority RSVP snapshot: groups of members and when each group's window
+  // opens (rsvpOpenDate stays the time it opens for everyone). priorityOpened lists
+  // group indexes already announced.
+  priorityTiers: [{
+    members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    opensAt: { type: Date },
+    _id: false,
+  }],
+  priorityOpened: { type: [Number], default: [] },
   // generating routine's frequency (null for one-off); drives RSVP-reminder
   // stages and the display cap.
   frequency: { type: String, enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal'], default: null },

@@ -60,6 +60,22 @@ const namedScheduleSchema = new mongoose.Schema({
     max: { type: Number, min: 1, default: null },
   }],
   defaultRidesEnabled: { type: Boolean, default: false },
+  // Premium priority RSVP: ranked members get RSVP windows before everyone else.
+  // priorityOrder is the ranking; priorityTiers slice it into groups (size people,
+  // each with an exclusive window of windowMinutes before the next group opens).
+  priorityEnabled: { type: Boolean, default: false },
+  priorityOrder: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  priorityTiers: [{
+    size: { type: Number, min: 1, required: true },
+    windowMinutes: { type: Number, min: 1, required: true },
+    _id: false,
+  }],
+  // Windows don't tick during quiet hours (so nobody loses their turn while asleep).
+  priorityQuiet: {
+    enabled: { type: Boolean, default: false },
+    start: { type: String, default: "10:00 PM" },
+    end: { type: String, default: "08:00 AM" },
+  },
 
   generationLeadDays: { type: Number, min: 0, default: null },
   generationLeadTime: { type: String, default: "09:00 AM" },

@@ -12,6 +12,7 @@ import { canManageGroup, canManageMember } from "./group.controller.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { groupHasPremium, withGroupPremium } from "../utils/premium.js";
 import { evaluateMinimumHeadcount, evaluateDueMeetups } from "../utils/minimumHeadcount.js";
+import { canRsvpNow, userOpensAt, userTierIndex, notifyOpenTiers } from "../utils/priorityRsvp.js";
 
 /**
  * @desc    Get all meetups for the current user
@@ -111,6 +112,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     const MAX_RETRIES = 3;
     let meetup;
     let promotedUserId = null;
+    let bumpedUserId = null;
     let statusUnchanged = false;
 
     // Waitlist + auto-promotion is a Premium feature of the group's owner.
@@ -141,8 +143,18 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         }
 
         // Admin overrides bypass the open/deadline window by design.
+        // Before the general open time, only members of a priority group whose window
+        // has opened (on schedule, or early because the groups ahead have answered) may RSVP.
         if (!actingAdmin && meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
-            return res.status(400).json({ error: "RSVPs are not open yet." });
+            const tiersActive = (meetup.priorityTiers?.length ?? 0) > 0 && await getWaitlistEnabled();
+            if (!canRsvpNow(meetup, user._id, tiersActive)) {
+                return res.status(400).json({
+                    error: tiersActive && userTierIndex(meetup, user._id) >= 0
+                        ? "It's not your group's turn to RSVP yet."
+                        : "RSVPs are not open yet.",
+                    opensAt: tiersActive ? userOpensAt(meetup, user._id) : meetup.rsvpOpenDate,
+                });
+            }
         }
 
         if (!actingAdmin && meetup.rsvpCloseDate && new Date(meetup.rsvpCloseDate) < new Date()) {
@@ -167,6 +179,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         meetup.undecided.pull(user._id);
 
         promotedUserId = null;
+        bumpedUserId = null;
 
         if (status === 'out') {
             meetup.out.push(user._id);
@@ -185,14 +198,41 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         } else if (status === 'in') {
             // Push to waitlist if at capacity (Premium), otherwise 'in'
             if (meetup.capacity > 0 && meetup.in.length >= meetup.capacity) {
-                if (!(await getWaitlistEnabled())) {
-                    // Nothing has been saved yet, so bailing out here changes no state.
-                    return res.status(409).json({
-                        error: "meetup_full",
-                        message: "This meetup is full.",
-                    });
+                // Priority RSVP: a member of a higher group takes a spot from the
+                // lowest-priority person who's in (they go to the front of the waitlist).
+                const myTier = (meetup.priorityTiers?.length ?? 0) > 0 ? userTierIndex(meetup, user._id) : -1;
+                let victimId = null;
+                if (myTier >= 0 && await getWaitlistEnabled()) {
+                    let worst = -1;
+                    for (const id of meetup.in) {
+                        if (id.equals(user._id)) continue;
+                        const t = userTierIndex(meetup, id);
+                        const rank = t < 0 ? Infinity : t;
+                        // must be strictly lower priority than the requester; ties go to
+                        // the most recent RSVP (later in the array)
+                        if (rank > myTier && rank >= worst) {
+                            worst = rank;
+                            victimId = id;
+                        }
+                    }
                 }
-                meetup.waitlist.push(user._id);
+                if (victimId) {
+                    meetup.in.pull(victimId);
+                    meetup.waitlist.unshift(victimId);
+                    if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter(c => !c.user.equals(victimId));
+                    if (meetup.rides?.length) meetup.rides = meetup.rides.filter(r => !r.user.equals(victimId));
+                    bumpedUserId = victimId;
+                    meetup.in.push(user._id);
+                } else {
+                    if (!(await getWaitlistEnabled())) {
+                        // Nothing has been saved yet, so bailing out here changes no state.
+                        return res.status(409).json({
+                            error: "meetup_full",
+                            message: "This meetup is full.",
+                        });
+                    }
+                    meetup.waitlist.push(user._id);
+                }
             } else {
                 meetup.in.push(user._id);
             }
@@ -210,6 +250,31 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     }
 
     // Notify only after save succeeds, so a retry can't double-send.
+    if (!statusUnchanged && bumpedUserId) {
+        const bumped = await User.findById(bumpedUserId);
+        if (bumped) {
+            await notifyAndPersist([bumped], {
+                title: "Moved to the waitlist",
+                body: `A member with RSVP priority took a spot in "${meetup.name}". You're first on the waitlist.`,
+                data: { meetupId: meetup._id.toString(), type: 'meetup_waitlist_bumped' },
+                type: 'priority-bumped',
+                sender: user._id,
+                meetup: meetup._id,
+                group: meetup.group,
+            });
+        }
+    }
+
+    // If this answer completed a priority group, the next group's window opens right
+    // away (ahead of schedule); let them know. Failures here must not fail the RSVP.
+    if (!statusUnchanged && (meetup.priorityTiers?.length ?? 0) > 0) {
+        try {
+            await notifyOpenTiers(meetup._id);
+        } catch (err) {
+            console.error("RSVP notifyOpenTiers failed:", err);
+        }
+    }
+
     if (!statusUnchanged && promotedUserId) {
         const nextUser = await User.findById(promotedUserId);
         if (nextUser) {
@@ -754,7 +819,10 @@ export const setAssignments = asyncHandler(async (req, res) => {
             for (const id of wanted) {
                 if (alreadyMine.has(id)) continue;
                 const item = itemsById.get(id);
-                const taken = meetup.bringClaims.filter(c => c.item.toString() === id).length;
+                // Only people still going count toward the limit.
+                const taken = meetup.bringClaims.filter(c =>
+                    c.item.toString() === id && !c.user.equals(user._id) && meetup.in.some(u => u.equals(c.user))
+                ).length;
                 if (item.max && taken >= item.max) {
                     return res.status(409).json({
                         error: "item_full",

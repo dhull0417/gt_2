@@ -107,6 +107,12 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
         queryClient.invalidateQueries({ queryKey: ['meetups'] });
         queryClient.invalidateQueries({ queryKey: ['notifications'] });
       }
+      // RSVPs just opened (for everyone, or for this user's priority group): refresh so
+      // the card swaps its lock banner for the I'm In / I'm Out buttons right away.
+      if (type === 'rsvp_open') {
+        queryClient.invalidateQueries({ queryKey: ['meetups'] });
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      }
     });
 
     // 3. Listen for notification taps while app is in background/foreground

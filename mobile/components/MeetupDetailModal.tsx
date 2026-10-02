@@ -37,11 +37,11 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
 import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/utils/api';
-import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn } from '@/utils/meetupStatus';
+import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor } from '@/utils/meetupStatus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
-import MeetupAssignments from '@/components/MeetupAssignments';
-import { assignmentsActive } from '@/utils/assignments';
+import MeetupAssignments, { AssignmentsSheet } from '@/components/MeetupAssignments';
+import { assignmentsActive, summarizeAssignments } from '@/utils/assignments';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
@@ -201,6 +201,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [dmTargetUser, setDmTargetUser] = useState<User | null>(null);
+    // Member an owner/moderator is editing assignments for.
+    const [assignTarget, setAssignTarget] = useState<User | null>(null);
     const [isCreatingDM, setIsCreatingDM] = useState(false);
     const [isSendingReminder, setIsSendingReminder] = useState(false);
     const [isUpdatingTargetRsvp, setIsUpdatingTargetRsvp] = useState(false);
@@ -298,9 +300,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const { isCancelled, isExpired, isHappeningNow } = getMeetupStatus(meetup);
 
-    const isRsvpLocked = meetup.rsvpOpenDate
-    ? new Date(meetup.rsvpOpenDate) > new Date()
-    : false;
+    const isRsvpLocked = isRsvpLockedFor(meetup, currentUser?._id);
 
     const isRsvpDeadlinePassed = isRsvpDeadlinePassedFn(meetup);
 
@@ -668,6 +668,35 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         setIsEditModalVisible(true);
     };
 
+    // Items someone is bringing and their ride role, shown as pills under their name.
+    const assignmentSummary = assignmentsActive(meetup) ? summarizeAssignments(meetup) : null;
+    const renderAssignmentPills = (userId: string) => {
+        if (!assignmentSummary) return null;
+        const pills: { key: string; label: string; icon: keyof typeof Feather.glyphMap; bg: string; fg: string }[] = [];
+        for (const item of assignmentSummary.items) {
+            if (item.claimedBy.includes(userId)) {
+                pills.push({ key: `i-${item._id}`, label: item.name, icon: 'shopping-bag', bg: '#F0FDFA', fg: '#0F766E' });
+            }
+        }
+        const driver = assignmentSummary.drivers.find(d => d.userId === userId);
+        if (driver) {
+            pills.push({ key: 'driver', label: `Driver · ${driver.seats}`, icon: 'truck', bg: '#EEF6FF', fg: '#2563EB' });
+        } else if (assignmentSummary.passengers.includes(userId)) {
+            pills.push({ key: 'passenger', label: 'Needs ride', icon: 'user', bg: '#FFF7ED', fg: '#C2410C' });
+        }
+        if (pills.length === 0) return null;
+        return (
+            <View style={styles.pillStack}>
+                {pills.map(p => (
+                    <View key={p.key} style={[styles.assignPill, { backgroundColor: p.bg }]}>
+                        <Feather name={p.icon} size={9} color={p.fg} />
+                        <Text style={[styles.assignPillText, { color: p.fg }]} numberOfLines={1}>{p.label}</Text>
+                    </View>
+                ))}
+            </View>
+        );
+    };
+
     const renderUserTile = (user: User, key: string, opts?: { waitlistPosition?: number }) => {
         const isSelf = user._id === currentUser._id;
         const Wrapper = isSelf ? View : TouchableOpacity;
@@ -689,6 +718,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     )}
                 </View>
                 <Text style={styles.gridName} numberOfLines={1}>{getUserDisplayName(user)}</Text>
+                {renderAssignmentPills(user._id)}
             </Wrapper>
         );
     };
@@ -949,9 +979,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Feather name="lock" size={22} color="#6B7280" />
                                 <Text style={styles.rsvpLockedTitle}>RSVPs Not Open Yet</Text>
                                 <Text style={styles.rsvpLockedSubtitle}>
-                                    Opens {new Date(meetup.rsvpOpenDate!).toLocaleDateString(undefined, {
-                                        weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone
-                                    })}
+                                    Opens {describeRsvpOpensFor(meetup, currentUser?._id)}
                                 </Text>
                             </View>
                         ) : isRsvpDeadlinePassed ? (
@@ -1293,11 +1321,42 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         </View>
                                     );
                                 })()}
+                                {canManageTarget(dmTargetUser) && assignmentsActive(meetup)
+                                    && (meetup.in?.some(u => getUserId(u) === dmTargetUser._id) ?? false) && (
+                                    <TouchableOpacity
+                                        style={dmStyles.remindBtn}
+                                        onPress={() => {
+                                            const target = dmTargetUser;
+                                            setDmTargetUser(null);
+                                            // Let this sheet finish dismissing before presenting the next (iOS).
+                                            setTimeout(() => setAssignTarget(target), 350);
+                                        }}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Text style={dmStyles.remindBtnText}>Edit Assignments</Text>
+                                    </TouchableOpacity>
+                                )}
                             </>
                         )}
                     </Pressable>
                 </Pressable>
             </Modal>
+
+            {assignTarget && (
+                <AssignmentsSheet
+                    visible
+                    meetup={meetup}
+                    currentUserId={currentUser._id}
+                    forUser={{ id: assignTarget._id, name: getUserDisplayName(assignTarget) }}
+                    onClose={() => setAssignTarget(null)}
+                    onUpdated={(m) => {
+                        setMeetup(m);
+                        queryClient.invalidateQueries({ queryKey: ['meetups'] });
+                        broadcastMeetupUpdate(getToken, meetupGroupId);
+                    }}
+                    onStale={() => queryClient.invalidateQueries({ queryKey: ['meetups'] })}
+                />
+            )}
 
             {/* Combined Edit Details Modal */}
             <Modal transparent visible={isEditModalVisible} animationType="slide">
@@ -1574,6 +1633,9 @@ rsvpLockedSubtitle: {
     gridAvatarWrap: { width: '100%', position: 'relative' },
     gridAvatar: { width: '100%', aspectRatio: 1, borderRadius: 14, backgroundColor: '#F3F4F6' },
     gridAvatarPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+    pillStack: { alignItems: 'center', gap: 3, marginTop: 4, maxWidth: '100%' },
+    assignPill: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2, maxWidth: '100%' },
+    assignPillText: { fontSize: 10, fontWeight: '700', flexShrink: 1 },
     gridName: { fontSize: 12, fontWeight: '700', color: '#374151', marginTop: 6, textAlign: 'center' },
     waitlistBadge: { position: 'absolute', top: -6, left: -6, backgroundColor: '#2563EB', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
     waitlistBadgeText: { color: 'white', fontSize: 11, fontWeight: '800' },

@@ -5,7 +5,7 @@ import ReanimatedAnimated from 'react-native-reanimated';
 import { Meetup, User } from '@/utils/api';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { RsvpBreather } from '@/components/RsvpBreather';
-import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn } from '@/utils/meetupStatus';
+import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor } from '@/utils/meetupStatus';
 
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
@@ -89,7 +89,7 @@ export const MeetupCard = ({
   }, [meetup.guests, currentUser?.clerkId, guestExpanded]);
 
   const { isCancelled, isExpired, isHappeningNow } = getMeetupStatus(meetup);
-  const isRsvpLocked = meetup.rsvpOpenDate ? new Date(meetup.rsvpOpenDate) > new Date() : false;
+  const isRsvpLocked = isRsvpLockedFor(meetup, currentUser?._id);
   const isRsvpDeadlinePassed = isRsvpDeadlinePassedFn(meetup);
 
   const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
@@ -226,7 +226,7 @@ export const MeetupCard = ({
               <View className="flex-row items-center">
                 <Feather name="lock" size={22} color="#6B7280" className="mr-2" />
                 <Text className="text-gray-600 font-bold text-sm ml-1.5">
-                  RSVPs open on {formatDate(meetup.rsvpOpenDate!, meetup.timezone)}
+                  RSVPs open {describeRsvpOpensFor(meetup, currentUser?._id)}
                 </Text>
               </View>
             </View>

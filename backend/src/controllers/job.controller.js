@@ -6,7 +6,9 @@ import Poll from "../models/poll.model.js";
 import { RSVP_REMINDER_STAGES } from "../utils/date.utils.js";
 import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
+import { groupHasPremium } from "../utils/premium.js";
 import { evaluateDueMeetups } from "../utils/minimumHeadcount.js";
+import { notifyOpenTiers } from "../utils/priorityRsvp.js";
 
 /**
  * @desc    Generate meetups for groups whose nextGenerationAt is now due.
@@ -108,6 +110,27 @@ export const cleanupExpiredMeetups = asyncHandler(async (req, res) => {
 export const notifyRsvpOpen = asyncHandler(async (req, res) => {
   const now = new Date();
 
+  // Priority groups: each group is told the moment its window opens, ahead of the
+  // general open time. (Groups that open early because the ones before them answered
+  // are announced from the RSVP itself.)
+  const priorityMeetups = await Meetup.find({
+    status: 'scheduled',
+    startsAt: { $gte: now },
+    rsvpNotified: false,
+    rsvpOpenDate: { $gt: now },
+    'priorityTiers.0': { $exists: true },
+  }).select('_id group').lean();
+  let tiersAnnounced = 0;
+  for (const m of priorityMeetups) {
+    try {
+      const group = await Group.findById(m.group).select('owner').lean();
+      if (!(await groupHasPremium(group))) continue;
+      tiersAnnounced += await notifyOpenTiers(m._id);
+    } catch (err) {
+      console.error("notifyRsvpOpen priority failed for meetup", m._id.toString(), err);
+    }
+  }
+
   const toNotify = await Meetup.find({
     status: 'scheduled',
     startsAt: { $gte: now },
@@ -120,7 +143,14 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
     const dateStr = new Date(meetup.date).toLocaleDateString('en-US', {
       weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone,
     });
-    const members = await User.find({ _id: { $in: meetup.members } });
+    // Members of a priority group were already told when their window opened.
+    const alreadyTold = new Set(
+      (meetup.priorityTiers || [])
+        .filter((_, i) => (meetup.priorityOpened || []).includes(i))
+        .flatMap((t) => t.members.map((id) => id.toString()))
+    );
+    const members = (await User.find({ _id: { $in: meetup.members } }))
+      .filter((u) => !alreadyTold.has(u._id.toString()));
     if (members.length > 0) {
       await notifyAndPersist(members, {
         title: "RSVPs Are Open!",
@@ -133,7 +163,7 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
     }
   }
 
-  res.status(200).json({ message: `Notified for ${toNotify.length} meetup(s).` });
+  res.status(200).json({ message: `Notified for ${toNotify.length} meetup(s); announced ${tiersAnnounced} priority group(s).` });
 });
 
 /**
