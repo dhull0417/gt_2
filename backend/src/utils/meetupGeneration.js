@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 import Meetup from "../models/meetup.model.js";
-import { computePriorityTiers } from "./priorityRsvp.js";
+import { resolveRsvpOpen } from "./priorityRsvp.js";
+import { groupHasPremium } from "./premium.js";
 import { calculateNextMeetupDate, computeNextGenerationAt, getGenerationWindowDays, parseTimeString } from "./date.utils.js";
 
 const existenceKey = (date, time) => `${new Date(date).toISOString()}|${time}`;
@@ -111,13 +112,17 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
     const { hours: leadH, minutes: leadM } = parseTimeString(schedule.generationLeadTime || "09:00 AM");
     const { hours: closeH, minutes: closeM } = parseTimeString(schedule.generationDeadlineTime || "09:00 AM");
 
+    const priorityActive = !!schedule.priorityEnabled && (await groupHasPremium(group));
+
     const docsToCreate = [];
     for (const { routine, dtEntry, nextDate, nextMeetupDT } of candidates) {
       const key = existenceKey(nextDate, dtEntry.time);
       if (seenKeys.has(key)) continue;
       seenKeys.add(key); // guards against two routines colliding within this batch
 
-      const rsvpOpenDate = schedule.generationLeadDays != null
+      // The series' "earliest time to RSVP". With priority RSVP this is when the first
+      // group opens; rsvpOpenDate below is then when everyone else can RSVP.
+      const baseOpen = schedule.generationLeadDays != null
         ? nextMeetupDT.minus({ days: schedule.generationLeadDays }).set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 }).toJSDate()
         : null;
 
@@ -125,10 +130,9 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         ? nextMeetupDT.minus({ days: schedule.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
         : null;
 
-      // Built even when RSVPs are already open for everyone: the ranking still decides
-      // who keeps a spot when the meetup fills up.
-      const priorityTiers = computePriorityTiers({ schedule, group, generalOpen: rsvpOpenDate });
-      const generalStillClosed = !!rsvpOpenDate && rsvpOpenDate > new Date();
+      // Groups are kept even after everyone can RSVP: the ranking still decides who
+      // keeps a spot when the meetup fills up.
+      const { rsvpOpenDate, priorityTiers, priorityOpened } = resolveRsvpOpen({ schedule, group, baseOpen, active: priorityActive });
 
       docsToCreate.push({
         group: group._id,
@@ -146,10 +150,7 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         bringItems: (schedule.defaultBringItems || []).map((i) => ({ _id: i._id, name: i.name, max: i.max ?? null })),
         ridesEnabled: !!schedule.defaultRidesEnabled,
         priorityTiers,
-        // Groups whose time already passed while the general window is still closed count as announced.
-        priorityOpened: generalStillClosed
-          ? priorityTiers.map((t, i) => (new Date(t.opensAt) <= new Date() ? i : null)).filter((i) => i !== null)
-          : [],
+        priorityOpened,
         // A meetup created after its RSVP deadline already passed (e.g. a series
         // edited late) is never evaluated against the minimum.
         minimumChecked: !!(rsvpCloseDate && rsvpCloseDate <= new Date()),
@@ -251,9 +252,11 @@ export const refreshOverrideMeetupWindows = async (group, schedule) => {
     status: 'scheduled',
     date: { $gte: now },
   })
-    .select('startsAt date rsvpOpenDate rsvpCloseDate rsvpNotified minAttendees minimumChecked')
+    .select('startsAt date rsvpOpenDate rsvpCloseDate rsvpNotified minAttendees minimumChecked priorityTiers')
     .lean();
   if (meetups.length === 0) return 0;
+
+  const priorityActive = !!schedule.priorityEnabled && (await groupHasPremium(group));
 
   const { hours: leadH, minutes: leadM } = parseTimeString(schedule.generationLeadTime || "09:00 AM");
   const { hours: closeH, minutes: closeM } = parseTimeString(schedule.generationDeadlineTime || "09:00 AM");
@@ -263,9 +266,11 @@ export const refreshOverrideMeetupWindows = async (group, schedule) => {
   const ops = [];
   for (const m of meetups) {
     const startsAtDT = DateTime.fromJSDate(new Date(m.startsAt || m.date)).setZone(group.timezone);
-    const rsvpOpenDate = schedule.generationLeadDays != null
+    const baseOpen = schedule.generationLeadDays != null
       ? startsAtDT.minus({ days: schedule.generationLeadDays }).set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 }).toJSDate()
       : null;
+    // With priority RSVP the series' open time is the first group's; everyone else opens later.
+    const { rsvpOpenDate } = resolveRsvpOpen({ schedule, group, baseOpen, active: priorityActive, now });
     const rsvpCloseDate = schedule.generationDeadlineDays != null
       ? startsAtDT.minus({ days: schedule.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
       : null;

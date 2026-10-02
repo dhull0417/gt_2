@@ -12,7 +12,7 @@ import { canManageGroup, canManageMember } from "./group.controller.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { groupHasPremium, withGroupPremium } from "../utils/premium.js";
 import { evaluateMinimumHeadcount, evaluateDueMeetups } from "../utils/minimumHeadcount.js";
-import { canRsvpNow, userOpensAt, userTierIndex, notifyOpenTiers } from "../utils/priorityRsvp.js";
+import { canRsvpNow, userOpensAt, userTierIndex, notifyOpenTiers, resolveRsvpOpen } from "../utils/priorityRsvp.js";
 
 /**
  * @desc    Get all meetups for the current user
@@ -145,14 +145,14 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         // Admin overrides bypass the open/deadline window by design.
         // Before the general open time, only members of a priority group whose window
         // has opened (on schedule, or early because the groups ahead have answered) may RSVP.
-        if (!actingAdmin && meetup.rsvpOpenDate && new Date(meetup.rsvpOpenDate) > new Date()) {
+        if (!actingAdmin && (meetup.rsvpOpenDate || meetup.priorityTiers?.length)) {
             const tiersActive = (meetup.priorityTiers?.length ?? 0) > 0 && await getWaitlistEnabled();
             if (!canRsvpNow(meetup, user._id, tiersActive)) {
                 return res.status(400).json({
                     error: tiersActive && userTierIndex(meetup, user._id) >= 0
                         ? "It's not your group's turn to RSVP yet."
                         : "RSVPs are not open yet.",
-                    opensAt: tiersActive ? userOpensAt(meetup, user._id) : meetup.rsvpOpenDate,
+                    opensAt: userOpensAt(meetup, user._id, tiersActive),
                 });
             }
         }
@@ -443,9 +443,17 @@ export const updateMeetup = asyncHandler(async (req, res) => {
         // — a one-off meetup with no schedule keeps no RSVP gating at all.
         const linkedSchedule = meetup.schedule ? meetup.group.schedules?.id(meetup.schedule) : null;
         const { hours: leadH, minutes: leadM } = parseTimeString(linkedSchedule?.generationLeadTime || "09:00 AM");
-        const newRsvpOpenDate = linkedSchedule?.generationLeadDays != null
+        const baseRsvpOpen = linkedSchedule?.generationLeadDays != null
             ? startsAtDT.minus({ days: linkedSchedule.generationLeadDays }).set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 }).toJSDate()
             : null;
+        // With priority RSVP the series' open time is the first group's; everyone else opens later.
+        const priorityActive = !!linkedSchedule?.priorityEnabled && await groupHasPremium(meetup.group);
+        const resolvedOpen = linkedSchedule
+            ? resolveRsvpOpen({ schedule: linkedSchedule, group: meetup.group, baseOpen: baseRsvpOpen, active: priorityActive })
+            : { rsvpOpenDate: baseRsvpOpen, priorityTiers: [], priorityOpened: [] };
+        const newRsvpOpenDate = resolvedOpen.rsvpOpenDate;
+        meetup.priorityTiers = resolvedOpen.priorityTiers;
+        meetup.priorityOpened = resolvedOpen.priorityOpened;
 
         const { hours: closeH, minutes: closeM } = parseTimeString(linkedSchedule?.generationDeadlineTime || "09:00 AM");
         const newRsvpCloseDate = linkedSchedule?.generationDeadlineDays != null

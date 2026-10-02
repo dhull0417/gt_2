@@ -76,10 +76,29 @@ const isTierOpen = (meetup: Meetup, k: number, now: Date): boolean => {
   return false;
 };
 
-/** True while this user can't RSVP yet (general window not open and their priority group isn't either). */
+// When RSVPs open for people outside every priority group. Without active priority
+// (e.g. the owner's Premium lapsed) that's the first group's time, the series' own
+// "earliest time to RSVP".
+const everyoneOpensAt = (meetup: Meetup): string | undefined => {
+  const tiers = meetup.priorityTiers ?? [];
+  if (tiers.length > 0 && !tiersActive(meetup)) return tiers[0].opensAt;
+  return meetup.rsvpOpenDate;
+};
+
+// Every group has opened and answered, so everyone else may RSVP early.
+const allTiersAnswered = (meetup: Meetup, now: Date): boolean => {
+  const tiers = meetup.priorityTiers ?? [];
+  if (tiers.length === 0) return false;
+  return isTierOpen(meetup, tiers.length - 1, now) && tiers.every((_, k) => isTierComplete(meetup, k));
+};
+
+/** True while this user can't RSVP yet (their priority group, or the general time, hasn't opened). */
 export const isRsvpLockedFor = (meetup: Meetup, userId: string | undefined, now: Date = new Date()): boolean => {
-  if (!meetup.rsvpOpenDate || new Date(meetup.rsvpOpenDate) <= now) return false;
-  if (!userId || !tiersActive(meetup)) return true;
+  const open = everyoneOpensAt(meetup);
+  if (!open || new Date(open) <= now) return false;
+  if (!tiersActive(meetup)) return true;
+  if (allTiersAnswered(meetup, now)) return false;
+  if (!userId) return true;
   const k = tierIndexOf(meetup, userId);
   return k < 0 || !isTierOpen(meetup, k, now);
 };
@@ -87,9 +106,10 @@ export const isRsvpLockedFor = (meetup: Meetup, userId: string | undefined, now:
 /** When RSVPs open for this user, as text: a date for everyone else, date + time for a priority group. */
 export const describeRsvpOpensFor = (meetup: Meetup, userId: string | undefined): string => {
   const tierK = userId && tiersActive(meetup) ? tierIndexOf(meetup, userId) : -1;
-  const when = new Date(tierK >= 0 ? meetup.priorityTiers![tierK].opensAt : meetup.rsvpOpenDate!);
+  const when = new Date(tierK >= 0 ? meetup.priorityTiers![tierK].opensAt : everyoneOpensAt(meetup)!);
   const date = when.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone });
-  if (tierK < 0) return date;
+  // Priority groups open at specific times; so can everyone else (a head-start series).
+  if (tierK < 0 && !tiersActive(meetup)) return date;
   const time = when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: meetup.timezone });
   return `${date} at ${time}`;
 };

@@ -3,14 +3,18 @@ import Meetup from "../models/meetup.model.js";
 import User from "../models/user.model.js";
 import { notifyAndPersist } from "./push.notifications.js";
 import { parseTimeString } from "./date.utils.js";
+import { groupHasPremium } from "./premium.js";
 
 /**
  * Priority RSVP (Premium): a series can give some members a head start. Members are
  * ranked in an ordered list; consecutive slices of that list form "groups" (tiers).
- * Each group has a `windowMinutes` exclusive window before the next group opens, and
- * the last group's window ends when RSVPs open for everyone (rsvpOpenDate). Windows
- * are counted in "awake" time when quiet hours are on, so nobody's turn passes while
- * they sleep. A group also opens as soon as the group before it has fully responded.
+ *
+ * The series' "earliest time to RSVP" is when the FIRST group opens. Each group then has
+ * an exclusive window (`windowMinutes`) before the next group opens, and the last group's
+ * window ends when RSVPs open for everyone else (Meetup.rsvpOpenDate). Windows count only
+ * "awake" time when quiet hours are on, so nobody's turn passes while they sleep. A group
+ * also opens early the moment every group before it has answered, and everyone else opens
+ * early once all groups have answered.
  */
 
 export const MAX_PRIORITY_TIERS = 20;
@@ -25,82 +29,85 @@ const atMinutes = (dt, mins) =>
   dt.startOf("day").set({ hour: Math.floor(mins / 60), minute: mins % 60, second: 0, millisecond: 0 });
 
 /**
- * Walks back `minutes` of awake time from `end`. With quiet hours on, the interval
+ * Adds `minutes` of awake time to `start`. With quiet hours on, the interval
  * [quiet.start, quiet.end) (which may cross midnight) doesn't count.
  */
-export const subtractAwakeMinutes = (end, minutes, quiet, timezone) => {
-  let cursor = DateTime.fromJSDate(new Date(end)).setZone(timezone);
+export const addAwakeMinutes = (start, minutes, quiet, timezone) => {
+  let cursor = DateTime.fromJSDate(new Date(start)).setZone(timezone);
   const startMin = quiet?.enabled ? minutesOfDay(quiet.start || "10:00 PM") : null;
   const endMin = quiet?.enabled ? minutesOfDay(quiet.end || "08:00 AM") : null;
   if (startMin === null || startMin === endMin) {
-    return cursor.minus({ minutes }).toJSDate();
+    return cursor.plus({ minutes }).toJSDate();
   }
 
-  // Start of the quiet interval that ends at `endDt` (an instant at quiet.end's time of day).
-  const quietStartFor = (endDt) => {
-    let s = atMinutes(endDt, startMin);
-    if (s >= endDt) s = atMinutes(endDt.minus({ days: 1 }), startMin);
+  // End of the quiet interval containing `dt`, or null if `dt` is awake time.
+  const quietEndContaining = (dt) => {
+    for (const dayOffset of [-1, 0]) {
+      const s = atMinutes(dt.plus({ days: dayOffset }), startMin);
+      let e = atMinutes(s, endMin);
+      if (e <= s) e = atMinutes(s.plus({ days: 1 }), endMin);
+      if (dt >= s && dt < e) return e;
+    }
+    return null;
+  };
+  const nextQuietStart = (dt) => {
+    let s = atMinutes(dt, startMin);
+    if (s <= dt) s = atMinutes(dt.plus({ days: 1 }), startMin);
     return s;
   };
-  // Latest quiet end at or before `dt`.
-  const latestQuietEnd = (dt) => {
-    let e = atMinutes(dt, endMin);
-    if (e > dt) e = atMinutes(dt.minus({ days: 1 }), endMin);
-    return e;
-  };
-
-  // If `cursor` sits inside a quiet interval, the awake time before it ends where that interval began.
-  const nextEnd = (() => {
-    // quiet interval containing cursor: starts at some S <= cursor and ends at the next quiet end after S
-    let e = atMinutes(cursor, endMin);
-    if (e <= cursor) e = atMinutes(cursor.plus({ days: 1 }), endMin);
-    return e;
-  })();
-  const nextStart = quietStartFor(nextEnd);
-  if (nextStart <= cursor) cursor = nextStart;
 
   let remaining = minutes;
-  for (let i = 0; i < 2000 && remaining > 0; i++) {
-    const segStart = latestQuietEnd(cursor);
-    const avail = Math.max(0, cursor.diff(segStart, "minutes").minutes);
-    if (avail >= remaining) return cursor.minus({ minutes: remaining }).toJSDate();
-    remaining -= avail;
-    cursor = quietStartFor(segStart);
+  for (let i = 0; i < 2000; i++) {
+    const quietEnd = quietEndContaining(cursor);
+    if (quietEnd) cursor = quietEnd;
+    const qStart = nextQuietStart(cursor);
+    const available = qStart.diff(cursor, "minutes").minutes;
+    if (available >= remaining) return cursor.plus({ minutes: remaining }).toJSDate();
+    remaining -= available;
+    cursor = qStart;
   }
   return cursor.toJSDate();
 };
 
 /**
- * Builds the per-meetup snapshot: [{ members: [userId], opensAt }] in priority order.
- * Returns [] when there's nothing to do (disabled, no general open time, no one ranked).
+ * Works out a meetup's RSVP schedule from the series' "earliest time to RSVP" (`baseOpen`).
+ * Without priority: { rsvpOpenDate: baseOpen, priorityTiers: [] }. With it: the first
+ * group opens at baseOpen, later groups cascade, and rsvpOpenDate becomes the time
+ * RSVPs open for everyone else.
+ *
+ * `active` = the series has priority on AND the owner has Premium.
+ * `priorityOpened` lists groups already past their time while everyone else is still
+ * locked out (counted as announced, so edits never re-send "your turn" pings).
  */
-export const computePriorityTiers = ({ schedule, group, generalOpen }) => {
-  if (!schedule?.priorityEnabled || !generalOpen) return [];
+export const resolveRsvpOpen = ({ schedule, group, baseOpen, active, now = new Date() }) => {
+  const plain = { rsvpOpenDate: baseOpen ?? null, priorityTiers: [], priorityOpened: [] };
+  if (!active || !baseOpen) return plain;
+
   const tierDefs = schedule.priorityTiers || [];
-  if (tierDefs.length === 0) return [];
+  if (tierDefs.length === 0) return plain;
 
   const groupMemberIds = new Set((group.members || []).map((m) => (m?._id ?? m).toString()));
   const ordered = (schedule.priorityOrder || [])
     .map((id) => id.toString())
     .filter((id) => groupMemberIds.has(id));
 
-  const slices = [];
-  let cursor = 0;
+  let pos = 0;
+  let cursor = new Date(baseOpen);
+  const priorityTiers = [];
   for (const def of tierDefs) {
-    const members = ordered.slice(cursor, cursor + def.size);
-    cursor += def.size;
-    if (members.length > 0) slices.push({ members, windowMinutes: def.windowMinutes });
+    const members = ordered.slice(pos, pos + def.size);
+    pos += def.size;
+    if (members.length === 0) continue;
+    priorityTiers.push({ members, opensAt: cursor });
+    cursor = addAwakeMinutes(cursor, def.windowMinutes, schedule.priorityQuiet, group.timezone);
   }
-  if (slices.length === 0) return [];
+  if (priorityTiers.length === 0) return plain;
 
-  const tiers = new Array(slices.length);
-  let end = new Date(generalOpen);
-  for (let i = slices.length - 1; i >= 0; i--) {
-    const opensAt = subtractAwakeMinutes(end, slices[i].windowMinutes, schedule.priorityQuiet, group.timezone);
-    tiers[i] = { members: slices[i].members, opensAt };
-    end = opensAt;
-  }
-  return tiers;
+  const everyoneStillClosed = cursor > now;
+  const priorityOpened = everyoneStillClosed
+    ? priorityTiers.map((t, i) => (new Date(t.opensAt) <= now ? i : null)).filter((i) => i !== null)
+    : [];
+  return { rsvpOpenDate: cursor, priorityTiers, priorityOpened };
 };
 
 const idStr = (v) => (v?._id ?? v).toString();
@@ -133,36 +140,62 @@ export const isTierOpen = (meetup, k, now = new Date()) => {
   const tiers = meetup.priorityTiers || [];
   for (let i = k; i >= 0; i--) {
     if (now >= new Date(tiers[i].opensAt)) return true;
-    // not open by time: only continues opening if the previous tier is open AND complete
     if (i === 0) return false;
     if (!isTierComplete(meetup, i - 1)) return false;
   }
   return false;
 };
 
+/** Every priority group has opened and answered, so everyone else may RSVP early. */
+export const allTiersAnswered = (meetup, now = new Date()) => {
+  const tiers = meetup.priorityTiers || [];
+  if (tiers.length === 0) return false;
+  const last = tiers.length - 1;
+  return isTierOpen(meetup, last, now) && tiers.every((_, k) => isTierComplete(meetup, k));
+};
+
 /**
- * Can this user RSVP right now? Everyone can once the general window opens;
- * before that, only members of a group that's currently open.
+ * When RSVPs open for people outside every priority group. If priority isn't active
+ * (e.g. the owner's Premium lapsed) there's no head start, so it's the first group's
+ * time — the series' own "earliest time to RSVP".
+ */
+export const everyoneOpensAt = (meetup, tiersActive = true) => {
+  const tiers = meetup.priorityTiers || [];
+  if (tiers.length > 0 && !tiersActive) return tiers[0].opensAt;
+  return meetup.rsvpOpenDate || null;
+};
+
+/**
+ * Can this user RSVP right now? Priority members once their group has opened; everyone
+ * else once the general time arrives (or early, after every group has answered).
  * `tiersActive` is false when the owner's Premium has lapsed (priority ignored).
  */
 export const canRsvpNow = (meetup, userId, tiersActive = true, now = new Date()) => {
-  if (!meetup.rsvpOpenDate || new Date(meetup.rsvpOpenDate) <= now) return true;
+  const open = everyoneOpensAt(meetup, tiersActive);
+  if (!open || new Date(open) <= now) return true;
   if (!tiersActive || !(meetup.priorityTiers || []).length) return false;
+  if (allTiersAnswered(meetup, now)) return true;
   const k = userTierIndex(meetup, userId);
   return k >= 0 && isTierOpen(meetup, k, now);
 };
 
-/** When this user's group opens (or null if they're not in a group). Used for messages. */
-export const userOpensAt = (meetup, userId) => {
-  const k = userTierIndex(meetup, userId);
-  if (k < 0) return meetup.rsvpOpenDate || null;
-  return meetup.priorityTiers[k].opensAt;
+/** When this user's turn starts (for messages): their group's time, or the general time. */
+export const userOpensAt = (meetup, userId, tiersActive = true) => {
+  const k = tiersActive ? userTierIndex(meetup, userId) : -1;
+  if (k >= 0) return meetup.priorityTiers[k].opensAt;
+  return everyoneOpensAt(meetup, tiersActive);
 };
+
+const dateLabel = (meetup) =>
+  new Date(meetup.date).toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric", timeZone: meetup.timezone,
+  });
 
 /**
  * Sends "RSVPs are open" to each priority group the moment it opens (on schedule or
- * early) — once per group. Only people who haven't answered yet are pinged.
- * Returns how many groups were announced.
+ * early), once per group, and to everyone else if they open early because every group
+ * has answered. Only people who haven't answered yet are pinged.
+ * Returns how many announcements were made.
  */
 export const notifyOpenTiers = async (meetupId) => {
   let announced = 0;
@@ -173,7 +206,27 @@ export const notifyOpenTiers = async (meetupId) => {
     const opened = new Set(meetup.priorityOpened || []);
     const now = new Date();
     const k = meetup.priorityTiers.findIndex((_, i) => !opened.has(i) && isTierOpen(meetup, i, now));
-    if (k < 0) return announced;
+
+    if (k < 0) {
+      // Every group answered: everyone else opens early (once).
+      if (meetup.rsvpNotified || !allTiersAnswered(meetup, now)) return announced;
+      const claimed = await Meetup.updateOne({ _id: meetup._id, rsvpNotified: false }, { $set: { rsvpNotified: true } });
+      if (claimed.modifiedCount === 0) return announced;
+      const inTier = new Set(meetup.priorityTiers.flatMap((t) => t.members.map(idStr)));
+      const targets = (meetup.members || []).filter((m) => !inTier.has(idStr(m)) && !hasResponded(meetup, idStr(m)));
+      if (targets.length > 0) {
+        const users = await User.find({ _id: { $in: targets } });
+        await notifyAndPersist(users, {
+          title: "RSVPs Are Open!",
+          body: `You can now RSVP to "${meetup.name}" on ${dateLabel(meetup)}.`,
+          data: { meetupId: meetup._id.toString(), type: "rsvp_open", groupId: meetup.group.toString() },
+          type: "meetup-rsvp-open",
+          meetup: meetup._id,
+          group: meetup.group,
+        });
+      }
+      return announced + 1;
+    }
 
     // claim the tier so concurrent callers don't double-announce
     const claimed = await Meetup.updateOne(
@@ -187,12 +240,9 @@ export const notifyOpenTiers = async (meetupId) => {
     );
     if (targets.length > 0) {
       const users = await User.find({ _id: { $in: targets } });
-      const dateStr = new Date(meetup.date).toLocaleDateString("en-US", {
-        weekday: "short", month: "short", day: "numeric", timeZone: meetup.timezone,
-      });
       await notifyAndPersist(users, {
         title: "It's your turn to RSVP!",
-        body: `You can now RSVP to "${meetup.name}" on ${dateStr}.`,
+        body: `You can now RSVP to "${meetup.name}" on ${dateLabel(meetup)}.`,
         data: { meetupId: meetup._id.toString(), type: "rsvp_open", groupId: meetup.group.toString() },
         type: "meetup-rsvp-open",
         meetup: meetup._id,
@@ -205,9 +255,8 @@ export const notifyOpenTiers = async (meetupId) => {
 };
 
 /**
- * Recomputes the priority snapshot on a schedule's upcoming meetups in place (RSVPs
- * untouched). While the general window is still closed, groups whose time has already
- * passed are marked announced so editing the order later never re-sends "your turn" pings.
+ * Recomputes RSVP open times and the priority snapshot on a schedule's upcoming meetups
+ * in place (RSVPs untouched), from the series' current settings.
  */
 export const refreshPriorityTiers = async (group, schedule) => {
   const now = new Date();
@@ -217,20 +266,29 @@ export const refreshPriorityTiers = async (group, schedule) => {
     status: "scheduled",
     date: { $gte: now },
   })
-    .select("rsvpOpenDate priorityTiers priorityOpened")
+    .select("startsAt date rsvpOpenDate rsvpNotified")
     .lean();
+  if (meetups.length === 0) return 0;
+
+  const active = !!schedule.priorityEnabled && (await groupHasPremium(group));
+  const { hours: leadH, minutes: leadM } = parseTimeString(schedule.generationLeadTime || "09:00 AM");
 
   const ops = [];
   for (const m of meetups) {
-    // Groups are kept even after the general window opens: the ranking still decides
-    // who keeps a spot when a meetup fills up.
-    const tiers = m.rsvpOpenDate ? computePriorityTiers({ schedule, group, generalOpen: m.rsvpOpenDate }) : [];
-    const generalStillClosed = !!m.rsvpOpenDate && new Date(m.rsvpOpenDate) > now;
-    const priorityOpened = generalStillClosed
-      ? tiers.map((t, i) => (new Date(t.opensAt) <= now ? i : null)).filter((i) => i !== null)
-      : [];
-    ops.push({ updateOne: { filter: { _id: m._id, status: "scheduled" }, update: { $set: { priorityTiers: tiers, priorityOpened } } } });
+    const startsAtDT = DateTime.fromJSDate(new Date(m.startsAt || m.date)).setZone(group.timezone);
+    const baseOpen = schedule.generationLeadDays != null
+      ? startsAtDT.minus({ days: schedule.generationLeadDays }).set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 }).toJSDate()
+      : null;
+    const { rsvpOpenDate, priorityTiers, priorityOpened } = resolveRsvpOpen({ schedule, group, baseOpen, active, now });
+    // already-open (or no gate) skips the "RSVPs are open" ping; a future open time re-arms it
+    const rsvpNotified = !rsvpOpenDate || rsvpOpenDate <= now;
+    ops.push({
+      updateOne: {
+        filter: { _id: m._id, status: "scheduled" },
+        update: { $set: { rsvpOpenDate, priorityTiers, priorityOpened, rsvpNotified } },
+      },
+    });
   }
-  if (ops.length > 0) await Meetup.bulkWrite(ops);
+  await Meetup.bulkWrite(ops);
   return ops.length;
 };

@@ -114,7 +114,7 @@ export default function GroupPriorityScreen() {
           <View style={styles.divider}>
             <Text style={styles.dividerTitle}>Group {k + 1}</Text>
             <Text style={styles.dividerSub}>
-              {count} {count === 1 ? 'person' : 'people'} · {formatWindow(t.hours)}{quietEnabled ? ' awake time' : ''} to RSVP first
+              {count} {count === 1 ? 'person' : 'people'} · {formatWindow(t.hours)}{quietEnabled ? ' awake time' : ''} {k === 0 ? 'from the earliest RSVP time' : 'once the group above is done'}
             </Text>
           </View>
         ),
@@ -131,7 +131,7 @@ export default function GroupPriorityScreen() {
         node: (
           <View style={[styles.divider, { backgroundColor: '#F3F4F6' }]}>
             <Text style={[styles.dividerTitle, { color: '#6B7280' }]}>Everyone else</Text>
-            <Text style={styles.dividerSub}>Opens at the normal RSVP time</Text>
+            <Text style={styles.dividerSub}>Opens after the last group's window</Text>
           </View>
         ),
       });
@@ -200,7 +200,7 @@ export default function GroupPriorityScreen() {
   const header = (
     <View>
       <Text style={styles.sub}>
-        Give some members a head start on RSVPing to "{schedule.name}". Rank members below, then choose how many people are in each group and how long each group gets before the next one opens.
+        Give some members a head start on RSVPing to "{schedule.name}". The series' earliest RSVP time is when Group 1 can start. Each group then gets its own window before the next group opens, and everyone else opens after the last group's window. Rank members below, then choose how many people are in each group and how long each group's window lasts.
       </Text>
 
       {!isPremium ? (
@@ -270,7 +270,7 @@ export default function GroupPriorityScreen() {
                 )}
               </View>
               <Text style={styles.hint}>
-                The hours are how long that group has to RSVP before the next group opens. Use groups of 1 to rank people one by one. The moment everyone in a group has answered, the next group opens automatically.
+                The hours are how long that group has to RSVP before the next group opens. Use groups of 1 to rank people one by one. The moment everyone in a group has answered, the next group opens automatically, and everyone else opens once every group has answered.
               </Text>
               {error && <Text style={styles.errorText}>{error}</Text>}
 
