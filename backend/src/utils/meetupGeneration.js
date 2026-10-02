@@ -125,9 +125,10 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         ? nextMeetupDT.minus({ days: schedule.generationDeadlineDays }).set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 }).toJSDate()
         : null;
 
-      const priorityTiers = computePriorityTiers({
-        schedule, group, generalOpen: rsvpOpenDate && rsvpOpenDate > new Date() ? rsvpOpenDate : null,
-      });
+      // Built even when RSVPs are already open for everyone: the ranking still decides
+      // who keeps a spot when the meetup fills up.
+      const priorityTiers = computePriorityTiers({ schedule, group, generalOpen: rsvpOpenDate });
+      const generalStillClosed = !!rsvpOpenDate && rsvpOpenDate > new Date();
 
       docsToCreate.push({
         group: group._id,
@@ -145,7 +146,10 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         bringItems: (schedule.defaultBringItems || []).map((i) => ({ _id: i._id, name: i.name, max: i.max ?? null })),
         ridesEnabled: !!schedule.defaultRidesEnabled,
         priorityTiers,
-        priorityOpened: priorityTiers.map((t, i) => (new Date(t.opensAt) <= new Date() ? i : null)).filter((i) => i !== null),
+        // Groups whose time already passed while the general window is still closed count as announced.
+        priorityOpened: generalStillClosed
+          ? priorityTiers.map((t, i) => (new Date(t.opensAt) <= new Date() ? i : null)).filter((i) => i !== null)
+          : [],
         // A meetup created after its RSVP deadline already passed (e.g. a series
         // edited late) is never evaluated against the minimum.
         minimumChecked: !!(rsvpCloseDate && rsvpCloseDate <= new Date()),

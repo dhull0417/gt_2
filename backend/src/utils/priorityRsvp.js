@@ -206,8 +206,8 @@ export const notifyOpenTiers = async (meetupId) => {
 
 /**
  * Recomputes the priority snapshot on a schedule's upcoming meetups in place (RSVPs
- * untouched). Groups whose time has already passed are marked announced so editing
- * the order later never re-sends "your turn" pings.
+ * untouched). While the general window is still closed, groups whose time has already
+ * passed are marked announced so editing the order later never re-sends "your turn" pings.
  */
 export const refreshPriorityTiers = async (group, schedule) => {
   const now = new Date();
@@ -222,9 +222,13 @@ export const refreshPriorityTiers = async (group, schedule) => {
 
   const ops = [];
   for (const m of meetups) {
-    const open = m.rsvpOpenDate && new Date(m.rsvpOpenDate) > now ? m.rsvpOpenDate : null;
-    const tiers = open ? computePriorityTiers({ schedule, group, generalOpen: open }) : [];
-    const priorityOpened = tiers.map((t, i) => (new Date(t.opensAt) <= now ? i : null)).filter((i) => i !== null);
+    // Groups are kept even after the general window opens: the ranking still decides
+    // who keeps a spot when a meetup fills up.
+    const tiers = m.rsvpOpenDate ? computePriorityTiers({ schedule, group, generalOpen: m.rsvpOpenDate }) : [];
+    const generalStillClosed = !!m.rsvpOpenDate && new Date(m.rsvpOpenDate) > now;
+    const priorityOpened = generalStillClosed
+      ? tiers.map((t, i) => (new Date(t.opensAt) <= now ? i : null)).filter((i) => i !== null)
+      : [];
     ops.push({ updateOne: { filter: { _id: m._id, status: "scheduled" }, update: { $set: { priorityTiers: tiers, priorityOpened } } } });
   }
   if (ops.length > 0) await Meetup.bulkWrite(ops);
