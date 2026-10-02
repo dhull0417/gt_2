@@ -5,6 +5,7 @@ import ReanimatedAnimated from 'react-native-reanimated';
 import { Meetup, User } from '@/utils/api';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { RsvpBreather } from '@/components/RsvpBreather';
+import { rsvpLabel } from '@/utils/questions';
 import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor, canPriorityBump } from '@/utils/meetupStatus';
 
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
@@ -261,7 +262,7 @@ export const MeetupCard = ({
                           style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                         >
                           <ReanimatedAnimated.Text style={[{ color: inFilled ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 16 }, inTextStyle]}>
-                            {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? (canBump ? "Priority In" : "Join Waitlist") : "I'm In"}
+                            {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? (canBump ? "Priority In" : "Join Waitlist") : rsvpLabel(meetup, 'in')}
                           </ReanimatedAnimated.Text>
                         </TouchableOpacity>
                         <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />
@@ -292,7 +293,7 @@ export const MeetupCard = ({
                           disabled={isRsvping}
                           style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                         >
-                          <ReanimatedAnimated.Text style={[{ color: outFilled ? 'white' : '#FF7A6E', fontWeight: 'bold', fontSize: 16 }, outTextStyle]}>I'm Out</ReanimatedAnimated.Text>
+                          <ReanimatedAnimated.Text style={[{ color: outFilled ? 'white' : '#FF7A6E', fontWeight: 'bold', fontSize: 16 }, outTextStyle]} numberOfLines={1} adjustsFontSizeToFit>{rsvpLabel(meetup, 'out')}</ReanimatedAnimated.Text>
                         </TouchableOpacity>
                         <View style={{ width: 1, backgroundColor: outFilled ? 'rgba(255,255,255,0.35)' : '#FFE4E1' }} />
                         <TouchableOpacity

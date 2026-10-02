@@ -188,6 +188,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter(c => !c.user.equals(user._id));
             if (meetup.rides?.length) meetup.rides = meetup.rides.filter(r => !r.user.equals(user._id));
             if (meetup.answers?.length) meetup.answers = meetup.answers.filter(a => !a.user.equals(user._id));
+            for (const t of meetup.teams || []) t.members.pull(user._id);
 
             // Auto-promote the first person in the waitlist if capacity allows
             // (Premium only; without it people already waitlisted stay put and
@@ -226,6 +227,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
                     if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter(c => !c.user.equals(victimId));
                     if (meetup.rides?.length) meetup.rides = meetup.rides.filter(r => !r.user.equals(victimId));
                     if (meetup.answers?.length) meetup.answers = meetup.answers.filter(a => !a.user.equals(victimId));
+                    for (const t of meetup.teams || []) t.members.pull(victimId);
                     bumpedUserId = victimId;
                     meetup.in.push(user._id);
                 } else {
@@ -947,4 +949,88 @@ export const setAnswers = asyncHandler(async (req, res) => {
         .populate('members', 'firstName lastName profilePicture clerkId');
 
     res.status(200).json({ message: "Answers saved.", meetup: await withGroupPremium(updatedMeetup) });
+});
+
+
+const MAX_TEAMS = 8;
+const TEAMS_PREMIUM_REQUIRED = { error: "premium_required", message: "Team splits require GroupThat Premium." };
+
+/**
+ * @desc    Split the people who are In into teams (Premium; owner/moderators).
+ *          Either shuffle into `count` balanced teams, set the teams by hand, or clear them.
+ * @route   PUT /api/meetups/:meetupId/teams
+ * @body    { shuffle: { count } } | { teams: [{ name, members: userId[] }] } | { clear: true }
+ */
+export const setTeams = asyncHandler(async (req, res) => {
+    const { meetupId } = req.params;
+    const { shuffle, teams, clear } = req.body;
+    const { userId: clerkId } = getAuth(req);
+
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!requester) return res.status(404).json({ error: "User not found." });
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        const meetup = await Meetup.findById(meetupId);
+        if (!meetup) return res.status(404).json({ error: "Meetup not found." });
+        const groupDoc = await Group.findById(meetup.group);
+        if (!groupDoc || !canManageGroup(requester._id, groupDoc)) return res.status(403).json({ error: "Permission denied." });
+        if (meetup.status !== 'scheduled') return res.status(400).json({ error: "This meetup is closed for changes." });
+        if (!(await groupHasPremium(groupDoc))) return res.status(403).json(TEAMS_PREMIUM_REQUIRED);
+
+        const inIds = meetup.in.map(String);
+        if (clear) {
+            meetup.teams = [];
+        } else if (shuffle) {
+            const count = Number(shuffle.count);
+            if (!Number.isInteger(count) || count < 2 || count > MAX_TEAMS) {
+                return res.status(400).json({ error: `Choose between 2 and ${MAX_TEAMS} teams.` });
+            }
+            const pool = [...inIds];
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+            const prevNames = (meetup.teams || []).map(t => t.name);
+            const next = Array.from({ length: count }, (_, i) => ({ name: prevNames[i] || `Team ${i + 1}`, members: [] }));
+            pool.forEach((id, i) => next[i % count].members.push(id));
+            meetup.teams = next;
+        } else if (Array.isArray(teams)) {
+            if (teams.length < 2 || teams.length > MAX_TEAMS) {
+                return res.status(400).json({ error: `Choose between 2 and ${MAX_TEAMS} teams.` });
+            }
+            const seen = new Set();
+            const next = [];
+            for (const [i, t] of teams.entries()) {
+                const name = (typeof t?.name === 'string' ? t.name.trim() : '') || `Team ${i + 1}`;
+                if (name.length > 24) return res.status(400).json({ error: "Team names can be at most 24 characters." });
+                const members = [];
+                for (const id of (Array.isArray(t?.members) ? t.members.map(String) : [])) {
+                    if (!inIds.includes(id)) return res.status(400).json({ error: "Only people who are In can be on a team." });
+                    if (seen.has(id)) continue;
+                    seen.add(id);
+                    members.push(id);
+                }
+                next.push({ name, members });
+            }
+            meetup.teams = next;
+        } else {
+            return res.status(400).json({ error: "Nothing to change." });
+        }
+
+        meetup.increment();
+        try {
+            await meetup.save();
+            break;
+        } catch (err) {
+            if (err instanceof mongoose.Error.VersionError && attempt < MAX_RETRIES) continue;
+            throw err;
+        }
+    }
+
+    const updatedMeetup = await Meetup.findById(meetupId)
+        .populate('group', 'name owner moderators timezone defaultLocation')
+        .populate('members', 'firstName lastName profilePicture clerkId');
+
+    res.status(200).json({ message: "Teams updated.", meetup: await withGroupPremium(updatedMeetup) });
 });

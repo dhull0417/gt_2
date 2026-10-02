@@ -40,6 +40,8 @@ export default function GroupQuestionsScreen() {
   const isPremium = group?.isPremium === true;
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [inLabel, setInLabel] = useState('');
+  const [outLabel, setOutLabel] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -49,6 +51,8 @@ export default function GroupQuestionsScreen() {
       key: newKey(), _id: q._id, prompt: q.prompt, type: q.type,
       options: q.type === 'choice' ? [...q.options] : ['', ''], required: q.required,
     })));
+    setInLabel(schedule.rsvpLabels?.inLabel ?? '');
+    setOutLabel(schedule.rsvpLabels?.outLabel ?? '');
     setLoaded(true);
   }, [schedule, loaded]);
 
@@ -70,13 +74,16 @@ export default function GroupQuestionsScreen() {
     if (err) { Alert.alert('Check your questions', err); return; }
     setSaving(true);
     try {
-      await groupApi.updateScheduleQuestions(api, id, scheduleId, drafts.map((d) => ({
-        _id: d._id,
-        prompt: d.prompt.trim(),
-        type: d.type,
-        options: d.type === 'choice' ? d.options.map((o) => o.trim()).filter(Boolean) : [],
-        required: d.required,
-      })));
+      await groupApi.updateScheduleQuestions(api, id, scheduleId, {
+        questions: drafts.map((d) => ({
+          _id: d._id,
+          prompt: d.prompt.trim(),
+          type: d.type,
+          options: d.type === 'choice' ? d.options.map((o) => o.trim()).filter(Boolean) : [],
+          required: d.required,
+        })),
+        labels: { inLabel: inLabel.trim(), outLabel: outLabel.trim() },
+      });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
         queryClient.invalidateQueries({ queryKey: ['meetups'] }),
@@ -112,7 +119,7 @@ export default function GroupQuestionsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
           <Feather name="arrow-left" size={24} color="#6B7280" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>RSVP Questions</Text>
+        <Text style={styles.headerTitle}>RSVP Options</Text>
         <TouchableOpacity onPress={save} disabled={saving || !isPremium} style={{ minWidth: 40, alignItems: 'flex-end' }}>
           {saving
             ? <ActivityIndicator size="small" color="#4A90E2" />
@@ -123,7 +130,7 @@ export default function GroupQuestionsScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 140 }}>
           <Text style={styles.sub}>
-            Ask members something when they RSVP "I'm In" to "{schedule.name}". Everyone going can see the answers on the meetup. Up to {MAX_QUESTIONS} questions.
+            Customize the RSVP buttons for "{schedule.name}" and ask members questions when they RSVP in. Everyone going can see the answers on the meetup. Up to {MAX_QUESTIONS} questions.
           </Text>
 
           {!isPremium ? (
@@ -136,8 +143,32 @@ export default function GroupQuestionsScreen() {
             </View>
           ) : (
             <>
+              <Text style={styles.sectionLabel}>Button text</Text>
+              <View style={styles.card}>
+                <Text style={styles.qLabel}>In button</Text>
+                <TextInput
+                  style={[styles.input, { marginTop: 6, marginBottom: 12 }]}
+                  value={inLabel}
+                  onChangeText={setInLabel}
+                  placeholder="I'm In"
+                  placeholderTextColor="#9CA3AF"
+                  maxLength={20}
+                />
+                <Text style={styles.qLabel}>Out button</Text>
+                <TextInput
+                  style={[styles.input, { marginTop: 6 }]}
+                  value={outLabel}
+                  onChangeText={setOutLabel}
+                  placeholder="I'm Out"
+                  placeholderTextColor="#9CA3AF"
+                  maxLength={20}
+                />
+                <Text style={styles.hint}>Make the buttons yours, emoji included, e.g. "Count me in 🎲". Leave blank for the defaults.</Text>
+              </View>
+
+              <Text style={styles.sectionLabel}>Questions</Text>
               {drafts.map((d, i) => (
-                <View key={d.key} style={[styles.card, { marginTop: 14 }]}>
+                <View key={d.key} style={[styles.card, { marginTop: i === 0 ? 0 : 14 }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                     <Text style={styles.qLabel}>Question {i + 1}</Text>
                     <TouchableOpacity onPress={() => setDrafts((cur) => cur.filter((x) => x.key !== d.key))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -223,6 +254,7 @@ const styles = StyleSheet.create({
   iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
   saveText: { fontSize: 16, fontWeight: '800', color: '#4A90E2' },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 20, marginBottom: 8 },
   sub: { fontSize: 14, color: '#6B7280', lineHeight: 20, marginTop: 4 },
   card: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', padding: 14 },
   qLabel: { fontSize: 11, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 },

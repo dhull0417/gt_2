@@ -39,6 +39,14 @@ export const parseQuestions = (raw, existing = []) => {
   return { questions };
 };
 
+/** Validates the custom In/Out button text. Returns { labels } or { error }. */
+export const parseLabels = (raw) => {
+  const clean = (v) => (typeof v === "string" ? v.trim() : "");
+  const labels = { inLabel: clean(raw?.inLabel), outLabel: clean(raw?.outLabel) };
+  if (labels.inLabel.length > 20 || labels.outLabel.length > 20) return { error: "Button text can be at most 20 characters." };
+  return { labels };
+};
+
 /** Drops answers whose question is gone or whose chosen option no longer exists. */
 export const pruneAnswers = (answers, questions) => {
   const byId = new Map(questions.map((q) => [q._id.toString(), q]));
@@ -64,10 +72,11 @@ export const refreshSeriesQuestions = async (group, schedule) => {
     _id: q._id, prompt: q.prompt, type: q.type, options: q.options || [], required: !!q.required,
   }));
   if (meetups.length === 0) return 0;
+  const rsvpLabels = { inLabel: schedule.rsvpLabels?.inLabel || "", outLabel: schedule.rsvpLabels?.outLabel || "" };
   await Meetup.bulkWrite(meetups.map((m) => ({
     updateOne: {
       filter: { _id: m._id, status: "scheduled" },
-      update: { $set: { questions, answers: pruneAnswers(m.answers, questions) } },
+      update: { $set: { questions, rsvpLabels, answers: pruneAnswers(m.answers, questions) } },
     },
   })));
   return meetups.length;

@@ -136,6 +136,7 @@ const GroupSettings = () => {
   const mainOptions = [
     { id: 'group', label: 'Edit Group Info', icon: 'edit-2', color: '#4A90E2', bg: '#EFF6FF' },
     { id: 'schedules', label: 'Edit Meetup Schedules', icon: 'calendar', color: '#6366F1', bg: '#EEF2FF' },
+    { id: 'stats', label: 'Stats & Attendance', icon: 'bar-chart-2', color: '#10B981', bg: '#ECFDF5' },
     { id: 'terminate', label: isUserOwner ? 'Delete Group' : 'Leave Group', icon: isUserOwner ? 'trash-2' : 'log-out', color: '#EF4444', bg: '#FEF2F2', destructive: true },
   ];
 
@@ -148,6 +149,9 @@ const GroupSettings = () => {
         break;
       case 'schedules':
         setView('schedules');
+        break;
+      case 'stats':
+        router.push({ pathname: '/group-stats/[id]', params: { id } });
         break;
       case 'image':
         handleOpenImageModal();

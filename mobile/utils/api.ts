@@ -67,6 +67,7 @@ export interface NamedSchedule extends Schedule {
   defaultRidesEnabled?: boolean;
   /** Premium custom RSVP questions. */
   defaultQuestions?: RsvpQuestion[];
+  rsvpLabels?: RsvpLabels;
   /** Premium priority RSVP: ranked members get RSVP windows before everyone else. */
   priorityEnabled?: boolean;
   priorityOrder?: string[];
@@ -162,6 +163,17 @@ export interface RsvpQuestion {
   required: boolean;
 }
 
+export interface GroupStats {
+  summary: { totalMeetups: number; averageHeadcount: number; averageFill: number | null };
+  members: {
+    _id: string; firstName?: string; lastName?: string; profilePicture?: string;
+    eligible: number; attended: number; declined: number; noResponse: number; rate: number; streak: number;
+  }[];
+  meetups: { id: string; name: string; date: string; in: number; out: number; guests: number; capacity: number }[];
+}
+
+export interface RsvpLabels { inLabel: string; outLabel: string }
+
 export interface RsvpAnswer { user: string; question: string; value: string }
 
 export interface Meetup {
@@ -206,6 +218,10 @@ export interface Meetup {
   priorityTiers?: { members: string[]; opensAt: string }[];
   questions?: RsvpQuestion[];
   answers?: RsvpAnswer[];
+  /** Premium custom button text (blank/absent = defaults). */
+  rsvpLabels?: RsvpLabels;
+  /** Premium team split. */
+  teams?: { _id: string; name: string; members: string[] }[];
   bringItems?: BringItem[];
   ridesEnabled?: boolean;
   bringClaims?: { user: string; item: string }[];
@@ -553,9 +569,20 @@ export const groupApi = {
     api: AxiosInstance,
     groupId: string,
     scheduleId: string,
-    questions: { _id?: string; prompt: string; type: RsvpQuestion['type']; options?: string[]; required?: boolean }[],
+    data: {
+      questions?: { _id?: string; prompt: string; type: RsvpQuestion['type']; options?: string[]; required?: boolean }[];
+      labels?: RsvpLabels;
+    },
   ): Promise<{ message: string; group: Group }> => {
-    const response = await api.put<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}/questions`, { questions });
+    const response = await api.put<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}/questions`, data);
+    return response.data;
+  },
+  getGroupStats: async (api: AxiosInstance, groupId: string, scheduleId?: string): Promise<GroupStats> => {
+    const response = await api.get<GroupStats>(`/api/groups/${groupId}/stats`, { params: scheduleId ? { scheduleId } : undefined });
+    return response.data;
+  },
+  exportGroupAttendance: async (api: AxiosInstance, groupId: string, scheduleId?: string): Promise<{ filename: string; csv: string }> => {
+    const response = await api.get<{ filename: string; csv: string }>(`/api/groups/${groupId}/stats/export`, { params: scheduleId ? { scheduleId } : undefined });
     return response.data;
   },
   deleteSchedule: async (api: AxiosInstance, groupId: string, scheduleId: string): Promise<{ message: string; group: Group }> => {
@@ -567,7 +594,8 @@ export const groupApi = {
     return response.data;
   },
   transferOwnership: async (api: AxiosInstance, { groupId, newOwnerId }: TransferOwnershipPayload): Promise<{ message: string }> => {
-    const response = await api.post(`/api/groups/${groupId}/transfer-ownership`, { newOwnerId });
+    // Longer than the client default: the server notifies the new owner before replying.
+    const response = await api.post(`/api/groups/${groupId}/transfer-ownership`, { newOwnerId }, { timeout: 15000 });
     return response.data;
   },
   generateInviteLink: async (api: AxiosInstance, groupId: string): Promise<{ link: string }> => {
@@ -631,6 +659,14 @@ export const meetupApi = {
     answers: { question: string; value: string }[],
   ): Promise<{ meetup: Meetup }> => {
     const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}/answers`, { answers });
+    return response.data;
+  },
+  setTeams: async (
+    api: AxiosInstance,
+    meetupId: string,
+    body: { shuffle: { count: number } } | { teams: { name: string; members: string[] }[] } | { clear: true },
+  ): Promise<{ meetup: Meetup }> => {
+    const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}/teams`, body);
     return response.data;
   },
   sendReminder: async (api: AxiosInstance, meetupId: string, userId?: string): Promise<{ message: string }> => {

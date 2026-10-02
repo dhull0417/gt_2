@@ -10,7 +10,8 @@ import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { generateMeetupsForGroup, generateMeetupsForSchedule, refreshOverrideMeetupWindows, refreshOverrideAssignments } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
-import { parseQuestions, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
+import { buildGroupStats, buildAttendanceCsv } from "../utils/groupStats.js";
+import { parseQuestions, parseLabels, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
 import { refreshPriorityTiers, MAX_PRIORITY_TIERS, MAX_WINDOW_MINUTES } from "../utils/priorityRsvp.js";
 import { hasPremium, groupHasPremium } from "../utils/premium.js";
 
@@ -838,8 +839,12 @@ export const transferOwnership = asyncHandler(async (req, res) => {
     // subscribed, the group's Premium features pause. Tell the new owner.
     const premiumPaused = hasPremium(requester) && !hasPremium(newOwner);
 
+    // The transfer is already committed, so a slow push provider must not hold
+    // the response past the client's request timeout (which would show the
+    // outgoing owner an error for a transfer that succeeded). Wait for the
+    // notification, but only up to a cap; it keeps running either way.
     try {
-        await notifyAndPersist([newOwner], {
+        const notified = notifyAndPersist([newOwner], {
             title: "You're Now the Owner",
             body: `${requester.firstName} made you the owner of "${group.name}".` +
                 (premiumPaused ? " Its Premium features are paused until you have your own Premium subscription." : ""),
@@ -849,6 +854,8 @@ export const transferOwnership = asyncHandler(async (req, res) => {
             group: group._id,
             meta: premiumPaused ? { premiumPaused: true } : undefined,
         });
+        notified.catch(err => console.error(err));
+        await Promise.race([notified, new Promise(resolve => setTimeout(resolve, 3000))]);
     } catch (err) { console.error(err); }
 
     res.status(200).json({ message: "Ownership transferred." });
@@ -1267,15 +1274,59 @@ export const updateScheduleQuestions = asyncHandler(async (req, res) => {
     const target = group.schedules.id(scheduleId);
     if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
 
-    const parsed = parseQuestions(req.body.questions, target.defaultQuestions);
+    const parsed = req.body.questions === undefined
+        ? { questions: target.defaultQuestions }
+        : parseQuestions(req.body.questions, target.defaultQuestions);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
-    if (parsed.questions.length > 0 && !(await groupHasPremium(group))) {
-        return res.status(403).json({ error: "premium_required", message: "Custom RSVP questions require GroupThat Premium." });
+    const parsedLabels = req.body.labels === undefined
+        ? { labels: { inLabel: target.rsvpLabels?.inLabel || "", outLabel: target.rsvpLabels?.outLabel || "" } }
+        : parseLabels(req.body.labels);
+    if (parsedLabels.error) return res.status(400).json({ error: parsedLabels.error });
+
+    const wantsPremium = parsed.questions.length > 0 || parsedLabels.labels.inLabel || parsedLabels.labels.outLabel;
+    if (wantsPremium && !(await groupHasPremium(group))) {
+        return res.status(403).json({ error: "premium_required", message: "Custom RSVP questions and buttons require GroupThat Premium." });
     }
 
     target.defaultQuestions = parsed.questions;
+    target.rsvpLabels = parsedLabels.labels;
     await group.save();
     await refreshSeriesQuestions(group, target);
 
     res.status(200).json({ message: "RSVP questions updated.", group: withLegacyScheduleMirror(group.toObject()) });
+});
+
+
+const STATS_PREMIUM_REQUIRED = {
+    error: "premium_required",
+    message: "Group stats and attendance history require GroupThat Premium.",
+};
+
+/**
+ * @desc    Attendance stats and history for a group (Premium). Any member can view.
+ * @route   GET /api/groups/:groupId/stats?scheduleId=
+ */
+export const getGroupStats = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const [group, user] = await Promise.all([Group.findById(req.params.groupId), User.findOne({ clerkId })]);
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!group.members.some(m => m.equals(user._id))) return res.status(403).json({ error: "Permission denied." });
+    if (!(await groupHasPremium(group))) return res.status(403).json(STATS_PREMIUM_REQUIRED);
+
+    res.status(200).json(await buildGroupStats(group, { scheduleId: req.query.scheduleId || undefined }));
+});
+
+/**
+ * @desc    Attendance history as CSV (Premium). Owner and moderators only.
+ * @route   GET /api/groups/:groupId/stats/export?scheduleId=
+ */
+export const exportGroupAttendance = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const [group, user] = await Promise.all([Group.findById(req.params.groupId), User.findOne({ clerkId })]);
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+    if (!(await groupHasPremium(group))) return res.status(403).json(STATS_PREMIUM_REQUIRED);
+
+    const csv = await buildAttendanceCsv(group, { scheduleId: req.query.scheduleId || undefined });
+    res.status(200).json({ filename: `${group.name.replace(/[^\w\-]+/g, "_")}_attendance.csv`, csv });
 });

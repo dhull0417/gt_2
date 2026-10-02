@@ -1764,14 +1764,14 @@ const EditScheduleScreen = () => {
                                     </TouchableOpacity>
                                 )}
 
-                                <Text style={s.fieldLabel}>RSVP Questions</Text>
+                                <Text style={s.fieldLabel}>RSVP Buttons & Questions</Text>
                                 {group?.isPremium !== true ? (
                                     <View style={s.premiumLockRow}>
                                         <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
                                         <View style={{ flex: 1 }}>
                                             <Text style={s.premiumLockTitle}>Premium</Text>
                                             <Text style={s.premiumLockText}>
-                                                Ask members your own questions when they RSVP. Requires the group owner to have Premium.
+                                                Rename the RSVP buttons and ask members your own questions when they RSVP. Requires the group owner to have Premium.
                                             </Text>
                                         </View>
                                     </View>
@@ -1785,9 +1785,9 @@ const EditScheduleScreen = () => {
                                             <Text style={{ fontSize: 15, fontWeight: "600", color: "#374151" }}>
                                                 {(targetSchedule?.defaultQuestions?.length ?? 0) > 0
                                                     ? `${targetSchedule!.defaultQuestions!.length} question${targetSchedule!.defaultQuestions!.length === 1 ? "" : "s"} — manage`
-                                                    : "Add questions"}
+                                                    : "Customize buttons & add questions"}
                                             </Text>
-                                            <Text style={s.premiumLockText}>Collect answers like dietary needs or skill level.</Text>
+                                            <Text style={s.premiumLockText}>Custom button text, plus questions like dietary needs or skill level.</Text>
                                         </View>
                                         <Feather name="chevron-right" size={20} color="#9CA3AF" />
                                     </TouchableOpacity>

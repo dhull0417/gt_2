@@ -1,3 +1,4 @@
+import { archiveMeetups } from "../utils/groupStats.js";
 import asyncHandler from "express-async-handler";
 import Meetup from "../models/meetup.model.js";
 import Group from "../models/group.model.js";
@@ -92,6 +93,18 @@ export const expirePastMeetups = asyncHandler(async (req, res) => {
 export const cleanupExpiredMeetups = asyncHandler(async (req, res) => {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 10);
+
+  // Keep each meetup's RSVPs for group stats before it's deleted. If archiving
+  // fails, skip the delete so nothing is lost; the next run tries again.
+  const old = await Meetup.find({ status: 'expired', startsAt: { $lte: cutoff } })
+    .select('group schedule name startsAt date members in out capacity guests')
+    .lean();
+  try {
+    await archiveMeetups(old);
+  } catch (err) {
+    console.error('[Cleanup] Archive failed, skipping delete:', err);
+    return res.status(500).json({ message: 'Archive failed; nothing deleted.' });
+  }
 
   const result = await Meetup.deleteMany({
     status: 'expired',

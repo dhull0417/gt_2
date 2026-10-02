@@ -60,6 +60,11 @@ const namedScheduleSchema = new mongoose.Schema({
     max: { type: Number, min: 1, default: null },
   }],
   defaultRidesEnabled: { type: Boolean, default: false },
+  // Premium custom RSVP button text (blank = the defaults "I'm In" / "I'm Out").
+  rsvpLabels: {
+    inLabel: { type: String, trim: true, default: "" },
+    outLabel: { type: String, trim: true, default: "" },
+  },
   // Premium custom RSVP questions asked when someone says they're In.
   defaultQuestions: [{
     prompt: { type: String, required: true, trim: true },
