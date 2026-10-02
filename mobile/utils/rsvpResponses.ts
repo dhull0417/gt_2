@@ -109,7 +109,8 @@ export const OUT_RESPONSES: RsvpResponse[] = [
   { text: "Big mistake. Huge.", emoji: "🏬" },
 ];
 
-export const getRandomRsvpResponse = (status: 'in' | 'out'): RsvpResponse => {
-  const list = status === 'in' ? IN_RESPONSES : OUT_RESPONSES;
+export const getRandomRsvpResponse = (status: 'in' | 'out', custom?: RsvpResponse[]): RsvpResponse => {
+  // A group that made its own reactions for this status only plays those.
+  const list = custom && custom.length > 0 ? custom : status === 'in' ? IN_RESPONSES : OUT_RESPONSES;
   return list[Math.floor(Math.random() * list.length)];
 };

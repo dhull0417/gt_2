@@ -60,11 +60,13 @@ const namedScheduleSchema = new mongoose.Schema({
     max: { type: Number, min: 1, default: null },
   }],
   defaultRidesEnabled: { type: Boolean, default: false },
-  // Premium custom RSVP button text (blank = the defaults "I'm In" / "I'm Out").
-  rsvpLabels: {
-    inLabel: { type: String, trim: true, default: "" },
-    outLabel: { type: String, trim: true, default: "" },
-  },
+  // Premium custom RSVP reactions: the catchphrase + emoji popup shown after tapping
+  // I'm In / I'm Out. When a group has any for a status, only those play for it.
+  rsvpResponses: [{
+    status: { type: String, enum: ['in', 'out'], required: true },
+    text: { type: String, required: true, trim: true },
+    emoji: { type: String, required: true, trim: true },
+  }],
   // Premium custom RSVP questions asked when someone says they're In.
   defaultQuestions: [{
     prompt: { type: String, required: true, trim: true },

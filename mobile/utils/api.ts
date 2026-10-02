@@ -67,7 +67,6 @@ export interface NamedSchedule extends Schedule {
   defaultRidesEnabled?: boolean;
   /** Premium custom RSVP questions. */
   defaultQuestions?: RsvpQuestion[];
-  rsvpLabels?: RsvpLabels;
   /** Premium priority RSVP: ranked members get RSVP windows before everyone else. */
   priorityEnabled?: boolean;
   priorityOrder?: string[];
@@ -129,6 +128,8 @@ export interface Group {
    */
   schedule: Schedule | null;
   owner: string;
+  /** Premium custom RSVP reactions (catchphrase + emoji). */
+  rsvpResponses?: GroupRsvpResponse[];
   timezone: string;
   /** Fallback location/capacity for one-off meetups not tied to any schedule. */
   defaultLocation: string;
@@ -172,9 +173,14 @@ export interface GroupStats {
   meetups: { id: string; name: string; date: string; in: number; out: number; guests: number; capacity: number }[];
 }
 
-export interface RsvpLabels { inLabel: string; outLabel: string }
-
 export interface RsvpAnswer { user: string; question: string; value: string }
+
+export interface GroupRsvpResponse {
+  _id: string;
+  status: 'in' | 'out';
+  text: string;
+  emoji: string;
+}
 
 export interface Meetup {
   _id: string;
@@ -185,6 +191,8 @@ export interface Meetup {
     image?: string;
     /** Computed by the server: true while the group's owner has Premium. Absent = unknown (treat as enabled; the server enforces). */
     isPremium?: boolean;
+    /** Premium custom RSVP reactions (only present while the owner has Premium). */
+    rsvpResponses?: GroupRsvpResponse[];
   };
   /** The named schedule (Group.schedules[i]._id) this was generated from — null for one-off meetups. */
   schedule?: string | null;
@@ -218,8 +226,6 @@ export interface Meetup {
   priorityTiers?: { members: string[]; opensAt: string }[];
   questions?: RsvpQuestion[];
   answers?: RsvpAnswer[];
-  /** Premium custom button text (blank/absent = defaults). */
-  rsvpLabels?: RsvpLabels;
   /** Premium team split. */
   teams?: { _id: string; name: string; members: string[] }[];
   bringItems?: BringItem[];
@@ -571,10 +577,17 @@ export const groupApi = {
     scheduleId: string,
     data: {
       questions?: { _id?: string; prompt: string; type: RsvpQuestion['type']; options?: string[]; required?: boolean }[];
-      labels?: RsvpLabels;
     },
   ): Promise<{ message: string; group: Group }> => {
     const response = await api.put<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}/questions`, data);
+    return response.data;
+  },
+  updateRsvpResponses: async (
+    api: AxiosInstance,
+    groupId: string,
+    responses: { _id?: string; status: 'in' | 'out'; text: string; emoji: string }[],
+  ): Promise<{ message: string; group: Group }> => {
+    const response = await api.put<{ message: string; group: Group }>(`/api/groups/${groupId}/rsvp-responses`, { responses });
     return response.data;
   },
   getGroupStats: async (api: AxiosInstance, groupId: string, scheduleId?: string): Promise<GroupStats> => {

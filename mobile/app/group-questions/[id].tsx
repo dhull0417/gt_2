@@ -40,8 +40,6 @@ export default function GroupQuestionsScreen() {
   const isPremium = group?.isPremium === true;
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [inLabel, setInLabel] = useState('');
-  const [outLabel, setOutLabel] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -51,8 +49,6 @@ export default function GroupQuestionsScreen() {
       key: newKey(), _id: q._id, prompt: q.prompt, type: q.type,
       options: q.type === 'choice' ? [...q.options] : ['', ''], required: q.required,
     })));
-    setInLabel(schedule.rsvpLabels?.inLabel ?? '');
-    setOutLabel(schedule.rsvpLabels?.outLabel ?? '');
     setLoaded(true);
   }, [schedule, loaded]);
 
@@ -82,7 +78,6 @@ export default function GroupQuestionsScreen() {
           options: d.type === 'choice' ? d.options.map((o) => o.trim()).filter(Boolean) : [],
           required: d.required,
         })),
-        labels: { inLabel: inLabel.trim(), outLabel: outLabel.trim() },
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
@@ -119,7 +114,7 @@ export default function GroupQuestionsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
           <Feather name="arrow-left" size={24} color="#6B7280" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>RSVP Options</Text>
+        <Text style={styles.headerTitle}>RSVP Questions</Text>
         <TouchableOpacity onPress={save} disabled={saving || !isPremium} style={{ minWidth: 40, alignItems: 'flex-end' }}>
           {saving
             ? <ActivityIndicator size="small" color="#4A90E2" />
@@ -130,7 +125,7 @@ export default function GroupQuestionsScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 140 }}>
           <Text style={styles.sub}>
-            Customize the RSVP buttons for "{schedule.name}" and ask members questions when they RSVP in. Everyone going can see the answers on the meetup. Up to {MAX_QUESTIONS} questions.
+            Ask members something when they RSVP "I'm In" to "{schedule.name}". Everyone going can see the answers on the meetup. Up to {MAX_QUESTIONS} questions.
           </Text>
 
           {!isPremium ? (
@@ -143,29 +138,6 @@ export default function GroupQuestionsScreen() {
             </View>
           ) : (
             <>
-              <Text style={styles.sectionLabel}>Button text</Text>
-              <View style={styles.card}>
-                <Text style={styles.qLabel}>In button</Text>
-                <TextInput
-                  style={[styles.input, { marginTop: 6, marginBottom: 12 }]}
-                  value={inLabel}
-                  onChangeText={setInLabel}
-                  placeholder="I'm In"
-                  placeholderTextColor="#9CA3AF"
-                  maxLength={20}
-                />
-                <Text style={styles.qLabel}>Out button</Text>
-                <TextInput
-                  style={[styles.input, { marginTop: 6 }]}
-                  value={outLabel}
-                  onChangeText={setOutLabel}
-                  placeholder="I'm Out"
-                  placeholderTextColor="#9CA3AF"
-                  maxLength={20}
-                />
-                <Text style={styles.hint}>Make the buttons yours, emoji included, e.g. "Count me in 🎲". Leave blank for the defaults.</Text>
-              </View>
-
               <Text style={styles.sectionLabel}>Questions</Text>
               {drafts.map((d, i) => (
                 <View key={d.key} style={[styles.card, { marginTop: i === 0 ? 0 : 14 }]}>

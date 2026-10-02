@@ -1,5 +1,5 @@
-import { useMutation } from "@tanstack/react-query";
-import { useApiClient } from "../utils/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useApiClient, Meetup } from "../utils/api";
 import { Alert } from "react-native";
 import { emitRsvpResponse } from "../utils/rsvpResponseBus";
 import { promptForNotificationPermissionOnFirstRsvpIn } from "./usePushNotifications";
@@ -15,12 +15,20 @@ import { useIsOnline } from "./useIsOnline";
 export const useRsvp = () => {
   const api = useApiClient();
   const isOnline = useIsOnline();
+  const queryClient = useQueryClient();
 
   const mutation = useMutation<unknown, any, RsvpVariables>({
     mutationKey: RSVP_MUTATION_KEY,
 
     onSuccess: (_data, variables) => {
-      if (!variables.skipResponsePopup) emitRsvpResponse(variables.status);
+      if (!variables.skipResponsePopup) {
+        // The group's own reactions (Premium) replace the defaults for that status.
+        const meetup = queryClient.getQueryData<Meetup[]>(['meetups'])?.find((m) => m._id === variables.meetupId);
+        const custom = meetup?.group?.isPremium === false
+          ? undefined
+          : meetup?.group?.rsvpResponses?.filter((r) => r.status === variables.status);
+        emitRsvpResponse(variables.status, custom);
+      }
       if (variables.status === 'in') promptForNotificationPermissionOnFirstRsvpIn(api);
     },
     onError: (error: any) => {

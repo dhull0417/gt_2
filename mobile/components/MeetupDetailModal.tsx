@@ -44,7 +44,7 @@ import MeetupAssignments, { AssignmentsSheet } from '@/components/MeetupAssignme
 import { assignmentsActive, summarizeAssignments } from '@/utils/assignments';
 import MeetupQuestions from '@/components/MeetupQuestions';
 import MeetupTeams from '@/components/MeetupTeams';
-import { questionsActive, hasAnsweredAny, rsvpLabel } from '@/utils/questions';
+import { questionsActive, hasAnsweredAny } from '@/utils/questions';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
@@ -1030,7 +1030,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                         style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                                                     >
                                                         <Animated.Text style={[{ color: inFilled ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 18 }, inTextStyle]}>
-                                                            {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? (canBump ? "Priority In" : "Join Waitlist") : rsvpLabel(meetup, 'in')}
+                                                            {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? (canBump ? "Priority In" : "Join Waitlist") : "I'm In"}
                                                         </Animated.Text>
                                                     </TouchableOpacity>
                                                     <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />
@@ -1062,7 +1062,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                         disabled={isRsvping}
                                                         style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                                                     >
-                                                        <Animated.Text style={[{ color: outFilled ? 'white' : '#FF7A6E', fontWeight: 'bold', fontSize: 18 }, outTextStyle]} numberOfLines={1} adjustsFontSizeToFit>{rsvpLabel(meetup, 'out')}</Animated.Text>
+                                                        <Animated.Text style={[{ color: outFilled ? 'white' : '#FF7A6E', fontWeight: 'bold', fontSize: 18 }, outTextStyle]}>I'm Out</Animated.Text>
                                                     </TouchableOpacity>
                                                     <View style={{ width: 1, backgroundColor: outFilled ? 'rgba(255,255,255,0.35)' : '#FFE4E1' }} />
                                                     <TouchableOpacity

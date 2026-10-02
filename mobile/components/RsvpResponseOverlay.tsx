@@ -26,8 +26,8 @@ const RsvpResponseOverlay = () => {
   const rotate = useSharedValue(0);
   const emojiBounce = useSharedValue(0);
 
-  useEffect(() => subscribeRsvpResponse((status) => {
-    setCurrent({ ...getRandomRsvpResponse(status), status });
+  useEffect(() => subscribeRsvpResponse((status, custom) => {
+    setCurrent({ ...getRandomRsvpResponse(status, custom), status });
   }), []);
 
   const dismiss = () => {

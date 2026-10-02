@@ -285,6 +285,7 @@ const AuthLayout = () => {
       'group-priority',
       'group-questions',
       'group-stats',
+      'group-rsvp-responses',
       'group-edit-jit',
       'group-settings',
       'group-chat',
@@ -351,6 +352,7 @@ const AuthLayout = () => {
           <Stack.Screen name="group-priority" options={{ headerShown: false }} />
           <Stack.Screen name="group-questions" options={{ headerShown: false }} />
           <Stack.Screen name="group-stats" options={{ headerShown: false }} />
+          <Stack.Screen name="group-rsvp-responses" options={{ headerShown: false }} />
           <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
           <Stack.Screen name="group-settings" options={{ headerShown: false }} />
           <Stack.Screen name="group-chat" options={{ headerShown: false }} />

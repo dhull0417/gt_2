@@ -34,11 +34,6 @@ const meetupSchema = new mongoose.Schema({
     max: { type: Number, default: null },
   }],
   ridesEnabled: { type: Boolean, default: false },
-  // Premium custom RSVP button text, copied from the series (blank = defaults).
-  rsvpLabels: {
-    inLabel: { type: String, default: "" },
-    outLabel: { type: String, default: "" },
-  },
   // Premium team split: named teams of people who are In.
   teams: [{
     name: { type: String, required: true },

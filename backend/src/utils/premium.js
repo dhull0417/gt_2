@@ -1,5 +1,6 @@
 import { ENV } from "../config/env.js";
 import User from "../models/user.model.js";
+import Group from "../models/group.model.js";
 
 // Clerk ids that count as Premium without a subscription (testing only).
 // Evaluated at read time so nothing is ever written to the database.
@@ -61,10 +62,24 @@ export const withGroupPremium = async (meetups) => {
     : [];
   const premiumByOwner = new Map(owners.map((o) => [o._id.toString(), hasPremium(o)]));
 
+  // Custom RSVP reactions ride along with the group (only while its owner has Premium).
+  const groupIds = [...new Set(plain.map((m) => m?.group?._id?.toString()).filter(Boolean))];
+  const groups = groupIds.length
+    ? await Group.find({ _id: { $in: groupIds } }).select("rsvpResponses").lean()
+    : [];
+  const responsesByGroup = new Map(
+    groups.map((g) => [
+      g._id.toString(),
+      (g.rsvpResponses || []).map((r) => ({ _id: r._id.toString(), status: r.status, text: r.text, emoji: r.emoji })),
+    ])
+  );
+
   const result = plain.map((m) => {
     const ownerId = m?.group?.owner?.toString();
     if (!ownerId) return m;
-    return { ...m, group: { ...m.group, isPremium: premiumByOwner.get(ownerId) === true } };
+    const isPremium = premiumByOwner.get(ownerId) === true;
+    const rsvpResponses = isPremium ? responsesByGroup.get(m.group._id.toString()) || [] : [];
+    return { ...m, group: { ...m.group, isPremium, rsvpResponses } };
   });
   return isArray ? result : result[0];
 };

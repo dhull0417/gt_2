@@ -12,11 +12,3 @@ export const hasAnsweredAny = (meetup: Meetup, userId: string): boolean =>
 
 export const displayAnswer = (type: 'text' | 'choice' | 'yesno', value: string): string =>
   type === 'yesno' ? (value === 'yes' ? 'Yes' : 'No') : value;
-
-/** Button text for the In/Out RSVP buttons: the series' custom text (Premium) or the default. */
-export const rsvpLabel = (meetup: Meetup, which: 'in' | 'out'): string => {
-  const custom = meetup.group?.isPremium !== false
-    ? (which === 'in' ? meetup.rsvpLabels?.inLabel : meetup.rsvpLabels?.outLabel)?.trim()
-    : '';
-  return custom || (which === 'in' ? "I'm In" : "I'm Out");
-};

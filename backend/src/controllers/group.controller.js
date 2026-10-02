@@ -11,7 +11,7 @@ import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { generateMeetupsForGroup, generateMeetupsForSchedule, refreshOverrideMeetupWindows, refreshOverrideAssignments } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { buildGroupStats, buildAttendanceCsv } from "../utils/groupStats.js";
-import { parseQuestions, parseLabels, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
+import { parseQuestions, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
 import { refreshPriorityTiers, MAX_PRIORITY_TIERS, MAX_WINDOW_MINUTES } from "../utils/priorityRsvp.js";
 import { hasPremium, groupHasPremium } from "../utils/premium.js";
 
@@ -1278,24 +1278,60 @@ export const updateScheduleQuestions = asyncHandler(async (req, res) => {
         ? { questions: target.defaultQuestions }
         : parseQuestions(req.body.questions, target.defaultQuestions);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
-    const parsedLabels = req.body.labels === undefined
-        ? { labels: { inLabel: target.rsvpLabels?.inLabel || "", outLabel: target.rsvpLabels?.outLabel || "" } }
-        : parseLabels(req.body.labels);
-    if (parsedLabels.error) return res.status(400).json({ error: parsedLabels.error });
-
-    const wantsPremium = parsed.questions.length > 0 || parsedLabels.labels.inLabel || parsedLabels.labels.outLabel;
-    if (wantsPremium && !(await groupHasPremium(group))) {
-        return res.status(403).json({ error: "premium_required", message: "Custom RSVP questions and buttons require GroupThat Premium." });
+    if (parsed.questions.length > 0 && !(await groupHasPremium(group))) {
+        return res.status(403).json({ error: "premium_required", message: "Custom RSVP questions require GroupThat Premium." });
     }
 
     target.defaultQuestions = parsed.questions;
-    target.rsvpLabels = parsedLabels.labels;
     await group.save();
     await refreshSeriesQuestions(group, target);
 
     res.status(200).json({ message: "RSVP questions updated.", group: withLegacyScheduleMirror(group.toObject()) });
 });
 
+
+const MAX_RSVP_RESPONSES = 20; // per status
+
+/**
+ * @desc    Set a group's custom RSVP reactions (Premium; owner/moderators). The full
+ *          list is replaced. Ids of existing reactions are kept.
+ * @route   PUT /api/groups/:groupId/rsvp-responses
+ * @body    { responses: [{ _id?, status: 'in'|'out', text, emoji }] }
+ */
+export const updateRsvpResponses = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const group = await Group.findById(req.params.groupId);
+    const user = await User.findOne({ clerkId });
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const raw = req.body.responses;
+    if (!Array.isArray(raw)) return res.status(400).json({ error: "Invalid reactions." });
+    const known = new Set((group.rsvpResponses || []).map(r => r._id.toString()));
+    const counts = { in: 0, out: 0 };
+    const clean = [];
+    for (const r of raw) {
+        if (r?.status !== 'in' && r?.status !== 'out') return res.status(400).json({ error: "Each reaction must be for In or Out." });
+        const text = typeof r.text === 'string' ? r.text.trim() : '';
+        const emoji = typeof r.emoji === 'string' ? r.emoji.trim() : '';
+        if (!text) return res.status(400).json({ error: "Each reaction needs a catchphrase." });
+        if (text.length > 80) return res.status(400).json({ error: "Catchphrases can be at most 80 characters." });
+        if (!emoji || emoji.length > 16) return res.status(400).json({ error: "Each reaction needs an emoji." });
+        if (++counts[r.status] > MAX_RSVP_RESPONSES) return res.status(400).json({ error: `You can add at most ${MAX_RSVP_RESPONSES} reactions for each of In and Out.` });
+        const entry = { status: r.status, text, emoji };
+        if (r._id && known.has(String(r._id))) entry._id = r._id;
+        clean.push(entry);
+    }
+    if (clean.length > 0 && !(await groupHasPremium(group))) {
+        return res.status(403).json({ error: "premium_required", message: "Custom RSVP reactions require GroupThat Premium." });
+    }
+
+    group.rsvpResponses = clean;
+    await group.save();
+    // Cached meetups carry a snapshot of the group, so nudge them to re-sync.
+    await touchGroupMeetups(group._id);
+    res.status(200).json({ message: "RSVP reactions updated.", group: withLegacyScheduleMirror(group.toObject()) });
+});
 
 const STATS_PREMIUM_REQUIRED = {
     error: "premium_required",

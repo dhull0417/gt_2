@@ -16,6 +16,7 @@ import {
   updateSchedulePriority,
   updateScheduleQuestions,
   getGroupStats,
+  updateRsvpResponses,
   exportGroupAttendance,
   deleteSchedule,
   updateModerators,
@@ -100,6 +101,7 @@ router.patch("/:groupId/schedules/:scheduleId", protectRoute, updateSchedule);
 router.put("/:groupId/schedules/:scheduleId/priority", protectRoute, updateSchedulePriority);
 router.put("/:groupId/schedules/:scheduleId/questions", protectRoute, updateScheduleQuestions);
 router.get("/:groupId/stats", protectRoute, getGroupStats);
+router.put("/:groupId/rsvp-responses", protectRoute, updateRsvpResponses);
 router.get("/:groupId/stats/export", protectRoute, exportGroupAttendance);
 router.delete("/:groupId/schedules/:scheduleId", protectRoute, deleteSchedule);
 router.post("/:groupId/meetups", protectRoute, createOneOffMeetup);
