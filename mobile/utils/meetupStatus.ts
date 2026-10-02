@@ -120,3 +120,22 @@ export const priorityGroupNumber = (meetup: Meetup, userId: string | undefined):
   const k = tierIndexOf(meetup, userId);
   return k >= 0 ? k + 1 : null;
 };
+
+/**
+ * True when the meetup is full and tapping In would bump a lower-priority
+ * person out to make room for this user (mirrors the server's victim rule:
+ * someone In from a strictly lower group, unlisted members counting lowest).
+ */
+export const canPriorityBump = (meetup: Meetup, userId: string | undefined): boolean => {
+  if (!userId || !tiersActive(meetup)) return false;
+  if (!(meetup.capacity > 0 && meetup.in.length >= meetup.capacity)) return false;
+  if (hasId(meetup.in, userId) || hasId(meetup.waitlist, userId)) return false;
+  const k = tierIndexOf(meetup, userId);
+  if (k < 0) return false;
+  return meetup.in.some((u) => {
+    const id = idOf(u);
+    if (id === userId) return false;
+    const j = tierIndexOf(meetup, id);
+    return j < 0 || j > k;
+  });
+};

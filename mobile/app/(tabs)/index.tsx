@@ -13,6 +13,8 @@ import { useFocusEffect, useRouter, useLocalSearchParams, Link } from 'expo-rout
 import MeetupDetailModal from '@/components/MeetupDetailModal';
 import { AssignmentsSheet } from '@/components/MeetupAssignments';
 import { assignmentsActive } from '@/utils/assignments';
+import { QuestionsSheet } from '@/components/MeetupQuestions';
+import { questionsActive, hasAnsweredAny } from '@/utils/questions';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
@@ -147,6 +149,9 @@ const DashboardScreen = () => {
   const [selectedMeetup, setSelectedMeetup] = useState<Meetup | null>(null);
   // Meetup whose items-to-bring / rides sheet is open (shown right after "I'm In" on a card).
   const [assignmentsMeetup, setAssignmentsMeetup] = useState<Meetup | null>(null);
+  const [questionsMeetup, setQuestionsMeetup] = useState<Meetup | null>(null);
+  // Questions queued to open after the assignments sheet closes.
+  const pendingQuestions = React.useRef<Meetup | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
 
   const { data: meetups, isLoading, isError, refetch } = useGetMeetups();
@@ -313,7 +318,14 @@ const DashboardScreen = () => {
           const me = currentUser._id;
           const onWaitlist = updated.waitlist?.some(u => getUserId(u) === me);
           const alreadyChose = updated.bringClaims?.some(c => c.user === me) || updated.rides?.some(r => r.user === me);
-          if (!onWaitlist && !alreadyChose) setAssignmentsMeetup(updated);
+          if (!onWaitlist && !alreadyChose) {
+            setAssignmentsMeetup(updated);
+            pendingQuestions.current = questionsActive(updated) && !hasAnsweredAny(updated, me) ? updated : null;
+          }
+        } else if (status === 'in' && updated && questionsActive(updated)) {
+          const me = currentUser._id;
+          const onWaitlist = updated.waitlist?.some(u => getUserId(u) === me);
+          if (!onWaitlist && !hasAnsweredAny(updated, me)) setQuestionsMeetup(updated);
         }
         if (status === 'in' && guestCount > 0) {
           meetupApi.setGuestCount(api, meetup._id, guestCount)
@@ -559,12 +571,31 @@ const DashboardScreen = () => {
           visible
           meetup={assignmentsMeetup}
           currentUserId={currentUser._id}
-          onClose={() => setAssignmentsMeetup(null)}
+          onClose={() => {
+            setAssignmentsMeetup(null);
+            if (pendingQuestions.current) {
+              setQuestionsMeetup(pendingQuestions.current);
+              pendingQuestions.current = null;
+            }
+          }}
           onUpdated={() => {
             queryClient.invalidateQueries({ queryKey: ['meetups'] });
             broadcastMeetupUpdate(getToken, assignmentsMeetup.group._id);
           }}
           onStale={() => queryClient.invalidateQueries({ queryKey: ['meetups'] })}
+        />
+      )}
+
+      {questionsMeetup && currentUser && (
+        <QuestionsSheet
+          visible
+          meetup={questionsMeetup}
+          currentUserId={currentUser._id}
+          onClose={() => setQuestionsMeetup(null)}
+          onUpdated={() => {
+            queryClient.invalidateQueries({ queryKey: ['meetups'] });
+            broadcastMeetupUpdate(getToken, questionsMeetup.group._id);
+          }}
         />
       )}
 

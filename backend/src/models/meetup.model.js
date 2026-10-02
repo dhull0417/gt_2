@@ -34,6 +34,20 @@ const meetupSchema = new mongoose.Schema({
     max: { type: Number, default: null },
   }],
   ridesEnabled: { type: Boolean, default: false },
+  // Premium custom RSVP questions (copied from the series; _ids match the series')
+  // and the answers people gave.
+  questions: [{
+    prompt: { type: String, required: true },
+    type: { type: String, enum: ['text', 'choice', 'yesno'], default: 'text' },
+    options: [String],
+    required: { type: Boolean, default: false },
+  }],
+  answers: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    question: { type: mongoose.Schema.Types.ObjectId },
+    value: { type: String },
+    _id: false,
+  }],
   // who is bringing what (a user may claim several items)
   bringClaims: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },

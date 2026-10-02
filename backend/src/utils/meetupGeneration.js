@@ -149,6 +149,7 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         minAttendees: schedule.defaultMinAttendees || 0,
         bringItems: (schedule.defaultBringItems || []).map((i) => ({ _id: i._id, name: i.name, max: i.max ?? null })),
         ridesEnabled: !!schedule.defaultRidesEnabled,
+        questions: (schedule.defaultQuestions || []).map((q) => ({ _id: q._id, prompt: q.prompt, type: q.type, options: q.options || [], required: !!q.required })),
         priorityTiers,
         priorityOpened,
         // A meetup created after its RSVP deadline already passed (e.g. a series

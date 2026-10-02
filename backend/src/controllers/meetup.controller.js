@@ -12,7 +12,8 @@ import { canManageGroup, canManageMember } from "./group.controller.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { groupHasPremium, withGroupPremium } from "../utils/premium.js";
 import { evaluateMinimumHeadcount, evaluateDueMeetups } from "../utils/minimumHeadcount.js";
-import { canRsvpNow, userOpensAt, userTierIndex, notifyOpenTiers, resolveRsvpOpen } from "../utils/priorityRsvp.js";
+import { pruneAnswers, MAX_ANSWER_LENGTH } from "../utils/rsvpQuestions.js";
+import { canRsvpNow, userOpensAt, userTierIndex, pickWaitlistIndex, notifyOpenTiers, resolveRsvpOpen } from "../utils/priorityRsvp.js";
 
 /**
  * @desc    Get all meetups for the current user
@@ -186,13 +187,16 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             // Leaving frees up whatever they'd signed up to bring and their ride seat.
             if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter(c => !c.user.equals(user._id));
             if (meetup.rides?.length) meetup.rides = meetup.rides.filter(r => !r.user.equals(user._id));
+            if (meetup.answers?.length) meetup.answers = meetup.answers.filter(a => !a.user.equals(user._id));
 
             // Auto-promote the first person in the waitlist if capacity allows
             // (Premium only; without it people already waitlisted stay put and
             // can tap "I'm In" themselves once a spot is open).
             if (meetup.capacity > 0 && meetup.waitlist.length > 0 && meetup.in.length < meetup.capacity
                 && await getWaitlistEnabled()) {
-                promotedUserId = meetup.waitlist.shift();
+                const pickIdx = pickWaitlistIndex(meetup, (meetup.priorityTiers?.length ?? 0) > 0);
+                promotedUserId = meetup.waitlist[pickIdx];
+                meetup.waitlist.splice(pickIdx, 1);
                 meetup.in.push(promotedUserId);
             }
         } else if (status === 'in') {
@@ -221,6 +225,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
                     meetup.waitlist.unshift(victimId);
                     if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter(c => !c.user.equals(victimId));
                     if (meetup.rides?.length) meetup.rides = meetup.rides.filter(r => !r.user.equals(victimId));
+                    if (meetup.answers?.length) meetup.answers = meetup.answers.filter(a => !a.user.equals(victimId));
                     bumpedUserId = victimId;
                     meetup.in.push(user._id);
                 } else {
@@ -875,4 +880,71 @@ export const setAssignments = asyncHandler(async (req, res) => {
         .populate('members', 'firstName lastName profilePicture clerkId');
 
     res.status(200).json({ message: "Assignments updated.", meetup: await withGroupPremium(updatedMeetup) });
+});
+
+
+/**
+ * @desc    Save the signed-in member's answers to the meetup's custom RSVP questions (Premium).
+ *          An empty value clears that answer.
+ * @route   PUT /api/meetups/:meetupId/answers
+ * @body    { answers: [{ question, value }] }
+ */
+export const setAnswers = asyncHandler(async (req, res) => {
+    const { meetupId } = req.params;
+    const { answers } = req.body;
+    const { userId: clerkId } = getAuth(req);
+
+    const user = await User.findOne({ clerkId }).lean();
+    if (!user) return res.status(404).json({ error: "User not found." });
+    if (!Array.isArray(answers)) return res.status(400).json({ error: "Invalid answers." });
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        const meetup = await Meetup.findById(meetupId);
+        if (!meetup) return res.status(404).json({ error: "Meetup not found." });
+        if (meetup.status !== 'scheduled') return res.status(400).json({ error: "This meetup is closed for changes." });
+        if (!meetup.members.some(id => id.equals(user._id))) return res.status(403).json({ error: "Not a member of this meetup." });
+        if (attempt === 1) {
+            const groupDoc = await Group.findById(meetup.group).select('owner').lean();
+            if (!(await groupHasPremium(groupDoc))) {
+                return res.status(403).json({ error: "premium_required", message: "Custom RSVP questions require GroupThat Premium." });
+            }
+        }
+        if (!meetup.in.some(id => id.equals(user._id)) && !meetup.waitlist.some(id => id.equals(user._id))) {
+            return res.status(400).json({ error: "RSVP first to answer the questions." });
+        }
+
+        const byId = new Map(meetup.questions.map(q => [q._id.toString(), q]));
+        const next = new Map();
+        for (const a of answers) {
+            const q = byId.get(String(a?.question));
+            if (!q) return res.status(400).json({ error: "That question no longer exists." });
+            const value = typeof a.value === 'string' ? a.value.trim() : '';
+            if (value.length > MAX_ANSWER_LENGTH) return res.status(400).json({ error: `Answers can be at most ${MAX_ANSWER_LENGTH} characters.` });
+            if (value && pruneAnswers([{ question: q._id, value }], [q]).length === 0) {
+                return res.status(400).json({ error: `Pick one of the choices for "${q.prompt}".` });
+            }
+            next.set(q._id.toString(), value);
+        }
+
+        const kept = meetup.answers.filter(a => !(a.user.equals(user._id) && next.has(a.question.toString())));
+        for (const [qid, value] of next) {
+            if (value) kept.push({ user: user._id, question: new mongoose.Types.ObjectId(qid), value });
+        }
+        meetup.answers = kept;
+        meetup.increment();
+        try {
+            await meetup.save();
+            break;
+        } catch (err) {
+            if (err instanceof mongoose.Error.VersionError && attempt < MAX_RETRIES) continue;
+            throw err;
+        }
+    }
+
+    const updatedMeetup = await Meetup.findById(meetupId)
+        .populate('group', 'name owner moderators timezone defaultLocation')
+        .populate('members', 'firstName lastName profilePicture clerkId');
+
+    res.status(200).json({ message: "Answers saved.", meetup: await withGroupPremium(updatedMeetup) });
 });

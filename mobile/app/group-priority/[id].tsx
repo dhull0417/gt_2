@@ -8,6 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/expo';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
+import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { useApiClient, groupApi, PriorityTierDef, User } from '@/utils/api';
 import { broadcastGroupUpdate, broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import { getUserDisplayName } from '@/utils/groupDisplay';
@@ -16,7 +17,7 @@ import DraggableList from '@/components/DraggableList';
 import NativeTimePicker from '@/components/NativeTimePicker';
 
 const ROW_H = 60;
-const DIV_H = 40;
+const DIV_H = 56;
 const MAX_TIERS = 20;
 
 interface TierDraft { key: string; size: string; hours: string }
@@ -50,6 +51,8 @@ export default function GroupPriorityScreen() {
   const queryClient = useQueryClient();
   const { getToken } = useAuth();
   const { data: group, isLoading } = useGetGroupDetails(id);
+
+  const { data: allMeetups } = useGetMeetups();
 
   const schedule = useMemo(() => group?.schedules?.find((s) => s._id === scheduleId) ?? null, [group, scheduleId]);
 
@@ -92,6 +95,25 @@ export default function GroupPriorityScreen() {
     setLoaded(true);
   }, [group, schedule, loaded, membersById]);
 
+  // Saved open times for this series' next upcoming meetup, shown per group so the
+  // organizer can sanity-check the cascade. Reflects what's saved, not unsaved edits.
+  const preview = useMemo(() => {
+    const now = Date.now();
+    const next = (allMeetups ?? [])
+      .filter((m) => m.status === 'scheduled' && m.schedule === scheduleId && new Date(m.date).getTime() >= now && (m.priorityTiers?.length ?? 0) > 0)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+    if (!next) return null;
+    const fmt = (iso: string) => {
+      const d = new Date(iso);
+      return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: next.timezone })} at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: next.timezone })}`;
+    };
+    return {
+      name: next.name,
+      groups: next.priorityTiers!.map((t) => fmt(t.opensAt)),
+      everyone: next.rsvpOpenDate ? fmt(next.rsvpOpenDate) : null,
+    };
+  }, [allMeetups, scheduleId]);
+
   const noRsvpWindow = schedule ? schedule.generationLeadDays == null : false;
   const isPremium = group?.isPremium === true;
 
@@ -116,6 +138,7 @@ export default function GroupPriorityScreen() {
             <Text style={styles.dividerSub}>
               {count} {count === 1 ? 'person' : 'people'} · {formatWindow(t.hours)}{quietEnabled ? ' awake time' : ''} {k === 0 ? 'from the earliest RSVP time' : 'once the group above is done'}
             </Text>
+            {preview?.groups[k] ? <Text style={styles.dividerSub}>Opens {preview.groups[k]}</Text> : null}
           </View>
         ),
       });
@@ -131,7 +154,7 @@ export default function GroupPriorityScreen() {
         node: (
           <View style={[styles.divider, { backgroundColor: '#F3F4F6' }]}>
             <Text style={[styles.dividerTitle, { color: '#6B7280' }]}>Everyone else</Text>
-            <Text style={styles.dividerSub}>Opens after the last group's window</Text>
+            <Text style={styles.dividerSub}>Opens after the last group's window{preview?.everyone ? ` · ${preview.everyone}` : ''}</Text>
           </View>
         ),
       });
@@ -139,7 +162,7 @@ export default function GroupPriorityScreen() {
       for (; pos < n; pos++) { slotTops.push(top); top += ROW_H; }
     }
     return { slotTops, decorations, height: top };
-  }, [orderIds.length, tiers, quietEnabled]);
+  }, [orderIds.length, tiers, quietEnabled, preview]);
 
   const rankOf = (index: number) => index + 1;
 

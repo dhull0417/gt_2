@@ -5,7 +5,7 @@ import ReanimatedAnimated from 'react-native-reanimated';
 import { Meetup, User } from '@/utils/api';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { RsvpBreather } from '@/components/RsvpBreather';
-import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor } from '@/utils/meetupStatus';
+import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor, canPriorityBump } from '@/utils/meetupStatus';
 
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
@@ -100,6 +100,7 @@ export const MeetupCard = ({
   // non-Premium group there is nothing to join, so the button reads "Full".
   // (Only `=== false` counts, so a missing flag never blocks; the server enforces.)
   const waitlistLocked = isFull && !isIn && !isWaitlisted && meetup.group?.isPremium === false;
+  const canBump = canPriorityBump(meetup, currentUser?._id);
   const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
   const outUnselected = !isOut;
   const isUndecided = inUnselected && outUnselected;
@@ -247,7 +248,7 @@ export const MeetupCard = ({
                     {/* Split I'm In button: left 70% = RSVP in, right 30% = open guest counter */}
                     <View style={{
                       flex: 1, borderRadius: 12, overflow: 'hidden', height: 48,
-                      backgroundColor: isWaitlisted ? '#2563EB' : waitlistLocked ? '#9CA3AF' : (isFull && !isIn) ? '#F97316' : inFilled ? '#4FD1C5' : 'white',
+                      backgroundColor: isWaitlisted ? '#2563EB' : waitlistLocked ? '#9CA3AF' : (isFull && !isIn) ? (canBump ? '#4FD1C5' : '#F97316') : inFilled ? '#4FD1C5' : 'white',
                     }}>
                       <ReanimatedAnimated.View style={[{
                         flex: 1, flexDirection: 'row', borderRadius: 12,
@@ -260,7 +261,7 @@ export const MeetupCard = ({
                           style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                         >
                           <ReanimatedAnimated.Text style={[{ color: inFilled ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 16 }, inTextStyle]}>
-                            {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+                            {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? (canBump ? "Priority In" : "Join Waitlist") : "I'm In"}
                           </ReanimatedAnimated.Text>
                         </TouchableOpacity>
                         <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />

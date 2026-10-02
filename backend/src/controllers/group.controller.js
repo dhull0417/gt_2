@@ -10,6 +10,7 @@ import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { generateMeetupsForGroup, generateMeetupsForSchedule, refreshOverrideMeetupWindows, refreshOverrideAssignments } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
+import { parseQuestions, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
 import { refreshPriorityTiers, MAX_PRIORITY_TIERS, MAX_WINDOW_MINUTES } from "../utils/priorityRsvp.js";
 import { hasPremium, groupHasPremium } from "../utils/premium.js";
 
@@ -1245,4 +1246,36 @@ export const updateSchedulePriority = asyncHandler(async (req, res) => {
     await refreshPriorityTiers(group, target);
 
     res.status(200).json({ message: "Priority RSVP updated.", group: withLegacyScheduleMirror(group.toObject()) });
+});
+
+
+/**
+ * @desc    Set a series' custom RSVP questions (Premium). Upcoming meetups get the new
+ *          questions; answers to questions that still exist are kept.
+ * @route   PUT /api/groups/:groupId/schedules/:scheduleId/questions
+ * @body    { questions: [{ _id?, prompt, type: 'text'|'choice'|'yesno', options?, required? }] }
+ */
+export const updateScheduleQuestions = asyncHandler(async (req, res) => {
+    const { groupId, scheduleId } = req.params;
+    const { userId: clerkId } = getAuth(req);
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const target = group.schedules.id(scheduleId);
+    if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
+
+    const parsed = parseQuestions(req.body.questions, target.defaultQuestions);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    if (parsed.questions.length > 0 && !(await groupHasPremium(group))) {
+        return res.status(403).json({ error: "premium_required", message: "Custom RSVP questions require GroupThat Premium." });
+    }
+
+    target.defaultQuestions = parsed.questions;
+    await group.save();
+    await refreshSeriesQuestions(group, target);
+
+    res.status(200).json({ message: "RSVP questions updated.", group: withLegacyScheduleMirror(group.toObject()) });
 });

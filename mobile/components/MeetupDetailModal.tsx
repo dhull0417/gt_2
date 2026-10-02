@@ -37,11 +37,13 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
 import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/utils/api';
-import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor } from '@/utils/meetupStatus';
+import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor, canPriorityBump } from '@/utils/meetupStatus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import MeetupAssignments, { AssignmentsSheet } from '@/components/MeetupAssignments';
 import { assignmentsActive, summarizeAssignments } from '@/utils/assignments';
+import MeetupQuestions from '@/components/MeetupQuestions';
+import { questionsActive, hasAnsweredAny } from '@/utils/questions';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
@@ -233,6 +235,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const { mutate: rsvp, isPending: isRsvping } = useRsvp();
 
     const [assignmentsSignal, setAssignmentsSignal] = useState(0);
+    const [questionsSignal, setQuestionsSignal] = useState(0);
+    // Set when the questions sheet should follow the assignments sheet.
+    const questionsAfterAssignments = useRef(false);
     const [localGuestCount, setLocalGuestCount] = useState(0);
     const [isSettingGuests, setIsSettingGuests] = useState(false);
     const [guestExpanded, setGuestExpanded] = useState(false);
@@ -337,6 +342,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     // non-Premium group there is nothing to join, so the button reads "Full".
     // (Only `=== false` counts, so a missing flag never blocks; the server enforces.)
     const waitlistLocked = isFull && !isIn && !isWaitlisted && meetup.group?.isPremium === false;
+    const canBump = canPriorityBump(meetup, currentUser?._id);
     const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
     const outUnselected = !isOut;
     const isUndecided = inUnselected && outUnselected;
@@ -382,6 +388,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     && !data.meetup.rides?.some((r: any) => r.user === currentUser._id)
                     && !data.meetup.waitlist?.some((u: any) => (typeof u === 'string' ? u : u._id) === currentUser._id)) {
                     setAssignmentsSignal((n) => n + 1);
+                    questionsAfterAssignments.current = questionsActive(data.meetup) && !hasAnsweredAny(data.meetup, currentUser._id);
+                } else if (status === 'in' && data.meetup && questionsActive(data.meetup)
+                    && !hasAnsweredAny(data.meetup, currentUser._id)
+                    && !data.meetup.waitlist?.some((u: any) => (typeof u === 'string' ? u : u._id) === currentUser._id)) {
+                    setQuestionsSignal((n) => n + 1);
                 }
             },
             onError: (error: any) => {
@@ -1005,7 +1016,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             {/* Split I'm In button */}
                                             <View style={{
                                                 flex: 1, borderRadius: 16, overflow: 'hidden', height: 72,
-                                                backgroundColor: isWaitlisted ? '#2563EB' : waitlistLocked ? '#9CA3AF' : (isFull && !isIn) ? '#F97316' : inFilled ? '#4FD1C5' : 'white',
+                                                backgroundColor: isWaitlisted ? '#2563EB' : waitlistLocked ? '#9CA3AF' : (isFull && !isIn) ? (canBump ? '#4FD1C5' : '#F97316') : inFilled ? '#4FD1C5' : 'white',
                                             }}>
                                                 <Animated.View style={[{
                                                     flex: 1, flexDirection: 'row', borderRadius: 16,
@@ -1018,7 +1029,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                         style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                                                     >
                                                         <Animated.Text style={[{ color: inFilled ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 18 }, inTextStyle]}>
-                                                            {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? "Join Waitlist" : "I'm In"}
+                                                            {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? (canBump ? "Priority In" : "Join Waitlist") : "I'm In"}
                                                         </Animated.Text>
                                                     </TouchableOpacity>
                                                     <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />
@@ -1140,6 +1151,24 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         broadcastMeetupUpdate(getToken, meetupGroupId);
                     }}
                     onStale={() => queryClient.invalidateQueries({ queryKey: ['meetups'] })}
+                    onSheetClosed={() => {
+                        if (questionsAfterAssignments.current) {
+                            questionsAfterAssignments.current = false;
+                            setQuestionsSignal((n) => n + 1);
+                        }
+                    }}
+                />
+
+                <MeetupQuestions
+                    meetup={meetup}
+                    currentUserId={currentUser._id}
+                    canAnswer={(isIn || isWaitlisted) && !isReadOnly}
+                    openSignal={questionsSignal}
+                    onUpdated={(m) => {
+                        setMeetup(m);
+                        queryClient.invalidateQueries({ queryKey: ['meetups'] });
+                        broadcastMeetupUpdate(getToken, meetupGroupId);
+                    }}
                 />
 
                 <Animated.View layout={LinearTransition.duration(300)} style={{ marginBottom: 40, marginTop: 8 }}>

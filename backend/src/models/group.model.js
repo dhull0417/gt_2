@@ -60,6 +60,13 @@ const namedScheduleSchema = new mongoose.Schema({
     max: { type: Number, min: 1, default: null },
   }],
   defaultRidesEnabled: { type: Boolean, default: false },
+  // Premium custom RSVP questions asked when someone says they're In.
+  defaultQuestions: [{
+    prompt: { type: String, required: true, trim: true },
+    type: { type: String, enum: ['text', 'choice', 'yesno'], default: 'text' },
+    options: [String],
+    required: { type: Boolean, default: false },
+  }],
   // Premium priority RSVP: ranked members get RSVP windows before everyone else.
   // priorityOrder is the ranking; priorityTiers slice it into groups (size people,
   // each with an exclusive window of windowMinutes before the next group opens).

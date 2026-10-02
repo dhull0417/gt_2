@@ -14,6 +14,7 @@ import {
   createSchedule,
   updateSchedule,
   updateSchedulePriority,
+  updateScheduleQuestions,
   deleteSchedule,
   updateModerators,
   toggleModerator,
@@ -95,6 +96,7 @@ router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
 router.post("/:groupId/schedules", protectRoute, createSchedule);
 router.patch("/:groupId/schedules/:scheduleId", protectRoute, updateSchedule);
 router.put("/:groupId/schedules/:scheduleId/priority", protectRoute, updateSchedulePriority);
+router.put("/:groupId/schedules/:scheduleId/questions", protectRoute, updateScheduleQuestions);
 router.delete("/:groupId/schedules/:scheduleId", protectRoute, deleteSchedule);
 router.post("/:groupId/meetups", protectRoute, createOneOffMeetup);
 

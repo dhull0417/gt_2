@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { useAuth } from '@clerk/expo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +13,7 @@ export const useGetMeetups = () => {
     const api = useApiClient();
     const queryClient = useQueryClient();
     const { getToken } = useAuth();
+    const [, setTick] = useState(0);
     const getTokenRef = useRef(getToken);
     getTokenRef.current = getToken;
 
@@ -107,6 +108,31 @@ export const useGetMeetups = () => {
         });
         return () => { clearTimeout(timer); sub.remove(); };
     }, [nextCheckAt, queryClient]);
+
+    // Priority RSVP: a group's turn starts at a set time. Tick right then so the
+    // lock banner and RSVP buttons update without a manual refresh. Re-arms itself
+    // for the next open time each time the list changes.
+    const nextOpenAt = (query.data ?? []).reduce<number | null>((earliest, m) => {
+        if (m.status !== 'scheduled') return earliest;
+        const times = [...(m.priorityTiers ?? []).map((t) => t.opensAt), m.rsvpOpenDate];
+        for (const raw of times) {
+            if (!raw) continue;
+            const t = new Date(raw).getTime();
+            if (t > Date.now() && (earliest === null || t < earliest)) earliest = t;
+        }
+        return earliest;
+    }, null);
+
+    useEffect(() => {
+        if (nextOpenAt === null) return;
+        const MAX_DELAY = 2 ** 31 - 1;
+        const delay = Math.max(nextOpenAt - Date.now(), 0) + 1000;
+        const timer = setTimeout(() => {
+            setTick((n) => n + 1); // re-render so lock state is recomputed against the new time
+            queryClient.invalidateQueries({ queryKey: MEETUPS_QUERY_KEY });
+        }, Math.min(delay, MAX_DELAY));
+        return () => clearTimeout(timer);
+    }, [nextOpenAt, queryClient]);
 
     return query;
 };

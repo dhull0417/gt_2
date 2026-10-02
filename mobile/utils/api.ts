@@ -65,6 +65,8 @@ export interface NamedSchedule extends Schedule {
   /** Premium meetup assignments: things people can sign up to bring (max null = unlimited). */
   defaultBringItems?: BringItem[];
   defaultRidesEnabled?: boolean;
+  /** Premium custom RSVP questions. */
+  defaultQuestions?: RsvpQuestion[];
   /** Premium priority RSVP: ranked members get RSVP windows before everyone else. */
   priorityEnabled?: boolean;
   priorityOrder?: string[];
@@ -152,6 +154,16 @@ export interface GroupDetails extends Group {
   isPremium?: boolean;
 }
 
+export interface RsvpQuestion {
+  _id: string;
+  prompt: string;
+  type: 'text' | 'choice' | 'yesno';
+  options: string[];
+  required: boolean;
+}
+
+export interface RsvpAnswer { user: string; question: string; value: string }
+
 export interface Meetup {
   _id: string;
   group: {
@@ -192,6 +204,8 @@ export interface Meetup {
   /** Premium meetup assignments (copied from the series). */
   /** Priority RSVP snapshot: groups of member ids and when each group's window opens. */
   priorityTiers?: { members: string[]; opensAt: string }[];
+  questions?: RsvpQuestion[];
+  answers?: RsvpAnswer[];
   bringItems?: BringItem[];
   ridesEnabled?: boolean;
   bringClaims?: { user: string; item: string }[];
@@ -535,6 +549,15 @@ export const groupApi = {
     const response = await api.put<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}/priority`, data);
     return response.data;
   },
+  updateScheduleQuestions: async (
+    api: AxiosInstance,
+    groupId: string,
+    scheduleId: string,
+    questions: { _id?: string; prompt: string; type: RsvpQuestion['type']; options?: string[]; required?: boolean }[],
+  ): Promise<{ message: string; group: Group }> => {
+    const response = await api.put<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}/questions`, { questions });
+    return response.data;
+  },
   deleteSchedule: async (api: AxiosInstance, groupId: string, scheduleId: string): Promise<{ message: string; group: Group }> => {
     const response = await api.delete<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}`);
     return response.data;
@@ -600,6 +623,14 @@ export const meetupApi = {
     body: { bring?: string[]; ride?: null | { role: 'driver'; seats: number } | { role: 'passenger' }; targetUserId?: string },
   ): Promise<{ meetup: Meetup }> => {
     const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}/assignments`, body);
+    return response.data;
+  },
+  setAnswers: async (
+    api: AxiosInstance,
+    meetupId: string,
+    answers: { question: string; value: string }[],
+  ): Promise<{ meetup: Meetup }> => {
+    const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}/answers`, { answers });
     return response.data;
   },
   sendReminder: async (api: AxiosInstance, meetupId: string, userId?: string): Promise<{ message: string }> => {

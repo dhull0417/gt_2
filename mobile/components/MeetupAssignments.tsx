@@ -16,9 +16,11 @@ interface Props {
   onUpdated: (meetup: Meetup) => void;
   /** Called when a save failed because the data was out of date (e.g. an item was just taken). */
   onStale?: () => void;
+  /** Called whenever the assignments sheet closes (saved or dismissed). */
+  onSheetClosed?: () => void;
 }
 
-export default function MeetupAssignments({ meetup, currentUserId, isIn, openSignal = 0, onUpdated, onStale }: Props) {
+export default function MeetupAssignments({ meetup, currentUserId, isIn, openSignal = 0, onUpdated, onStale, onSheetClosed }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -116,7 +118,7 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
         visible={sheetOpen}
         meetup={meetup}
         currentUserId={currentUserId}
-        onClose={() => setSheetOpen(false)}
+        onClose={() => { setSheetOpen(false); onSheetClosed?.(); }}
         onUpdated={onUpdated}
         onStale={onStale}
       />

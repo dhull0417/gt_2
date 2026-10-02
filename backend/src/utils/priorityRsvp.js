@@ -119,6 +119,103 @@ export const userTierIndex = (meetup, userId) => {
   return (meetup.priorityTiers || []).findIndex((t) => (t.members || []).some((m) => idStr(m) === id));
 };
 
+const rankOf = (meetup, id) => {
+  const t = userTierIndex(meetup, id);
+  return t < 0 ? Infinity : t;
+};
+
+/**
+ * Which waitlisted person gets the next open spot: the highest-priority group first
+ * (unlisted members last), then whoever has waited longest. Without active priority
+ * it's simply the front of the line. Returns an index into meetup.waitlist, or -1.
+ */
+export const pickWaitlistIndex = (meetup, tiersActive = true) => {
+  const list = meetup.waitlist || [];
+  if (list.length === 0) return -1;
+  if (!tiersActive || (meetup.priorityTiers?.length ?? 0) === 0) return 0;
+  let best = 0;
+  for (let i = 1; i < list.length; i++) {
+    if (rankOf(meetup, list[i]) < rankOf(meetup, list[best])) best = i;
+  }
+  return best;
+};
+
+/**
+ * Bring a full-or-filling meetup in line with the current priority ranking: open spots go
+ * to the best waitlisted people, and a waitlisted person who outranks someone who's In
+ * swaps places with them (the displaced person goes to the front of the waitlist).
+ * Used after priority settings change. Notifies everyone who moved.
+ */
+export const rebalanceMeetup = async (meetupId) => {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const meetup = await Meetup.findById(meetupId);
+    if (!meetup || meetup.status !== "scheduled" || !(meetup.capacity > 0)) return null;
+    if ((meetup.priorityTiers?.length ?? 0) === 0 || (meetup.waitlist?.length ?? 0) === 0) return null;
+
+    const before = new Set(meetup.in.map(idStr));
+    for (let guard = 0; guard < 500 && meetup.waitlist.length > 0; guard++) {
+      const wi = pickWaitlistIndex(meetup, true);
+      const w = meetup.waitlist[wi];
+      if (meetup.in.length < meetup.capacity) {
+        meetup.waitlist.splice(wi, 1);
+        meetup.in.push(w);
+        continue;
+      }
+      let vi = -1;
+      for (let i = 0; i < meetup.in.length; i++) {
+        if (vi < 0 || rankOf(meetup, meetup.in[i]) >= rankOf(meetup, meetup.in[vi])) vi = i;
+      }
+      if (vi < 0 || rankOf(meetup, w) >= rankOf(meetup, meetup.in[vi])) break;
+      const v = meetup.in[vi];
+      meetup.in.splice(vi, 1);
+      meetup.waitlist.splice(wi, 1);
+      meetup.waitlist.unshift(v);
+      meetup.in.push(w);
+    }
+
+    const after = new Set(meetup.in.map(idStr));
+    const promoted = [...after].filter((id) => !before.has(id));
+    const bumped = [...before].filter((id) => !after.has(id));
+    if (promoted.length === 0 && bumped.length === 0) return null;
+
+    if (bumped.length) {
+      if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter((c) => !bumped.includes(idStr(c.user)));
+      if (meetup.rides?.length) meetup.rides = meetup.rides.filter((r) => !bumped.includes(idStr(r.user)));
+      if (meetup.answers?.length) meetup.answers = meetup.answers.filter((a) => !bumped.includes(idStr(a.user)));
+    }
+    try {
+      await meetup.save();
+    } catch (err) {
+      if (err.name === "VersionError" && attempt < 2) continue;
+      throw err;
+    }
+
+    const data = { meetupId: meetup._id.toString(), groupId: meetup.group.toString() };
+    if (promoted.length) {
+      await notifyAndPersist(await User.find({ _id: { $in: promoted } }), {
+        title: "You're In! 🎉",
+        body: `You've been moved off the waitlist for "${meetup.name}" because of RSVP priority.`,
+        data: { ...data, type: "meetup_waitlist_promoted" },
+        type: "waitlist-promotion",
+        meetup: meetup._id,
+        group: meetup.group,
+      });
+    }
+    if (bumped.length) {
+      await notifyAndPersist(await User.find({ _id: { $in: bumped } }), {
+        title: "Moved to the waitlist",
+        body: `RSVP priority changed, and your spot in "${meetup.name}" went to a higher-priority member. You're first on the waitlist.`,
+        data: { ...data, type: "meetup_waitlist_bumped" },
+        type: "priority-bumped",
+        meetup: meetup._id,
+        group: meetup.group,
+      });
+    }
+    return { promoted, bumped };
+  }
+  return null;
+};
+
 const hasResponded = (meetup, id) =>
   includesId(meetup.in, id) || includesId(meetup.out, id) || includesId(meetup.waitlist, id);
 
@@ -290,5 +387,16 @@ export const refreshPriorityTiers = async (group, schedule) => {
     });
   }
   await Meetup.bulkWrite(ops);
+  // The ranking may have changed: shuffle full meetups so higher-priority waitlisted
+  // members take the place of lower-priority people who are In.
+  if (active) {
+    for (const m of meetups) {
+      try {
+        await rebalanceMeetup(m._id);
+      } catch (err) {
+        console.error("Priority rebalance failed:", err);
+      }
+    }
+  }
   return ops.length;
 };

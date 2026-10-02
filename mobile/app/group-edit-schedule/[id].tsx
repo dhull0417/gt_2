@@ -1763,6 +1763,35 @@ const EditScheduleScreen = () => {
                                         <Feather name="chevron-right" size={20} color="#9CA3AF" />
                                     </TouchableOpacity>
                                 )}
+
+                                <Text style={s.fieldLabel}>RSVP Questions</Text>
+                                {group?.isPremium !== true ? (
+                                    <View style={s.premiumLockRow}>
+                                        <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={s.premiumLockTitle}>Premium</Text>
+                                            <Text style={s.premiumLockText}>
+                                                Ask members your own questions when they RSVP. Requires the group owner to have Premium.
+                                            </Text>
+                                        </View>
+                                    </View>
+                                ) : (
+                                    <TouchableOpacity
+                                        style={[s.inputRow, { marginBottom: 0, justifyContent: "space-between" }]}
+                                        onPress={() => router.push({ pathname: "/group-questions/[id]", params: { id: id!, scheduleId: scheduleId! } })}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={{ flex: 1, paddingRight: 12 }}>
+                                            <Text style={{ fontSize: 15, fontWeight: "600", color: "#374151" }}>
+                                                {(targetSchedule?.defaultQuestions?.length ?? 0) > 0
+                                                    ? `${targetSchedule!.defaultQuestions!.length} question${targetSchedule!.defaultQuestions!.length === 1 ? "" : "s"} — manage`
+                                                    : "Add questions"}
+                                            </Text>
+                                            <Text style={s.premiumLockText}>Collect answers like dietary needs or skill level.</Text>
+                                        </View>
+                                        <Feather name="chevron-right" size={20} color="#9CA3AF" />
+                                    </TouchableOpacity>
+                                )}
                             </>
                         )}
                     </View>
