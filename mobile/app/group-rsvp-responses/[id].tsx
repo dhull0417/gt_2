@@ -126,7 +126,12 @@ export default function GroupRsvpResponsesScreen() {
       ]);
       broadcastGroupUpdate(getToken, id);
       broadcastMeetupUpdate(getToken, id);
-      router.back();
+      const addedCount = drafts.filter((d) => !d._id).length;
+      if (addedCount > 0) {
+        Alert.alert('Reaction(s) added!', undefined, [{ text: 'OK', onPress: () => router.back() }]);
+      } else {
+        router.back();
+      }
     } catch (e: any) {
       const data = e.response?.data;
       const status = e.response?.status;
