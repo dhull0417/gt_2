@@ -476,6 +476,11 @@ export const userApi = {
     const response = await api.get<{ url: string }>("/api/users/calendar-url");
     return response.data;
   },
+  /** Asks the server to re-check RevenueCat for this user (after a purchase or restore) and returns the fresh user. */
+  syncPremium: async (api: AxiosInstance): Promise<User> => {
+    const response = await api.post<{ user: User }>("/api/users/premium/sync");
+    return response.data.user;
+  },
   deleteAccount: async (api: AxiosInstance): Promise<{ message: string }> => {
     const response = await api.delete<{ message: string }>("/api/users/account");
     return response.data;

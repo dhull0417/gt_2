@@ -17,6 +17,7 @@ import DraggableList from '@/components/DraggableList';
 import NativeTimePicker from '@/components/NativeTimePicker';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
+import { UpgradeButton } from '@/components/UpgradeButton';
 
 const ROW_H = 60;
 const DIV_H = 56;
@@ -236,6 +237,7 @@ export default function GroupPriorityScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.lockTitle}>Premium</Text>
             <Text style={styles.lockText}>Priority RSVP requires the group owner to have Premium.</Text>
+            <UpgradeButton owner={group?.owner} />
           </View>
         </View>
       ) : noRsvpWindow ? (

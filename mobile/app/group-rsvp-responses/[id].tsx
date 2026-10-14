@@ -16,6 +16,7 @@ import { broadcastGroupUpdate, broadcastMeetupUpdate } from '@/utils/groupRealti
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
+import { UpgradeButton } from '@/components/UpgradeButton';
 
 type Status = 'in' | 'out';
 interface Draft { key: string; _id?: string; status: Status; text: string; emoji: string }
@@ -264,6 +265,7 @@ export default function GroupRsvpResponsesScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.lockTitle}>Premium</Text>
                 <Text style={styles.lockText}>Custom RSVP reactions require the group owner to have Premium.</Text>
+                <UpgradeButton owner={group?.owner} />
               </View>
             </View>
           ) : (

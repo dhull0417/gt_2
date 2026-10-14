@@ -14,6 +14,7 @@ import { broadcastGroupUpdate, broadcastMeetupUpdate } from '@/utils/groupRealti
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
+import { UpgradeButton } from '@/components/UpgradeButton';
 
 const MAX_QUESTIONS = 5;
 const TYPE_LABELS: Record<RsvpQuestion['type'], string> = { text: 'Text', choice: 'Choices', yesno: 'Yes / No' };
@@ -138,6 +139,7 @@ export default function GroupQuestionsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.lockTitle}>Premium</Text>
                 <Text style={styles.lockText}>Custom RSVP questions require the group owner to have Premium.</Text>
+                <UpgradeButton owner={group?.owner} />
               </View>
             </View>
           ) : (

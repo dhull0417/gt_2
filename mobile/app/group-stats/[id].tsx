@@ -9,6 +9,7 @@ import { useApiClient, groupApi, userApi, GroupStats, User } from '@/utils/api';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
+import { UpgradeButton } from '@/components/UpgradeButton';
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 const nameOf = (m: { firstName?: string; lastName?: string }) => `${m.firstName ?? ''} ${m.lastName ?? ''}`.trim() || 'Member';
@@ -79,6 +80,7 @@ export default function GroupStatsScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.lockTitle}>Premium</Text>
             <Text style={styles.lockText}>Attendance stats, history and CSV export require the group owner to have Premium.</Text>
+            <UpgradeButton owner={group?.owner} />
           </View>
         </View>
       </SafeAreaView>

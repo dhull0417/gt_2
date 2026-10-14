@@ -10,6 +10,7 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { useUserSync } from '@/hooks/useUserSync';
+import { usePurchasesSetup } from '@/hooks/usePurchases';
 import * as SecureStore from 'expo-secure-store';
 import * as Clipboard from 'expo-clipboard';
 import { User, useApiClient, userApi, meetupApi, groupApi, notificationApi } from '@/utils/api';
@@ -192,6 +193,7 @@ const AuthLayout = () => {
   const inTabsGroup = segments[0] === '(tabs)';
 
   useUserSync();
+  usePurchasesSetup();
 
   // Gives the mutation-defaults registry (utils/authToken.ts) a way to fetch a
   // token outside React, for queued mutations resumed with no screen mounted.
@@ -294,6 +296,7 @@ const AuthLayout = () => {
       'group-rsvp-responses',
       'group-edit-jit',
       'group-settings',
+      'paywall',
       'group-chat',
       'group-details',
       'meetup-edit',
@@ -355,6 +358,7 @@ const AuthLayout = () => {
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
           <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
           <Stack.Screen name="account" options={{ presentation: 'modal', headerShown: false }} />
+          <Stack.Screen name="paywall" options={{ presentation: 'modal', headerShown: false }} />
           <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
           <Stack.Screen name="group-priority" options={{ headerShown: false }} />
           <Stack.Screen name="group-questions" options={{ headerShown: false }} />

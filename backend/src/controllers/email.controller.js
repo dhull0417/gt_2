@@ -96,7 +96,7 @@ const DEST_PATHS = {
   open: "",
   groups: "groups",
   "create-group": "create-group",
-  premium: "profile", // TODO: point at the paywall screen if/when it has its own route
+  premium: "paywall",
 };
 
 /** Opens the app at a screen, or sends people to the store if it isn't installed. */

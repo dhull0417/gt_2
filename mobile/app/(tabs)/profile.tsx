@@ -188,6 +188,13 @@ const HomeScreen = () => {
 
   const ACTIONS = [
     {
+      id: 'premium',
+      label: currentUser?.isPremium ? 'GroupThat Premium (Active)' : 'Get GroupThat Premium',
+      icon: 'star' as const,
+      color: colors.warning,
+      onPress: () => router.push('/paywall'),
+    },
+    {
       id: 'account',
       label: 'Update Account Info',
       icon: 'user' as const,

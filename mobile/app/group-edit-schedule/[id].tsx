@@ -31,6 +31,7 @@ import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
 import InfoBubble from "@/components/InfoBubble";
 import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
+import { UpgradeButton } from '@/components/UpgradeButton';
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -1682,6 +1683,7 @@ const EditScheduleScreen = () => {
                                     <Text style={s.premiumLockText}>
                                         Cancel a meetup automatically if too few people are in by the RSVP deadline. Requires the group owner to have Premium.
                                     </Text>
+                                    <UpgradeButton owner={group?.owner} />
                                 </View>
                             </View>
                         ) : !(d.rsvpRestricted && d.deadlineEnabled) ? (
@@ -1722,6 +1724,7 @@ const EditScheduleScreen = () => {
                                     <Text style={s.premiumLockText}>
                                         Ask people what they're bringing and coordinate rides. Requires the group owner to have Premium.
                                     </Text>
+                                    <UpgradeButton owner={group?.owner} />
                                 </View>
                             </View>
                         ) : (
@@ -1790,6 +1793,7 @@ const EditScheduleScreen = () => {
                                             <Text style={s.premiumLockText}>
                                                 Let your longest-standing members RSVP first, in groups you set. Requires the group owner to have Premium.
                                             </Text>
+                                            <UpgradeButton owner={group?.owner} />
                                         </View>
                                     </View>
                                 ) : (
@@ -1817,6 +1821,7 @@ const EditScheduleScreen = () => {
                                             <Text style={s.premiumLockText}>
                                                 Ask members your own questions when they RSVP. Requires the group owner to have Premium.
                                             </Text>
+                                            <UpgradeButton owner={group?.owner} />
                                         </View>
                                     </View>
                                 ) : (
