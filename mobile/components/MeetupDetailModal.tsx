@@ -13,14 +13,14 @@ import {
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    Linking,
     Dimensions,
     Share
 } from 'react-native';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import VideoServiceIcon from './VideoServiceIcon';
-import { detectVideoService, isHttpUrl } from '../utils/videoLinks';
+import { detectVideoService } from '../utils/videoLinks';
+import { openLocation } from '../utils/openLink';
 import { getUserDisplayName, getUserInitial } from '../utils/groupDisplay';
 import Animated, {
     FadeIn,
@@ -56,6 +56,8 @@ import NativeTimePicker from './NativeTimePicker';
 import LocationField from './LocationField';
 import LocationSearchModal from './LocationSearchModal';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
 
 // Watermark that slowly breathes between a base and darker opacity, one full cycle every 5 seconds.
 const PulsingWatermark = ({ label, style, baseOpacity, peakOpacity }: {
@@ -186,6 +188,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const router = useRouter();
     const queryClient = useQueryClient();
     const { getToken } = useAuth();
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const isDark = scheme === 'dark';
 
     const [meetup, setMeetup] = useState<Meetup | null>(initialMeetup);
     const { data: allMeetups } = useGetMeetups();
@@ -352,7 +357,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const outFilled = !outUnselected || isUndecided;
 
     // Tint matches RSVP button colors: amber until responded, green (in/waitlisted), red (out).
-    const modalBackgroundColor = isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
+    // Dark mode swaps in muted, low-saturation versions of the same hues (mirrors MeetupCard).
+    const modalBackgroundColor = isDark
+        ? (isOut ? '#3A1F1F' : (isIn || isWaitlisted) ? '#16261D' : colors.surfaceAlt)
+        : (isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA');
 
     const goingUsers = (meetup.members || []).filter(m => meetup.in?.some(u => getUserId(u) === m._id));
     const outUsers = (meetup.members || []).filter(m => meetup.out?.some(u => getUserId(u) === m._id));
@@ -521,22 +529,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         }
     };
 
-    const handleOpenLocation = (address: string) => {
-        if (isHttpUrl(address)) {
-            // Meeting links are universal/app links; the https URL opens the native app if installed, else the browser.
-            Linking.openURL(address.trim()).catch(() => {
-                Alert.alert('Error', 'Could not open this link.');
-            });
-            return;
-        }
-        const query = encodeURIComponent(address);
-        const url = Platform.OS === 'ios' ? `maps:0,0?q=${query}` : `geo:0,0?q=${query}`;
-        Linking.openURL(url).catch(() => {
-            Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`).catch(() => {
-                Alert.alert('Error', 'Could not open a navigation app.');
-            });
-        });
-    };
+    const handleOpenLocation = (address: string) => openLocation(address);
 
     const handleGoToChat = () => {
         onClose();
@@ -717,19 +710,19 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             <Wrapper key={key} style={styles.gridItem} {...wrapperProps}>
                 <View style={styles.gridAvatarWrap}>
                     {user.profilePicture
-                        ? <Image source={{ uri: user.profilePicture }} style={styles.gridAvatar} />
+                        ? <Image source={{ uri: user.profilePicture }} style={[styles.gridAvatar, { backgroundColor: colors.backgroundAlt }]} />
                         : (
-                            <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder]}>
-                                <Feather name="user" size={22} color="#9CA3AF" />
+                            <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder, { backgroundColor: colors.backgroundAlt }]}>
+                                <Feather name="user" size={22} color={colors.textFaint} />
                             </View>
                         )}
                     {opts?.waitlistPosition != null && (
-                        <View style={styles.waitlistBadge}>
+                        <View style={[styles.waitlistBadge, { borderColor: colors.surface }]}>
                             <Text style={styles.waitlistBadgeText}>{opts.waitlistPosition}</Text>
                         </View>
                     )}
                 </View>
-                <Text style={styles.gridName} numberOfLines={1}>{getUserDisplayName(user)}</Text>
+                <Text style={[styles.gridName, { color: colors.textSecondary }]} numberOfLines={1}>{getUserDisplayName(user)}</Text>
                 {renderAssignmentPills(user._id)}
             </Wrapper>
         );
@@ -743,7 +736,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder, styles.guestAvatarPlaceholder]}>
                     <Feather name="user" size={22} color="#FFFFFF" />
                 </View>
-                <Text style={styles.gridName} numberOfLines={1}>{hostName}&apos;s Guest</Text>
+                <Text style={[styles.gridName, { color: colors.textSecondary }]} numberOfLines={1}>{hostName}&apos;s Guest</Text>
             </View>
         ));
     };
@@ -754,7 +747,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 <Text style={[styles.sectionHeaderText, { color, marginBottom: 0 }]}>{label} - {count}</Text>
                 {rightElement}
             </View>
-            <View style={[styles.sectionHeaderLine, { backgroundColor: color }]} />
+            <View style={[styles.sectionHeaderLine, { backgroundColor: color, opacity: isDark ? 0.7 : 0.85 }]} />
         </View>
     );
 
@@ -803,12 +796,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: modalBackgroundColor }]} edges={['top', 'bottom']}>
-            <View style={styles.header}>
+            <View style={[styles.header, { borderBottomColor: colors.border }]}>
                 <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                    <Feather name="x" size={28} color="#9CA3AF" />
+                    <Feather name="x" size={28} color={colors.textFaint} />
                 </TouchableOpacity>
                 <Animated.View layout={LinearTransition.duration(300).easing(Easing.out(Easing.cubic))} style={styles.headerTitleContainer}>
-                    <Text style={styles.headerTitle}>
+                    <Text style={[styles.headerTitle, { color: colors.textFaint }]}>
                         {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })} • {meetup.time}
                     </Text>
                     {!!resolvedLocation && (
@@ -836,7 +829,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             key={locationExpanded ? 'expanded' : 'collapsed'}
                                             entering={FadeIn.duration(200).delay(80)}
                                             exiting={FadeOut.duration(120)}
-                                            style={styles.headerLocation}
+                                            style={[styles.headerLocation, { color: colors.textFaint }]}
                                             numberOfLines={locationExpanded ? undefined : 1}
                                         >
                                             {resolvedLocation}
@@ -854,7 +847,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         hitSlop={8}
                                     >
                                         <Animated.View style={[styles.headerLocationChevron, locationChevronStyle]}>
-                                            <Feather name="chevron-down" size={14} color="#9CA3AF" />
+                                            <Feather name="chevron-down" size={14} color={colors.textFaint} />
                                         </Animated.View>
                                     </Pressable>
                                 )}
@@ -868,15 +861,18 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 <View style={{ marginBottom: showRsvpSelector ? 32 : 14 }}>
                     {isCancelled && (
-                        <View style={[styles.cancelBanner, { justifyContent: 'space-between' }]}>
+                        <View style={[
+                            styles.cancelBanner,
+                            { justifyContent: 'space-between', backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2', borderColor: isDark ? '#5C2E2E' : '#FEE2E2' },
+                        ]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                                <Feather name="alert-triangle" size={18} color="#B91C1C" />
+                                <Feather name="alert-triangle" size={18} color={colors.danger} />
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.cancelBannerText}>
+                                    <Text style={[styles.cancelBannerText, { color: colors.danger }]}>
                                         {meetup.cancelReason === 'minimum-headcount' ? 'Cancelled: minimum not met' : 'Meetup Cancelled'}
                                     </Text>
                                     {meetup.cancelReason === 'minimum-headcount' && (
-                                        <Text style={styles.cancelBannerSubtext}>
+                                        <Text style={[styles.cancelBannerSubtext, { color: colors.danger }]}>
                                             {meetup.minAttendees
                                                 ? `The RSVP deadline has passed and fewer than ${meetup.minAttendees} people were in.`
                                                 : 'The RSVP deadline has passed and the minimum headcount wasn\'t met.'}
@@ -885,22 +881,22 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 </View>
                             </View>
                             {canCancelOrRestore && (
-                                <TouchableOpacity onPress={handleCancelMeetup} style={styles.reactivateBannerBtn}>
+                                <TouchableOpacity onPress={handleCancelMeetup} style={[styles.reactivateBannerBtn, { backgroundColor: colors.brand }]}>
                                     <Text style={styles.reactivateBannerBtnText}>Reactivate</Text>
                                 </TouchableOpacity>
                             )}
                         </View>
                     )}
                     {isExpired && !isCancelled && (
-                        <View style={[styles.cancelBanner, { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' }]}>
-                            <Feather name="clock" size={18} color="#6B7280" />
-                            <Text style={[styles.cancelBannerText, { color: '#6B7280' }]}>This Meetup Has Ended</Text>
+                        <View style={[styles.cancelBanner, { backgroundColor: colors.backgroundAlt, borderColor: colors.border }]}>
+                            <Feather name="clock" size={18} color={colors.textMuted} />
+                            <Text style={[styles.cancelBannerText, { color: colors.textMuted }]}>This Meetup Has Ended</Text>
                         </View>
                     )}
                     {isHappeningNow && (
-                        <View style={[styles.cancelBanner, { backgroundColor: '#F0FDFB', borderColor: '#99F6E4' }]}>
-                            <Feather name="radio" size={18} color="#0F766E" />
-                            <Text style={[styles.cancelBannerText, { color: '#0F766E' }]}>Meetup Happening Right Now</Text>
+                        <View style={[styles.cancelBanner, { backgroundColor: isDark ? '#123330' : '#F0FDFB', borderColor: isDark ? '#1F5B54' : '#99F6E4' }]}>
+                            <Feather name="radio" size={18} color={isDark ? colors.accentTeal : '#0F766E'} />
+                            <Text style={[styles.cancelBannerText, { color: isDark ? colors.accentTeal : '#0F766E' }]}>Meetup Happening Right Now</Text>
                         </View>
                     )}
 
@@ -913,9 +909,13 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         )}
                         <Animated.View layout={LinearTransition.duration(350).easing(Easing.out(Easing.cubic))} style={styles.nameCard}>
                             {!!frequencyLabel && (
-                                <Text style={styles.meetupFrequencyLabel}>{frequencyLabel}</Text>
+                                <Text style={[styles.meetupFrequencyLabel, { color: colors.textFaint }]}>{frequencyLabel}</Text>
                             )}
-                            <Text style={[styles.meetupTitle, isReadOnly && styles.strikeThrough]}>
+                            <Text style={[
+                                styles.meetupTitle,
+                                { color: colors.textPrimary },
+                                isReadOnly && [styles.strikeThrough, { color: colors.borderStrong }],
+                            ]}>
                                 {meetup.name}
                             </Text>
                             {!!meetup.description?.trim() && (
@@ -933,23 +933,24 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         layout={LinearTransition.duration(350).easing(Easing.out(Easing.cubic))}
                                         style={[
                                             styles.meetupDescriptionChip,
+                                            { backgroundColor: colors.surfaceAlt },
                                             descriptionExpanded && styles.meetupDescriptionChipExpanded,
                                             descriptionPressStyle,
                                         ]}
                                     >
                                         <View style={styles.meetupDescriptionRow}>
-                                            <Feather name="align-left" size={12} color="#9CA3AF" style={styles.meetupDescriptionIcon} />
+                                            <Feather name="align-left" size={12} color={colors.textFaint} style={styles.meetupDescriptionIcon} />
                                             <Animated.Text
                                                 key={descriptionExpanded ? 'expanded' : 'collapsed'}
                                                 entering={FadeIn.duration(200).delay(80)}
                                                 exiting={FadeOut.duration(120)}
-                                                style={styles.meetupDescriptionText}
+                                                style={[styles.meetupDescriptionText, { color: colors.textMuted }]}
                                                 numberOfLines={descriptionExpanded ? undefined : 1}
                                             >
                                                 {meetup.description.trim()}
                                             </Animated.Text>
                                             <Animated.View style={[styles.meetupDescriptionChevron, descriptionChevronStyle]}>
-                                                <Feather name="chevron-down" size={14} color="#9CA3AF" />
+                                                <Feather name="chevron-down" size={14} color={colors.textFaint} />
                                             </Animated.View>
                                         </View>
                                     </Animated.View>
@@ -962,10 +963,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         <TouchableOpacity
                             ref={moreBtnRef}
                             onPress={openActionsMenu}
-                            style={[styles.actionBtn, styles.moreActionBtn]}
+                            style={[styles.actionBtn, styles.moreActionBtn, { backgroundColor: colors.brandSoft, borderColor: colors.brand }]}
                             activeOpacity={0.7}
                         >
-                            <Ionicons name="ellipsis-horizontal-circle-outline" size={22} color="#4A90E2" />
+                            <Ionicons name="ellipsis-horizontal-circle-outline" size={22} color={colors.brand} />
                         </TouchableOpacity>
                         {!isReadOnly && !isRsvpLocked && !isRsvpDeadlinePassed && hasRsvpResponse && (
                             <TouchableOpacity
@@ -976,8 +977,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 style={[styles.actionBtn, styles.inOutActionBtn]}
                                 activeOpacity={0.7}
                             >
-                                <View style={[StyleSheet.absoluteFill, { top: 0, height: '50%', backgroundColor: '#F0FDFB', borderTopLeftRadius: 9, borderTopRightRadius: 9 }]} />
-                                <View style={[StyleSheet.absoluteFill, { top: '50%', height: '50%', backgroundColor: '#FFE4E1', borderBottomLeftRadius: 9, borderBottomRightRadius: 9 }]} />
+                                <View style={[StyleSheet.absoluteFill, { top: 0, height: '50%', backgroundColor: isDark ? '#123330' : '#F0FDFB', borderTopLeftRadius: 9, borderTopRightRadius: 9 }]} />
+                                <View style={[StyleSheet.absoluteFill, { top: '50%', height: '50%', backgroundColor: isDark ? '#3B1E1E' : '#FFE4E1', borderBottomLeftRadius: 9, borderBottomRightRadius: 9 }]} />
                                 <InOutSwapIcon burstNonce={swapIconNonce} />
                             </TouchableOpacity>
                         )}
@@ -987,18 +988,18 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 {!isReadOnly && (
                     <Animated.View layout={LinearTransition.duration(300)} style={{ marginTop: showRsvpSelector ? 24 : 0, marginBottom: (isRsvpLocked || isRsvpDeadlinePassed || showRsvpSelector) ? 60 : 0 }}>
                         {isRsvpLocked ? (
-                            <View style={styles.rsvpLockedBanner}>
-                                <Feather name="lock" size={22} color="#6B7280" />
-                                <Text style={styles.rsvpLockedTitle}>RSVPs Not Open Yet</Text>
-                                <Text style={styles.rsvpLockedSubtitle}>
+                            <View style={[styles.rsvpLockedBanner, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+                                <Feather name="lock" size={22} color={colors.textMuted} />
+                                <Text style={[styles.rsvpLockedTitle, { color: colors.textMuted }]}>RSVPs Not Open Yet</Text>
+                                <Text style={[styles.rsvpLockedSubtitle, { color: colors.textFaint }]}>
                                     Opens {describeRsvpOpensFor(meetup, currentUser?._id)}
                                 </Text>
                             </View>
                         ) : isRsvpDeadlinePassed ? (
-                            <View style={styles.rsvpLockedBanner}>
-                                <Feather name="lock" size={22} color="#6B7280" />
-                                <Text style={styles.rsvpLockedTitle}>RSVP Deadline Passed</Text>
-                                <Text style={styles.rsvpLockedSubtitle}>
+                            <View style={[styles.rsvpLockedBanner, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+                                <Feather name="lock" size={22} color={colors.textMuted} />
+                                <Text style={[styles.rsvpLockedTitle, { color: colors.textMuted }]}>RSVP Deadline Passed</Text>
+                                <Text style={[styles.rsvpLockedSubtitle, { color: colors.textFaint }]}>
                                     Closed {new Date(meetup.rsvpCloseDate!).toLocaleDateString(undefined, {
                                         weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone
                                     })}
@@ -1017,31 +1018,31 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             {/* Split I'm In button */}
                                             <View style={{
                                                 flex: 1, borderRadius: 16, overflow: 'hidden', height: 72,
-                                                backgroundColor: isWaitlisted ? '#2563EB' : waitlistLocked ? '#9CA3AF' : (isFull && !isIn) ? (canBump ? '#4FD1C5' : '#F97316') : inFilled ? '#4FD1C5' : 'white',
+                                                backgroundColor: isWaitlisted ? '#2563EB' : waitlistLocked ? '#9CA3AF' : (isFull && !isIn) ? (canBump ? colors.accentTeal : '#F97316') : inFilled ? colors.accentTeal : colors.surface,
                                             }}>
                                                 <Animated.View style={[{
                                                     flex: 1, flexDirection: 'row', borderRadius: 16,
                                                     borderWidth: inFilled ? 0 : 1.5,
-                                                    borderColor: '#4FD1C5',
+                                                    borderColor: colors.accentTeal,
                                                 }, boxStyle]}>
                                                     <TouchableOpacity
                                                         onPress={() => { setGuestExpanded(false); handleRsvpAction('in'); }}
                                                         disabled={isRsvping || waitlistLocked}
                                                         style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                                                     >
-                                                        <Animated.Text style={[{ color: inFilled ? 'white' : '#4FD1C5', fontWeight: 'bold', fontSize: 18 }, inTextStyle]}>
+                                                        <Animated.Text style={[{ color: inFilled ? 'white' : colors.accentTeal, fontWeight: 'bold', fontSize: 18 }, inTextStyle]}>
                                                             {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? (canBump ? "Priority In" : "Join Waitlist") : "I'm In"}
                                                         </Animated.Text>
                                                     </TouchableOpacity>
-                                                    <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : '#D1FAE5' }} />
+                                                    <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : colors.border }} />
                                                     <TouchableOpacity
                                                         onPress={() => setGuestExpanded(v => !v)}
                                                         disabled={isRsvping || waitlistLocked}
                                                         style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                                                     >
                                                         {guestExpanded
-                                                            ? <Feather name="x" size={20} color={inFilled ? 'white' : '#4FD1C5'} />
-                                                            : <MaterialIcons name="group-add" size={22} color={inFilled ? 'white' : '#4FD1C5'} />
+                                                            ? <Feather name="x" size={20} color={inFilled ? 'white' : colors.accentTeal} />
+                                                            : <MaterialIcons name="group-add" size={22} color={inFilled ? 'white' : colors.accentTeal} />
                                                         }
                                                     </TouchableOpacity>
                                                 </Animated.View>
@@ -1050,27 +1051,27 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             {/* Split I'm Out button */}
                                             <View style={{
                                                 flex: 1, borderRadius: 16, overflow: 'hidden', height: 72,
-                                                backgroundColor: outFilled ? '#FF7A6E' : 'white',
+                                                backgroundColor: outFilled ? colors.accentCoral : colors.surface,
                                             }}>
                                                 <Animated.View style={[{
                                                     flex: 1, flexDirection: 'row', borderRadius: 16,
                                                     borderWidth: outFilled ? 0 : 1.5,
-                                                    borderColor: '#FF7A6E',
+                                                    borderColor: colors.accentCoral,
                                                 }, boxStyle]}>
                                                     <TouchableOpacity
                                                         onPress={() => { setGuestExpanded(false); handleRsvpAction('out'); }}
                                                         disabled={isRsvping}
                                                         style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                                                     >
-                                                        <Animated.Text style={[{ color: outFilled ? 'white' : '#FF7A6E', fontWeight: 'bold', fontSize: 18 }, outTextStyle]}>I'm Out</Animated.Text>
+                                                        <Animated.Text style={[{ color: outFilled ? 'white' : colors.accentCoral, fontWeight: 'bold', fontSize: 18 }, outTextStyle]}>I'm Out</Animated.Text>
                                                     </TouchableOpacity>
-                                                    <View style={{ width: 1, backgroundColor: outFilled ? 'rgba(255,255,255,0.35)' : '#FFE4E1' }} />
+                                                    <View style={{ width: 1, backgroundColor: outFilled ? 'rgba(255,255,255,0.35)' : colors.border }} />
                                                     <TouchableOpacity
                                                         onPress={handleRsvpOutAndMute}
                                                         disabled={isRsvping}
                                                         style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                                                     >
-                                                        <Feather name="bell-off" size={20} color={outFilled ? 'white' : '#FF7A6E'} />
+                                                        <Feather name="bell-off" size={20} color={outFilled ? 'white' : colors.accentCoral} />
                                                     </TouchableOpacity>
                                                 </Animated.View>
                                             </View>
@@ -1081,23 +1082,23 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 {/* Inline guest counter */}
                                 {guestExpanded && (
                                     <View style={{ alignItems: 'center', marginTop: 10 }}>
-                                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Add Guests?</Text>
+                                        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Add Guests?</Text>
                                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
                                             <TouchableOpacity
                                                 onPress={() => setLocalGuestCount(c => Math.max(0, c - 1))}
                                                 disabled={localGuestCount === 0}
                                                 style={{
                                                     width: 36, height: 36, borderRadius: 18,
-                                                    backgroundColor: localGuestCount === 0 ? '#F9FAFB' : '#EEF6FF',
+                                                    backgroundColor: localGuestCount === 0 ? colors.surfaceAlt : colors.brandSoft,
                                                     borderWidth: 1.5,
-                                                    borderColor: localGuestCount === 0 ? '#E5E7EB' : '#93C5FD',
+                                                    borderColor: localGuestCount === 0 ? colors.border : colors.brand,
                                                     alignItems: 'center', justifyContent: 'center',
                                                 }}
                                             >
-                                                <Feather name="minus" size={16} color={localGuestCount === 0 ? '#D1D5DB' : '#4A90E2'} />
+                                                <Feather name="minus" size={16} color={localGuestCount === 0 ? colors.borderStrong : colors.brand} />
                                             </TouchableOpacity>
 
-                                            <Text style={{ fontSize: 24, fontWeight: '900', color: '#111827', minWidth: 28, textAlign: 'center' }}>
+                                            <Text style={{ fontSize: 24, fontWeight: '900', color: colors.textPrimary, minWidth: 28, textAlign: 'center' }}>
                                                 {localGuestCount}
                                             </Text>
 
@@ -1105,12 +1106,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                 onPress={() => setLocalGuestCount(c => c + 1)}
                                                 style={{
                                                     width: 36, height: 36, borderRadius: 18,
-                                                    backgroundColor: '#EEF6FF',
-                                                    borderWidth: 1.5, borderColor: '#93C5FD',
+                                                    backgroundColor: colors.brandSoft,
+                                                    borderWidth: 1.5, borderColor: colors.brand,
                                                     alignItems: 'center', justifyContent: 'center',
                                                 }}
                                             >
-                                                <Feather name="plus" size={16} color="#4A90E2" />
+                                                <Feather name="plus" size={16} color={colors.brand} />
                                             </TouchableOpacity>
 
                                             <TouchableOpacity
@@ -1122,7 +1123,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                 disabled={isRsvping || isSettingGuests}
                                                 style={{
                                                     width: 36, height: 36, borderRadius: 18,
-                                                    backgroundColor: '#4FD1C5',
+                                                    backgroundColor: colors.accentTeal,
                                                     borderWidth: 1.5, borderColor: '#3FABA1',
                                                     alignItems: 'center', justifyContent: 'center',
                                                     marginLeft: 6,
@@ -1184,41 +1185,41 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 />
 
                 <Animated.View layout={LinearTransition.duration(300)} style={{ marginBottom: 40, marginTop: 8 }}>
-                    {renderSectionHeader('In', goingUsers.length + totalGuestsForInTab, '#4FD1C5',
-                        <Text style={[styles.sectionHeaderText, { color: '#4FD1C5', marginBottom: 0 }]}>
+                    {renderSectionHeader('In', goingUsers.length + totalGuestsForInTab, colors.accentTeal,
+                        <Text style={[styles.sectionHeaderText, { color: colors.accentTeal, marginBottom: 0 }]}>
                             {meetup.capacity > 0 ? `Max: ${meetup.capacity}` : 'Unlimited'}
                         </Text>
                     )}
                     <View style={styles.grid}>
                         {goingUsers.length === 0 && totalGuestsForInTab === 0 && (
-                            <Text style={styles.emptyText}>No one is in yet.</Text>
+                            <Text style={[styles.emptyText, { color: colors.textFaint }]}>No one is in yet.</Text>
                         )}
                         {goingUsers.map(user => renderUserTile(user, user._id))}
                         {allGuestEntries.flatMap(renderGuestTiles)}
                     </View>
 
-                    {renderSectionHeader('Out', outUsers.length, '#FF7A6E')}
+                    {renderSectionHeader('Out', outUsers.length, colors.accentCoral)}
                     <View style={styles.grid}>
-                        {outUsers.length === 0 && <Text style={styles.emptyText}>No one is out.</Text>}
+                        {outUsers.length === 0 && <Text style={[styles.emptyText, { color: colors.textFaint }]}>No one is out.</Text>}
                         {outUsers.map(user => renderUserTile(user, user._id))}
                     </View>
 
-                    {renderSectionHeader('Undecided', undecidedUsers.length, '#9CA3AF',
+                    {renderSectionHeader('Undecided', undecidedUsers.length, colors.textFaint,
                         canManage && undecidedUsers.length > 0 ? (
-                            <TouchableOpacity onPress={handleRemindAll} disabled={isSendingReminder} style={styles.remindAllBtn} activeOpacity={0.7}>
-                                <Feather name="bell" size={12} color="#4A90E2" />
-                                <Text style={styles.remindAllText}>Remind All</Text>
+                            <TouchableOpacity onPress={handleRemindAll} disabled={isSendingReminder} style={[styles.remindAllBtn, { backgroundColor: colors.brandSoft, borderColor: colors.brand }]} activeOpacity={0.7}>
+                                <Feather name="bell" size={12} color={colors.brand} />
+                                <Text style={[styles.remindAllText, { color: colors.brand }]}>Remind All</Text>
                             </TouchableOpacity>
                         ) : undefined
                     )}
                     <View style={styles.grid}>
-                        {undecidedUsers.length === 0 && <Text style={styles.emptyText}>Everyone has responded.</Text>}
+                        {undecidedUsers.length === 0 && <Text style={[styles.emptyText, { color: colors.textFaint }]}>Everyone has responded.</Text>}
                         {undecidedUsers.map(user => renderUserTile(user, user._id))}
                     </View>
 
                     {waitlistUsers.length > 0 && (
                         <>
-                            {renderSectionHeader('Waitlist', waitlistUsers.length, '#2563EB')}
+                            {renderSectionHeader('Waitlist', waitlistUsers.length, isDark ? '#5B9EE8' : '#2563EB')}
                             <View style={styles.grid}>
                                 {waitlistUsers.map((user, index) => renderUserTile(user, user._id, { waitlistPosition: index + 1 }))}
                             </View>
@@ -1227,9 +1228,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 </Animated.View>
 
                 {canCancelOrRestore && !isCancelled && (
-                    <View style={styles.ownerSection}>
-                        <TouchableOpacity onPress={handleCancelMeetup} style={styles.cancelToggle}>
-                            <Text style={styles.cancelToggleText}>Cancel This Meetup</Text>
+                    <View style={[styles.ownerSection, { borderTopColor: colors.border }]}>
+                        <TouchableOpacity onPress={handleCancelMeetup} style={[styles.cancelToggle, { borderColor: colors.danger, backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2' }]}>
+                            <Text style={[styles.cancelToggleText, { color: colors.danger }]}>Cancel This Meetup</Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -1248,7 +1249,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     style={styles.actionsMenuItem}
                                     onPress={() => { setIsActionsMenuVisible(false); openEditModal(); }}
                                 >
-                                    <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#FFFBEB' }]}>
+                                    <View style={[styles.actionsMenuIconWrap, { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB' }]}>
                                         <Feather name="edit-2" size={18} color="#F59E0B" />
                                     </View>
                                     <Text style={styles.actionsMenuLabel}>Edit Meetup</Text>
@@ -1260,7 +1261,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             style={styles.actionsMenuItem}
                             onPress={() => { setIsActionsMenuVisible(false); handleAddToCalendar(); }}
                         >
-                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#F0FDF4' }]}>
+                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: isDark ? '#132A1E' : '#F0FDF4' }]}>
                                 <Feather name="calendar" size={18} color="#16A34A" />
                             </View>
                             <Text style={styles.actionsMenuLabel}>Add to Calendar</Text>
@@ -1270,7 +1271,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             style={styles.actionsMenuItem}
                             onPress={() => { setIsActionsMenuVisible(false); handleGoToChat(); }}
                         >
-                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#F0F9FF' }]}>
+                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: isDark ? '#1A2A42' : '#F0F9FF' }]}>
                                 <Feather name="message-circle" size={18} color="#0EA5E9" />
                             </View>
                             <Text style={styles.actionsMenuLabel}>Go to Chat</Text>
@@ -1280,7 +1281,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                             style={styles.actionsMenuItem}
                             onPress={() => { setIsActionsMenuVisible(false); handleInviteToMeetup(); }}
                         >
-                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: '#ECFDF5' }]}>
+                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: isDark ? '#123330' : '#ECFDF5' }]}>
                                 <Feather name="user-plus" size={18} color="#0D9488" />
                             </View>
                             <Text style={styles.actionsMenuLabel}>Invite to Meetup</Text>
@@ -1296,20 +1297,20 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 animationType="slide"
                 onRequestClose={() => setDmTargetUser(null)}
             >
-                <Pressable style={dmStyles.backdrop} onPress={() => setDmTargetUser(null)}>
-                    <Pressable style={dmStyles.sheet} onPress={() => {}}>
-                        <View style={dmStyles.dragHandle} />
+                <Pressable style={[dmStyles.backdrop, { backgroundColor: colors.overlay }]} onPress={() => setDmTargetUser(null)}>
+                    <Pressable style={[dmStyles.sheet, { backgroundColor: colors.surface }]} onPress={() => {}}>
+                        <View style={[dmStyles.dragHandle, { backgroundColor: colors.borderStrong }]} />
                         {dmTargetUser && (
                             <>
                                 <Image
                                     source={{ uri: dmTargetUser.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${getUserInitial(dmTargetUser)}` }}
-                                    style={dmStyles.avatar}
+                                    style={[dmStyles.avatar, { backgroundColor: colors.backgroundAlt }]}
                                 />
-                                <Text style={dmStyles.name}>
+                                <Text style={[dmStyles.name, { color: colors.textPrimary }]}>
                                     {getUserDisplayName(dmTargetUser)}
                                 </Text>
                                 <TouchableOpacity
-                                    style={dmStyles.dmBtn}
+                                    style={[dmStyles.dmBtn, { backgroundColor: colors.brand }]}
                                     onPress={handleSendDM}
                                     disabled={isCreatingDM}
                                     activeOpacity={0.8}
@@ -1321,14 +1322,14 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 </TouchableOpacity>
                                 {canManage && undecidedUsers.some(u => u._id === dmTargetUser._id) && (
                                     <TouchableOpacity
-                                        style={dmStyles.remindBtn}
+                                        style={[dmStyles.remindBtn, { backgroundColor: colors.brandSoft, borderColor: colors.brand }]}
                                         onPress={() => handleSendReminder(dmTargetUser._id)}
                                         disabled={isSendingReminder}
                                         activeOpacity={0.8}
                                     >
                                         {isSendingReminder
-                                            ? <ActivityIndicator color="#4A90E2" size="small" />
-                                            : <Text style={dmStyles.remindBtnText}>Send Reminder</Text>
+                                            ? <ActivityIndicator color={colors.brand} size="small" />
+                                            : <Text style={[dmStyles.remindBtnText, { color: colors.brand }]}>Send Reminder</Text>
                                         }
                                     </TouchableOpacity>
                                 )}
@@ -1338,7 +1339,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     return (
                                         <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
                                             <TouchableOpacity
-                                                style={[dmStyles.rsvpActionBtn, { backgroundColor: '#4FD1C5' }, targetIsIn && dmStyles.rsvpActionBtnDisabled]}
+                                                style={[dmStyles.rsvpActionBtn, { backgroundColor: colors.accentTeal }, targetIsIn && dmStyles.rsvpActionBtnDisabled]}
                                                 onPress={() => handleAdminRsvpChange(dmTargetUser._id, 'in')}
                                                 disabled={isUpdatingTargetRsvp || targetIsIn}
                                                 activeOpacity={0.8}
@@ -1349,7 +1350,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                 }
                                             </TouchableOpacity>
                                             <TouchableOpacity
-                                                style={[dmStyles.rsvpActionBtn, { backgroundColor: '#FF7A6E' }, targetIsOut && dmStyles.rsvpActionBtnDisabled]}
+                                                style={[dmStyles.rsvpActionBtn, { backgroundColor: colors.accentCoral }, targetIsOut && dmStyles.rsvpActionBtnDisabled]}
                                                 onPress={() => handleAdminRsvpChange(dmTargetUser._id, 'out')}
                                                 disabled={isUpdatingTargetRsvp || targetIsOut}
                                                 activeOpacity={0.8}
@@ -1403,31 +1404,31 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             <Modal transparent visible={isEditModalVisible} animationType="slide">
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
                     <View style={styles.modalOverlay}>
-                        <View style={styles.modalContent}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
                             <View style={styles.modalHeaderInner}>
-                                <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color="#9CA3AF" /></TouchableOpacity>
-                                <Text style={styles.modalTitleInner}>Edit Meetup</Text>
+                                <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color={colors.textFaint} /></TouchableOpacity>
+                                <Text style={[styles.modalTitleInner, { color: colors.textPrimary }]}>Edit Meetup</Text>
                                 <TouchableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating || !canSaveCapacity}>
-                                    {isUpdating ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={[styles.saveBtnText, !canSaveCapacity && styles.saveBtnTextDisabled]}>Save</Text>}
+                                    {isUpdating ? <ActivityIndicator size="small" color={colors.brand} /> : <Text style={[styles.saveBtnText, { color: colors.brand }, !canSaveCapacity && styles.saveBtnTextDisabled]}>Save</Text>}
                                 </TouchableOpacity>
                             </View>
 
                             <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-                                <Text style={styles.fieldLabel}>Date</Text>
-                                <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
-                                    <Feather name="calendar" size={18} color="#4A90E2" />
-                                    <Text style={styles.dateInputText}>
+                                <Text style={[styles.fieldLabel, { color: colors.textFaint }]}>Date</Text>
+                                <TouchableOpacity style={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} onPress={() => setShowDatePicker(true)}>
+                                    <Feather name="calendar" size={18} color={colors.brand} />
+                                    <Text style={[styles.dateInputText, { color: colors.textSecondary }]}>
                                         {newDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                                     </Text>
                                 </TouchableOpacity>
 
-                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Time</Text>
-                                <TouchableOpacity style={styles.dateInput} onPress={() => setShowTimePicker(true)}>
-                                    <Feather name="clock" size={18} color="#4A90E2" />
-                                    <Text style={styles.dateInputText}>{newTime}</Text>
+                                <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Time</Text>
+                                <TouchableOpacity style={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} onPress={() => setShowTimePicker(true)}>
+                                    <Feather name="clock" size={18} color={colors.brand} />
+                                    <Text style={[styles.dateInputText, { color: colors.textSecondary }]}>{newTime}</Text>
                                 </TouchableOpacity>
 
-                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Location Override</Text>
+                                <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Location Override</Text>
                                 <LocationField
                                     variant="card"
                                     placeholder="Specific address or link..."
@@ -1435,29 +1436,29 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     onPress={() => setIsLocationSearchActive(true)}
                                 />
 
-                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Max Attendees</Text>
+                                <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Max Attendees</Text>
                                 <View style={styles.boolRow}>
                                     <TouchableOpacity
-                                        style={[styles.boolBtn, capacityMode === "unlimited" && styles.boolBtnActive]}
+                                        style={[styles.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, capacityMode === "unlimited" && [styles.boolBtnActive, { borderColor: colors.brand, backgroundColor: colors.brandSoft }]]}
                                         onPress={() => { setCapacityMode("unlimited"); setNewCapacity(""); }}
                                     >
-                                        <Text style={[styles.boolBtnText, capacityMode === "unlimited" && styles.boolBtnTextActive]}>Unlimited</Text>
+                                        <Text style={[styles.boolBtnText, { color: colors.textMuted }, capacityMode === "unlimited" && { color: colors.brand }]}>Unlimited</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
-                                        style={[styles.boolBtn, capacityMode === "limited" && styles.boolBtnActive]}
+                                        style={[styles.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, capacityMode === "limited" && [styles.boolBtnActive, { borderColor: colors.brand, backgroundColor: colors.brandSoft }]]}
                                         onPress={() => setCapacityMode("limited")}
                                     >
-                                        <Text style={[styles.boolBtnText, capacityMode === "limited" && styles.boolBtnTextActive]}>Limited</Text>
+                                        <Text style={[styles.boolBtnText, { color: colors.textMuted }, capacityMode === "limited" && { color: colors.brand }]}>Limited</Text>
                                     </TouchableOpacity>
                                 </View>
                                 {capacityMode === "limited" && (
                                     <View style={{ marginTop: 10 }}>
-                                        <View style={[styles.inputContainer, capacityError && styles.inputContainerError]}>
-                                            <Feather name="users" size={18} color="#4A90E2" />
+                                        <View style={[styles.inputContainer, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, capacityError && styles.inputContainerError]}>
+                                            <Feather name="users" size={18} color={colors.brand} />
                                             <TextInput
-                                                style={styles.textInput}
+                                                style={[styles.textInput, { color: colors.textSecondary }]}
                                                 placeholder="How many?"
-                                                placeholderTextColor="#C4C9D4"
+                                                placeholderTextColor={colors.placeholder}
                                                 keyboardType="number-pad"
                                                 value={newCapacity}
                                                 onChangeText={setNewCapacity}
@@ -1467,12 +1468,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     </View>
                                 )}
 
-                                <Text style={[styles.fieldLabel, { marginTop: 20 }]}>Description (optional)</Text>
-                                <View style={[styles.inputContainer, styles.descriptionInputContainer]}>
+                                <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Description (optional)</Text>
+                                <View style={[styles.inputContainer, styles.descriptionInputContainer, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
                                     <TextInput
-                                        style={[styles.textInput, styles.descriptionInput]}
+                                        style={[styles.textInput, styles.descriptionInput, { color: colors.textSecondary }]}
                                         placeholder="Add any extra details for this meetup..."
-                                        placeholderTextColor="#C4C9D4"
+                                        placeholderTextColor={colors.placeholder}
                                         value={newDescription}
                                         onChangeText={setNewDescription}
                                         multiline
@@ -1498,15 +1499,15 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     Platform.OS === 'ios' ? (
                         <View style={StyleSheet.absoluteFillObject}>
                             <View style={styles.datePickerOverlay}>
-                                <View style={styles.datePickerContent}>
+                                <View style={[styles.datePickerContent, { backgroundColor: colors.surface }]}>
                                     <DateTimePicker
                                         value={tempDate}
                                         mode="date"
                                         display="spinner"
                                         onChange={onDateChange}
-                                        textColor='black'
+                                        textColor={isDark ? colors.textPrimary : 'black'}
                                     />
-                                    <TouchableOpacity onPress={confirmIosDate} style={styles.doneButton}>
+                                    <TouchableOpacity onPress={confirmIosDate} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
                                         <Text style={styles.doneButtonText}>Done</Text>
                                     </TouchableOpacity>
                                 </View>
@@ -1726,4 +1727,4 @@ const dmStyles = StyleSheet.create({
     rsvpActionBtnDisabled: { opacity: 0.45 },
 });
 
-export default MeetupDetailModal;
+export default MeetupDetailModal;

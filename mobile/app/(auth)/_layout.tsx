@@ -2,13 +2,15 @@ import { Redirect, Stack } from 'expo-router'
 import { useAuth } from '@clerk/expo'
 import { View } from 'react-native';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 export default function AuthRoutesLayout() {
   const { isSignedIn, isLoaded } = useAuth()
+  const colors = useThemeColors();
 
   if (!isLoaded) {
     return (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
             <LoadingAnimation />
         </View>
     );
@@ -18,5 +20,5 @@ export default function AuthRoutesLayout() {
     return <Redirect href={"/(tabs)"} />
   }
 
-  return <Stack screenOptions={{headerShown: false}}/>
+  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}/>
 }

@@ -4,10 +4,12 @@ import { useSignIn } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const ResetPasswordScreen = () => {
   const router = useRouter();
   const { signIn } = useSignIn();
+  const colors = useThemeColors();
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -45,7 +47,7 @@ const ResetPasswordScreen = () => {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView className="flex-1 bg-white dark:bg-gray-900">
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
@@ -60,53 +62,57 @@ const ResetPasswordScreen = () => {
           className="p-8"
           keyboardShouldPersistTaps="handled"
         >
-          <Text className="text-3xl font-black text-gray-900 mb-8">Set New Password</Text>
+          <Text className="text-3xl font-black text-gray-900 dark:text-white mb-8">Set New Password</Text>
           <TextInput
             value={code}
             onChangeText={setCode}
             placeholder="Verification Code"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.placeholder}
             keyboardType="numeric"
-            className="w-full bg-gray-100 p-4 border border-gray-300 rounded-lg text-base mb-4"
+            className="w-full bg-gray-100 dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
+            style={{ color: colors.textPrimary }}
           />
-          <View className="w-full flex-row items-center bg-gray-100 border border-gray-300 rounded-lg text-base mb-4 pr-4">
+          <View className="w-full flex-row items-center bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4 pr-4">
               <TextInput
                   value={password}
                   onChangeText={setPassword}
                   placeholder="New Password"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.placeholder}
                   secureTextEntry={!isPasswordVisible}
                   className="flex-1 p-4 text-base"
+                  style={{ color: colors.textPrimary }}
               />
               <TouchableOpacity onPress={() => setPasswordVisible(!isPasswordVisible)}>
-                  <Feather 
-                      name={isPasswordVisible ? 'eye-off' : 'eye'} 
-                      size={22} 
-                      color="#6B7280" 
+                  <Feather
+                      name={isPasswordVisible ? 'eye-off' : 'eye'}
+                      size={22}
+                      color={colors.textMuted}
                   />
               </TouchableOpacity>
           </View>
-          <View className="w-full flex-row items-center bg-gray-100 border border-gray-300 rounded-lg text-base mb-6 pr-4">
+          <View className="w-full flex-row items-center bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-6 pr-4">
               <TextInput
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   placeholder="Confirm New Password"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.placeholder}
                   secureTextEntry={!isConfirmPasswordVisible}
                   className="flex-1 p-4 text-base"
+                  style={{ color: colors.textPrimary }}
               />
               <TouchableOpacity onPress={() => setConfirmPasswordVisible(!isConfirmPasswordVisible)}>
-                  <Feather 
-                      name={isConfirmPasswordVisible ? 'eye-off' : 'eye'} 
-                      size={22} 
-                      color="#6B7280" 
+                  <Feather
+                      name={isConfirmPasswordVisible ? 'eye-off' : 'eye'}
+                      size={22}
+                      color={colors.textMuted}
                   />
               </TouchableOpacity>
           </View>
           <TouchableOpacity
             onPress={onReset}
             disabled={isLoading}
-            className={`w-full py-4 rounded-lg items-center shadow ${isLoading ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
+            className="w-full py-4 rounded-lg items-center shadow"
+            style={{ backgroundColor: colors.brand }}
           >
             <Text className="text-white text-lg font-bold">Save New Password</Text>
           </TouchableOpacity>

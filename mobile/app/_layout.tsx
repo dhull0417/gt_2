@@ -1,4 +1,5 @@
 import { View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth, useUser } from '@clerk/expo';
 import { resourceCache } from '@clerk/expo/resource-cache';
@@ -27,6 +28,7 @@ import { registerChatMutationDefaults, SEND_MESSAGE_MUTATION_KEY, type SendMessa
 import { registerOfflineMutationDefaults, RSVP_MUTATION_KEY, ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import type { Meetup } from '@/utils/api';
+import { AppearanceProvider, useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync();
@@ -143,34 +145,36 @@ export default function RootLayout() {
   if (!publishableKey) throw new Error('Missing Clerk Publishable Key');
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ClerkProvider
-        tokenCache={tokenCache}
-        publishableKey={publishableKey}
-        // Persists Clerk's client/session resources to SecureStore so a signed-in user
-        // can reach `isLoaded` (and the app) on a cold start with no network — otherwise
-        // Clerk has to fetch that state from its API before auth can resolve at all.
-        __experimental_resourceCache={resourceCache}
-      >
-        <PersistQueryClientProvider
-          client={queryClient}
-          persistOptions={{
-            persister: asyncStoragePersister,
-            maxAge: ONE_WEEK_MS,
-            dehydrateOptions: {
-              shouldDehydrateMutation: (mutation) =>
-                QUEUED_MUTATION_KEYS.includes(mutation.options.mutationKey?.[0] as string),
-            },
-          }}
-          // Resumes any send that was still paused-offline when the app was last
-          // closed, once the persisted cache (and this mutation) is back in memory.
-          onSuccess={() => { queryClient.resumePausedMutations(); }}
+    <AppearanceProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <ClerkProvider
+          tokenCache={tokenCache}
+          publishableKey={publishableKey}
+          // Persists Clerk's client/session resources to SecureStore so a signed-in user
+          // can reach `isLoaded` (and the app) on a cold start with no network — otherwise
+          // Clerk has to fetch that state from its API before auth can resolve at all.
+          __experimental_resourceCache={resourceCache}
         >
-          <AuthLayout />
-          <ImageCropperHost />
-        </PersistQueryClientProvider>
-      </ClerkProvider>
-    </GestureHandlerRootView>
+          <PersistQueryClientProvider
+            client={queryClient}
+            persistOptions={{
+              persister: asyncStoragePersister,
+              maxAge: ONE_WEEK_MS,
+              dehydrateOptions: {
+                shouldDehydrateMutation: (mutation) =>
+                  QUEUED_MUTATION_KEYS.includes(mutation.options.mutationKey?.[0] as string),
+              },
+            }}
+            // Resumes any send that was still paused-offline when the app was last
+            // closed, once the persisted cache (and this mutation) is back in memory.
+            onSuccess={() => { queryClient.resumePausedMutations(); }}
+          >
+            <AuthLayout />
+            <ImageCropperHost />
+          </PersistQueryClientProvider>
+        </ClerkProvider>
+      </GestureHandlerRootView>
+    </AppearanceProvider>
   );
 }
 
@@ -181,6 +185,8 @@ const AuthLayout = () => {
   const router = useRouter();
   const api = useApiClient();
   const queryClient = useQueryClient();
+  const { scheme } = useAppearance();
+  const colors = useThemeColors();
 
   const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
   const inTabsGroup = segments[0] === '(tabs)';
@@ -339,11 +345,12 @@ const AuthLayout = () => {
 
   return (
     <OfflineBannerHeightProvider>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         <OfflineBanner />
         <WelcomeModal visible={showWelcomeModal} onClose={closeWelcomeModal} />
         <UpdateNameModal visible={showUpdateNameModal} onClose={() => setNameModalDismissed(true)} />
-        <Stack>
+        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background } }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
           <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />
@@ -361,7 +368,17 @@ const AuthLayout = () => {
           <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />
           <Stack.Screen name="add-members" options={{ headerShown: false, presentation: 'modal' }} />
           <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />
-          <Stack.Screen name="notifications" options={{ headerShown: true, title: 'Notifications'}} />
+          <Stack.Screen
+            name="notifications"
+            options={{
+              headerShown: true,
+              title: 'Notifications',
+              headerStyle: { backgroundColor: colors.surface },
+              headerTintColor: colors.textPrimary,
+              headerTitleStyle: { color: colors.textPrimary },
+              headerShadowVisible: scheme === 'dark',
+            }}
+          />
           <Stack.Screen name="join" options={{ headerShown: false }} />
           <Stack.Screen name="sso-callback" options={{ headerShown: false }} />
         </Stack>

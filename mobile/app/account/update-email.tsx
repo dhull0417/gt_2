@@ -4,10 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const UpdateEmailScreen = () => {
     const { user } = useUser();
     const router = useRouter();
+    const colors = useThemeColors();
     const [newEmail, setNewEmail] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
@@ -36,35 +38,35 @@ const UpdateEmailScreen = () => {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-gray-100">
+        <SafeAreaView className="flex-1 bg-gray-100 dark:bg-black">
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 className="flex-1"
             >
                 <ScrollView contentContainerStyle={{ flexGrow: 1 }} className="p-6">
                     <View style={{ marginBottom: 20 }}>
-                        <Text style={styles.label}>Current Email</Text>
-                        <View style={styles.readOnlyBox}>
-                            <Feather name="mail" size={16} color="#9CA3AF" />
-                            <Text style={styles.readOnlyText}>{user?.primaryEmailAddress?.emailAddress}</Text>
+                        <Text style={[styles.label, { color: colors.textFaint }]}>Current Email</Text>
+                        <View style={[styles.readOnlyBox, { backgroundColor: colors.backgroundAlt, borderColor: colors.border }]}>
+                            <Feather name="mail" size={16} color={colors.textFaint} />
+                            <Text style={[styles.readOnlyText, { color: colors.textMuted }]}>{user?.primaryEmailAddress?.emailAddress}</Text>
                         </View>
                     </View>
                     <View style={{ marginBottom: 28 }}>
-                        <Text style={styles.label}>New Email Address</Text>
+                        <Text style={[styles.label, { color: colors.textFaint }]}>New Email Address</Text>
                         <TextInput
                             value={newEmail}
                             onChangeText={setNewEmail}
                             placeholder="Enter your new email"
-                            placeholderTextColor="#9CA3AF"
+                            placeholderTextColor={colors.placeholder}
                             keyboardType="email-address"
                             autoCapitalize="none"
-                            style={styles.input}
+                            style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textSecondary }]}
                         />
                     </View>
                     <TouchableOpacity
                         onPress={onUpdateEmailPress}
                         disabled={isLoading}
-                        style={styles.saveBtn}
+                        style={[styles.saveBtn, { backgroundColor: colors.brand }]}
                         activeOpacity={0.85}
                     >
                         {isLoading

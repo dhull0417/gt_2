@@ -2,15 +2,17 @@ import { Stack, useRouter } from 'expo-router';
 import React from 'react';
 import { TouchableOpacity } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const AddMembersLayout = () => {
     const router = useRouter();
-    
+    const colors = useThemeColors();
+
     return (
-        <Stack>
-            <Stack.Screen 
-                name="[id]" 
-                options={{ 
+        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background } }}>
+            <Stack.Screen
+                name="[id]"
+                options={{
                     headerTitle: 'Invite Members',
                     presentation: 'card',
                     animation: 'slide_from_right',
@@ -19,7 +21,7 @@ const AddMembersLayout = () => {
                             <Feather name="x" size={24} color="#4A90E2" />
                         </TouchableOpacity>
                     ),
-                }} 
+                }}
             />
         </Stack>
     );

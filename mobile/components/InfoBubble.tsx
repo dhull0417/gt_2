@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, Pressable, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 interface InfoBubbleProps {
     title: string;
@@ -11,29 +12,31 @@ interface InfoBubbleProps {
 }
 
 // Small "i" button that pops a dismissible explainer card over the page content.
-export default function InfoBubble({ title, description, iconSize = 14, iconColor = '#9CA3AF', style }: InfoBubbleProps) {
+export default function InfoBubble({ title, description, iconSize = 14, iconColor, style }: InfoBubbleProps) {
+    const colors = useThemeColors();
     const [visible, setVisible] = useState(false);
+    const resolvedIconColor = iconColor ?? colors.textFaint;
 
     return (
         <>
             <TouchableOpacity
                 onPress={() => setVisible(true)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                style={[styles.trigger, style]}
+                style={[styles.trigger, { backgroundColor: colors.backgroundAlt }, style]}
             >
-                <Feather name="info" size={iconSize} color={iconColor} />
+                <Feather name="info" size={iconSize} color={resolvedIconColor} />
             </TouchableOpacity>
 
             <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
                 <Pressable style={styles.backdrop} onPress={() => setVisible(false)}>
-                    <Pressable style={styles.card} onPress={() => {}}>
+                    <Pressable style={[styles.card, { backgroundColor: colors.surface }]} onPress={() => {}}>
                         <View style={styles.header}>
-                            <Text style={styles.title}>{title}</Text>
+                            <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
                             <TouchableOpacity onPress={() => setVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                                <Feather name="x" size={18} color="#9CA3AF" />
+                                <Feather name="x" size={18} color={colors.textFaint} />
                             </TouchableOpacity>
                         </View>
-                        <Text style={styles.description}>{description}</Text>
+                        <Text style={[styles.description, { color: colors.textMuted }]}>{description}</Text>
                     </Pressable>
                 </Pressable>
             </Modal>

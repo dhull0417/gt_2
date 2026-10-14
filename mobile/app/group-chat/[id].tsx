@@ -50,6 +50,7 @@ import type { ChatMessage, PendingImage } from '@/types/chat';
 import EmojiPicker from 'rn-emoji-keyboard';
 import * as Clipboard from 'expo-clipboard';
 import { isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor } from '@/utils/meetupStatus';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 
 interface ChatDaySection {
   key: string;
@@ -62,6 +63,9 @@ const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._i
 const GroupChatScreen = () => {
   const { id, promptNotifications } = useLocalSearchParams<{ id: string; promptNotifications?: string }>();
   const [chatHeaderHeight, setChatHeaderHeight] = useState(0);
+  const colors = useThemeColors();
+  const { scheme } = useAppearance();
+  const isDark = scheme === 'dark';
 
   const contentTopInset = useContentTopInset();
   const api = useApiClient();
@@ -215,10 +219,14 @@ const GroupChatScreen = () => {
     return { isIn, isOut, isWaitlisted, isRsvpLocked, isRsvpDeadlinePassed };
   }, [nextMeetup, currentUser]);
   const nextMeetupBarColor = useMemo(() => {
-    if (!nextMeetupRsvpStatus) return '#EEF6FF';
+    if (!nextMeetupRsvpStatus) return isDark ? colors.backgroundAlt : '#EEF6FF';
     const { isOut, isIn, isWaitlisted } = nextMeetupRsvpStatus;
+    if (isDark) {
+      return isOut ? '#3B1E1E' : (isIn || isWaitlisted) ? '#153226' : colors.backgroundAlt;
+    }
     return isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
-  }, [nextMeetupRsvpStatus]);
+  }, [nextMeetupRsvpStatus, isDark, colors]);
+  const pollBarColor = isDark ? '#2A2140' : '#F5F3FF';
 
   // Right side of the next-event bar: currently open polls for this group
   const { data: polls } = useGetPolls(!isDM ? id : undefined);
@@ -483,13 +491,22 @@ const GroupChatScreen = () => {
 
   const chatContentReady = contentReady && !!effectiveGroup && !!currentUser;
 
+  // Pastel status-chip colors (icon buttons + mute options) adapt background/border by
+  // scheme while keeping the same hue family, mirroring MeetupCard's RSVP tint treatment.
+  const mutedChip = { backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2', borderColor: isDark ? '#5C2E2E' : '#FECACA' };
+  const mutedUntilNextChip = { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB', borderColor: isDark ? '#5C4A1E' : '#FDE68A' };
+  const activeChip = { backgroundColor: isDark ? '#132A1E' : '#F0FDF4', borderColor: isDark ? '#1F4A34' : '#BBF7D0' };
+  const detailsChip = { backgroundColor: isDark ? '#1E2340' : '#EEF2FF', borderColor: isDark ? '#333B6B' : '#C7D2FE' };
+  const amberText = isDark ? '#FBBF24' : '#B45309';
+  const redText = isDark ? '#F87171' : '#DC2626';
+
   return (
     <SafeAreaView
-      style={{ flex: 1, backgroundColor: 'white', paddingTop: contentTopInset }}
+      style={{ flex: 1, backgroundColor: colors.background, paddingTop: contentTopInset }}
       edges={['left', 'right', 'bottom']}
     >
       <View
-        className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200"
+        className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800"
         onLayout={(e) => setChatHeaderHeight(e.nativeEvent.layout.height)}
       >
         <View className="flex-row items-center flex-1">
@@ -499,7 +516,7 @@ const GroupChatScreen = () => {
           <View style={{ marginRight: 10 }}>
             <GroupAvatar name={headerName} imageUrl={effectiveGroup?.image} size={36} borderRadius={9} />
           </View>
-          <Text className="text-lg font-black text-gray-900 flex-1" numberOfLines={1}>
+          <Text className="text-lg font-black text-gray-900 dark:text-white flex-1" numberOfLines={1}>
             {headerName}
           </Text>
         </View>
@@ -513,7 +530,7 @@ const GroupChatScreen = () => {
             onPress={handleMutePress}
             style={[
               styles.iconButton,
-              isMutedUntilNext ? styles.iconButtonMutedUntilNext : isCurrentlyMuted ? styles.iconButtonMuted : styles.iconButtonActive,
+              isMutedUntilNext ? mutedUntilNextChip : isCurrentlyMuted ? mutedChip : activeChip,
             ]}
           >
             {isMutedUntilNext ? (
@@ -532,9 +549,9 @@ const GroupChatScreen = () => {
 
           <TouchableOpacity
             onPress={handleOpenDetails}
-            style={[styles.iconButton, styles.iconButtonDetails]}
+            style={[styles.iconButton, detailsChip]}
           >
-            <Feather name="menu" size={18} color="#4A90E2" />
+            <Feather name="menu" size={18} color={colors.brand} />
           </TouchableOpacity>
         </View>
       </View>
@@ -571,7 +588,7 @@ const GroupChatScreen = () => {
               contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}
               ListEmptyComponent={
                 <View style={chatStyles.center}>
-                  <Text style={{ color: '#9CA3AF', fontSize: 15 }}>No messages yet. Say hello!</Text>
+                  <Text style={{ color: colors.textFaint, fontSize: 15 }}>No messages yet. Say hello!</Text>
                 </View>
               }
               onContentSizeChange={() => scrollToBottom(false)}
@@ -591,19 +608,19 @@ const GroupChatScreen = () => {
           </View>
 
           {replyingTo && (
-            <View style={chatStyles.replyPreview}>
-              <View style={chatStyles.replyPreviewBody}>
-                <Text style={chatStyles.replyPreviewLabel}>↩ {replyingTo.sender_name}</Text>
-                <Text style={chatStyles.replyPreviewText} numberOfLines={1}>{replyingTo.content}</Text>
+            <View style={[chatStyles.replyPreview, { backgroundColor: colors.surfaceAlt, borderTopColor: colors.border }]}>
+              <View style={[chatStyles.replyPreviewBody, { borderLeftColor: colors.brand }]}>
+                <Text style={[chatStyles.replyPreviewLabel, { color: colors.brand }]}>↩ {replyingTo.sender_name}</Text>
+                <Text style={[chatStyles.replyPreviewText, { color: colors.textMuted }]} numberOfLines={1}>{replyingTo.content}</Text>
               </View>
               <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ padding: 4 }}>
-                <Text style={{ fontSize: 16, color: '#9CA3AF' }}>✕</Text>
+                <Text style={{ fontSize: 16, color: colors.textFaint }}>✕</Text>
               </TouchableOpacity>
             </View>
           )}
 
           {((nextMeetup && nextMeetupLabel) || activePolls.length > 0) && (
-            <View style={chatStyles.nextEventBarRow}>
+            <View style={[chatStyles.nextEventBarRow, { borderTopColor: colors.border }]}>
               {nextMeetup && nextMeetupLabel && (
                 <TouchableOpacity
                   onPress={() => setNextMeetupModalVisible(true)}
@@ -615,11 +632,11 @@ const GroupChatScreen = () => {
                   activeOpacity={0.7}
                 >
                   {activePolls.length === 0 && nextMeetupDay && (
-                    <View style={{ width: 20, height: 20, borderRadius: 7, backgroundColor: '#4A90E2', alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{ width: 20, height: 20, borderRadius: 7, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>{nextMeetupDay}</Text>
                     </View>
                   )}
-                  <Text style={chatStyles.nextEventText} numberOfLines={1}>
+                  <Text style={[chatStyles.nextEventText, { color: colors.textPrimary }]} numberOfLines={1}>
                     {activePolls.length > 0 ? 'Next Meetup' : `Next Meetup: ${nextMeetupLabel}`}
                   </Text>
                   {nextMeetupRsvpStatus && (
@@ -629,27 +646,27 @@ const GroupChatScreen = () => {
                       </Text>
                     ) : nextMeetupRsvpStatus.isRsvpLocked ? (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                        <Feather name="clock" size={13} color="#9CA3AF" />
-                        <Feather name="lock" size={13} color="#9CA3AF" />
+                        <Feather name="clock" size={13} color={colors.textFaint} />
+                        <Feather name="lock" size={13} color={colors.textFaint} />
                       </View>
                     ) : nextMeetupRsvpStatus.isRsvpDeadlinePassed ? (
-                      <Feather name="lock" size={13} color="#9CA3AF" />
+                      <Feather name="lock" size={13} color={colors.textFaint} />
                     ) : (
                       <Ionicons name="mail-open-outline" size={16} color="#F59E0B" />
                     )
                   )}
-                  {activePolls.length === 0 && <Feather name="chevron-right" size={13} color="#93C5FD" />}
+                  {activePolls.length === 0 && <Feather name="chevron-right" size={13} color={colors.textFaint} />}
                 </TouchableOpacity>
               )}
 
               {activePolls.length > 0 && (
                 <TouchableOpacity
                   onPress={handlePollBarPress}
-                  style={[chatStyles.nextEventBarHalf, chatStyles.pollBarHalf]}
+                  style={[chatStyles.nextEventBarHalf, { backgroundColor: pollBarColor }]}
                   activeOpacity={0.7}
                 >
                   <Feather name="bar-chart-2" size={15} color="#7C3AED" />
-                  <Text style={chatStyles.pollBarText} numberOfLines={1}>
+                  <Text style={[chatStyles.pollBarText, { color: colors.textPrimary }]} numberOfLines={1}>
                     {activePolls.length > 1 ? 'Active Polls' : 'Active Poll'}
                   </Text>
                   {hasUnansweredActivePoll ? (
@@ -657,7 +674,7 @@ const GroupChatScreen = () => {
                   ) : (
                     <Feather name="check-circle" size={15} color="#4FD1C5" />
                   )}
-                  <Feather name="chevron-right" size={13} color="#C4B5FD" />
+                  <Feather name="chevron-right" size={13} color={colors.textFaint} />
                 </TouchableOpacity>
               )}
             </View>
@@ -672,7 +689,7 @@ const GroupChatScreen = () => {
         </KeyboardAvoidingView>
 
         {!chatContentReady && (
-          <View style={[styles.loadingContainer, StyleSheet.absoluteFillObject]} pointerEvents="none">
+          <View style={[styles.loadingContainer, { backgroundColor: colors.background }, StyleSheet.absoluteFillObject]} pointerEvents="none">
             <LoadingAnimation />
           </View>
         )}
@@ -716,8 +733,8 @@ const GroupChatScreen = () => {
       {/* Reaction detail */}
       <Modal visible={!!reactionDetailMessage} transparent animationType="fade" onRequestClose={() => setReactionDetailMessage(null)}>
         <Pressable style={chatStyles.overlay} onPress={() => setReactionDetailMessage(null)}>
-          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 16 }}>Reactions</Text>
+          <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 16 }}>Reactions</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               {Object.entries(reactionDetailMessage?.reactions ?? {})
                 .filter(([, users]) => users.length > 0)
@@ -725,10 +742,10 @@ const GroupChatScreen = () => {
                   <View key={emoji} style={{ marginBottom: 16 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <Text style={{ fontSize: 22 }}>{emoji}</Text>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#6B7280' }}>{users.length}</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textMuted }}>{users.length}</Text>
                     </View>
                     {users.map((uid) => (
-                      <Text key={uid} style={{ fontSize: 15, color: '#111827', paddingVertical: 3, paddingLeft: 4 }}>
+                      <Text key={uid} style={{ fontSize: 15, color: colors.textPrimary, paddingVertical: 3, paddingLeft: 4 }}>
                         {userNameMap.get(uid) ?? 'Unknown'}
                       </Text>
                     ))}
@@ -742,22 +759,23 @@ const GroupChatScreen = () => {
       {/* Edit modal */}
       <Modal visible={!!editingMessage} transparent animationType="fade" onRequestClose={() => setEditingMessage(null)}>
         <Pressable style={chatStyles.overlay} onPress={() => setEditingMessage(null)}>
-          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 12 }}>Edit Message</Text>
+          <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 12 }}>Edit Message</Text>
             <TextInput
-              style={chatStyles.editInput}
+              style={[chatStyles.editInput, { borderColor: colors.border, backgroundColor: colors.backgroundAlt, color: colors.textPrimary }]}
               value={editText}
               onChangeText={setEditText}
               multiline
               autoFocus
               maxLength={2000}
-              selectionColor="#4A90E2"
+              selectionColor={colors.brand}
+              placeholderTextColor={colors.placeholder}
             />
             <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
-              <TouchableOpacity style={chatStyles.cancelBtn} onPress={() => setEditingMessage(null)}>
-                <Text style={{ fontSize: 15, color: '#6B7280', fontWeight: '600' }}>Cancel</Text>
+              <TouchableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setEditingMessage(null)}>
+                <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600' }}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={chatStyles.saveBtn} onPress={handleEditSave}>
+              <TouchableOpacity style={[chatStyles.saveBtn, { backgroundColor: colors.brand }]} onPress={handleEditSave}>
                 <Text style={{ fontSize: 15, color: '#fff', fontWeight: '600' }}>Save</Text>
               </TouchableOpacity>
             </View>
@@ -785,18 +803,18 @@ const GroupChatScreen = () => {
       {/* Poll picker — only shown when the bar's poll side is tapped with more than one active poll */}
       <Modal visible={pollSelectorVisible} transparent animationType="fade" onRequestClose={() => setPollSelectorVisible(false)}>
         <Pressable style={chatStyles.overlay} onPress={() => setPollSelectorVisible(false)}>
-          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 16 }}>Active Polls</Text>
+          <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 16 }}>Active Polls</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               {activePolls.map(poll => {
                 const hasVoted = !!currentUser && poll.options.some(opt =>
                   opt.voters.some(v => (typeof v === 'string' ? v : v._id) === currentUser._id)
                 );
                 return (
-                  <TouchableOpacity key={poll._id} style={chatStyles.pollSelectorRow} onPress={() => handleSelectActivePoll(poll._id)}>
-                    <Text style={chatStyles.pollSelectorPrompt} numberOfLines={2}>{poll.prompt}</Text>
+                  <TouchableOpacity key={poll._id} style={[chatStyles.pollSelectorRow, { borderBottomColor: colors.border }]} onPress={() => handleSelectActivePoll(poll._id)}>
+                    <Text style={[chatStyles.pollSelectorPrompt, { color: colors.textPrimary }]} numberOfLines={2}>{poll.prompt}</Text>
                     {!hasVoted && <View style={chatStyles.pollSelectorDot} />}
-                    <Feather name="chevron-right" size={16} color="#9CA3AF" />
+                    <Feather name="chevron-right" size={16} color={colors.textFaint} />
                   </TouchableOpacity>
                 );
               })}
@@ -838,38 +856,38 @@ const GroupChatScreen = () => {
       {/* Mute options */}
       <Modal visible={muteOptionsVisible} transparent animationType="fade" onRequestClose={() => setMuteOptionsVisible(false)}>
         <Pressable style={chatStyles.overlay} onPress={() => setMuteOptionsVisible(false)}>
-          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 16 }}>Mute Notifications</Text>
+          <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 16 }}>Mute Notifications</Text>
             <TouchableOpacity
-              style={[muteStyles.option, muteStyles.untilNextOption]}
+              style={[muteStyles.option, mutedUntilNextChip]}
               onPress={() => handleMuteOptionPress('untilNext')}
               activeOpacity={0.7}
             >
-              <View style={[muteStyles.iconWrap, muteStyles.untilNextIconWrap]}>
+              <View style={[muteStyles.iconWrap, { backgroundColor: isDark ? '#4A3A18' : '#FEF3C7' }]}>
                 <Feather name="clock" size={18} color="#D97706" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={muteStyles.untilNextText}>Mute until next meetup</Text>
-                <Text style={muteStyles.optionSubtitle}>We'll turn notifications back on for you</Text>
+                <Text style={[muteStyles.untilNextText, { color: amberText }]}>Mute until next meetup</Text>
+                <Text style={[muteStyles.optionSubtitle, { color: colors.textFaint }]}>We'll turn notifications back on for you</Text>
               </View>
-              <Feather name="chevron-right" size={18} color="#D1D5DB" />
+              <Feather name="chevron-right" size={18} color={colors.textFaint} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[muteStyles.option, muteStyles.indefiniteOption]}
+              style={[muteStyles.option, mutedChip]}
               onPress={() => handleMuteOptionPress('indefinite')}
               activeOpacity={0.7}
             >
-              <View style={[muteStyles.iconWrap, muteStyles.indefiniteIconWrap]}>
+              <View style={[muteStyles.iconWrap, { backgroundColor: isDark ? '#4A2424' : '#FEE2E2' }]}>
                 <Feather name="bell-off" size={18} color="#DC2626" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={muteStyles.indefiniteText}>Mute</Text>
-                <Text style={muteStyles.optionSubtitle}>Stay silent until you turn it back on</Text>
+                <Text style={[muteStyles.indefiniteText, { color: redText }]}>Mute</Text>
+                <Text style={[muteStyles.optionSubtitle, { color: colors.textFaint }]}>Stay silent until you turn it back on</Text>
               </View>
-              <Feather name="chevron-right" size={18} color="#D1D5DB" />
+              <Feather name="chevron-right" size={18} color={colors.textFaint} />
             </TouchableOpacity>
-            <TouchableOpacity style={chatStyles.cancelBtn} onPress={() => setMuteOptionsVisible(false)}>
-              <Text style={{ fontSize: 15, color: '#6B7280', fontWeight: '600', textAlign: 'center' }}>Cancel</Text>
+            <TouchableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setMuteOptionsVisible(false)}>
+              <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600', textAlign: 'center' }}>Cancel</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -893,26 +911,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
   },
-  iconButtonMuted: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-  },
-  iconButtonMutedUntilNext: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FDE68A',
-  },
   mutedUntilNextClockIcon: {
     position: 'absolute',
     top: 2,
     right: 2,
-  },
-  iconButtonActive: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
-  },
-  iconButtonDetails: {
-    backgroundColor: '#EEF2FF',
-    borderColor: '#C7D2FE',
   },
 });
 
@@ -925,7 +927,6 @@ const chatStyles = StyleSheet.create({
   nextEventBarHalfDivider: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: 'rgba(17,24,39,0.08)' },
   nextEventText: { fontSize: 15, fontWeight: '400', color: '#111827' },
   nextEventStatusText: { fontSize: 13, fontWeight: '900', letterSpacing: 1 },
-  pollBarHalf: { backgroundColor: '#F5F3FF' },
   pollBarText: { fontSize: 15, fontWeight: '400', color: '#111827' },
   pollSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F3F4F6' },
   pollSelectorPrompt: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
@@ -950,8 +951,6 @@ const muteStyles = StyleSheet.create({
     borderWidth: 1.5,
     marginBottom: 10,
   },
-  untilNextOption: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
-  indefiniteOption: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
   iconWrap: {
     width: 36,
     height: 36,
@@ -959,8 +958,6 @@ const muteStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  untilNextIconWrap: { backgroundColor: '#FEF3C7' },
-  indefiniteIconWrap: { backgroundColor: '#FEE2E2' },
   untilNextText: { fontSize: 15, fontWeight: '800', color: '#B45309' },
   indefiniteText: { fontSize: 15, fontWeight: '800', color: '#DC2626' },
   optionSubtitle: { fontSize: 12, fontWeight: '500', color: '#9CA3AF', marginTop: 2 },

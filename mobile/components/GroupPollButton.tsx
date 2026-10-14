@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import PollListModal from '@/components/PollListModal';
 import { useGetPolls } from '@/hooks/useGetPolls';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 
 interface GroupPollButtonProps {
   groupId: string;
@@ -13,6 +14,9 @@ interface GroupPollButtonProps {
 
 // Shared by Group Details and Group Chat; renders nothing for DMs (no polls).
 export const GroupPollButton = ({ groupId, currentUserId, canManage, isDM }: GroupPollButtonProps) => {
+  const colors = useThemeColors();
+  const { scheme } = useAppearance();
+  const isDark = scheme === 'dark';
   const [pollListVisible, setPollListVisible] = useState(false);
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const [pollTooltipAnchor, setPollTooltipAnchor] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -54,10 +58,10 @@ export const GroupPollButton = ({ groupId, currentUserId, canManage, isDM }: Gro
         ref={pollButtonRef}
         onLayout={handlePollButtonLayout}
         onPress={handlePollButtonPress}
-        style={styles.iconButton}
+        style={[styles.iconButton, { backgroundColor: isDark ? '#1E2340' : '#EEF2FF', borderColor: isDark ? '#333B6B' : '#C7D2FE' }]}
       >
-        <Feather name="bar-chart-2" size={18} color="#4A90E2" />
-        {hasUnansweredPoll && <View style={styles.pollUnansweredDot} />}
+        <Feather name="bar-chart-2" size={18} color={colors.brand} />
+        {hasUnansweredPoll && <View style={[styles.pollUnansweredDot, { borderColor: colors.surface }]} />}
       </TouchableOpacity>
 
       {tooltipVisible && pollTooltipAnchor && (
@@ -109,6 +113,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'white',
   },
+  // This tooltip is intentionally a fixed dark badge in both themes (like a toast),
+  // so it isn't tokenized.
   pollTooltip: {
     position: 'absolute',
     backgroundColor: '#111827',

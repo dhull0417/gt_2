@@ -8,6 +8,7 @@ import { useGetMeetups } from '@/hooks/useGetMeetups';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
 import { MeetupCard } from '@/components/MeetupCard';
 import { DayHeader, splitByDay } from '@/components/MeetupDayGroups';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 interface GroupMeetupsModalProps {
     visible: boolean;
@@ -16,6 +17,7 @@ interface GroupMeetupsModalProps {
 }
 
 const GroupMeetupsModal = ({ visible, onClose, groupId }: GroupMeetupsModalProps) => {
+    const colors = useThemeColors();
     const api = useApiClient();
     const { data: allMeetups, isLoading } = useGetMeetups();
     const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
@@ -51,19 +53,19 @@ const GroupMeetupsModal = ({ visible, onClose, groupId }: GroupMeetupsModalProps
                 <MeetupDetailModal meetup={selectedMeetup} onClose={() => setSelectedMeetup(null)} />
             ) : (
                 // pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually
-                <SafeAreaView style={styles.modalContent} edges={['top', 'bottom']}>
+                <SafeAreaView style={[styles.modalContent, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
                     <View style={styles.modalHeader}>
                         <View style={{ width: 24 }} />
-                        <Text style={styles.modalHeaderTitle}>Upcoming Meetups</Text>
+                        <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>Upcoming Meetups</Text>
                         <TouchableOpacity onPress={onClose}>
-                            <Feather name="x" size={24} color="#374151" />
+                            <Feather name="x" size={24} color={colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
                     {isLoading ? (
-                        <ActivityIndicator color="#4A90E2" style={{ marginTop: 40 }} />
+                        <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
                     ) : upcomingMeetups.length === 0 ? (
-                        <Text style={styles.emptyText}>No upcoming meetups.</Text>
+                        <Text style={[styles.emptyText, { color: colors.textFaint }]}>No upcoming meetups.</Text>
                     ) : (
                         <ScrollView showsVerticalScrollIndicator={false}>
                             {dayGroups.map(day => (

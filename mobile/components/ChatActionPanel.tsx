@@ -5,6 +5,7 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
 import type { BubbleLayout } from './ChatMessageBubble';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const PANEL_WIDTH = 244;
 const REACTIONS_PANEL_WIDTH = 300;
@@ -63,6 +64,7 @@ export function ChatActionPanel({
   onDelete,
   onClose,
 }: Props) {
+  const colors = useThemeColors();
   const entrance = useSharedValue(0);
   useEffect(() => {
     entrance.value = withTiming(1, { duration: 180 });
@@ -101,7 +103,7 @@ export function ChatActionPanel({
         <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
       </Pressable>
 
-      <Animated.View style={[styles.panel, { top, left, width: panelWidth }, panelStyle]}>
+      <Animated.View style={[styles.panel, { top, left, width: panelWidth, backgroundColor: colors.surface }, panelStyle]}>
         {showReactions && (
           <View style={styles.emojiRow}>
             {REACTIONS.map((emoji, i) => (
@@ -113,17 +115,17 @@ export function ChatActionPanel({
 
         {(showReply || showCopy) && (
           <>
-            {showReactions && <View style={styles.divider} />}
+            {showReactions && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
             {showReply && (
               <TouchableOpacity style={styles.actionRow} onPress={onReply}>
-                <Feather name="corner-up-left" size={17} color="#111827" />
-                <Text style={styles.actionLabel}>Reply</Text>
+                <Feather name="corner-up-left" size={17} color={colors.textPrimary} />
+                <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>Reply</Text>
               </TouchableOpacity>
             )}
             {showCopy && (
               <TouchableOpacity style={styles.actionRow} onPress={onCopy}>
-                <Feather name="copy" size={16} color="#111827" />
-                <Text style={styles.actionLabel}>Copy</Text>
+                <Feather name="copy" size={16} color={colors.textPrimary} />
+                <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>Copy</Text>
               </TouchableOpacity>
             )}
           </>
@@ -131,17 +133,17 @@ export function ChatActionPanel({
 
         {(showEdit || showDelete) && (
           <>
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
             {showEdit && (
               <TouchableOpacity style={styles.actionRow} onPress={onEdit}>
-                <Feather name="edit-2" size={16} color="#111827" />
-                <Text style={styles.actionLabel}>Edit</Text>
+                <Feather name="edit-2" size={16} color={colors.textPrimary} />
+                <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>Edit</Text>
               </TouchableOpacity>
             )}
             {showDelete && (
               <TouchableOpacity style={styles.actionRow} onPress={onDelete}>
-                <Feather name="trash-2" size={16} color="#EF4444" />
-                <Text style={[styles.actionLabel, { color: '#EF4444' }]}>Delete</Text>
+                <Feather name="trash-2" size={16} color={colors.danger} />
+                <Text style={[styles.actionLabel, { color: colors.danger }]}>Delete</Text>
               </TouchableOpacity>
             )}
           </>

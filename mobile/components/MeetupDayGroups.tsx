@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text } from 'react-native';
 import { Meetup } from '@/utils/api';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 export type DayGroup = { key: string; label: string; items: Meetup[] };
 
@@ -29,8 +30,11 @@ export const splitByDay = (list: Meetup[]): DayGroup[] => {
     return groups;
 };
 
-export const DayHeader = ({ label }: { label: string }) => (
-    <Text style={{ fontSize: 16, fontWeight: '800', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 8, marginTop: 28, marginBottom: 6, textAlign: 'center' }}>
-        {label}
-    </Text>
-);
+export const DayHeader = ({ label }: { label: string }) => {
+    const colors = useThemeColors();
+    return (
+        <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 8, marginTop: 28, marginBottom: 6, textAlign: 'center' }}>
+            {label}
+        </Text>
+    );
+};

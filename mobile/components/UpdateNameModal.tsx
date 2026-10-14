@@ -2,6 +2,7 @@ import { View, Text, TextInput, TouchableOpacity, Modal, ActivityIndicator, Keyb
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, userApi, User } from '@/utils/api';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 interface UpdateNameModalProps {
   visible: boolean;
@@ -14,6 +15,7 @@ interface UpdateNameModalProps {
 // rather than a one-time-seen flag (see showUpdateNameModal in app/_layout.tsx), so it
 // reappears on the next app open until the name is actually filled in.
 export function UpdateNameModal({ visible, onClose }: UpdateNameModalProps) {
+  const colors = useThemeColors();
   const api = useApiClient();
   const queryClient = useQueryClient();
   const [firstName, setFirstName] = useState('');
@@ -40,33 +42,33 @@ export function UpdateNameModal({ visible, onClose }: UpdateNameModalProps) {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1 items-center justify-center px-8"
-        style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+        style={{ backgroundColor: colors.overlay }}
       >
-        <View className="w-full bg-white rounded-2xl p-6">
-          <Text className="text-xl font-bold text-gray-800 mb-1">Update Name!</Text>
-          <Text className="text-sm text-gray-600 mb-4">Make sure your friends know who you are.</Text>
+        <View className="w-full bg-white dark:bg-gray-800 rounded-2xl p-6">
+          <Text className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-1">Update Name!</Text>
+          <Text className="text-sm text-gray-600 dark:text-gray-400 mb-4">Make sure your friends know who you are.</Text>
 
           <TextInput
             placeholder="First Name"
             value={firstName}
             onChangeText={setFirstName}
-            className="w-full bg-gray-50 p-4 border border-gray-300 rounded-lg text-base mb-3"
+            className="w-full bg-gray-50 dark:bg-gray-900 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base text-gray-900 dark:text-gray-100 mb-3"
             style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.placeholder}
           />
           <TextInput
             placeholder="Last Name"
             value={lastName}
             onChangeText={setLastName}
-            className="w-full bg-gray-50 p-4 border border-gray-300 rounded-lg text-base mb-4"
+            className="w-full bg-gray-50 dark:bg-gray-900 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base text-gray-900 dark:text-gray-100 mb-4"
             style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.placeholder}
           />
 
           <TouchableOpacity
             onPress={() => saveName.mutate()}
             disabled={!canSave || saveName.isPending}
-            className={`w-full py-4 rounded-lg items-center shadow ${canSave ? 'bg-[#4A90E2]' : 'bg-gray-300'}`}
+            className={`w-full py-4 rounded-lg items-center shadow ${canSave ? 'bg-[#4A90E2]' : 'bg-gray-300 dark:bg-gray-700'}`}
           >
             {saveName.isPending
               ? <ActivityIndicator color="#fff" />
@@ -74,7 +76,7 @@ export function UpdateNameModal({ visible, onClose }: UpdateNameModalProps) {
           </TouchableOpacity>
 
           <TouchableOpacity onPress={onClose} className="mt-3 items-center">
-            <Text className="text-sm text-gray-400">Skip for now</Text>
+            <Text className="text-sm text-gray-400 dark:text-gray-500">Skip for now</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

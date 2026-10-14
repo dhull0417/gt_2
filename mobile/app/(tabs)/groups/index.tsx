@@ -18,6 +18,7 @@ import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { TAB_BAR_HEIGHT } from '@/utils/layout';
 import { promptForNotificationPermission } from '@/hooks/usePushNotifications';
 import { useContentTopInset } from '@/hooks/useContentTopInset';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const GroupScreen = () => {
   const api = useApiClient();
@@ -25,6 +26,7 @@ const GroupScreen = () => {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const contentTopInset = useContentTopInset();
+  const colors = useThemeColors();
   const { promptNotifications } = useLocalSearchParams<{ promptNotifications?: string }>();
 
   // Ask once after group creation, then drop the param so revisiting this tab doesn't re-ask
@@ -67,8 +69,8 @@ const GroupScreen = () => {
 
   const renderGroupList = () => {
     if (isLoadingGroups || (!currentUser && isLoadingUser)) return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>;
-    if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
-    if (!sortedGroups || sortedGroups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
+    if (isErrorGroups) return <Text className="text-center text-red-500 dark:text-red-400 mt-4">Failed to load groups.</Text>;
+    if (!sortedGroups || sortedGroups.length === 0) return <Text className="text-center text-gray-500 dark:text-gray-400 mt-4">You have no groups yet.</Text>;
 
     return sortedGroups.map((group) => {
       const isMuted = currentUser?.mutedGroups?.includes(group._id) || currentUser?.mutedUntilNextMeetup?.includes(group._id);
@@ -81,11 +83,11 @@ const GroupScreen = () => {
       return (
         <TouchableOpacity
           key={group._id}
-          className="relative bg-white px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100"
+          className="relative bg-white dark:bg-gray-900 px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800"
           onPress={() => handleOpenGroupDetail(group)}
         >
           {isUnread && (
-            <View className="absolute top-3 right-3 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+            <View className="absolute top-3 right-3 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-gray-900" />
           )}
           <View className="flex-row items-center">
             <View style={{ marginRight: 12 }}>
@@ -93,17 +95,17 @@ const GroupScreen = () => {
             </View>
             <View className="flex-1">
               <View className="flex-row items-center">
-                <Text className="text-lg font-bold text-gray-800 flex-1" numberOfLines={1}>
+                <Text className="text-lg font-bold text-gray-800 dark:text-gray-100 flex-1" numberOfLines={1}>
                   {displayName}
                 </Text>
-                {isMuted && <Feather name="bell-off" size={14} color="#9CA3AF" style={{ marginLeft: 6 }} />}
+                {isMuted && <Feather name="bell-off" size={14} color={colors.textFaint} style={{ marginLeft: 6 }} />}
               </View>
               {group.lastMessage ? (
-                <Text className="text-sm text-gray-500 mt-0.5" numberOfLines={1}>
-                  <Text style={{ color: '#4A90E2', fontWeight: '600' }}>{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
+                <Text className="text-sm text-gray-500 dark:text-gray-400 mt-0.5" numberOfLines={1}>
+                  <Text style={{ color: colors.brand, fontWeight: '600' }}>{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
                 </Text>
               ) : (
-                <Text className="text-sm text-gray-400 italic mt-0.5">No messages yet</Text>
+                <Text className="text-sm text-gray-400 dark:text-gray-500 italic mt-0.5">No messages yet</Text>
               )}
             </View>
           </View>
@@ -114,23 +116,23 @@ const GroupScreen = () => {
 
   return (
     <SafeAreaView
-      className='flex-1 bg-gray-50'
+      className='flex-1 bg-gray-50 dark:bg-black'
       edges={['left', 'right']}
       style={{ paddingTop: contentTopInset }}
     >
-      <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
+      <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
         <TouchableOpacity onPress={() => { if (pathname !== '/notifications') router.push('/notifications'); }}>
-          <Feather name="bell" size={26} color="#4A90E2" />
+          <Feather name="bell" size={26} color={colors.brand} />
           {hasUnreadNotifications && (
-            <View className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+            <View className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-gray-900" />
           )}
         </TouchableOpacity>
-        <Text className="text-xl font-black text-gray-900">Groups</Text>
+        <Text className="text-xl font-black text-gray-900 dark:text-gray-100">Groups</Text>
         <TouchableOpacity
           onPress={() => router.push('/create-group')}
           style={{ alignItems: 'center', justifyContent: 'center' }}
         >
-          <Feather name="plus-circle" size={26} color="#4A90E2" />
+          <Feather name="plus-circle" size={26} color={colors.brand} />
         </TouchableOpacity>
       </View>
       <ScrollView className="px-4" contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}>

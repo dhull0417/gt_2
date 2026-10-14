@@ -13,12 +13,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { subscribeRsvpResponse } from '@/utils/rsvpResponseBus';
 import { getRandomRsvpResponse, RsvpResponse } from '@/utils/rsvpResponses';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const AUTO_DISMISS_MS = 2200;
 
 // Absolutely-positioned overlay, not RN <Modal> — a nested Modal can fail to
 // present on iOS (e.g. inside MeetupDetailModal).
 const RsvpResponseOverlay = () => {
+  const colors = useThemeColors();
   const [current, setCurrent] = useState<(RsvpResponse & { status: 'in' | 'out' }) | null>(null);
 
   const backdropOpacity = useSharedValue(0);
@@ -86,7 +88,7 @@ const RsvpResponseOverlay = () => {
       <Pressable style={StyleSheet.absoluteFill} onPress={dismiss}>
         <Animated.View style={[styles.backdrop, backdropStyle]} />
         <View style={styles.centerWrap} pointerEvents="box-none">
-          <Animated.View style={[styles.card, { borderColor: accentColor }, cardStyle]}>
+          <Animated.View style={[styles.card, { backgroundColor: colors.surface, borderColor: accentColor }, cardStyle]}>
             <Animated.Text style={[styles.emoji, emojiStyle]}>{current.emoji}</Animated.Text>
             <Text style={[styles.responseText, { color: accentColor }]}>{current.text}</Text>
           </Animated.View>

@@ -8,6 +8,7 @@ import { Meetup } from '@/utils/api';
 import NativeTimePicker from '@/components/NativeTimePicker';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const usaTimezones = [
     { label: "Eastern (ET)", value: "America/New_York" },
@@ -23,7 +24,8 @@ const MeetupEditScreen = () => {
     const { id } = useLocalSearchParams<{ id: string }>();
     const queryClient = useQueryClient();
     const { mutate: updateMeetup, isPending } = useUpdateMeetup();
-    
+    const colors = useThemeColors();
+
     const meetupToEdit = queryClient.getQueryData<Meetup[]>(['meetups'])?.find(e => e._id === id);
 
     const [date, setDate] = useState(new Date());
@@ -62,7 +64,7 @@ const MeetupEditScreen = () => {
         setDate(tempDate); // Finalize the date selection
         setShowDatePicker(false);
     };
-    
+
     const handleSaveChanges = () => {
         if (!id) return;
         // Timezone omitted — backend uses the group's default
@@ -70,43 +72,45 @@ const MeetupEditScreen = () => {
     };
 
     if (!meetupToEdit) {
-        return <Text style={{textAlign: 'center', marginTop: 20}}>Meetup not found. Please go back and try again.</Text>;
+        return <Text style={{textAlign: 'center', marginTop: 20, color: colors.textPrimary}}>Meetup not found. Please go back and try again.</Text>;
     }
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <ScrollView style={{ padding: 24 }} keyboardShouldPersistTaps="handled">
                  <View style={{ marginBottom: 24 }}>
-                    <Text style={styles.title}>Set New Date</Text>
-                    <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateButton}>
-                        <Text style={styles.dateButtonText}>{date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: meetupToEdit?.timezone })}</Text>
+                    <Text style={[styles.title, { color: colors.textSecondary }]}>Set New Date</Text>
+                    <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.dateButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
+                        <Text style={[styles.dateButtonText, { color: colors.brand }]}>{date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: meetupToEdit?.timezone })}</Text>
                     </TouchableOpacity>
                 </View>
-                
+
                 <View style={{ marginBottom: 24 }}>
-                    <Text style={styles.title}>Set New Time</Text>
-                    <TouchableOpacity onPress={() => setShowTimePicker(true)} style={styles.dateButton}>
-                        <Text style={styles.dateButtonText}>{meetTime}</Text>
+                    <Text style={[styles.title, { color: colors.textSecondary }]}>Set New Time</Text>
+                    <TouchableOpacity onPress={() => setShowTimePicker(true)} style={[styles.dateButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
+                        <Text style={[styles.dateButtonText, { color: colors.brand }]}>{meetTime}</Text>
                     </TouchableOpacity>
                 </View>
 
                 <View style={styles.timezoneContainer}>
-                    <Text style={styles.title}>Select Timezone</Text>
-                    <View style={styles.pickerWrapper}>
-                        <Picker 
-                            selectedValue={timezone} 
+                    <Text style={[styles.title, { color: colors.textSecondary }]}>Select Timezone</Text>
+                    <View style={[styles.pickerWrapper, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
+                        <Picker
+                            selectedValue={timezone}
                             onValueChange={setTimezone}
-                            itemStyle={styles.pickerItem}
+                            itemStyle={[styles.pickerItem, { color: colors.textPrimary }]}
+                            style={{ color: colors.textPrimary, backgroundColor: colors.surface }}
+                            dropdownIconColor={colors.textSecondary}
                         >
                             {usaTimezones.map(tz => <Picker.Item key={tz.value} label={tz.label} value={tz.value} />)}
                         </Picker>
                     </View>
                 </View>
-                
+
                 <TouchableOpacity
                     onPress={handleSaveChanges}
                     disabled={isPending}
-                    style={[styles.saveButton, isPending && { backgroundColor: '#4FD1C5' }]}
+                    style={[styles.saveButton, { backgroundColor: colors.accentTeal }, isPending && { backgroundColor: colors.accentTeal, opacity: 0.7 }]}
                 >
                     <Text style={styles.saveButtonText}>{isPending ? "Saving..." : "Save Changes"}</Text>
                 </TouchableOpacity>
@@ -121,16 +125,16 @@ const MeetupEditScreen = () => {
                         visible={showDatePicker}
                         onRequestClose={() => setShowDatePicker(false)}
                     >
-                        <View style={styles.modalContainer}>
-                            <View style={styles.datePickerContent}>
+                        <View style={[styles.modalContainer, { backgroundColor: colors.overlay }]}>
+                            <View style={[styles.datePickerContent, { backgroundColor: colors.surface }]}>
                                 <DateTimePicker
                                     value={tempDate}
                                     mode="date"
                                     display="spinner"
                                     onChange={onDateChange}
-                                    textColor='black' // Fix for invisible text
+                                    textColor={colors.textPrimary} // Fix for invisible text
                                 />
-                                <TouchableOpacity onPress={confirmDate} style={styles.doneButton}>
+                                <TouchableOpacity onPress={confirmDate} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
                                     <Text style={styles.doneButtonText}>Done</Text>
                                 </TouchableOpacity>
                             </View>
@@ -154,6 +158,7 @@ const MeetupEditScreen = () => {
 };
 
 const styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#F9FAFB' },
     title: { fontSize: 18, fontWeight: '600', color: '#374151', marginBottom: 8, textAlign: 'center' },
     dateButton: { paddingVertical: 16, backgroundColor: 'white', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, alignItems: 'center' },
     dateButtonText: { color: '#4A90E2', fontSize: 18 },

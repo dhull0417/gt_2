@@ -14,8 +14,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-const ACTIVE_COLOR = '#4A90E2';
-const INACTIVE_COLOR = '#8E8E93';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 // Must match TAB_BAR_HEIGHT in utils/layout.ts (android: 80) or content shifts under the bar.
 const BAR_HEIGHT = 80;
@@ -30,6 +29,9 @@ const TAB_ICONS: Record<string, React.ComponentProps<typeof Feather>['name']> = 
 };
 
 const AnimatedTabIcon = ({ name, focused }: { name: React.ComponentProps<typeof Feather>['name']; focused: boolean }) => {
+  const colors = useThemeColors();
+  const activeColor = colors.brand;
+  const inactiveColor = colors.textFaint;
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
   const shadowOpacity = useSharedValue(0);
@@ -69,8 +71,8 @@ const AnimatedTabIcon = ({ name, focused }: { name: React.ComponentProps<typeof 
           <Defs>
             {/* Darkest at the center, fading out toward the tapered tips. */}
             <RadialGradient id="tabShadowGradient" cx="50%" cy="50%" r="50%">
-              <Stop offset="0%" stopColor={ACTIVE_COLOR} stopOpacity={0.6} />
-              <Stop offset="100%" stopColor={ACTIVE_COLOR} stopOpacity={0.22} />
+              <Stop offset="0%" stopColor={activeColor} stopOpacity={0.6} />
+              <Stop offset="100%" stopColor={activeColor} stopOpacity={0.22} />
             </RadialGradient>
           </Defs>
           <Ellipse
@@ -83,7 +85,7 @@ const AnimatedTabIcon = ({ name, focused }: { name: React.ComponentProps<typeof 
         </Svg>
       </Animated.View>
       <Animated.View style={iconStyle}>
-        <Feather name={name} size={24} color={focused ? ACTIVE_COLOR : INACTIVE_COLOR} />
+        <Feather name={name} size={24} color={focused ? activeColor : inactiveColor} />
       </Animated.View>
     </View>
   );
@@ -91,9 +93,13 @@ const AnimatedTabIcon = ({ name, focused }: { name: React.ComponentProps<typeof 
 
 export const AndroidTabBar = ({ state, descriptors, navigation }: BottomTabBarProps) => {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
 
   return (
-    <View style={[styles.container, { height: BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}>
+    <View style={[
+      styles.container,
+      { height: BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom, backgroundColor: colors.surface, borderTopColor: colors.border },
+    ]}>
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         const isFocused = state.index === index;

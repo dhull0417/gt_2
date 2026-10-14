@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getDMDisplayName, getUserDisplayName } from '@/utils/groupDisplay';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -69,7 +70,10 @@ export const GroupDetailsView = ({
     onLeaveSuccess,
     onMemberPress,
 }: GroupDetailsViewProps) => {
-    
+
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const isDark = scheme === 'dark';
     const [detailsExpanded, setDetailsExpanded] = useState(false);
     const router = useRouter();
     const api = useApiClient();
@@ -81,11 +85,17 @@ export const GroupDetailsView = ({
         enabled: !groupDetails.isDM,
         staleTime: 1000 * 60 * 5,
     });
-    
+
+    // Pastel icon-chip backgrounds adapt by scheme while keeping the same hue family
+    const chipBlue = { backgroundColor: isDark ? '#1A2A42' : '#EEF6FF', borderColor: isDark ? '#2C4870' : '#BFDBFE' };
+    const chipGreen = { backgroundColor: isDark ? '#132A1E' : '#F0FDF4', borderColor: isDark ? '#1F4A34' : '#BBF7D0' };
+    const chipPurple = { backgroundColor: isDark ? '#241B3D' : '#F5F3FF', borderColor: isDark ? '#3B2E63' : '#DDD6FE' };
+    const chipAmber = { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB', borderColor: isDark ? '#5C4A1E' : '#FDE68A' };
+    const chipTeal = { backgroundColor: isDark ? '#123330' : '#F0FDFA', borderColor: isDark ? '#1F5B54' : '#99F6E4' };
 
     // --- Permissions ---
     const isOwner = currentUser._id === groupDetails.owner;
-    const isMod = groupDetails.moderators?.some((m: User | string) => 
+    const isMod = groupDetails.moderators?.some((m: User | string) =>
         typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id
     ) ?? false;
     const canManage = isOwner || isMod;
@@ -139,7 +149,7 @@ export const GroupDetailsView = ({
                 }
 
                 return matches.map((mt, mtIdx) => (
-                    <Text key={`daily-${dayIdx}-${mtIdx}`} style={styles.scheduleDetailText}>
+                    <Text key={`daily-${dayIdx}-${mtIdx}`} style={[styles.scheduleDetailText, { color: colors.textSecondary }]}>
                         • {dayName} @ {mt.time} {groupTimezoneAbbr}
                     </Text>
                 ));
@@ -154,8 +164,8 @@ export const GroupDetailsView = ({
                 dayLabel = `${rules[dtIdx].occurrence} ${dayName}`;
             } else if (typeof dt.date === 'number') {
                 const d = dt.date;
-                const sfx = d === 1 || d === 21 || d === 31 ? 'st' : 
-                            d === 2 || d === 22 ? 'nd' : 
+                const sfx = d === 1 || d === 21 || d === 31 ? 'st' :
+                            d === 2 || d === 22 ? 'nd' :
                             d === 3 || d === 23 ? 'rd' : 'th';
                 dayLabel = `The ${d}${sfx}`;
             } else if (typeof dt.day === 'number') {
@@ -165,7 +175,7 @@ export const GroupDetailsView = ({
             }
 
             return (
-                <Text key={dtIdx} style={styles.scheduleDetailText}>
+                <Text key={dtIdx} style={[styles.scheduleDetailText, { color: colors.textSecondary }]}>
                     • {dayLabel} @ {dt.time} {groupTimezoneAbbr}
                 </Text>
             );
@@ -185,57 +195,57 @@ export const GroupDetailsView = ({
             {/* 0. Group Photo Header */}
             <View style={styles.groupHeader}>
                 <GroupAvatar name={headerName} imageUrl={groupDetails.image} size={140} borderRadius={32} />
-                <Text style={styles.groupHeaderName}>{headerName}</Text>
+                <Text style={[styles.groupHeaderName, { color: colors.textPrimary }]}>{headerName}</Text>
             </View>
 
             {/* Invite Friends — hidden for DMs */}
             {!isDM && (
-                <TouchableOpacity onPress={handleInvitePress} style={styles.inviteButton} activeOpacity={0.7}>
-                    <Feather name="user-plus" size={16} color="#0D9488" />
-                    <Text style={styles.inviteButtonText}>Invite Friends</Text>
+                <TouchableOpacity onPress={handleInvitePress} style={[styles.inviteButton, chipTeal]} activeOpacity={0.7}>
+                    <Feather name="user-plus" size={16} color={colors.accentTeal} />
+                    <Text style={[styles.inviteButtonText, { color: colors.accentTeal }]}>Invite Friends</Text>
                 </TouchableOpacity>
             )}
 
             {/* 1. Details — collapsible, hidden for DMs */}
-            {!isDM && <View style={styles.card}>
+            {!isDM && <View style={[styles.card, { backgroundColor: colors.surface }]}>
                 <TouchableOpacity style={styles.collapsibleHeader} onPress={toggleDetails} activeOpacity={0.7}>
                     <View style={styles.collapsibleHeaderLeft}>
-                        <View style={[styles.iconWrap, styles.iconWrapSmall, styles.iconWrapBlue]}>
-                            <Feather name="info" size={14} color="#4A90E2" />
+                        <View style={[styles.iconWrap, styles.iconWrapSmall, chipBlue]}>
+                            <Feather name="info" size={14} color={colors.brand} />
                         </View>
-                        <Text style={styles.cardTitle}>Details</Text>
+                        <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Details</Text>
                     </View>
-                    <Feather name={detailsExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#9CA3AF" />
+                    <Feather name={detailsExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textFaint} />
                 </TouchableOpacity>
 
                 {detailsExpanded && (
-                    <View style={styles.collapsibleBody}>
+                    <View style={[styles.collapsibleBody, { borderTopColor: colors.border }]}>
                         {(() => {
                             const activeSchedules = (groupDetails.schedules ?? []).filter(sch => sch.active !== false);
                             if (activeSchedules.length === 0) {
                                 return (
                                     <View style={styles.infoRow}>
-                                        <View style={[styles.iconWrap, styles.iconWrapBlue]}>
-                                            <Feather name="calendar" size={16} color="#4A90E2" />
+                                        <View style={[styles.iconWrap, chipBlue]}>
+                                            <Feather name="calendar" size={16} color={colors.brand} />
                                         </View>
-                                        <Text style={styles.infoText}>No schedule defined</Text>
+                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>No schedule defined</Text>
                                     </View>
                                 );
                             }
 
                             return activeSchedules.map((sch, schIdx) => (
-                                <View key={sch._id} style={[styles.scheduleBlock, schIdx === activeSchedules.length - 1 && { marginBottom: 0 }]}>
-                                    <Text style={styles.scheduleNameLabel}>{sch.name}</Text>
+                                <View key={sch._id} style={[styles.scheduleBlock, { borderBottomColor: colors.border }, schIdx === activeSchedules.length - 1 && { marginBottom: 0 }]}>
+                                    <Text style={[styles.scheduleNameLabel, { color: colors.textPrimary }]}>{sch.name}</Text>
 
                                     {/* Routines */}
                                     <View style={styles.infoRowTop}>
-                                        <View style={[styles.iconWrap, styles.iconWrapBlue]}>
-                                            <Feather name="calendar" size={16} color="#4A90E2" />
+                                        <View style={[styles.iconWrap, chipBlue]}>
+                                            <Feather name="calendar" size={16} color={colors.brand} />
                                         </View>
                                         <View style={styles.scheduleContent}>
                                             {(sch.routines ?? []).map((routine, rIdx) => (
                                                 <View key={rIdx} style={styles.routineBlock}>
-                                                    <Text style={styles.frequencyLabel}>
+                                                    <Text style={[styles.frequencyLabel, { color: colors.brand }]}>
                                                         {routine.frequency === 'biweekly' ? 'Every 2 Weeks' : routine.frequency.charAt(0).toUpperCase() + routine.frequency.slice(1)}
                                                     </Text>
                                                     {renderScheduleLines(routine.frequency, routine.dayTimes, routine.rules)}
@@ -246,28 +256,28 @@ export const GroupDetailsView = ({
 
                                     {/* Location */}
                                     <View style={styles.infoRow}>
-                                        <View style={[styles.iconWrap, styles.iconWrapGreen]}>
+                                        <View style={[styles.iconWrap, chipGreen]}>
                                             <Feather name="map-pin" size={16} color="#16A34A" />
                                         </View>
-                                        <Text style={styles.infoText}>
+                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
                                             {sch.defaultLocation || "No location set"}
                                         </Text>
                                     </View>
 
                                     {/* Capacity */}
                                     <View style={styles.infoRow}>
-                                        <View style={[styles.iconWrap, styles.iconWrapPurple]}>
+                                        <View style={[styles.iconWrap, chipPurple]}>
                                             <Feather name="users" size={16} color="#7C3AED" />
                                         </View>
-                                        <Text style={styles.infoText}>{sch.defaultCapacity === 0 ? "Unlimited Attendees" : sch.defaultCapacity}</Text>
+                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>{sch.defaultCapacity === 0 ? "Unlimited Attendees" : sch.defaultCapacity}</Text>
                                     </View>
 
                                     {/* RSVP window */}
                                     <View style={[styles.infoRow, { marginBottom: 0 }]}>
-                                        <View style={[styles.iconWrap, styles.iconWrapAmber]}>
+                                        <View style={[styles.iconWrap, chipAmber]}>
                                             <Feather name="bell" size={16} color="#D97706" />
                                         </View>
-                                        <Text style={styles.infoText}>
+                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
                                             {sch.generationLeadDays == null && sch.generationDeadlineDays == null
                                                 ? "RSVPs open anytime"
                                                 : [
@@ -315,25 +325,25 @@ export const GroupDetailsView = ({
                         <Wrapper key={member._id} style={styles.gridItem} {...wrapperProps}>
                             <View style={styles.gridAvatarWrap}>
                                 {member.profilePicture
-                                    ? <Image source={{ uri: member.profilePicture }} style={styles.gridAvatar} />
+                                    ? <Image source={{ uri: member.profilePicture }} style={[styles.gridAvatar, { backgroundColor: colors.backgroundAlt }]} />
                                     : (
-                                        <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder]}>
-                                            <Feather name="user" size={22} color="#9CA3AF" />
+                                        <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder, { backgroundColor: colors.backgroundAlt }]}>
+                                            <Feather name="user" size={22} color={colors.textFaint} />
                                         </View>
                                     )}
                                 {isMemberOwner && (
-                                    <View style={[styles.roleBadge, styles.ownerRoleBadge]}>
+                                    <View style={[styles.roleBadge, styles.ownerRoleBadge, { borderColor: colors.surface }]}>
                                         <Feather name="star" size={11} color="white" />
                                     </View>
                                 )}
                                 {isMemberMod && !isMemberOwner && (
-                                    <View style={[styles.roleBadge, styles.modRoleBadge]}>
+                                    <View style={[styles.roleBadge, styles.modRoleBadge, { borderColor: colors.surface }]}>
                                         <Feather name="shield" size={11} color="white" />
                                     </View>
                                 )}
                                 {canRemove && (
                                     <TouchableOpacity
-                                        style={styles.removeBadge}
+                                        style={[styles.removeBadge, { borderColor: colors.surface }]}
                                         onPress={() => onRemoveMember(member._id)}
                                         disabled={isRemovingMember}
                                     >
@@ -341,7 +351,7 @@ export const GroupDetailsView = ({
                                     </TouchableOpacity>
                                 )}
                             </View>
-                            <Text style={styles.gridName} numberOfLines={1}>{getUserDisplayName(member)}</Text>
+                            <Text style={[styles.gridName, { color: colors.textSecondary }]} numberOfLines={1}>{getUserDisplayName(member)}</Text>
                         </Wrapper>
                     );
                 };
@@ -363,8 +373,8 @@ export const GroupDetailsView = ({
                         {regularMembers.length > 0 && (
                             <View style={{ marginTop: 8, marginBottom: 24 }}>
                                 <View style={styles.sectionHeaderWrap}>
-                                    <Text style={styles.sectionTitle}>Members — {regularMembers.length}</Text>
-                                    <View style={styles.sectionHeaderLine} />
+                                    <Text style={[styles.sectionTitle, { color: colors.brand }]}>Members — {regularMembers.length}</Text>
+                                    <View style={[styles.sectionHeaderLine, { backgroundColor: colors.brand }]} />
                                 </View>
                                 <View style={styles.grid}>
                                     {regularMembers.map(renderMemberTile)}
@@ -377,10 +387,10 @@ export const GroupDetailsView = ({
 
             {/* --- LEAVE GROUP BUTTON (for non-managers) --- */}
             {!canManage && (
-                <View style={styles.footerActionContainer}>
-                    <TouchableOpacity onPress={handleLeaveGroup} style={styles.leaveButton} disabled={isLeaving}>
-                        {isLeaving 
-                            ? <ActivityIndicator color="#fff" /> 
+                <View style={[styles.footerActionContainer, { borderTopColor: colors.border }]}>
+                    <TouchableOpacity onPress={handleLeaveGroup} style={[styles.leaveButton, { backgroundColor: colors.danger }]} disabled={isLeaving}>
+                        {isLeaving
+                            ? <ActivityIndicator color="#fff" />
                             : <Text style={styles.leaveButtonText}>Leave Group</Text>
                         }
                     </TouchableOpacity>
@@ -410,10 +420,6 @@ const styles = StyleSheet.create({
     scheduleDetailText: { fontSize: 15, fontWeight: '600', color: '#374151', marginBottom: 2 },
     iconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
     iconWrapSmall: { width: 26, height: 26, borderRadius: 9 },
-    iconWrapBlue: { backgroundColor: '#EEF6FF', borderColor: '#BFDBFE' },
-    iconWrapGreen: { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
-    iconWrapPurple: { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' },
-    iconWrapAmber: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
     inviteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14, borderWidth: 1, backgroundColor: '#F0FDFA', borderColor: '#99F6E4', marginBottom: 12 },
     inviteButtonText: { marginLeft: 8, fontWeight: 'bold', fontSize: 14, color: '#0D9488' },
     sectionHeaderWrap: { marginBottom: 16 },

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Modal, Platform, StyleSheet } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useThemeColors, useAppearance } from '@/contexts/AppearanceContext';
 
 // Converts between app's "hh:mm AM/PM" strings and Date objects for the native picker.
 export const timeStringToDate = (time: string): Date => {
@@ -34,6 +35,8 @@ interface NativeTimePickerProps {
 // iOS: inline spinner sheet with a Done button. Android: system dialog, commits on pick.
 // Caller controls mount/unmount via its own "show picker" flag.
 const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, onClose, asOverlay }) => {
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
     const [temp, setTemp] = useState<Date>(() => timeStringToDate(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { setTemp(timeStringToDate(value)); }, []);
@@ -57,10 +60,10 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, on
     }
 
     const content = (
-        <View style={styles.modalContainer}>
-            <View style={styles.pickerModalContent}>
-                <DateTimePicker value={temp} mode="time" display="spinner" onChange={handleChange} textColor="black" />
-                <TouchableOpacity onPress={() => { onChange(dateToTimeString(temp)); onClose(); }} style={styles.doneButton}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.overlay }]}>
+            <View style={[styles.pickerModalContent, { backgroundColor: colors.surface }]}>
+                <DateTimePicker value={temp} mode="time" display="spinner" onChange={handleChange} textColor={scheme === 'dark' ? 'white' : 'black'} />
+                <TouchableOpacity onPress={() => { onChange(dateToTimeString(temp)); onClose(); }} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
                     <Text style={styles.doneButtonText}>Done</Text>
                 </TouchableOpacity>
             </View>
