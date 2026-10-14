@@ -15,6 +15,8 @@ import { getUserDisplayName } from '@/utils/groupDisplay';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import DraggableList from '@/components/DraggableList';
 import NativeTimePicker from '@/components/NativeTimePicker';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
 
 const ROW_H = 60;
 const DIV_H = 56;
@@ -45,6 +47,8 @@ const formatWindow = (text: string) => {
 };
 
 export default function GroupPriorityScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { id, scheduleId } = useLocalSearchParams<{ id: string; scheduleId: string }>();
   const router = useRouter();
   const api = useApiClient();
@@ -152,8 +156,8 @@ export default function GroupPriorityScreen() {
         top,
         height: DIV_H,
         node: (
-          <View style={[styles.divider, { backgroundColor: '#F3F4F6' }]}>
-            <Text style={[styles.dividerTitle, { color: '#6B7280' }]}>Everyone else</Text>
+          <View style={[styles.divider, { backgroundColor: colors.backgroundAlt }]}>
+            <Text style={[styles.dividerTitle, { color: colors.textMuted }]}>Everyone else</Text>
             <Text style={styles.dividerSub}>Opens after the last group's window{preview?.everyone ? ` · ${preview.everyone}` : ''}</Text>
           </View>
         ),
@@ -228,7 +232,7 @@ export default function GroupPriorityScreen() {
 
       {!isPremium ? (
         <View style={styles.lockRow}>
-          <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
+          <Feather name="lock" size={16} color={colors.textFaint} style={{ marginTop: 1 }} />
           <View style={{ flex: 1 }}>
             <Text style={styles.lockTitle}>Premium</Text>
             <Text style={styles.lockText}>Priority RSVP requires the group owner to have Premium.</Text>
@@ -236,7 +240,7 @@ export default function GroupPriorityScreen() {
         </View>
       ) : noRsvpWindow ? (
         <View style={styles.lockRow}>
-          <Feather name="info" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
+          <Feather name="info" size={16} color={colors.textFaint} style={{ marginTop: 1 }} />
           <Text style={[styles.lockText, { flex: 1 }]}>
             Turn on "Limit RSVPs" and set when RSVPs open in this series' settings first. Priority groups open ahead of that time.
           </Text>
@@ -245,7 +249,7 @@ export default function GroupPriorityScreen() {
         <>
           <View style={[styles.card, { marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
             <Text style={styles.cardTitle}>Priority RSVP</Text>
-            <Switch value={enabled} onValueChange={setEnabled} trackColor={{ true: '#4FD1C5' }} />
+            <Switch value={enabled} onValueChange={setEnabled} trackColor={{ true: colors.accentTeal }} />
           </View>
 
           {enabled && (
@@ -253,7 +257,7 @@ export default function GroupPriorityScreen() {
               <Text style={styles.sectionLabel}>Groups</Text>
               <View style={styles.card}>
                 {tiers.map((t, k) => (
-                  <View key={t.key} style={[styles.tierRow, k > 0 && { borderTopWidth: 1, borderTopColor: '#F3F4F6' }]}>
+                  <View key={t.key} style={[styles.tierRow, k > 0 && { borderTopWidth: 1, borderTopColor: colors.border }]}>
                     <Text style={styles.tierName}>Group {k + 1}</Text>
                     <TextInput
                       style={styles.numInput}
@@ -277,7 +281,7 @@ export default function GroupPriorityScreen() {
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         style={{ marginLeft: 'auto' }}
                       >
-                        <Feather name="trash-2" size={16} color="#9CA3AF" />
+                        <Feather name="trash-2" size={16} color={colors.textFaint} />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -287,8 +291,8 @@ export default function GroupPriorityScreen() {
                     onPress={() => setTiers((cur) => [...cur, { key: newKey(), size: '1', hours: '1' }])}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 12 }}
                   >
-                    <Feather name="plus-circle" size={16} color="#4A90E2" />
-                    <Text style={{ color: '#4A90E2', fontWeight: '700', fontSize: 14 }}>Add group</Text>
+                    <Feather name="plus-circle" size={16} color={colors.brand} />
+                    <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>Add group</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -303,7 +307,7 @@ export default function GroupPriorityScreen() {
                     <Text style={styles.cardTitle}>Quiet hours</Text>
                     <Text style={styles.hint}>Don't count these hours, so no one's turn passes while they sleep.</Text>
                   </View>
-                  <Switch value={quietEnabled} onValueChange={setQuietEnabled} trackColor={{ true: '#4FD1C5' }} />
+                  <Switch value={quietEnabled} onValueChange={setQuietEnabled} trackColor={{ true: colors.accentTeal }} />
                 </View>
                 {quietEnabled && (
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
@@ -334,12 +338,12 @@ export default function GroupPriorityScreen() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.headerBar}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Feather name="arrow-left" size={24} color="#6B7280" />
+          <Feather name="arrow-left" size={24} color={colors.textMuted} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Priority RSVP</Text>
         <TouchableOpacity onPress={save} disabled={saving || !isPremium || noRsvpWindow} style={{ minWidth: 40, alignItems: 'flex-end' }}>
           {saving
-            ? <ActivityIndicator size="small" color="#4A90E2" />
+            ? <ActivityIndicator size="small" color={colors.brand} />
             : <Text style={[styles.saveText, (!isPremium || noRsvpWindow) && { opacity: 0.4 }]}>Save</Text>}
         </TouchableOpacity>
       </View>
@@ -361,9 +365,9 @@ export default function GroupPriorityScreen() {
               <View style={styles.rank}><Text style={styles.rankText}>{rankOf(index)}</Text></View>
               {m?.profilePicture
                 ? <Image source={{ uri: m.profilePicture }} style={styles.avatar} />
-                : <View style={[styles.avatar, { backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' }]}><Feather name="user" size={16} color="#9CA3AF" /></View>}
+                : <View style={[styles.avatar, { backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }]}><Feather name="user" size={16} color={colors.textFaint} /></View>}
               <Text style={styles.rowName} numberOfLines={1}>{m ? getUserDisplayName(m) : 'Member'}</Text>
-              <Feather name="menu" size={18} color="#C4C9D4" />
+              <Feather name="menu" size={18} color={colors.textFaint} />
             </View>
           );
         }}
@@ -380,34 +384,34 @@ export default function GroupPriorityScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
   headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
   iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
-  saveText: { fontSize: 16, fontWeight: '800', color: '#4A90E2' },
-  sub: { fontSize: 14, color: '#6B7280', lineHeight: 20, marginTop: 4 },
-  sectionLabel: { fontSize: 11, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 20, marginBottom: 8 },
-  card: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', padding: 14 },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  hint: { fontSize: 12, color: '#6B7280', lineHeight: 17, marginTop: 6 },
-  errorText: { fontSize: 12, fontWeight: '600', color: '#EF4444', marginTop: 6 },
-  lockRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', padding: 12, marginTop: 16 },
-  lockTitle: { fontSize: 13, fontWeight: '800', color: '#374151' },
-  lockText: { fontSize: 12, color: '#6B7280', lineHeight: 17 },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  saveText: { fontSize: 16, fontWeight: '800', color: colors.brand },
+  sub: { fontSize: 14, color: colors.textMuted, lineHeight: 20, marginTop: 4 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 20, marginBottom: 8 },
+  card: { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14 },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  hint: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginTop: 6 },
+  errorText: { fontSize: 12, fontWeight: '600', color: colors.danger, marginTop: 6 },
+  lockRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12, marginTop: 16 },
+  lockTitle: { fontSize: 13, fontWeight: '800', color: colors.textSecondary },
+  lockText: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
   tierRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 },
-  tierName: { fontSize: 14, fontWeight: '700', color: '#374151', width: 64 },
-  numInput: { width: 46, height: 36, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', textAlign: 'center', fontSize: 15, color: '#111827', backgroundColor: '#fff' },
-  tierUnit: { fontSize: 13, color: '#6B7280' },
-  timeBtn: { flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB', paddingVertical: 8, paddingHorizontal: 12 },
-  timeLabel: { fontSize: 11, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase' },
-  timeValue: { fontSize: 16, fontWeight: '700', color: '#111827', marginTop: 2 },
-  divider: { flex: 1, borderRadius: 10, backgroundColor: '#ECFDF5', paddingHorizontal: 12, justifyContent: 'center', marginBottom: 4 },
-  dividerTitle: { fontSize: 13, fontWeight: '800', color: '#047857' },
-  dividerSub: { fontSize: 11, color: '#6B7280' },
-  row: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 12, marginBottom: 6 },
-  rank: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F0FDFA', alignItems: 'center', justifyContent: 'center' },
-  rankText: { fontSize: 13, fontWeight: '800', color: '#0F766E' },
+  tierName: { fontSize: 14, fontWeight: '700', color: colors.textSecondary, width: 64 },
+  numInput: { width: 46, height: 36, borderRadius: 8, borderWidth: 1, borderColor: colors.border, textAlign: 'center', fontSize: 15, color: colors.textPrimary, backgroundColor: colors.surface },
+  tierUnit: { fontSize: 13, color: colors.textMuted },
+  timeBtn: { flex: 1, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingVertical: 8, paddingHorizontal: 12 },
+  timeLabel: { fontSize: 11, fontWeight: '700', color: colors.textFaint, textTransform: 'uppercase' },
+  timeValue: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
+  divider: { flex: 1, borderRadius: 10, backgroundColor: 'rgba(16,185,129,0.14)', paddingHorizontal: 12, justifyContent: 'center', marginBottom: 4 },
+  dividerTitle: { fontSize: 13, fontWeight: '800', color: colors.success },
+  dividerSub: { fontSize: 11, color: colors.textMuted },
+  row: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, marginBottom: 6 },
+  rank: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(79,209,197,0.16)', alignItems: 'center', justifyContent: 'center' },
+  rankText: { fontSize: 13, fontWeight: '800', color: colors.success },
   avatar: { width: 32, height: 32, borderRadius: 16 },
-  rowName: { flex: 1, fontSize: 16, fontWeight: '600', color: '#111827' },
+  rowName: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.textPrimary },
 });

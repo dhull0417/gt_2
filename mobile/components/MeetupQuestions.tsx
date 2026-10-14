@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator,
   TextInput, KeyboardAvoidingView, Platform,
@@ -8,6 +8,8 @@ import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanim
 import { useApiClient, meetupApi, Meetup } from '@/utils/api';
 import { questionsActive, answerFor, hasAnsweredAny, displayAnswer } from '@/utils/questions';
 import { memberName } from '@/utils/assignments';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
 
 interface Props {
   meetup: Meetup;
@@ -20,6 +22,8 @@ interface Props {
 }
 
 export default function MeetupQuestions({ meetup, currentUserId, canAnswer, openSignal = 0, onUpdated }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -46,7 +50,7 @@ export default function MeetupQuestions({ meetup, currentUserId, canAnswer, open
           hitSlop={{ top: 8, bottom: 8, left: 0, right: 8 }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}
         >
-          <Feather name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color="#9CA3AF" />
+          <Feather name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
           <Text style={styles.title}>Questions</Text>
         </TouchableOpacity>
         {canAnswer && (
@@ -104,6 +108,8 @@ export function QuestionsSheet({
 }: {
   visible: boolean; meetup: Meetup; currentUserId: string; onClose: () => void; onUpdated: (m: Meetup) => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const api = useApiClient();
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -146,7 +152,7 @@ export function QuestionsSheet({
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{meetup.name}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Feather name="x" size={22} color="#6B7280" />
+              <Feather name="x" size={22} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
 
@@ -162,7 +168,7 @@ export function QuestionsSheet({
                     value={values[q._id] ?? ''}
                     onChangeText={(t) => set(q._id, t)}
                     placeholder="Your answer"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textFaint}
                     maxLength={300}
                     multiline
                     style={styles.input}
@@ -189,7 +195,7 @@ export function QuestionsSheet({
                       onPress={() => set(q._id, on ? '' : o)}
                       style={[styles.option, on && styles.optionOn]}
                     >
-                      <Feather name={on ? 'check-circle' : 'circle'} size={20} color={on ? '#4FD1C5' : '#9CA3AF'} />
+                      <Feather name={on ? 'check-circle' : 'circle'} size={20} color={on ? colors.accentTeal : colors.textFaint} />
                       <Text style={styles.optionText}>{o}</Text>
                     </TouchableOpacity>
                   );
@@ -207,7 +213,7 @@ export function QuestionsSheet({
           </TouchableOpacity>
           {missingRequired && <Text style={styles.reqHint}>Answer the questions marked * to save.</Text>}
           <TouchableOpacity onPress={onClose} style={{ alignItems: 'center', paddingTop: 12 }}>
-            <Text style={{ color: '#6B7280', fontWeight: '600' }}>Not now</Text>
+            <Text style={{ color: colors.textMuted, fontWeight: '600' }}>Not now</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -215,29 +221,29 @@ export function QuestionsSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  card: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', padding: 14, marginTop: 16 },
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  card: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 16 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title: { fontSize: 11, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 },
-  action: { fontSize: 14, fontWeight: '700', color: '#4A90E2' },
-  prompt: { fontSize: 14, fontWeight: '700', color: '#111827', marginBottom: 4 },
-  none: { fontSize: 13, color: '#9CA3AF', marginTop: 2 },
+  title: { fontSize: 11, fontWeight: '800', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.5 },
+  action: { fontSize: 14, fontWeight: '700', color: colors.brand },
+  prompt: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
+  none: { fontSize: 13, color: colors.textFaint, marginTop: 2 },
   answerRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 3 },
-  who: { fontSize: 14, color: '#6B7280' },
-  value: { fontSize: 14, fontWeight: '600', color: '#111827', flexShrink: 1, textAlign: 'right' },
+  who: { fontSize: 14, color: colors.textMuted },
+  value: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flexShrink: 1, textAlign: 'right' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 34 },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 34 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: '#111827', flex: 1, paddingRight: 12 },
-  sheetSection: { fontSize: 14, fontWeight: '800', color: '#374151', marginBottom: 10 },
-  input: { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, fontSize: 16, color: '#111827', minHeight: 48, textAlignVertical: 'top' },
-  choiceBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#4FD1C5' },
-  choiceBtnOn: { backgroundColor: '#4FD1C5' },
-  choiceText: { fontSize: 15, fontWeight: '700', color: '#4FD1C5' },
-  option: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', marginBottom: 8 },
-  optionOn: { borderColor: '#4FD1C5', backgroundColor: '#F0FDFA' },
-  optionText: { fontSize: 16, fontWeight: '600', color: '#111827', flex: 1 },
-  saveBtn: { backgroundColor: '#4FD1C5', borderRadius: 14, alignItems: 'center', justifyContent: 'center', height: 52, marginTop: 16 },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, flex: 1, paddingRight: 12 },
+  sheetSection: { fontSize: 14, fontWeight: '800', color: colors.textSecondary, marginBottom: 10 },
+  input: { borderWidth: 1.5, borderColor: colors.border, borderRadius: 12, padding: 12, fontSize: 16, color: colors.textPrimary, minHeight: 48, textAlignVertical: 'top' },
+  choiceBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: colors.accentTeal },
+  choiceBtnOn: { backgroundColor: colors.accentTeal },
+  choiceText: { fontSize: 15, fontWeight: '700', color: colors.accentTeal },
+  option: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, marginBottom: 8 },
+  optionOn: { borderColor: colors.accentTeal, backgroundColor: 'rgba(79,209,197,0.16)' },
+  optionText: { fontSize: 16, fontWeight: '600', color: colors.textPrimary, flex: 1 },
+  saveBtn: { backgroundColor: colors.accentTeal, borderRadius: 14, alignItems: 'center', justifyContent: 'center', height: 52, marginTop: 16 },
   saveText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   reqHint: { textAlign: 'center', fontSize: 12, color: '#EA580C', marginTop: 8 },
 });

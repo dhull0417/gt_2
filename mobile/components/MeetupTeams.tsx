@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator,
   TextInput, KeyboardAvoidingView, Platform,
@@ -7,6 +7,8 @@ import { Feather } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useApiClient, meetupApi, Meetup } from '@/utils/api';
 import { memberName } from '@/utils/assignments';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
 
 const TEAM_COLORS = ['#4FD1C5', '#F59E0B', '#6366F1', '#EF4444', '#10B981', '#EC4899', '#3B82F6', '#8B5CF6'];
 const MAX_TEAMS = 8;
@@ -21,6 +23,8 @@ interface Props {
 }
 
 export default function MeetupTeams({ meetup, currentUserId, canManage, onUpdated }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -43,7 +47,7 @@ export default function MeetupTeams({ meetup, currentUserId, canManage, onUpdate
           hitSlop={{ top: 8, bottom: 8, left: 0, right: 8 }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}
         >
-          <Feather name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color="#9CA3AF" />
+          <Feather name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
           <Text style={styles.title}>Teams</Text>
         </TouchableOpacity>
         {showForManager && (
@@ -92,6 +96,8 @@ export default function MeetupTeams({ meetup, currentUserId, canManage, onUpdate
 function TeamsSheet({ visible, meetup, onClose, onUpdated }: {
   visible: boolean; meetup: Meetup; onClose: () => void; onUpdated: (m: Meetup) => void;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const api = useApiClient();
   const inIds = meetup.in.map(idOf);
   const [names, setNames] = useState<string[]>([]);
@@ -166,18 +172,18 @@ function TeamsSheet({ visible, meetup, onClose, onUpdated }: {
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Teams</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Feather name="x" size={22} color="#6B7280" />
+              <Feather name="x" size={22} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <TouchableOpacity onPress={() => setCount(names.length - 1)} disabled={names.length <= 2} style={[styles.stepBtn, names.length <= 2 && styles.stepBtnOff]}>
-                <Feather name="minus" size={16} color={names.length <= 2 ? '#D1D5DB' : '#4A90E2'} />
+                <Feather name="minus" size={16} color={names.length <= 2 ? colors.borderStrong : colors.brand} />
               </TouchableOpacity>
               <Text style={styles.stepCount}>{names.length} teams</Text>
               <TouchableOpacity onPress={() => setCount(names.length + 1)} disabled={names.length >= MAX_TEAMS} style={[styles.stepBtn, names.length >= MAX_TEAMS && styles.stepBtnOff]}>
-                <Feather name="plus" size={16} color={names.length >= MAX_TEAMS ? '#D1D5DB' : '#4A90E2'} />
+                <Feather name="plus" size={16} color={names.length >= MAX_TEAMS ? colors.borderStrong : colors.brand} />
               </TouchableOpacity>
             </View>
             <TouchableOpacity onPress={shuffle} style={styles.shuffleBtn}>
@@ -233,7 +239,7 @@ function TeamsSheet({ visible, meetup, onClose, onUpdated }: {
           </TouchableOpacity>
           {(meetup.teams?.length ?? 0) > 0 && (
             <TouchableOpacity onPress={clear} disabled={saving} style={{ alignItems: 'center', paddingTop: 12 }}>
-              <Text style={{ color: '#EF4444', fontWeight: '600' }}>Remove teams</Text>
+              <Text style={{ color: colors.danger, fontWeight: '600' }}>Remove teams</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -242,32 +248,32 @@ function TeamsSheet({ visible, meetup, onClose, onUpdated }: {
   );
 }
 
-const styles = StyleSheet.create({
-  card: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', padding: 14, marginTop: 16 },
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  card: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 16 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title: { fontSize: 11, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 },
-  action: { fontSize: 14, fontWeight: '700', color: '#4A90E2' },
+  title: { fontSize: 11, fontWeight: '800', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.5 },
+  action: { fontSize: 14, fontWeight: '700', color: colors.brand },
   dot: { width: 10, height: 10, borderRadius: 5 },
-  teamName: { fontSize: 15, fontWeight: '800', color: '#111827' },
-  count: { fontSize: 13, color: '#9CA3AF', fontWeight: '600' },
-  members: { fontSize: 14, color: '#4B5563', lineHeight: 20, paddingLeft: 18 },
-  unassigned: { fontSize: 13, color: '#9CA3AF' },
+  teamName: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
+  count: { fontSize: 13, color: colors.textFaint, fontWeight: '600' },
+  members: { fontSize: 14, color: colors.textSecondary, lineHeight: 20, paddingLeft: 18 },
+  unassigned: { fontSize: 13, color: colors.textFaint },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 34 },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 34 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
-  section: { fontSize: 12, fontWeight: '800', color: '#6B7280', marginBottom: 8 },
-  stepBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#EEF6FF', borderWidth: 1.5, borderColor: '#93C5FD', alignItems: 'center', justifyContent: 'center' },
-  stepBtnOff: { backgroundColor: '#F9FAFB', borderColor: '#E5E7EB' },
-  stepCount: { fontSize: 16, fontWeight: '800', color: '#111827', minWidth: 64, textAlign: 'center' },
-  shuffleBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#4A90E2', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999 },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  section: { fontSize: 12, fontWeight: '800', color: colors.textMuted, marginBottom: 8 },
+  stepBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.brandSoft, borderWidth: 1.5, borderColor: '#93C5FD', alignItems: 'center', justifyContent: 'center' },
+  stepBtnOff: { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+  stepCount: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, minWidth: 64, textAlign: 'center' },
+  shuffleBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.brand, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999 },
   shuffleText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   nameBox: { borderWidth: 1.5, borderRadius: 10, paddingHorizontal: 10, minWidth: 96 },
-  nameInput: { height: 38, fontSize: 14, fontWeight: '700', color: '#111827' },
+  nameInput: { height: 38, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   personRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 7, gap: 10 },
-  personName: { fontSize: 15, fontWeight: '600', color: '#111827', flex: 1 },
+  personName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, flex: 1 },
   chip: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   chipText: { fontSize: 13, fontWeight: '800' },
-  saveBtn: { backgroundColor: '#4FD1C5', borderRadius: 14, alignItems: 'center', justifyContent: 'center', height: 52, marginTop: 16 },
+  saveBtn: { backgroundColor: colors.accentTeal, borderRadius: 14, alignItems: 'center', justifyContent: 'center', height: 52, marginTop: 16 },
   saveText: { color: '#fff', fontWeight: '800', fontSize: 16 },
 });

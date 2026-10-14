@@ -7,11 +7,15 @@ import { useQuery } from '@tanstack/react-query';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useApiClient, groupApi, userApi, GroupStats, User } from '@/utils/api';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 const nameOf = (m: { firstName?: string; lastName?: string }) => `${m.firstName ?? ''} ${m.lastName ?? ''}`.trim() || 'Member';
 
 export default function GroupStatsScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const api = useApiClient();
@@ -51,12 +55,12 @@ export default function GroupStatsScreen() {
   const header = (
     <View style={styles.headerBar}>
       <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-        <Feather name="arrow-left" size={24} color="#6B7280" />
+        <Feather name="arrow-left" size={24} color={colors.textMuted} />
       </TouchableOpacity>
       <Text style={styles.headerTitle}>Stats & Attendance</Text>
       {canExport && isPremium && stats ? (
         <TouchableOpacity onPress={exportCsv} disabled={exporting} style={{ minWidth: 40, alignItems: 'flex-end' }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          {exporting ? <ActivityIndicator size="small" color="#4A90E2" /> : <Feather name="download" size={22} color="#4A90E2" />}
+          {exporting ? <ActivityIndicator size="small" color={colors.brand} /> : <Feather name="download" size={22} color={colors.brand} />}
         </TouchableOpacity>
       ) : <View style={{ width: 40 }} />}
     </View>
@@ -71,7 +75,7 @@ export default function GroupStatsScreen() {
       <SafeAreaView style={styles.safe}>
         {header}
         <View style={[styles.lockRow, { margin: 20 }]}>
-          <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
+          <Feather name="lock" size={16} color={colors.textFaint} style={{ marginTop: 1 }} />
           <View style={{ flex: 1 }}>
             <Text style={styles.lockTitle}>Premium</Text>
             <Text style={styles.lockText}>Attendance stats, history and CSV export require the group owner to have Premium.</Text>
@@ -90,8 +94,8 @@ export default function GroupStatsScreen() {
       <SafeAreaView style={styles.safe}>
         {header}
         <View style={styles.center}>
-          <Text style={{ color: '#6B7280', marginBottom: 12 }}>Could not load stats.</Text>
-          <TouchableOpacity onPress={() => refetch()}><Text style={{ color: '#4A90E2', fontWeight: '700' }}>Try again</Text></TouchableOpacity>
+          <Text style={{ color: colors.textMuted, marginBottom: 12 }}>Could not load stats.</Text>
+          <TouchableOpacity onPress={() => refetch()}><Text style={{ color: colors.brand, fontWeight: '700' }}>Try again</Text></TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -111,7 +115,7 @@ export default function GroupStatsScreen() {
 
         {summary.totalMeetups === 0 ? (
           <View style={[styles.card, { marginTop: 16 }]}>
-            <Text style={{ color: '#6B7280', lineHeight: 20 }}>
+            <Text style={{ color: colors.textMuted, lineHeight: 20 }}>
               No finished meetups yet. Once a meetup has happened, its attendance shows up here.
             </Text>
           </View>
@@ -129,10 +133,10 @@ export default function GroupStatsScreen() {
             <Text style={styles.sectionLabel}>Members</Text>
             <View style={styles.card}>
               {ranked.map((m, i) => (
-                <View key={m._id} style={[styles.memberRow, i > 0 && { borderTopWidth: 1, borderTopColor: '#F3F4F6' }]}>
+                <View key={m._id} style={[styles.memberRow, i > 0 && { borderTopWidth: 1, borderTopColor: colors.border }]}>
                   {m.profilePicture
                     ? <Image source={{ uri: m.profilePicture }} style={styles.avatar} />
-                    : <View style={[styles.avatar, { backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' }]}><Feather name="user" size={16} color="#9CA3AF" /></View>}
+                    : <View style={[styles.avatar, { backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }]}><Feather name="user" size={16} color={colors.textFaint} /></View>}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.memberName} numberOfLines={1}>{nameOf(m)}</Text>
                     <View style={styles.bar}><View style={[styles.barFill, { width: `${Math.round(m.rate * 100)}%` }]} /></View>
@@ -149,7 +153,7 @@ export default function GroupStatsScreen() {
             <Text style={styles.sectionLabel}>History</Text>
             <View style={styles.card}>
               {visibleMeetups.map((m, i) => (
-                <View key={m.id} style={[styles.histRow, i > 0 && { borderTopWidth: 1, borderTopColor: '#F3F4F6' }]}>
+                <View key={m.id} style={[styles.histRow, i > 0 && { borderTopWidth: 1, borderTopColor: colors.border }]}>
                   <View style={{ flex: 1, paddingRight: 10 }}>
                     <Text style={styles.memberName} numberOfLines={1}>{m.name}</Text>
                     <Text style={styles.memberSub}>{new Date(m.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</Text>
@@ -161,14 +165,14 @@ export default function GroupStatsScreen() {
               ))}
               {meetups.length > 8 && (
                 <TouchableOpacity onPress={() => setShowAll((v) => !v)} style={{ paddingTop: 12 }}>
-                  <Text style={{ color: '#4A90E2', fontWeight: '700', textAlign: 'center' }}>{showAll ? 'Show less' : `Show all ${meetups.length}`}</Text>
+                  <Text style={{ color: colors.brand, fontWeight: '700', textAlign: 'center' }}>{showAll ? 'Show less' : `Show all ${meetups.length}`}</Text>
                 </TouchableOpacity>
               )}
             </View>
 
             {canExport && (
               <TouchableOpacity onPress={exportCsv} disabled={exporting} style={styles.exportBtn}>
-                {exporting ? <ActivityIndicator color="#4A90E2" /> : (<><Feather name="download" size={18} color="#4A90E2" /><Text style={styles.exportText}>Export attendance (CSV)</Text></>)}
+                {exporting ? <ActivityIndicator color={colors.brand} /> : (<><Feather name="download" size={18} color={colors.brand} /><Text style={styles.exportText}>Export attendance (CSV)</Text></>)}
               </TouchableOpacity>
             )}
           </>
@@ -178,31 +182,31 @@ export default function GroupStatsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
   iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
-  sub: { fontSize: 13, color: '#6B7280', lineHeight: 19, marginTop: 4 },
-  sectionLabel: { fontSize: 11, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 22, marginBottom: 8 },
-  card: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', padding: 14 },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  sub: { fontSize: 13, color: colors.textMuted, lineHeight: 19, marginTop: 4 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 22, marginBottom: 8 },
+  card: { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14 },
   tiles: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  tile: { flex: 1, backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', paddingVertical: 14, alignItems: 'center' },
-  tileValue: { fontSize: 24, fontWeight: '900', color: '#111827' },
-  tileLabel: { fontSize: 11, fontWeight: '700', color: '#9CA3AF', marginTop: 2 },
+  tile: { flex: 1, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingVertical: 14, alignItems: 'center' },
+  tileValue: { fontSize: 24, fontWeight: '900', color: colors.textPrimary },
+  tileLabel: { fontSize: 11, fontWeight: '700', color: colors.textFaint, marginTop: 2 },
   memberRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
   avatar: { width: 36, height: 36, borderRadius: 18 },
-  memberName: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  memberSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  bar: { height: 6, borderRadius: 3, backgroundColor: '#F3F4F6', marginTop: 5, overflow: 'hidden' },
-  barFill: { height: 6, borderRadius: 3, backgroundColor: '#4FD1C5' },
-  rate: { fontSize: 16, fontWeight: '800', color: '#0F766E', minWidth: 46, textAlign: 'right' },
+  memberName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  memberSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  bar: { height: 6, borderRadius: 3, backgroundColor: colors.backgroundAlt, marginTop: 5, overflow: 'hidden' },
+  barFill: { height: 6, borderRadius: 3, backgroundColor: colors.accentTeal },
+  rate: { fontSize: 16, fontWeight: '800', color: colors.success, minWidth: 46, textAlign: 'right' },
   histRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
-  histCount: { fontSize: 16, fontWeight: '800', color: '#111827' },
-  exportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 22, borderRadius: 14, borderWidth: 1.5, borderColor: '#93C5FD', backgroundColor: '#fff' },
-  exportText: { color: '#4A90E2', fontWeight: '700', fontSize: 15 },
-  lockRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', padding: 12 },
-  lockTitle: { fontSize: 13, fontWeight: '800', color: '#374151' },
-  lockText: { fontSize: 12, color: '#6B7280', lineHeight: 17 },
+  histCount: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
+  exportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 22, borderRadius: 14, borderWidth: 1.5, borderColor: '#93C5FD', backgroundColor: colors.surface },
+  exportText: { color: colors.brand, fontWeight: '700', fontSize: 15 },
+  lockRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12 },
+  lockTitle: { fontSize: 13, fontWeight: '800', color: colors.textSecondary },
+  lockText: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
 });

@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useApiClient, meetupApi, Meetup } from '@/utils/api';
 import { assignmentsActive, summarizeAssignments, memberName } from '@/utils/assignments';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
 
 interface Props {
   meetup: Meetup;
@@ -21,6 +23,8 @@ interface Props {
 }
 
 export default function MeetupAssignments({ meetup, currentUserId, isIn, openSignal = 0, onUpdated, onStale, onSheetClosed }: Props) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -46,7 +50,7 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
           hitSlop={{ top: 8, bottom: 8, left: 0, right: 8 }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}
         >
-          <Feather name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color="#9CA3AF" />
+          <Feather name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
           <Text style={styles.title}>Assignments</Text>
         </TouchableOpacity>
         {isIn && (
@@ -65,7 +69,7 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
           <Text style={styles.sectionLabel}>Bringing</Text>
           {summary.items.map((item) => (
             <View key={item._id} style={styles.itemRow}>
-              <Text style={[styles.itemName, item.isFull && { color: '#6B7280' }]}>
+              <Text style={[styles.itemName, item.isFull && { color: colors.textMuted }]}>
                 {item.name}
                 {item.max !== null ? `  ${item.claimedBy.length}/${item.max}` : ''}
               </Text>
@@ -87,7 +91,7 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
           <View
             style={[
               styles.seatPill,
-              { backgroundColor: summary.seatBalance >= 0 ? '#ECFDF5' : '#FFF7ED' },
+              { backgroundColor: summary.seatBalance >= 0 ? 'rgba(5,150,105,0.14)' : 'rgba(234,88,12,0.14)' },
             ]}
           >
             <Feather
@@ -134,6 +138,8 @@ export function AssignmentsSheet({
   /** Owner/moderator filling this in on someone else's behalf. */
   forUser?: { id: string; name: string };
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const currentUserId = forUser?.id ?? viewerId;
   const api = useApiClient();
   const [selected, setSelected] = useState<string[]>([]);
@@ -185,7 +191,7 @@ export function AssignmentsSheet({
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{forUser ? `${forUser.name}'s assignments` : meetup.name}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Feather name="x" size={22} color="#6B7280" />
+              <Feather name="x" size={22} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
 
@@ -206,9 +212,9 @@ export function AssignmentsSheet({
                       onPress={() => toggle(item._id)}
                       style={[styles.option, mine && styles.optionOn, unavailable && styles.optionOff]}
                     >
-                      <Feather name={mine ? 'check-square' : 'square'} size={20} color={mine ? '#4FD1C5' : unavailable ? '#D1D5DB' : '#9CA3AF'} />
+                      <Feather name={mine ? 'check-square' : 'square'} size={20} color={mine ? colors.accentTeal : unavailable ? colors.borderStrong : colors.textFaint} />
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.optionText, unavailable && { color: '#9CA3AF' }]}>{item.name}</Text>
+                        <Text style={[styles.optionText, unavailable && { color: colors.textFaint }]}>{item.name}</Text>
                         {item.max !== null && (
                           <Text style={styles.optionSub}>
                             {unavailable ? 'Already taken' : `${Math.max(item.max - takenByOthers - (mine ? 1 : 0), 0)} of ${item.max} still needed`}
@@ -231,7 +237,7 @@ export function AssignmentsSheet({
                       onPress={() => setRole(r)}
                       style={[styles.roleBtn, role === r && styles.roleBtnOn]}
                     >
-                      <Feather name={r === 'driver' ? 'truck' : 'user'} size={16} color={role === r ? '#fff' : '#4FD1C5'} />
+                      <Feather name={r === 'driver' ? 'truck' : 'user'} size={16} color={role === r ? '#fff' : colors.accentTeal} />
                       <Text style={[styles.roleText, role === r && { color: '#fff' }]}>{r === 'driver' ? (forUser ? 'Driving' : "I'm driving") : (forUser ? 'Needs a ride' : 'I need a ride')}</Text>
                     </TouchableOpacity>
                   ))}
@@ -246,14 +252,14 @@ export function AssignmentsSheet({
                         disabled={seats === 0}
                         style={[styles.stepBtn, seats === 0 && styles.stepBtnOff]}
                       >
-                        <Feather name="minus" size={18} color={seats === 0 ? '#D1D5DB' : '#4A90E2'} />
+                        <Feather name="minus" size={18} color={seats === 0 ? colors.borderStrong : colors.brand} />
                       </TouchableOpacity>
                       <Text style={styles.seatCount}>{seats}</Text>
                       <TouchableOpacity
                         onPress={() => setSeats((n) => Math.min(20, n + 1))}
                         style={styles.stepBtn}
                       >
-                        <Feather name="plus" size={18} color="#4A90E2" />
+                        <Feather name="plus" size={18} color={colors.brand} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -270,7 +276,7 @@ export function AssignmentsSheet({
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save</Text>}
           </TouchableOpacity>
           <TouchableOpacity onPress={onClose} style={{ alignItems: 'center', paddingTop: 12 }}>
-            <Text style={{ color: '#6B7280', fontWeight: '600' }}>Not now</Text>
+            <Text style={{ color: colors.textMuted, fontWeight: '600' }}>Not now</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -278,34 +284,34 @@ export function AssignmentsSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  card: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', padding: 14, marginTop: 16 },
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  card: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 16 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title: { fontSize: 11, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 },
-  action: { fontSize: 14, fontWeight: '700', color: '#4A90E2' },
-  sectionLabel: { fontSize: 12, fontWeight: '700', color: '#6B7280', marginBottom: 6 },
+  title: { fontSize: 11, fontWeight: '800', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.5 },
+  action: { fontSize: 14, fontWeight: '700', color: colors.brand },
+  sectionLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted, marginBottom: 6 },
   itemRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 5 },
-  itemName: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  itemWho: { fontSize: 14, color: '#6B7280', flexShrink: 1, textAlign: 'right' },
+  itemName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  itemWho: { fontSize: 14, color: colors.textMuted, flexShrink: 1, textAlign: 'right' },
   seatPill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 6 },
-  rideLine: { fontSize: 14, color: '#4B5563', paddingVertical: 2 },
+  rideLine: { fontSize: 14, color: colors.textSecondary, paddingVertical: 2 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 34 },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 34 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: '#111827', flex: 1, paddingRight: 12 },
-  sheetSection: { fontSize: 13, fontWeight: '800', color: '#374151', marginBottom: 10 },
-  sheetHint: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
-  option: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', marginBottom: 8 },
-  optionOn: { borderColor: '#4FD1C5', backgroundColor: '#F0FDFA' },
-  optionOff: { backgroundColor: '#F9FAFB' },
-  optionText: { fontSize: 16, fontWeight: '600', color: '#111827' },
-  optionSub: { fontSize: 12, color: '#6B7280', marginTop: 1 },
-  roleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: '#4FD1C5', backgroundColor: '#fff' },
-  roleBtnOn: { backgroundColor: '#4FD1C5' },
-  roleText: { fontSize: 15, fontWeight: '700', color: '#4FD1C5' },
-  stepBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#EEF6FF', borderWidth: 1.5, borderColor: '#93C5FD', alignItems: 'center', justifyContent: 'center' },
-  stepBtnOff: { backgroundColor: '#F9FAFB', borderColor: '#E5E7EB' },
-  seatCount: { fontSize: 28, fontWeight: '900', color: '#111827', minWidth: 36, textAlign: 'center' },
-  saveBtn: { backgroundColor: '#4FD1C5', borderRadius: 14, alignItems: 'center', justifyContent: 'center', height: 52, marginTop: 16 },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, flex: 1, paddingRight: 12 },
+  sheetSection: { fontSize: 13, fontWeight: '800', color: colors.textSecondary, marginBottom: 10 },
+  sheetHint: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  option: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, marginBottom: 8 },
+  optionOn: { borderColor: colors.accentTeal, backgroundColor: 'rgba(79,209,197,0.16)' },
+  optionOff: { backgroundColor: colors.surfaceAlt },
+  optionText: { fontSize: 16, fontWeight: '600', color: colors.textPrimary },
+  optionSub: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  roleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: colors.accentTeal, backgroundColor: colors.surface },
+  roleBtnOn: { backgroundColor: colors.accentTeal },
+  roleText: { fontSize: 15, fontWeight: '700', color: colors.accentTeal },
+  stepBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandSoft, borderWidth: 1.5, borderColor: '#93C5FD', alignItems: 'center', justifyContent: 'center' },
+  stepBtnOff: { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+  seatCount: { fontSize: 28, fontWeight: '900', color: colors.textPrimary, minWidth: 36, textAlign: 'center' },
+  saveBtn: { backgroundColor: colors.accentTeal, borderRadius: 14, alignItems: 'center', justifyContent: 'center', height: 52, marginTop: 16 },
   saveText: { color: '#fff', fontWeight: '800', fontSize: 16 },
 });

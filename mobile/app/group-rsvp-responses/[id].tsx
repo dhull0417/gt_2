@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,
   ScrollView, KeyboardAvoidingView, Platform,
@@ -14,6 +14,8 @@ import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useApiClient, groupApi } from '@/utils/api';
 import { broadcastGroupUpdate, broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
 
 type Status = 'in' | 'out';
 interface Draft { key: string; _id?: string; status: Status; text: string; emoji: string }
@@ -30,13 +32,15 @@ const newKey = () => `r_${Date.now().toString(36)}${Math.random().toString(36).s
 function ReactionCard({ status, emoji, text, onPress, onDelete, selected }: {
   status: Status; emoji: string; text: string; onPress?: () => void; onDelete?: () => void; selected?: boolean;
 }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <TouchableOpacity activeOpacity={onPress ? 0.8 : 1} onPress={onPress} style={[styles.card, { borderColor: ACCENT[status] }, selected && styles.cardSelected]}>
       <Text style={styles.emoji}>{emoji || '🙂'}</Text>
       <Text style={[styles.cardText, { color: ACCENT[status] }]}>{text || 'Your catchphrase'}</Text>
       {onDelete && (
         <TouchableOpacity onPress={onDelete} style={styles.trash} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Feather name="trash-2" size={16} color="#9CA3AF" />
+          <Feather name="trash-2" size={16} color={colors.textFaint} />
         </TouchableOpacity>
       )}
     </TouchableOpacity>
@@ -45,6 +49,8 @@ function ReactionCard({ status, emoji, text, onPress, onDelete, selected }: {
 
 /** Two-sided slider: knob slides to I'm In (green) or I'm Out (red). */
 function StatusSlider({ status, onChange, disabled }: { status: Status; onChange: (s: Status) => void; disabled?: boolean }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const W = 220;
   const KNOB = W / 2 - 4;
   const pos = useSharedValue(status === 'in' ? 0 : 1);
@@ -54,15 +60,15 @@ function StatusSlider({ status, onChange, disabled }: { status: Status; onChange
     backgroundColor: interpolateColor(pos.value, [0, 1], [ACCENT.in, ACCENT.out]),
   }));
   const trackStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(pos.value, [0, 1], ['#E6FAF8', '#FFECEA']),
+    backgroundColor: interpolateColor(pos.value, [0, 1], ['rgba(79,209,197,0.18)', 'rgba(255,122,110,0.18)']),
   }));
   return (
     <TouchableOpacity activeOpacity={0.9} disabled={disabled} onPress={() => onChange(status === 'in' ? 'out' : 'in')} style={{ opacity: disabled ? 0.6 : 1 }}>
       <Animated.View style={[{ width: W, height: 44, borderRadius: 22, padding: 4, justifyContent: 'center' }, trackStyle]}>
         <Animated.View style={[{ position: 'absolute', left: 4, top: 4, width: KNOB, height: 36, borderRadius: 18 }, knobStyle]} />
         <View style={{ flexDirection: 'row' }} pointerEvents="none">
-          <Text style={[styles.sliderLabel, { color: status === 'in' ? '#fff' : '#6B7280' }]}>I'm In</Text>
-          <Text style={[styles.sliderLabel, { color: status === 'out' ? '#fff' : '#6B7280' }]}>I'm Out</Text>
+          <Text style={[styles.sliderLabel, { color: status === 'in' ? '#fff' : colors.textMuted }]}>I'm In</Text>
+          <Text style={[styles.sliderLabel, { color: status === 'out' ? '#fff' : colors.textMuted }]}>I'm Out</Text>
         </View>
       </Animated.View>
     </TouchableOpacity>
@@ -70,6 +76,8 @@ function StatusSlider({ status, onChange, disabled }: { status: Status; onChange
 }
 
 export default function GroupRsvpResponsesScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const api = useApiClient();
@@ -163,12 +171,12 @@ export default function GroupRsvpResponsesScreen() {
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
         {SUGGESTED[composerStatus].map((e) => (
-          <TouchableOpacity key={e} onPress={() => setEmoji(e)} style={[styles.emojiChip, emoji === e && { borderColor: ACCENT[composerStatus], backgroundColor: '#F9FAFB' }]}>
+          <TouchableOpacity key={e} onPress={() => setEmoji(e)} style={[styles.emojiChip, emoji === e && { borderColor: ACCENT[composerStatus], backgroundColor: colors.surfaceAlt }]}>
             <Text style={{ fontSize: 22 }}>{e}</Text>
           </TouchableOpacity>
         ))}
         <TouchableOpacity onPress={() => setPickerOpen(true)} style={styles.emojiChip} accessibilityLabel="Search all emoji">
-          <Feather name="search" size={20} color="#4A90E2" />
+          <Feather name="search" size={20} color={colors.brand} />
         </TouchableOpacity>
       </View>
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
@@ -185,14 +193,14 @@ export default function GroupRsvpResponsesScreen() {
           onChangeText={setText}
           maxLength={80}
           placeholder={composerStatus === 'in' ? 'e.g. Look who showed up!' : "e.g. We'll miss you!"}
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={colors.textFaint}
         />
       </View>
       <Text style={[styles.composerLabel, { marginTop: 14 }]}>Preview</Text>
       <ReactionCard status={composerStatus} emoji={emoji} text={text} />
-      {atLimit && <Text style={[styles.hint, { color: '#EF4444' }]}>That's the most you can add for {composerStatus === 'in' ? "I'm In" : "I'm Out"} ({MAX_PER_STATUS}).</Text>}
+      {atLimit && <Text style={[styles.hint, { color: colors.danger }]}>That's the most you can add for {composerStatus === 'in' ? "I'm In" : "I'm Out"} ({MAX_PER_STATUS}).</Text>}
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-        <TouchableOpacity onPress={closeComposer} style={[styles.btn, { backgroundColor: '#F3F4F6' }]}><Text style={[styles.btnText, { color: '#6B7280' }]}>Cancel</Text></TouchableOpacity>
+        <TouchableOpacity onPress={closeComposer} style={[styles.btn, { backgroundColor: colors.backgroundAlt }]}><Text style={[styles.btnText, { color: colors.textMuted }]}>Cancel</Text></TouchableOpacity>
         <TouchableOpacity onPress={commit} disabled={atLimit} style={[styles.btn, { backgroundColor: ACCENT[composerStatus] }, atLimit && { opacity: 0.4 }]}><Text style={styles.btnText}>{editingKey ? 'Update' : 'Add'}</Text></TouchableOpacity>
       </View>
     </View>
@@ -202,8 +210,8 @@ export default function GroupRsvpResponsesScreen() {
     <View>
       {composeStatus ? composer : (
         <TouchableOpacity onPress={() => openComposer('in')} style={[styles.addBtn, { marginTop: 18 }]}>
-          <Feather name="plus-circle" size={18} color="#4A90E2" />
-          <Text style={{ color: '#4A90E2', fontWeight: '700', fontSize: 15 }}>Add reaction</Text>
+          <Feather name="plus-circle" size={18} color={colors.brand} />
+          <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 15 }}>Add reaction</Text>
         </TouchableOpacity>
       )}
 
@@ -237,11 +245,11 @@ export default function GroupRsvpResponsesScreen() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.headerBar}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Feather name="arrow-left" size={24} color="#6B7280" />
+          <Feather name="arrow-left" size={24} color={colors.textMuted} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>RSVP Reactions</Text>
         <TouchableOpacity onPress={save} disabled={saving || !isPremium} style={{ minWidth: 40, alignItems: 'flex-end' }}>
-          {saving ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={[styles.saveText, !isPremium && { opacity: 0.4 }]}>Save</Text>}
+          {saving ? <ActivityIndicator size="small" color={colors.brand} /> : <Text style={[styles.saveText, !isPremium && { opacity: 0.4 }]}>Save</Text>}
         </TouchableOpacity>
       </View>
 
@@ -252,7 +260,7 @@ export default function GroupRsvpResponsesScreen() {
           </Text>
           {!isPremium ? (
             <View style={styles.lockRow}>
-              <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
+              <Feather name="lock" size={16} color={colors.textFaint} style={{ marginTop: 1 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.lockTitle}>Premium</Text>
                 <Text style={styles.lockText}>Custom RSVP reactions require the group owner to have Premium.</Text>
@@ -279,19 +287,19 @@ export default function GroupRsvpResponsesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
   iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
-  saveText: { fontSize: 16, fontWeight: '800', color: '#4A90E2' },
-  sub: { fontSize: 14, color: '#6B7280', lineHeight: 20, marginTop: 4 },
-  sectionLabel: { fontSize: 11, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 22, marginBottom: 10 },
-  hint: { fontSize: 12, color: '#6B7280', lineHeight: 17, marginBottom: 10 },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  saveText: { fontSize: 16, fontWeight: '800', color: colors.brand },
+  sub: { fontSize: 14, color: colors.textMuted, lineHeight: 20, marginTop: 4 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 22, marginBottom: 10 },
+  hint: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginBottom: 10 },
   // Matches RsvpResponseOverlay's card.
   card: {
-    backgroundColor: 'white', borderRadius: 28, borderWidth: 3, paddingVertical: 28, paddingHorizontal: 28,
+    backgroundColor: colors.surface, borderRadius: 28, borderWidth: 3, paddingVertical: 28, paddingHorizontal: 28,
     alignItems: 'center', marginBottom: 14,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 10, elevation: 4,
   },
@@ -299,18 +307,18 @@ const styles = StyleSheet.create({
   emoji: { fontSize: 56, marginBottom: 14 },
   cardText: { fontSize: 19, fontWeight: '900', textAlign: 'center', lineHeight: 26 },
   trash: { position: 'absolute', top: 12, right: 14 },
-  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#93C5FD', backgroundColor: '#fff' },
-  composer: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', padding: 14 },
-  composerLabel: { fontSize: 11, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 },
-  emojiChip: { width: 44, height: 44, borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
-  input: { height: 48, borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 12, fontSize: 15, color: '#111827', backgroundColor: '#fff' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#93C5FD', backgroundColor: colors.surface },
+  composer: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 14 },
+  composerLabel: { fontSize: 11, fontWeight: '800', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.5 },
+  emojiChip: { width: 44, height: 44, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  input: { height: 48, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, fontSize: 15, color: colors.textPrimary, backgroundColor: colors.surface },
   sliderLabel: { flex: 1, textAlign: 'center', fontWeight: '800', fontSize: 14 },
   legend: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
-  legendText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
+  legendText: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
   btn: { flex: 1, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   btnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  lockRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', padding: 12, marginTop: 16 },
-  lockTitle: { fontSize: 13, fontWeight: '800', color: '#374151' },
-  lockText: { fontSize: 12, color: '#6B7280', lineHeight: 17 },
+  lockRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12, marginTop: 16 },
+  lockTitle: { fontSize: 13, fontWeight: '800', color: colors.textSecondary },
+  lockText: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
 });
