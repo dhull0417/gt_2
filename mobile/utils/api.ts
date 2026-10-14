@@ -439,9 +439,18 @@ export const useApiClient = (): AxiosInstance => {
   return useMemo(() => createApiClient(getToken), [getToken]);
 };
 
+// Device timezone (IANA, e.g. "America/Denver"); lets the server time emails to the user's local day.
+const deviceTimezone = (): string | undefined => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const userApi = {
   syncUser: (api: AxiosInstance, data?: { firstName?: string; lastName?: string }) =>
-    api.post("/api/users/sync", data ?? {}),
+    api.post("/api/users/sync", { timezone: deviceTimezone(), ...(data ?? {}) }),
   getCurrentUser: async (api: AxiosInstance): Promise<User> => {
     const response = await api.get<{ user: User }>("/api/users/me");
     return response.data.user;

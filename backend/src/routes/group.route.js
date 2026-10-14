@@ -31,6 +31,33 @@ import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import { notifyUsers } from "../utils/push.notifications.js";
 
+import mongoose from "mongoose";
+
+// Loads the signed-in user and the group, and confirms the user belongs to it.
+// Returns { user, group } or sends the error response and returns null.
+const requireGroupMember = async (req, res, select) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400).json({ message: 'Invalid group id' });
+    return null;
+  }
+  const { userId: clerkId } = getAuth(req);
+  const [user, group] = await Promise.all([
+    User.findOne({ clerkId }).select('_id firstName lastName clerkId'),
+    Group.findById(id).select(select),
+  ]);
+  if (!user) { res.status(404).json({ message: 'User not found' }); return null; }
+  if (!group) { res.status(404).json({ message: 'Group not found' }); return null; }
+  if (!group.members.some((m) => m.equals(user._id))) {
+    res.status(403).json({ message: 'You are not a member of this group' });
+    return null;
+  }
+  return { user, group };
+};
+
+const displayName = (user, fallback) =>
+  [user.firstName, user.lastName].filter(Boolean).join(' ') || String(fallback || '').slice(0, 80) || 'Someone';
+
 const router = express.Router();
 
 // --- Group Management ---
@@ -118,22 +145,25 @@ router.post("/:groupId/invite-link", protectRoute, generateInviteLink);
 // updates lastMessage preview and notifies group members
 router.patch("/:id/last-message", protectRoute, async (req, res) => {
   try {
-    const { text, senderName } = req.body;
-    if (!text || !senderName) return res.status(400).json({ message: 'text and senderName required' });
+    const { text, senderName: clientName } = req.body;
+    if (typeof text !== 'string' || !text.trim()) return res.status(400).json({ message: 'text required' });
 
-    const { userId: senderClerkId } = getAuth(req);
+    const ctx = await requireGroupMember(req, res, 'name _id members');
+    if (!ctx) return;
+    const { user, group: found } = ctx;
+    const senderName = displayName(user, clientName);
+    const preview = text.slice(0, 500);
 
     const group = await Group.findByIdAndUpdate(
-      req.params.id,
-      { lastMessage: { text, user: { name: senderName, clerkId: senderClerkId }, createdAt: new Date() } },
+      found._id,
+      { lastMessage: { text: preview, user: { name: senderName, clerkId: user.clerkId }, createdAt: new Date() } },
       { new: true }
     );
-    if (!group) return res.status(404).json({ message: 'Group not found' });
 
     // Fire-and-forget — don't hold up the response for notification delivery
     User.find({
       _id: { $in: group.members },
-      clerkId: { $ne: senderClerkId },
+      clerkId: { $ne: user.clerkId },
       expoPushToken: { $exists: true, $ne: null },
       mutedGroups: { $ne: group._id },
       mutedUntilNextMeetup: { $ne: group._id },
@@ -141,7 +171,7 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
       if (recipients.length > 0) {
         notifyUsers(recipients, {
           title: group.name,
-          body: `${senderName}: ${text}`,
+          body: `${senderName}: ${preview}`,
           data: { type: 'chat', groupId: group._id.toString() },
         });
       }
@@ -156,19 +186,19 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
 // notifies group members of a reaction
 router.post("/:id/chat-reaction", protectRoute, async (req, res) => {
   try {
-    const { emoji, senderName } = req.body;
-    if (!emoji || !senderName) {
-      return res.status(400).json({ message: 'emoji and senderName required' });
+    const { emoji, senderName: clientName } = req.body;
+    if (typeof emoji !== 'string' || !emoji || emoji.length > 16) {
+      return res.status(400).json({ message: 'valid emoji required' });
     }
 
-    const { userId: senderClerkId } = getAuth(req);
-
-    const group = await Group.findById(req.params.id).select('name _id members');
-    if (!group) return res.status(404).json({ message: 'Group not found' });
+    const ctx = await requireGroupMember(req, res, 'name _id members');
+    if (!ctx) return;
+    const { user, group } = ctx;
+    const senderName = displayName(user, clientName);
 
     const recipients = await User.find({
       _id: { $in: group.members },
-      clerkId: { $ne: senderClerkId },
+      clerkId: { $ne: user.clerkId },
       expoPushToken: { $exists: true, $ne: null },
       mutedGroups: { $ne: group._id },
       mutedUntilNextMeetup: { $ne: group._id },

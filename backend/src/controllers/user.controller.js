@@ -1,3 +1,4 @@
+import { syncPremiumForUser } from "../utils/revenuecat.js";
 import asyncHandler from "express-async-handler";
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
@@ -6,6 +7,8 @@ import Notification from "../models/notification.model.js";
 import { getAuth, clerkClient } from "@clerk/express";
 import { serializeUser, hasPremium } from "../utils/premium.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
+import { resolveZone } from "../utils/email/lifecycle.js";
+import { ENV } from "../config/env.js";
 
 /**
  * @desc    Toggle mute status for a specific group's chat
@@ -165,6 +168,15 @@ export const updateProfile = asyncHandler(async (req, res) => {
   delete req.body.premium;
   delete req.body.isPremium;
   delete req.body.clerkId;
+  // Also block dotted paths ("premium.active") and Mongo operators ("$set"), which
+  // would otherwise slip past the deletes above, plus the server-owned email fields.
+  for (const key of Object.keys(req.body)) {
+    if (key.startsWith("$") || /^(premium|isPremium|clerkId|lifecycle|emailPrefs)(\.|$)/.test(key)) delete req.body[key];
+  }
+  if (req.body.timezone !== undefined) {
+    const tz = resolveZone(req.body.timezone);
+    if (tz) req.body.timezone = tz; else delete req.body.timezone;
+  }
   if (req.body.firstName !== undefined) req.body.firstName = req.body.firstName.trim();
   if (req.body.lastName !== undefined) req.body.lastName = req.body.lastName.trim();
 
@@ -186,6 +198,12 @@ export const syncUser = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   let user = await User.findOne({ clerkId: userId });
   if (user) {
+    // keep the device timezone current (used to time lifecycle emails)
+    const tz = resolveZone(req.body?.timezone);
+    if (tz && user.timezone !== tz) {
+      await User.updateOne({ _id: user._id }, { $set: { timezone: tz } });
+      user.timezone = tz;
+    }
     return res.status(200).json({ user: serializeUser(user), message: "User already exists" });
   }
 
@@ -207,6 +225,9 @@ export const syncUser = asyncHandler(async (req, res) => {
     firstName: bodyFirstName || clerkUser.firstName || (isAppleUser ? "New Member" : ""),
     lastName: bodyLastName || clerkUser.lastName || "",
     profilePicture: clerkUser.imageUrl || "",
+    timezone: resolveZone(req.body?.timezone),
+    // Only people who sign up while lifecycle emails are switched on get the sequence.
+    lifecycle: { enrolledAt: ENV.LIFECYCLE_EMAILS_ENABLED === "true" ? new Date() : null },
   };
 
   user = await User.create(userData);
@@ -299,4 +320,17 @@ export const deleteAccount = asyncHandler(async (req, res) => {
   await User.findByIdAndDelete(userId);
 
   res.status(200).json({ message: "Account deleted successfully." });
+});
+/**
+ * @desc    Re-check the signed-in user's Premium status with RevenueCat and save it.
+ *          The app calls this after a purchase or restore; it never sends a status itself.
+ * @route   POST /api/users/premium/sync
+ */
+export const syncPremium = asyncHandler(async (req, res) => {
+  const { userId: clerkId } = getAuth(req);
+  const user = await User.findOne({ clerkId });
+  if (!user) return res.status(404).json({ error: "User not found in database." });
+
+  const updated = await syncPremiumForUser(user);
+  res.status(200).json({ user: serializeUser(updated.toObject ? updated.toObject() : updated) });
 });

@@ -96,6 +96,33 @@ const userSchema = new mongoose.Schema(
             },
             default: {},
         },
+        // IANA timezone from the device (e.g. "America/Denver"); used to send
+        // lifecycle emails inside the recipient's 9am-7pm window.
+        timezone: {
+            type: String,
+            default: null,
+        },
+        // Lifecycle email state. Server-owned: never accept from client input.
+        // Users without `enrolledAt` (everyone who signed up before launch) are never emailed.
+        lifecycle: {
+            type: {
+                enrolledAt: { type: Date, default: null },
+                firstGroupAt: { type: Date, default: null },
+                // groups this user has ever created (a counter, so deleting a group doesn't undo it)
+                groupsCreated: { type: Number, default: 0 },
+                joinedViaGroup: { type: mongoose.Schema.Types.ObjectId, ref: "Group", default: null },
+            },
+            default: {},
+        },
+        emailPrefs: {
+            type: {
+                marketingOptOut: { type: Boolean, default: false },
+                marketingOptOutAt: { type: Date, default: null },
+                // hard bounce or spam complaint: send nothing further
+                suppressed: { type: Boolean, default: false },
+            },
+            default: {},
+        },
         calendarToken: {
             type: String,
             required: false,

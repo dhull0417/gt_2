@@ -1,5 +1,6 @@
 import express from "express";
 import { regenerateMeetups, expirePastMeetups, cleanupExpiredMeetups, notifyRsvpOpen, notifyMeetupReminder, notifyRsvpReminderStages, expirePolls, cancelUnderMinimum } from "../controllers/job.controller.js";
+import { runLifecycleJob } from "../controllers/email.controller.js";
 import { protectCron } from "../middleware/cron.middleware.js";
 
 const router = express.Router();
@@ -12,5 +13,6 @@ router.post("/notify-meetup-reminder", protectCron, notifyMeetupReminder);
 router.post("/notify-rsvp-reminder-stages", protectCron, notifyRsvpReminderStages);
 router.post("/expire-polls", protectCron, expirePolls);
 router.post("/cancel-under-minimum", protectCron, cancelUnderMinimum);
+router.post("/send-lifecycle-emails", protectCron, runLifecycleJob);
 
 export default router;

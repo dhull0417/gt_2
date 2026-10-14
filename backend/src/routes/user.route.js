@@ -10,6 +10,7 @@ import {
   toggleGroupMute,
   markGroupRead,
   deleteAccount,
+  syncPremium,
 } from "../controllers/user.controller.js";
 import { getCalendarSyncUrl, getCalendarFeed } from "../controllers/calendar.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
@@ -27,6 +28,8 @@ router.patch("/permissions", protectRoute, updatePermissionStatus);
 router.patch("/mute-group", protectRoute, toggleGroupMute);
 router.patch("/groups/:groupId/read", protectRoute, markGroupRead);
 router.delete("/account", protectRoute, deleteAccount);
+// Called by the app right after a purchase / restore so Premium shows up without waiting for the webhook.
+router.post("/premium/sync", protectRoute, syncPremium);
 
 // --- Calendar routes ---
 // Protected: The mobile app fetches the user's specific URL

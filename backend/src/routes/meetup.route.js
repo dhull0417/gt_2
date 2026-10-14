@@ -15,6 +15,7 @@ import { protectRoute } from "../middleware/auth.middleware.js";
 import { getAuth } from "@clerk/express";
 import Meetup from "../models/meetup.model.js";
 import User from "../models/user.model.js";
+import Group from "../models/group.model.js";
 
 const router = express.Router();
 
@@ -35,8 +36,20 @@ router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
         if (typeof count !== 'number' || count < 0) {
             return res.status(400).json({ message: 'count must be a non-negative number' });
         }
+        if (!Number.isInteger(count) || count > 50) {
+            return res.status(400).json({ message: 'count must be a whole number up to 50' });
+        }
         const meetup = await Meetup.findById(req.params.meetupId);
         if (!meetup) return res.status(404).json({ message: 'Meetup not found' });
+
+        // Only members of the meetup's group may add guests to it.
+        const [guestUser, guestGroup] = await Promise.all([
+            User.findOne({ clerkId }).select('_id').lean(),
+            Group.findById(meetup.group).select('members').lean(),
+        ]);
+        if (!guestUser || !guestGroup || !guestGroup.members.some(m => m.equals(guestUser._id))) {
+            return res.status(403).json({ message: 'You are not a member of this group' });
+        }
 
         // backfill: older docs may lack a guests array
         if (!meetup.guests) meetup.guests = [];

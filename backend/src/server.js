@@ -33,11 +33,16 @@ import placesRoutes from "./routes/places.route.js";
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
 import { arcjetMiddleware } from "./middleware/arcjet.middleware.js";
+import revenuecatRoutes from "./routes/revenuecat.route.js";
+import emailRoutes from "./routes/email.route.js";
+import { resendWebhook, goPage } from "./controllers/email.controller.js";
 import User from "./models/user.model.js";
 
 const app = express();
 
 app.use(cors());
+// Resend webhook needs the raw body for signature verification, so it is mounted before express.json().
+app.post("/api/email/webhook/resend", express.raw({ type: "*/*" }), resendWebhook);
 app.use(express.json());
 app.use(clerkMiddleware());
 app.get('/logo.png', (req, res) => {
@@ -63,11 +68,18 @@ app.use("/api/polls", pollRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/places", placesRoutes);
+app.use("/api/revenuecat", revenuecatRoutes);
+app.use("/api/email", emailRoutes);
+app.get("/go/:dest", goPage);
+app.get("/go/:dest/:id", goPage);
 
-app.post("/api/debug/log", (req, res) => {
-  console.log("[DEBUG]", JSON.stringify(req.body, null, 2));
-  res.status(200).json({ received: true });
-});
+// Dev-only: unauthenticated request logger. Never exposed in production.
+if (ENV.NODE_ENV !== "production") {
+  app.post("/api/debug/log", (req, res) => {
+    console.log("[DEBUG]", JSON.stringify(req.body, null, 2));
+    res.status(200).json({ received: true });
+  });
+}
 
 // --- Public web routes ---
 

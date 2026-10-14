@@ -14,6 +14,7 @@ import { buildGroupStats, buildAttendanceCsv } from "../utils/groupStats.js";
 import { parseQuestions, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
 import { refreshPriorityTiers, MAX_PRIORITY_TIERS, MAX_WINDOW_MINUTES } from "../utils/priorityRsvp.js";
 import { hasPremium, groupHasPremium } from "../utils/premium.js";
+import { onGroupCreated, onInviteRedeemed } from "../utils/email/lifecycle.js";
 
 // --- Helpers ---
 
@@ -284,6 +285,9 @@ export const createGroup = asyncHandler(async (req, res) => {
       await generateMeetupsForGroup(newGroup);
     } catch (err) { console.error("Initial Gen Error:", err); }
   }
+
+  // Lifecycle emails: records the first group and sends the "You made a group!" email. Never throws.
+  await onGroupCreated(owner._id, newGroup._id);
 
   res.status(201).json({ group: withLegacyScheduleMirror(newGroup.toObject()), message: "Created successfully." });
 });
@@ -1147,6 +1151,7 @@ export const redeemInviteToken = asyncHandler(async (req, res) => {
 
     await group.updateOne({ $addToSet: { members: user._id } });
     await user.updateOne({ $addToSet: { groups: group._id } });
+    await onInviteRedeemed(user._id, group._id); // remembered for the welcome email
 
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
