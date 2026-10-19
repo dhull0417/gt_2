@@ -98,6 +98,15 @@ const resolveSafe = async (hostname) => {
   return addrs[0];
 };
 
+// Makes the socket connect to the address we already vetted instead of resolving the name again.
+// Node 20+ calls lookup with { all: true } and expects an array back; older style expects (address, family).
+export const makePinnedLookup = (pinned) => (_host, opts, cb) => {
+  const callback = typeof opts === 'function' ? opts : cb;
+  const wantsAll = typeof opts === 'object' && opts !== null && opts.all;
+  if (wantsAll) callback(null, [{ address: pinned.address, family: pinned.family }]);
+  else callback(null, pinned.address, pinned.family);
+};
+
 const requestOnce = (url, pinned) =>
   new Promise((resolve, reject) => {
     const lib = url.protocol === 'https:' ? https : http;
@@ -110,7 +119,7 @@ const requestOnce = (url, pinned) =>
           Accept: 'text/html,application/xhtml+xml',
         },
         // Pin the connection to the address we already vetted.
-        lookup: (_host, _opts, cb) => cb(null, pinned.address, pinned.family),
+        lookup: makePinnedLookup(pinned),
         timeout: TIMEOUT_MS,
       },
       (res) => {

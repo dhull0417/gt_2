@@ -26,8 +26,10 @@ router.get('/', protectRoute, async (req, res) => {
     cache.set(url, { preview, expires: Date.now() + CACHE_TTL_MS });
     res.set('Cache-Control', 'private, max-age=3600');
     res.json({ preview });
-  } catch {
-    // Unreachable, blocked, slow — the app just shows the plain link.
+  } catch (err) {
+    // Unreachable, blocked, slow — the app just shows the plain link. Logged so a deployed
+    // problem is visible in the Vercel function logs instead of failing silently.
+    console.warn('Link preview failed for', url, '-', err?.message || err);
     res.json({ preview: null });
   }
 });
