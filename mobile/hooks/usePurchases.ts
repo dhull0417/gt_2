@@ -36,7 +36,7 @@ export const usePackages = () => {
 };
 
 /** After a purchase/restore: ask OUR server to re-check RevenueCat, then refresh everything Premium touches. */
-const useRefreshPremium = () => {
+export const useRefreshPremium = () => {
   const api = useApiClient();
   const queryClient = useQueryClient();
   return async () => {

@@ -2241,6 +2241,11 @@
   resolved "https://registry.yarnpkg.com/@revenuecat/purchases-typescript-internal/-/purchases-typescript-internal-19.11.0.tgz#ba7b047a503ebc9ee1f26c79ad9631d6060c753f"
   integrity sha512-RW+M+VDagkiy2D6vOHd2ukbF72XHMDRPXSK1DGsXkqZVTmjDQFaJoVV3XSWImIzfOWZDpkD2J36a3GbNRiSm2A==
 
+"@revenuecat/purchases-typescript-internal@19.12.0":
+  version "19.12.0"
+  resolved "https://registry.yarnpkg.com/@revenuecat/purchases-typescript-internal/-/purchases-typescript-internal-19.12.0.tgz#3287b8fcd7fd00b77c7d87e758d332aadae6912e"
+  integrity sha512-oDI505W2IX54wmmZu0M4N6ZLRnFvS5FlFruvFAZXbsZpybksUnZHqgiyMVfsD8Bnd2EloxDu7RK7QNAVMT6fLg==
+
 "@scure/base@~1.2.5":
   version "1.2.6"
   resolved "https://registry.yarnpkg.com/@scure/base/-/base-1.2.6.tgz#ca917184b8231394dd8847509c67a0be522e59f6"
@@ -7193,6 +7198,13 @@ react-native-is-edge-to-edge@^1.1.6, react-native-is-edge-to-edge@^1.2.1:
   version "1.3.1"
   resolved "https://registry.yarnpkg.com/react-native-is-edge-to-edge/-/react-native-is-edge-to-edge-1.3.1.tgz#feb9a6a8faf0874298947edd556e5af22044e139"
   integrity sha512-NIXU/iT5+ORyCc7p0z2nnlkouYKX425vuU1OEm6bMMtWWR9yvb+Xg5AZmImTKoF9abxCPqrKC3rOZsKzUYgYZA==
+
+react-native-purchases-ui@^10.14.0:
+  version "10.14.0"
+  resolved "https://registry.yarnpkg.com/react-native-purchases-ui/-/react-native-purchases-ui-10.14.0.tgz#84bf2c65959f6aa1c406e910dff1d569e5533b06"
+  integrity sha512-TgkjIccTzbmnu6hoEjXDulzIT49ZHAASWLfu48zgTBZR5Xw3bBucZ7DfVDkGeQ7bXBwBD86lfIHrTTMcBuVlfA==
+  dependencies:
+    "@revenuecat/purchases-typescript-internal" "19.12.0"
 
 react-native-purchases@^10.13.0:
   version "10.13.0"
