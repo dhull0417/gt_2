@@ -159,6 +159,7 @@ export default function ChatSearchScreen() {
 
       {tab === 'search' ? (
         <FlatList
+          key="search-list"
           data={searchEnabled ? results : []}
           keyExtractor={(m) => m.id}
           keyboardShouldPersistTaps="handled"
@@ -192,6 +193,9 @@ export default function ChatSearchScreen() {
         />
       ) : (
         <FlatList
+          // Different column count than the search list; React Native can't change numColumns in place,
+          // so the two lists must be separate instances.
+          key="photo-grid"
           data={photoList}
           keyExtractor={(m) => m.id}
           numColumns={3}
