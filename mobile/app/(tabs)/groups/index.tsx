@@ -2,8 +2,8 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -19,6 +19,7 @@ import { TAB_BAR_HEIGHT } from '@/utils/layout';
 import { promptForNotificationPermission } from '@/hooks/usePushNotifications';
 import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { useUnreadCounts } from '@/hooks/useUnreadCounts';
 
 const GroupScreen = () => {
   const api = useApiClient();
@@ -63,6 +64,22 @@ const GroupScreen = () => {
     }, [refetchGroups, refetchUser])
   );
 
+  // Groups the existing check (lastMessage newer than lastReadAt, not sent by me) marks unread —
+  // only those are asked for a real count.
+  const unreadCandidates = useMemo(
+    () =>
+      (sortedGroups ?? [])
+        .filter((g) => {
+          const lastReadAt = currentUser?.lastReadAt?.[g._id];
+          const own = !!g.lastMessage?.user?.clerkId && g.lastMessage.user.clerkId === currentUser?.clerkId;
+          return !own && !!g.lastMessage?.createdAt &&
+            (!lastReadAt || new Date(lastReadAt) < new Date(g.lastMessage.createdAt));
+        })
+        .map((g) => ({ groupId: g._id, lastReadAt: currentUser?.lastReadAt?.[g._id] ?? '' })),
+    [sortedGroups, currentUser]
+  );
+  const unreadCounts = useUnreadCounts(unreadCandidates);
+
   const handleOpenGroupDetail = (group: Group) => {
     router.push({ pathname: '/group-chat/[id]', params: { id: group._id } });
   };
@@ -80,13 +97,16 @@ const GroupScreen = () => {
         group.lastMessage.user.clerkId === currentUser?.clerkId;
       const isUnread = !isOwnLastMessage && !!group.lastMessage?.createdAt &&
         (!lastReadAt || new Date(lastReadAt) < new Date(group.lastMessage.createdAt));
+      // Real count when available; until then (or if it can't be fetched) the plain dot shows.
+      const info = isUnread ? unreadCounts[group._id] : undefined;
+      const unreadInfo = info && info.unread > 0 ? info : null;
       return (
-        <TouchableOpacity
+        <PressableOpacity
           key={group._id}
           className="relative bg-white dark:bg-gray-900 px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800"
           onPress={() => handleOpenGroupDetail(group)}
         >
-          {isUnread && (
+          {isUnread && !unreadInfo && (
             <View className="absolute top-3 right-3 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-gray-900" />
           )}
           <View className="flex-row items-center">
@@ -108,8 +128,20 @@ const GroupScreen = () => {
                 <Text className="text-sm text-gray-400 dark:text-gray-500 italic mt-0.5">No messages yet</Text>
               )}
             </View>
+            {unreadInfo && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 8 }}>
+                {unreadInfo.mentioned > 0 && (
+                  <View style={{ backgroundColor: colors.brand, borderRadius: 10, minWidth: 20, height: 20, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>@</Text>
+                  </View>
+                )}
+                <View style={{ backgroundColor: '#EF4444', borderRadius: 10, minWidth: 20, height: 20, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>{unreadInfo.unread > 99 ? '99+' : unreadInfo.unread}</Text>
+                </View>
+              </View>
+            )}
           </View>
-        </TouchableOpacity>
+        </PressableOpacity>
       );
     });
   };
@@ -121,19 +153,19 @@ const GroupScreen = () => {
       style={{ paddingTop: contentTopInset }}
     >
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-        <TouchableOpacity onPress={() => { if (pathname !== '/notifications') router.push('/notifications'); }}>
+        <PressableOpacity accessibilityLabel="Notifications" onPress={() => { if (pathname !== '/notifications') router.push('/notifications'); }}>
           <Feather name="bell" size={26} color={colors.brand} />
           {hasUnreadNotifications && (
             <View className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-gray-900" />
           )}
-        </TouchableOpacity>
+        </PressableOpacity>
         <Text className="text-xl font-black text-gray-900 dark:text-gray-100">Groups</Text>
-        <TouchableOpacity
+        <PressableOpacity
           onPress={() => router.push('/create-group')}
           style={{ alignItems: 'center', justifyContent: 'center' }}
         >
           <Feather name="plus-circle" size={26} color={colors.brand} />
-        </TouchableOpacity>
+        </PressableOpacity>
       </View>
       <ScrollView className="px-4" contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}>
         {renderGroupList()}

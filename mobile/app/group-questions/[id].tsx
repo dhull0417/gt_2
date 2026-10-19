@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Switch, ActivityIndicator,
+  View, Text, TextInput, StyleSheet, Alert, Switch, ActivityIndicator,
   ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -116,15 +117,15 @@ export default function GroupQuestionsScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.headerBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+        <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()} style={styles.iconBtn}>
           <Feather name="arrow-left" size={24} color={colors.textMuted} />
-        </TouchableOpacity>
+        </PressableOpacity>
         <Text style={styles.headerTitle}>RSVP Questions</Text>
-        <TouchableOpacity onPress={save} disabled={saving || !isPremium} style={{ minWidth: 40, alignItems: 'flex-end' }}>
+        <PressableOpacity onPress={save} disabled={saving || !isPremium} style={{ minWidth: 40, alignItems: 'flex-end' }}>
           {saving
             ? <ActivityIndicator size="small" color={colors.brand} />
             : <Text style={[styles.saveText, !isPremium && { opacity: 0.4 }]}>Save</Text>}
-        </TouchableOpacity>
+        </PressableOpacity>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
@@ -149,9 +150,9 @@ export default function GroupQuestionsScreen() {
                 <View key={d.key} style={[styles.card, { marginTop: i === 0 ? 0 : 14 }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                     <Text style={styles.qLabel}>Question {i + 1}</Text>
-                    <TouchableOpacity onPress={() => setDrafts((cur) => cur.filter((x) => x.key !== d.key))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <PressableOpacity accessibilityLabel="Delete" onPress={() => setDrafts((cur) => cur.filter((x) => x.key !== d.key))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Feather name="trash-2" size={16} color={colors.textFaint} />
-                    </TouchableOpacity>
+                    </PressableOpacity>
                   </View>
                   <TextInput
                     style={styles.input}
@@ -164,13 +165,13 @@ export default function GroupQuestionsScreen() {
 
                   <View style={styles.segment}>
                     {(Object.keys(TYPE_LABELS) as RsvpQuestion['type'][]).map((t) => (
-                      <TouchableOpacity
+                      <PressableOpacity
                         key={t}
                         onPress={() => patch(d.key, { type: t })}
                         style={[styles.segBtn, d.type === t && styles.segBtnOn]}
                       >
                         <Text style={[styles.segText, d.type === t && { color: '#fff' }]}>{TYPE_LABELS[t]}</Text>
-                      </TouchableOpacity>
+                      </PressableOpacity>
                     ))}
                   </View>
 
@@ -187,17 +188,17 @@ export default function GroupQuestionsScreen() {
                             maxLength={60}
                           />
                           {d.options.length > 2 && (
-                            <TouchableOpacity onPress={() => patch(d.key, { options: d.options.filter((_, xi) => xi !== oi) })} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <PressableOpacity accessibilityLabel="Remove" onPress={() => patch(d.key, { options: d.options.filter((_, xi) => xi !== oi) })} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                               <Feather name="x" size={18} color={colors.textFaint} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                           )}
                         </View>
                       ))}
                       {d.options.length < 10 && (
-                        <TouchableOpacity onPress={() => patch(d.key, { options: [...d.options, ''] })} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <PressableOpacity onPress={() => patch(d.key, { options: [...d.options, ''] })} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Feather name="plus-circle" size={16} color={colors.brand} />
                           <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>Add choice</Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                       )}
                     </View>
                   )}
@@ -210,10 +211,10 @@ export default function GroupQuestionsScreen() {
               ))}
 
               {drafts.length < MAX_QUESTIONS && (
-                <TouchableOpacity onPress={() => setDrafts((cur) => [...cur, blank()])} style={styles.addBtn}>
+                <PressableOpacity onPress={() => setDrafts((cur) => [...cur, blank()])} style={styles.addBtn}>
                   <Feather name="plus-circle" size={18} color={colors.brand} />
                   <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 15 }}>Add question</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
               )}
               <Text style={styles.hint}>
                 Required questions must be answered to save the answers sheet, but members can still skip it and answer later. Removing a question deletes its answers.

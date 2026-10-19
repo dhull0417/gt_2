@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, Alert, Linking, Platform } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -42,12 +43,12 @@ export default function PaywallScreen() {
         <Feather name="check-circle" size={40} color={colors.success} />
         <Text style={[styles.title, { color: colors.textPrimary }]}>You're Premium</Text>
         <Text style={[styles.text, { color: colors.textMuted }]}>Thanks for supporting GroupThat.</Text>
-        <TouchableOpacity onPress={() => Linking.openURL(MANAGE_URL).catch(() => {})} style={{ marginTop: 16 }}>
+        <PressableOpacity onPress={() => Linking.openURL(MANAGE_URL).catch(() => {})} style={{ marginTop: 16 }}>
           <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 15 }}>Manage subscription</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={close} style={{ marginTop: 18 }}>
+        </PressableOpacity>
+        <PressableOpacity onPress={close} style={{ marginTop: 18 }}>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>Close</Text>
-        </TouchableOpacity>
+        </PressableOpacity>
       </SafeAreaView>
     );
   }
@@ -59,9 +60,9 @@ export default function PaywallScreen() {
         <Text style={[styles.text, { color: colors.textMuted, marginTop: 10 }]}>
           Subscriptions aren't available in this version of the app.
         </Text>
-        <TouchableOpacity onPress={close} style={{ marginTop: 18 }}>
+        <PressableOpacity onPress={close} style={{ marginTop: 18 }}>
           <Text style={{ color: colors.brand, fontWeight: '700' }}>Close</Text>
-        </TouchableOpacity>
+        </PressableOpacity>
       </SafeAreaView>
     );
   }

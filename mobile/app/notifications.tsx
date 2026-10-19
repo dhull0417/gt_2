@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Image, Platform } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -163,7 +164,7 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
     const icon = getNotificationIcon(notification.type);
 
     return (
-        <TouchableOpacity style={[styles.itemContainer, !notification.read && { backgroundColor: unreadBg, borderLeftWidth: 3, borderLeftColor: colors.brand }]} onPress={handlePress} activeOpacity={0.7}>
+        <PressableOpacity style={[styles.itemContainer, !notification.read && { backgroundColor: unreadBg, borderLeftWidth: 3, borderLeftColor: colors.brand }]} onPress={handlePress} activeOpacity={0.7}>
             <View style={styles.iconContainer}>
                 <Feather name={icon.name as any} size={24} color={icon.color} />
             </View>
@@ -172,24 +173,24 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
                 <Text style={styles.timeText}>{timeAgo(notification.createdAt)}</Text>
                 {notification.type === 'group-invite' && notification.status === 'pending' && (
                     <View style={styles.actionContainer}>
-                        <TouchableOpacity
+                        <PressableOpacity
                             style={[styles.actionButton, styles.acceptButton, (isAccepting || isDeclining) && styles.actionButtonDisabled]}
                             onPress={() => onAccept(notification._id)}
                             disabled={isAccepting || isDeclining}
                         >
                             <Text style={styles.actionTextAccept}>{isAccepting ? 'Accepting…' : 'Accept'}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
+                        </PressableOpacity>
+                        <PressableOpacity
                             style={[styles.actionButton, styles.declineButton, (isAccepting || isDeclining) && styles.actionButtonDisabled]}
                             onPress={() => onDecline(notification._id)}
                             disabled={isAccepting || isDeclining}
                         >
                             <Text style={styles.actionTextDecline}>{isDeclining ? 'Declining…' : 'Decline'}</Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
                 )}
             </View>
-        </TouchableOpacity>
+        </PressableOpacity>
     );
 };
 

@@ -1,4 +1,5 @@
-import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState } from 'react';
 import { useSignIn } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -41,9 +42,9 @@ const ForgotPasswordScreen = () => {
         className="flex-1"
       >
         <View className="flex-row items-center px-4 pt-2">
-          <TouchableOpacity onPress={() => router.back()}>
+          <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()}>
             <Feather name="arrow-left" size={28} color="#FF7A6E" />
-          </TouchableOpacity>
+          </PressableOpacity>
         </View>
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
@@ -62,14 +63,14 @@ const ForgotPasswordScreen = () => {
             className="w-full bg-gray-100 dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-6"
             style={{ color: colors.textPrimary }}
           />
-          <TouchableOpacity
+          <PressableOpacity
             onPress={onRequestReset}
             disabled={isLoading}
             className="w-full py-4 rounded-lg items-center shadow"
             style={{ backgroundColor: colors.brand }}
           >
             <Text className="text-white text-lg font-bold">Send Reset Code</Text>
-          </TouchableOpacity>
+          </PressableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

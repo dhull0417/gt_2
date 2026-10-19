@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,
+  View, Text, TextInput, StyleSheet, Alert, ActivityIndicator,
   ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import EmojiPicker from 'rn-emoji-keyboard';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import { EmojiPickerSheet } from '@/components/EmojiPickerSheet';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, interpolateColor } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -36,15 +37,15 @@ function ReactionCard({ status, emoji, text, onPress, onDelete, selected }: {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
-    <TouchableOpacity activeOpacity={onPress ? 0.8 : 1} onPress={onPress} style={[styles.card, { borderColor: ACCENT[status] }, selected && styles.cardSelected]}>
+    <PressableOpacity activeOpacity={onPress ? 0.8 : 1} onPress={onPress} style={[styles.card, { borderColor: ACCENT[status] }, selected && styles.cardSelected]}>
       <Text style={styles.emoji}>{emoji || '🙂'}</Text>
       <Text style={[styles.cardText, { color: ACCENT[status] }]}>{text || 'Your catchphrase'}</Text>
       {onDelete && (
-        <TouchableOpacity onPress={onDelete} style={styles.trash} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <PressableOpacity accessibilityLabel="Delete" onPress={onDelete} style={styles.trash} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Feather name="trash-2" size={16} color={colors.textFaint} />
-        </TouchableOpacity>
+        </PressableOpacity>
       )}
-    </TouchableOpacity>
+    </PressableOpacity>
   );
 }
 
@@ -64,7 +65,7 @@ function StatusSlider({ status, onChange, disabled }: { status: Status; onChange
     backgroundColor: interpolateColor(pos.value, [0, 1], ['rgba(79,209,197,0.18)', 'rgba(255,122,110,0.18)']),
   }));
   return (
-    <TouchableOpacity activeOpacity={0.9} disabled={disabled} onPress={() => onChange(status === 'in' ? 'out' : 'in')} style={{ opacity: disabled ? 0.6 : 1 }}>
+    <PressableOpacity activeOpacity={0.9} disabled={disabled} onPress={() => onChange(status === 'in' ? 'out' : 'in')} style={{ opacity: disabled ? 0.6 : 1 }}>
       <Animated.View style={[{ width: W, height: 44, borderRadius: 22, padding: 4, justifyContent: 'center' }, trackStyle]}>
         <Animated.View style={[{ position: 'absolute', left: 4, top: 4, width: KNOB, height: 36, borderRadius: 18 }, knobStyle]} />
         <View style={{ flexDirection: 'row' }} pointerEvents="none">
@@ -72,7 +73,7 @@ function StatusSlider({ status, onChange, disabled }: { status: Status; onChange
           <Text style={[styles.sliderLabel, { color: status === 'out' ? '#fff' : colors.textMuted }]}>I'm Out</Text>
         </View>
       </Animated.View>
-    </TouchableOpacity>
+    </PressableOpacity>
   );
 }
 
@@ -172,22 +173,22 @@ export default function GroupRsvpResponsesScreen() {
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
         {SUGGESTED[composerStatus].map((e) => (
-          <TouchableOpacity key={e} onPress={() => setEmoji(e)} style={[styles.emojiChip, emoji === e && { borderColor: ACCENT[composerStatus], backgroundColor: colors.surfaceAlt }]}>
+          <PressableOpacity key={e} onPress={() => setEmoji(e)} style={[styles.emojiChip, emoji === e && { borderColor: ACCENT[composerStatus], backgroundColor: colors.surfaceAlt }]}>
             <Text style={{ fontSize: 22 }}>{e}</Text>
-          </TouchableOpacity>
+          </PressableOpacity>
         ))}
-        <TouchableOpacity onPress={() => setPickerOpen(true)} style={styles.emojiChip} accessibilityLabel="Search all emoji">
+        <PressableOpacity onPress={() => setPickerOpen(true)} style={styles.emojiChip} accessibilityLabel="Search all emoji">
           <Feather name="search" size={20} color={colors.brand} />
-        </TouchableOpacity>
+        </PressableOpacity>
       </View>
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-        <TouchableOpacity
+        <PressableOpacity
           onPress={() => setPickerOpen(true)}
           style={[styles.input, { width: 64, alignItems: 'center', justifyContent: 'center' }]}
           accessibilityLabel="Choose emoji"
         >
           <Text style={{ fontSize: 26 }}>{emoji || '🙂'}</Text>
-        </TouchableOpacity>
+        </PressableOpacity>
         <TextInput
           style={[styles.input, { flex: 1 }]}
           value={text}
@@ -201,8 +202,8 @@ export default function GroupRsvpResponsesScreen() {
       <ReactionCard status={composerStatus} emoji={emoji} text={text} />
       {atLimit && <Text style={[styles.hint, { color: colors.danger }]}>That's the most you can add for {composerStatus === 'in' ? "I'm In" : "I'm Out"} ({MAX_PER_STATUS}).</Text>}
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-        <TouchableOpacity onPress={closeComposer} style={[styles.btn, { backgroundColor: colors.backgroundAlt }]}><Text style={[styles.btnText, { color: colors.textMuted }]}>Cancel</Text></TouchableOpacity>
-        <TouchableOpacity onPress={commit} disabled={atLimit} style={[styles.btn, { backgroundColor: ACCENT[composerStatus] }, atLimit && { opacity: 0.4 }]}><Text style={styles.btnText}>{editingKey ? 'Update' : 'Add'}</Text></TouchableOpacity>
+        <PressableOpacity onPress={closeComposer} style={[styles.btn, { backgroundColor: colors.backgroundAlt }]}><Text style={[styles.btnText, { color: colors.textMuted }]}>Cancel</Text></PressableOpacity>
+        <PressableOpacity onPress={commit} disabled={atLimit} style={[styles.btn, { backgroundColor: ACCENT[composerStatus] }, atLimit && { opacity: 0.4 }]}><Text style={styles.btnText}>{editingKey ? 'Update' : 'Add'}</Text></PressableOpacity>
       </View>
     </View>
   );
@@ -210,10 +211,10 @@ export default function GroupRsvpResponsesScreen() {
   const body = (
     <View>
       {composeStatus ? composer : (
-        <TouchableOpacity onPress={() => openComposer('in')} style={[styles.addBtn, { marginTop: 18 }]}>
+        <PressableOpacity onPress={() => openComposer('in')} style={[styles.addBtn, { marginTop: 18 }]}>
           <Feather name="plus-circle" size={18} color={colors.brand} />
           <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 15 }}>Add reaction</Text>
-        </TouchableOpacity>
+        </PressableOpacity>
       )}
 
       <View style={{ marginTop: 22 }}>
@@ -245,13 +246,13 @@ export default function GroupRsvpResponsesScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.headerBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+        <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()} style={styles.iconBtn}>
           <Feather name="arrow-left" size={24} color={colors.textMuted} />
-        </TouchableOpacity>
+        </PressableOpacity>
         <Text style={styles.headerTitle}>RSVP Reactions</Text>
-        <TouchableOpacity onPress={save} disabled={saving || !isPremium} style={{ minWidth: 40, alignItems: 'flex-end' }}>
+        <PressableOpacity onPress={save} disabled={saving || !isPremium} style={{ minWidth: 40, alignItems: 'flex-end' }}>
           {saving ? <ActivityIndicator size="small" color={colors.brand} /> : <Text style={[styles.saveText, !isPremium && { opacity: 0.4 }]}>Save</Text>}
-        </TouchableOpacity>
+        </PressableOpacity>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
@@ -276,14 +277,10 @@ export default function GroupRsvpResponsesScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <EmojiPicker
+      <EmojiPickerSheet
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onEmojiSelected={(item) => setEmoji(item.emoji)}
-        enableSearchBar
-        enableRecentlyUsed
-        defaultHeight="75%"
-        expandedHeight="90%"
       />
     </SafeAreaView>
   );

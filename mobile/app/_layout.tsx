@@ -26,6 +26,8 @@ import { WelcomeModal } from '@/components/WelcomeModal';
 import { UpdateNameModal } from '@/components/UpdateNameModal';
 import { setClerkTokenGetter, getClerkToken } from '@/utils/authToken';
 import { registerChatMutationDefaults, SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
+import { upsertMessage } from '@/utils/chatCache';
+import type { ChatMessage } from '@/types/chat';
 import { registerOfflineMutationDefaults, RSVP_MUTATION_KEY, ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import type { Meetup } from '@/utils/api';
@@ -73,19 +75,19 @@ const queryClient = new QueryClient({
     onSuccess: (_data, variables, _context, mutation) => {
       switch (mutation.options.mutationKey?.[0]) {
         case SEND_MESSAGE_MUTATION_KEY[0]: {
-          // Needed for a send that finishes after being paused offline: the
-          // realtime INSERT event only reaches a chat screen that's mounted
-          // and subscribed at the moment it lands, so without this the
-          // message can go missing from the thread even though it made it
-          // to Supabase (it still shows up via the group list's own refetch
-          // of last-message, which is what made this look like a display-only
-          // bug rather than the message failing to send). Skipped for a normal
-          // online send (resolves in well under a second) since realtime's own
-          // INSERT event already delivers those - no need for the extra fetch.
-          const elapsed = Date.now() - mutation.state.submittedAt;
-          if (elapsed > 3000) {
-            const { groupId } = variables as SendMessageVariables;
-            queryClient.invalidateQueries({ queryKey: ['messages', groupId] });
+          // The send returns the saved row. Put it in the thread's cache right away, before the
+          // "sending" placeholder goes away, so the bubble never vanishes while we wait on the
+          // realtime INSERT event - and so a send that finishes in the background (resumed after
+          // an offline stretch or an app restart, with no chat screen mounted) still lands.
+          const row = _data as ChatMessage | undefined;
+          const { groupId } = variables as SendMessageVariables;
+          const messagesKey = ['messages', groupId];
+          if (row?.id && queryClient.getQueryData(messagesKey)) {
+            queryClient.setQueryData<ChatMessage[]>(messagesKey, (prev) =>
+              prev ? upsertMessage(prev, row) : prev
+            );
+          } else {
+            queryClient.invalidateQueries({ queryKey: messagesKey });
           }
           break;
         }
@@ -162,13 +164,30 @@ export default function RootLayout() {
               persister: asyncStoragePersister,
               maxAge: ONE_WEEK_MS,
               dehydrateOptions: {
+                // Persist the ones that haven't finished: paused offline, mid-flight when the app was
+                // killed, or failed and waiting on Retry/Discard. Completed ones have nothing to resume.
                 shouldDehydrateMutation: (mutation) =>
+                  mutation.state.status !== 'success' &&
                   QUEUED_MUTATION_KEYS.includes(mutation.options.mutationKey?.[0] as string),
               },
             }}
             // Resumes any send that was still paused-offline when the app was last
             // closed, once the persisted cache (and this mutation) is back in memory.
-            onSuccess={() => { queryClient.resumePausedMutations(); }}
+            onSuccess={() => {
+              // A send that was mid-flight when the app was killed comes back "pending" but not
+              // paused, so resumePausedMutations() skips it and its placeholder would sit on
+              // "Sending..." forever. Sends are idempotent (client_id), so just run it again.
+              for (const m of queryClient.getMutationCache().getAll()) {
+                if (
+                  m.options.mutationKey?.[0] === SEND_MESSAGE_MUTATION_KEY[0] &&
+                  m.state.status === 'pending' &&
+                  !m.state.isPaused
+                ) {
+                  m.continue().catch(() => {});
+                }
+              }
+              queryClient.resumePausedMutations();
+            }}
           >
             <AuthLayout />
             <ImageCropperHost />

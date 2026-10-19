@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useSignIn, useSignUp } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -102,12 +103,12 @@ export default function PhoneLogin() {
       <View style={{ flex: 1 }}>
       {/* Header / Back Button */}
       <View style={styles.header}>
-        <TouchableOpacity
+        <PressableOpacity accessibilityLabel="Go back"
           onPress={() => (pendingVerification ? setPendingVerification(false) : router.back())}
           style={styles.backButton}
         >
           <Feather name="arrow-left" size={24} color="#FF7A6E" />
-        </TouchableOpacity>
+        </PressableOpacity>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Phone Login</Text>
       </View>
 
@@ -134,13 +135,13 @@ export default function PhoneLogin() {
               placeholderTextColor={colors.placeholder}
             />
 
-            <TouchableOpacity
+            <PressableOpacity
               onPress={onSendCodePress}
               style={[styles.button, { backgroundColor: colors.brand }, isLoading && styles.buttonDisabled]}
               disabled={isLoading}
             >
               {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Send Code</Text>}
-            </TouchableOpacity>
+            </PressableOpacity>
           </>
         ) : (
           // === STEP 2: ENTER CODE ===
@@ -159,17 +160,17 @@ export default function PhoneLogin() {
               maxLength={6}
             />
 
-            <TouchableOpacity
+            <PressableOpacity
               onPress={onVerifyPress}
               style={[styles.button, { backgroundColor: colors.brand }, isLoading && styles.buttonDisabled]}
               disabled={isLoading}
             >
                {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Verify & Continue</Text>}
-            </TouchableOpacity>
+            </PressableOpacity>
 
-            <TouchableOpacity onPress={() => setPendingVerification(false)} style={styles.secondaryButton}>
+            <PressableOpacity onPress={() => setPendingVerification(false)} style={styles.secondaryButton}>
                <Text style={[styles.secondaryButtonText, { color: colors.brand }]}>Change Phone Number</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
           </>
         )}
       </View>

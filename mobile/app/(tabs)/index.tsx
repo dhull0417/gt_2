@@ -1,4 +1,6 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Animated, TextInput, Alert } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
+import Reanimated, { FadeIn, useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -84,15 +86,9 @@ const capMeetupsByFrequency = (list: Meetup[]): Meetup[] => {
 
 // Fades a card in when it newly appears in a filtered list (e.g. switching RSVP tabs)
 // instead of having it pop in abruptly.
-const FadeInCard = ({ children }: { children: React.ReactNode }) => {
-  const opacity = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }).start();
-  }, []);
-
-  return <Animated.View style={{ opacity }}>{children}</Animated.View>;
-};
+const FadeInCard = ({ children }: { children: React.ReactNode }) => (
+  <Reanimated.View entering={FadeIn.duration(250)}>{children}</Reanimated.View>
+);
 
 type RsvpFilter = 'all' | 'undecided' | 'in' | 'out';
 
@@ -106,19 +102,17 @@ const FILTER_TABS: { key: RsvpFilter; label: string }[] = [
 // Pulses to 110% scale on tap (not just a color change) before invoking onPress.
 const FilterPill = ({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) => {
   const colors = useThemeColors();
-  const scale = useRef(new Animated.Value(1)).current;
+  const scale = useSharedValue(1);
+  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   const handlePress = () => {
-    Animated.sequence([
-      Animated.timing(scale, { toValue: 1.1, duration: 100, useNativeDriver: true }),
-      Animated.timing(scale, { toValue: 1, duration: 120, useNativeDriver: true }),
-    ]).start();
+    scale.value = withSequence(withTiming(1.1, { duration: 100 }), withTiming(1, { duration: 120 }));
     onPress();
   };
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity
+    <Reanimated.View style={pulseStyle}>
+      <PressableOpacity
         onPress={handlePress}
         activeOpacity={0.8}
         style={{
@@ -133,8 +127,8 @@ const FilterPill = ({ label, active, onPress }: { label: string; active: boolean
         <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.5, color: active ? 'white' : colors.textMuted }}>
           {label}
         </Text>
-      </TouchableOpacity>
-    </Animated.View>
+      </PressableOpacity>
+    </Reanimated.View>
   );
 };
 
@@ -202,18 +196,6 @@ const DashboardScreen = () => {
     setReadyForZipModal(true);
   }, [currentUser?.hasSeenWelcome]);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const toastOpacity = useRef(new Animated.Value(0)).current;
-
-  const showToast = (message: string) => {
-    setToastMessage(message);
-    Animated.sequence([
-      Animated.timing(toastOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.delay(2500),
-      Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-    ]).start(() => setToastMessage(null));
-  };
-
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
   const uniqueGroups = useMemo(() => {
@@ -389,12 +371,12 @@ const DashboardScreen = () => {
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
         <View style={{ width: 26 }} />
         <Text className="text-xl font-black text-gray-900 dark:text-gray-100">Meetups</Text>
-        <TouchableOpacity
+        <PressableOpacity
           onPress={() => setShowAddChoicePicker(true)}
           style={{ alignItems: 'center', justifyContent: 'center' }}
         >
           <Feather name="plus-circle" size={26} color={colors.brand} />
-        </TouchableOpacity>
+        </PressableOpacity>
       </View>
 
       <ScrollView className="p-4" contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}>
@@ -412,7 +394,7 @@ const DashboardScreen = () => {
                   Upcoming Meetups
                 </Text>
                 {uniqueGroups.length > 1 && (
-                  <TouchableOpacity
+                  <PressableOpacity
                     onPress={() => setFilterOpen(prev => !prev)}
                     style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, position: 'relative' }}
                   >
@@ -420,7 +402,7 @@ const DashboardScreen = () => {
                     {hiddenGroupIds.size > 0 && (
                       <View style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentCoral }} />
                     )}
-                  </TouchableOpacity>
+                  </PressableOpacity>
                 )}
               </View>
 
@@ -453,7 +435,7 @@ const DashboardScreen = () => {
 
               {filterOpen && uniqueGroups.length > 1 && (
                 <View style={{ paddingHorizontal: 8, paddingBottom: 4 }}>
-                  <TouchableOpacity
+                  <PressableOpacity
                     onPress={toggleAll}
                     activeOpacity={0.7}
                     style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10, borderBottomWidth: 0.5, borderBottomColor: colors.border, marginBottom: 2 }}
@@ -468,12 +450,12 @@ const DashboardScreen = () => {
                     }}>
                       {hiddenGroupIds.size === 0 && <Feather name="check" size={12} color="#fff" />}
                     </View>
-                  </TouchableOpacity>
+                  </PressableOpacity>
                   {uniqueGroups.map(group => {
                     const isVisible = !hiddenGroupIds.has(group._id);
                     const color = hashGroupColor(group._id);
                     return (
-                      <TouchableOpacity
+                      <PressableOpacity
                         key={group._id}
                         onPress={() => toggleGroup(group._id)}
                         activeOpacity={0.7}
@@ -490,7 +472,7 @@ const DashboardScreen = () => {
                         }}>
                           {isVisible && <Feather name="check" size={12} color="#fff" />}
                         </View>
-                      </TouchableOpacity>
+                      </PressableOpacity>
                     );
                   })}
                 </View>
@@ -639,7 +621,7 @@ const DashboardScreen = () => {
             {!!zipCodeError && (
               <Text style={{ color: colors.danger, fontSize: 13, marginBottom: 12 }}>{zipCodeError}</Text>
             )}
-            <TouchableOpacity
+            <PressableOpacity
               onPress={handleSaveZipCode}
               disabled={isSavingZip}
               style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 }}
@@ -648,44 +630,16 @@ const DashboardScreen = () => {
                 ? <ActivityIndicator color="white" />
                 : <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>Save</Text>
               }
-            </TouchableOpacity>
-            <TouchableOpacity
+            </PressableOpacity>
+            <PressableOpacity
               onPress={() => setZipCardDismissed(true)}
               style={{ alignItems: 'center', paddingVertical: 8 }}
             >
               <Text style={{ color: colors.textFaint, fontSize: 14 }}>Skip for now</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
           </View>
         </View>
       </Modal>
-      {toastMessage && (
-        <Animated.View style={{
-          position: 'absolute',
-          top: 0, bottom: 0, left: 0, right: 0,
-          justifyContent: 'center',
-          alignItems: 'center',
-          opacity: toastOpacity,
-          pointerEvents: 'none',
-        }}>
-          <View style={{
-            backgroundColor: '#1F2937',
-            borderRadius: 14,
-            paddingVertical: 16,
-            paddingHorizontal: 24,
-            marginHorizontal: 32,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.22,
-            shadowRadius: 10,
-            elevation: 8,
-          }}>
-            <Text style={{ color: 'white', fontWeight: '600', fontSize: 15, textAlign: 'center' }}>
-              {toastMessage}
-            </Text>
-          </View>
-        </Animated.View>
-      )}
-
       {/* MeetupDetailModal renders its own instance while open (a nested RN
           Modal can fail to present on iOS), so skip this one then to avoid
           both firing off the same RSVP and showing the burst twice. */}
@@ -693,42 +647,42 @@ const DashboardScreen = () => {
 
       {showAddChoicePicker && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setShowAddChoicePicker(false)}>
-          <TouchableOpacity
+          <PressableOpacity
             style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', padding: 24 }}
             activeOpacity={1}
             onPress={() => setShowAddChoicePicker(false)}
           >
             <View style={{ width: '100%', maxWidth: 340, gap: 12 }}>
-              <TouchableOpacity
+              <PressableOpacity
                 activeOpacity={0.8}
                 style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
                 onPress={() => { setShowAddChoicePicker(false); router.push('/create-group'); }}
               >
                 <Feather name="users" size={22} color={colors.brand} />
                 <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginLeft: 14 }}>Create New Group</Text>
-              </TouchableOpacity>
+              </PressableOpacity>
 
               {meetupCapableGroups.length > 0 && (
-                <TouchableOpacity
+                <PressableOpacity
                   activeOpacity={0.8}
                   style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
                   onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('existing'); setAddMeetupVisible(true); }}
                 >
                   <Feather name="calendar" size={22} color={colors.brand} />
                   <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginLeft: 14 }}>Add Meetup to Existing Group</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
               )}
 
-              <TouchableOpacity
+              <PressableOpacity
                 activeOpacity={0.8}
                 style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
                 onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('new'); setAddMeetupVisible(true); }}
               >
                 <Feather name="plus-circle" size={22} color={colors.brand} />
                 <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginLeft: 14 }}>Create One-Time Meetup</Text>
-              </TouchableOpacity>
+              </PressableOpacity>
             </View>
-          </TouchableOpacity>
+          </PressableOpacity>
         </Modal>
       )}
 

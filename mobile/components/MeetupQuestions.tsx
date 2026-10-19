@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator,
+  View, Text, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator,
   TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useApiClient, meetupApi, Meetup } from '@/utils/api';
@@ -44,7 +45,7 @@ export default function MeetupQuestions({ meetup, currentUserId, canAnswer, open
   return (
     <Animated.View layout={LinearTransition.duration(260)} style={[styles.card, { overflow: 'hidden' }]}>
       <View style={styles.headerRow}>
-        <TouchableOpacity
+        <PressableOpacity
           onPress={() => setCollapsed((c) => !c)}
           activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 0, right: 8 }}
@@ -52,11 +53,11 @@ export default function MeetupQuestions({ meetup, currentUserId, canAnswer, open
         >
           <Feather name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
           <Text style={styles.title}>Questions</Text>
-        </TouchableOpacity>
+        </PressableOpacity>
         {canAnswer && (
-          <TouchableOpacity onPress={() => setSheetOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <PressableOpacity onPress={() => setSheetOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.action}>{answered ? 'Edit mine' : 'Answer'}</Text>
-          </TouchableOpacity>
+          </PressableOpacity>
         )}
       </View>
 
@@ -151,9 +152,9 @@ export function QuestionsSheet({
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{meetup.name}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <PressableOpacity accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Feather name="x" size={22} color={colors.textMuted} />
-            </TouchableOpacity>
+            </PressableOpacity>
           </View>
 
           <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
@@ -177,44 +178,44 @@ export function QuestionsSheet({
                 {q.type === 'yesno' && (
                   <View style={{ flexDirection: 'row', gap: 10 }}>
                     {(['yes', 'no'] as const).map((v) => (
-                      <TouchableOpacity
+                      <PressableOpacity
                         key={v}
                         onPress={() => set(q._id, values[q._id] === v ? '' : v)}
                         style={[styles.choiceBtn, values[q._id] === v && styles.choiceBtnOn]}
                       >
                         <Text style={[styles.choiceText, values[q._id] === v && { color: '#fff' }]}>{v === 'yes' ? 'Yes' : 'No'}</Text>
-                      </TouchableOpacity>
+                      </PressableOpacity>
                     ))}
                   </View>
                 )}
                 {q.type === 'choice' && q.options.map((o) => {
                   const on = values[q._id] === o;
                   return (
-                    <TouchableOpacity
+                    <PressableOpacity
                       key={o}
                       onPress={() => set(q._id, on ? '' : o)}
                       style={[styles.option, on && styles.optionOn]}
                     >
                       <Feather name={on ? 'check-circle' : 'circle'} size={20} color={on ? colors.accentTeal : colors.textFaint} />
                       <Text style={styles.optionText}>{o}</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                   );
                 })}
               </View>
             ))}
           </ScrollView>
 
-          <TouchableOpacity
+          <PressableOpacity
             onPress={save}
             disabled={saving || missingRequired}
             style={[styles.saveBtn, (saving || missingRequired) && { opacity: 0.5 }]}
           >
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save</Text>}
-          </TouchableOpacity>
+          </PressableOpacity>
           {missingRequired && <Text style={styles.reqHint}>Answer the questions marked * to save.</Text>}
-          <TouchableOpacity onPress={onClose} style={{ alignItems: 'center', paddingTop: 12 }}>
+          <PressableOpacity onPress={onClose} style={{ alignItems: 'center', paddingTop: 12 }}>
             <Text style={{ color: colors.textMuted, fontWeight: '600' }}>Not now</Text>
-          </TouchableOpacity>
+          </PressableOpacity>
         </View>
       </KeyboardAvoidingView>
     </Modal>

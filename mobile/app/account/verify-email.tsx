@@ -1,4 +1,5 @@
-import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
@@ -98,7 +99,7 @@ const VerifyNewEmailScreen = () => {
                         keyboardType="numeric"
                         style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textSecondary }]}
                     />
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={onVerifyPress}
                         disabled={isLoading}
                         style={[styles.saveBtn, { backgroundColor: colors.brand }]}
@@ -107,8 +108,8 @@ const VerifyNewEmailScreen = () => {
                         {isLoading
                             ? <ActivityIndicator color="white" />
                             : <Text style={styles.saveBtnText}>Verify and Save</Text>}
-                    </TouchableOpacity>
-                    <TouchableOpacity
+                    </PressableOpacity>
+                    <PressableOpacity
                         onPress={onResendPress}
                         disabled={resendLoading || resendCooldown > 0}
                         style={styles.resendBtn}
@@ -121,7 +122,7 @@ const VerifyNewEmailScreen = () => {
                                     {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend Code'}
                                 </Text>
                             )}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>

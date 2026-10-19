@@ -2,13 +2,13 @@ import React, { useMemo, useState } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
     TextInput,
     StyleSheet,
     Modal,
     ActivityIndicator,
     ScrollView,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -69,13 +69,13 @@ const InlineCalendar = ({ value, onChange, minDate }: {
     return (
         <View style={cal.container}>
             <View style={cal.nav}>
-                <TouchableOpacity onPress={() => setMonth(m => m.minus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
+                <PressableOpacity accessibilityLabel="Go back" onPress={() => setMonth(m => m.minus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
                     <Feather name="chevron-left" size={22} color={colors.brand} />
-                </TouchableOpacity>
+                </PressableOpacity>
                 <Text style={[cal.monthLabel, { color: colors.textPrimary }]}>{month.toFormat("MMMM yyyy")}</Text>
-                <TouchableOpacity onPress={() => setMonth(m => m.plus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
+                <PressableOpacity onPress={() => setMonth(m => m.plus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
                     <Feather name="chevron-right" size={22} color={colors.brand} />
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
             <View style={cal.weekRow}>
                 {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
@@ -90,7 +90,7 @@ const InlineCalendar = ({ value, onChange, minDate }: {
                         const selected = iso === value;
                         const disabled = day < minDT;
                         return (
-                            <TouchableOpacity
+                            <PressableOpacity
                                 key={iso}
                                 style={[cal.cell, selected && { backgroundColor: colors.brand, borderRadius: 100 }, disabled && cal.cellDisabled]}
                                 onPress={() => !disabled && onChange(iso)}
@@ -104,7 +104,7 @@ const InlineCalendar = ({ value, onChange, minDate }: {
                                 ]}>
                                     {day.day}
                                 </Text>
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         );
                     })}
                 </View>
@@ -127,9 +127,9 @@ const DatePickerModal = ({ visible, value, minDate, onChange, onCancel }: {
                 <View style={[s.calendarPopupCard, { backgroundColor: colors.surface }]}>
                     <View style={[s.popupHeader, { borderBottomColor: colors.border }]}>
                         <Text style={[s.popupTitle, { color: colors.textPrimary }]}>Expiration Date</Text>
-                        <TouchableOpacity onPress={onCancel} style={{ padding: 4 }} activeOpacity={0.7}>
+                        <PressableOpacity accessibilityLabel="Close" onPress={onCancel} style={{ padding: 4 }} activeOpacity={0.7}>
                             <Feather name="x" size={20} color={colors.textFaint} />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
                     <View style={{ padding: 8 }}>
                         {visible && <InlineCalendar value={value} onChange={onChange} minDate={minDate} />}
@@ -200,9 +200,9 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
             {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
             <SafeAreaView style={[s.screen, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
                 <View style={s.screenHeader}>
-                    <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>
+                    <PressableOpacity accessibilityLabel="Close" onPress={resetAndClose} style={s.iconBtn}>
                         <Feather name="x" size={24} color={colors.textMuted} />
-                    </TouchableOpacity>
+                    </PressableOpacity>
                     <View style={{ width: 36 }} />
                 </View>
 
@@ -261,9 +261,9 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                         ))}
 
                         {options.length < MAX_OPTIONS ? (
-                            <TouchableOpacity style={[s.addOptionBox, { borderColor: colors.brand, backgroundColor: colors.brandSoft }]} onPress={addOption}>
+                            <PressableOpacity style={[s.addOptionBox, { borderColor: colors.brand, backgroundColor: colors.brandSoft }]} onPress={addOption}>
                                 <Feather name="plus" size={20} color={colors.brand} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         ) : (
                             <Text style={[s.limitReachedText, { color: colors.textFaint }]}>Limit of 10 responses reached</Text>
                         )}
@@ -278,18 +278,18 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                             <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Group Members can choose:</Text>
                         </View>
                         <View style={s.boolRow}>
-                            <TouchableOpacity
+                            <PressableOpacity
                                 style={[s.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, !allowMultiple && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => setAllowMultiple(false)}
                             >
                                 <Text style={[s.boolBtnText, { color: colors.textMuted }, !allowMultiple && { color: colors.brand }]}>Only ONE Response</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
+                            </PressableOpacity>
+                            <PressableOpacity
                                 style={[s.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, allowMultiple && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => setAllowMultiple(true)}
                             >
                                 <Text style={[s.boolBtnText, { color: colors.textMuted }, allowMultiple && { color: colors.brand }]}>Multiple Responses</Text>
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
                     </View>
 
@@ -303,33 +303,33 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                         </View>
 
                         <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textMuted }]}>Date</Text>
-                        <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => setShowDatePopup(true)}>
+                        <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => setShowDatePopup(true)}>
                             <Feather name="calendar" size={16} color={colors.brand} style={{ marginRight: 8 }} />
                             <Text style={expiryDate ? [s.dateFieldText, { color: colors.textSecondary }] : [s.dateFieldPlaceholder, { color: colors.textFaint }]}>
                                 {expiryDate ? DateTime.fromISO(expiryDate).toFormat('MMM d, yyyy') : 'Select date'}
                             </Text>
                             <Feather name="chevron-right" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                        </TouchableOpacity>
+                        </PressableOpacity>
 
                         <Text style={[s.fieldLabel, { color: colors.textMuted }]}>Time</Text>
-                        <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => setShowTimePopup(true)}>
+                        <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => setShowTimePopup(true)}>
                             <Feather name="clock" size={16} color={colors.brand} style={{ marginRight: 8 }} />
                             <Text style={expiryTime ? [s.dateFieldText, { color: colors.textSecondary }] : [s.dateFieldPlaceholder, { color: colors.textFaint }]}>
                                 {expiryTime ?? 'Select time'}
                             </Text>
                             <Feather name="chevron-right" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
                 </ScrollView>
 
                 <View style={[s.screenFooter, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={handleStartPoll}
                         disabled={!canStartPoll || isPending}
                         style={[s.startBtn, { backgroundColor: colors.brand }, (!canStartPoll || isPending) && { backgroundColor: colors.borderStrong }]}
                     >
                         {isPending ? <ActivityIndicator color="white" /> : <Text style={s.startBtnText}>Start Poll</Text>}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
 
                 <DatePickerModal

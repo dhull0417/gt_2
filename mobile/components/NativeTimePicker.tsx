@@ -1,26 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, Platform, StyleSheet } from 'react-native';
+import { View, Text, Modal, Platform, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useThemeColors, useAppearance } from '@/contexts/AppearanceContext';
 
-// Converts between app's "hh:mm AM/PM" strings and Date objects for the native picker.
-export const timeStringToDate = (time: string): Date => {
-    const [t, period] = time.split(' ');
-    let [h, m] = t.split(':').map(Number);
-    if (period === 'PM' && h !== 12) h += 12;
-    if (period === 'AM' && h === 12) h = 0;
-    const d = new Date();
-    d.setHours(h, m, 0, 0);
-    return d;
-};
+import { timeStringToDate, dateToTimeString } from '@/utils/timeString';
 
-export const dateToTimeString = (date: Date): string => {
-    let h = date.getHours();
-    const m = date.getMinutes();
-    const period = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
-};
+// Re-exported so existing imports from this file keep working.
+export { timeStringToDate, dateToTimeString };
 
 interface NativeTimePickerProps {
     value: string;
@@ -63,9 +50,9 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, on
         <View style={[styles.modalContainer, { backgroundColor: colors.overlay }]}>
             <View style={[styles.pickerModalContent, { backgroundColor: colors.surface }]}>
                 <DateTimePicker value={temp} mode="time" display="spinner" onChange={handleChange} textColor={scheme === 'dark' ? 'white' : 'black'} />
-                <TouchableOpacity onPress={() => { onChange(dateToTimeString(temp)); onClose(); }} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
+                <PressableOpacity onPress={() => { onChange(dateToTimeString(temp)); onClose(); }} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
                     <Text style={styles.doneButtonText}>Done</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
         </View>
     );

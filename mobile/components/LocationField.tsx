@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ViewStyle, TextStyle } from 'react-native';
+import { View, Text, ViewStyle, TextStyle } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
@@ -58,14 +59,14 @@ const LocationField = ({ value, placeholder, onPress, variant = 'wizard' }: Loca
   const hasValue = value.trim().length > 0;
 
   return (
-    <TouchableOpacity style={style.container} onPress={onPress} activeOpacity={0.7}>
+    <PressableOpacity style={style.container} onPress={onPress} activeOpacity={0.7}>
       {style.iconName && (
         <Feather name={style.iconName} size={style.iconSize} color={style.iconColor} style={{ marginRight: style.iconMarginRight }} />
       )}
       <Text style={[style.text, !hasValue && { color: colors.placeholder }]} numberOfLines={1}>
         {hasValue ? value : (placeholder ?? '')}
       </Text>
-    </TouchableOpacity>
+    </PressableOpacity>
   );
 };
 

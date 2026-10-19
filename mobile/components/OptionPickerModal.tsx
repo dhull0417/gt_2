@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Modal, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, Modal, StyleSheet, ScrollView } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 
@@ -26,23 +27,23 @@ const OptionPickerModal: React.FC<OptionPickerModalProps> = ({ title, options, s
 
     return (
         <Modal animationType="fade" transparent visible onRequestClose={onClose}>
-            <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-                <TouchableOpacity activeOpacity={1} style={[styles.card, { backgroundColor: colors.surface }]} onPress={() => {}}>
+            <PressableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
+                <PressableOpacity activeOpacity={1} style={[styles.card, { backgroundColor: colors.surface }]} onPress={() => {}}>
                     <Text style={[styles.title, { color: colors.textFaint }]}>{title}</Text>
                     <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
                         {options.map(opt => {
                             const active = opt.key === selectedKey;
                             return (
-                                <TouchableOpacity key={opt.key} style={[styles.row, active && { backgroundColor: activeRowBg }]}
+                                <PressableOpacity key={opt.key} style={[styles.row, active && { backgroundColor: activeRowBg }]}
                                     onPress={() => onSelect(opt.key)}>
                                     <Text style={[styles.rowText, { color: colors.textSecondary }, active && { color: activeText, fontWeight: '800' }]}>{opt.label}</Text>
                                     {active && <Feather name="check" size={18} color={colors.brand} />}
-                                </TouchableOpacity>
+                                </PressableOpacity>
                             );
                         })}
                     </ScrollView>
-                </TouchableOpacity>
-            </TouchableOpacity>
+                </PressableOpacity>
+            </PressableOpacity>
         </Modal>
     );
 };

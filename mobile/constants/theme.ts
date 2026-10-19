@@ -81,3 +81,28 @@ export const darkColors: ThemeColors = {
   danger: '#F87171',
   warning: '#F0A93A',
 };
+
+// ---------------------------------------------------------------------------
+// Non-color tokens. Values are the ones the app already uses most often
+// (e.g. borderRadius 12/14/16, fontSize 14/15/16), so adopting them does not
+// change how anything looks - it just gives the numbers names.
+// ---------------------------------------------------------------------------
+
+export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
+
+export const radius = { sm: 8, md: 12, lg: 16, xl: 20, pill: 999 } as const;
+
+export const fontSize = {
+  xxs: 11,
+  xs: 12,
+  sm: 13,
+  md: 14,
+  base: 15,
+  lg: 16,
+  xl: 18,
+  xxl: 20,
+  h2: 22,
+  h1: 24,
+} as const;
+
+export const fontWeight = { regular: '400', medium: '500', semibold: '600', bold: '700' } as const;

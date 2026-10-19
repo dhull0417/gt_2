@@ -1,4 +1,4 @@
-// Run with: node --test src/utils/email/
+// Run with: npm test (from backend/)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 

@@ -1,7 +1,8 @@
 // Android replacement for expo-image-picker's allowsEditing (its toolbar has no
 // visible confirm/cancel there). Mount once near app root, then call requestImageCrop().
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, useWindowDimensions, ActivityIndicator } from 'react-native';
+import { Modal, View, Text, StyleSheet, useWindowDimensions, ActivityIndicator } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
@@ -150,13 +151,13 @@ export function ImageCropperHost() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={handleCancel} hitSlop={12} disabled={processing}>
+            <PressableOpacity onPress={handleCancel} hitSlop={12} disabled={processing}>
               <Text style={[styles.headerButton, processing && styles.headerButtonDisabled]}>Cancel</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
             <Text style={styles.headerTitle}>Move and Scale</Text>
-            <TouchableOpacity onPress={handleConfirm} hitSlop={12} disabled={processing}>
+            <PressableOpacity onPress={handleConfirm} hitSlop={12} disabled={processing}>
               <Text style={[styles.headerButton, styles.headerButtonPrimary, processing && styles.headerButtonDisabled]}>Choose</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
           </View>
 
           <View style={styles.cropArea}>

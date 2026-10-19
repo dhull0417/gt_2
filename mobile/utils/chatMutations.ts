@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { getSupabaseClient } from '@/utils/supabase';
 import { getClerkToken } from '@/utils/authToken';
-import type { PendingImage } from '@/types/chat';
+import type { ChatMessage, PendingImage } from '@/types/chat';
 
 // Shared by every group's chat screen — variables carry groupId, so one
 // registration covers all of them. Registering the mutationFn on the
@@ -20,6 +20,8 @@ export interface SendMessageVariables {
   createdAt: string;
   replyTo?: { id: string; content: string; senderName: string };
   image?: PendingImage;
+  // Clerk ids of people @mentioned in the text.
+  mentions?: string[];
 }
 
 // Covers a request that fails while NetInfo still reports "connected" (DNS
@@ -34,27 +36,31 @@ export function registerChatMutationDefaults(queryClient: QueryClient) {
   queryClient.setMutationDefaults(SEND_MESSAGE_MUTATION_KEY, {
     retry: MAX_SEND_RETRIES,
     retryDelay: RETRY_DELAY_MS,
-    mutationFn: async (vars: SendMessageVariables) => {
+    // Goes through the send_message() database function, which is idempotent on
+    // (sender, client_id): if an earlier attempt actually reached the database but its
+    // response was lost, the retry gets that same row back instead of inserting a
+    // duplicate. Returns the saved row so the caller can show it immediately.
+    mutationFn: async (vars: SendMessageVariables): Promise<ChatMessage> => {
       const token = await getClerkToken({ template: 'supabase' });
       if (!token) throw new Error('No auth token');
       const supabase = getSupabaseClient(token);
-      const { error } = await supabase.from('messages').insert({
-        group_id: vars.groupId,
-        sender_id: vars.senderId,
-        sender_name: vars.senderName,
-        content: vars.content,
-        ...(vars.image && {
-          image_url: vars.image.url,
-          ...(vars.image.width && { image_width: vars.image.width }),
-          ...(vars.image.height && { image_height: vars.image.height }),
-        }),
-        ...(vars.replyTo && {
-          reply_to_id: vars.replyTo.id,
-          reply_to_content: vars.replyTo.content,
-          reply_to_sender: vars.replyTo.senderName,
-        }),
+      const { data, error } = await supabase.rpc('send_message', {
+        // Only sent when there are mentions, so ordinary sends keep working even before the
+        // database has the p_mentions version of the function.
+        ...(vars.mentions && vars.mentions.length > 0 ? { p_mentions: vars.mentions } : {}),
+        p_client_id: vars.clientId,
+        p_group_id: vars.groupId,
+        p_sender_name: vars.senderName,
+        p_content: vars.content,
+        p_reply_to_id: vars.replyTo?.id ?? null,
+        p_reply_to_content: vars.replyTo?.content ?? null,
+        p_reply_to_sender: vars.replyTo?.senderName ?? null,
+        p_image_url: vars.image?.url ?? null,
+        p_image_width: vars.image?.width ?? null,
+        p_image_height: vars.image?.height ?? null,
       });
       if (error) throw error;
+      return data as ChatMessage;
     },
   });
 }

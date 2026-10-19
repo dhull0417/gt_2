@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Switch, ActivityIndicator, Image,
+  View, Text, TextInput, StyleSheet, Alert, Switch, ActivityIndicator, Image,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -278,24 +279,24 @@ export default function GroupPriorityScreen() {
                     />
                     <Text style={styles.tierUnit}>hours</Text>
                     {tiers.length > 1 && (
-                      <TouchableOpacity
+                      <PressableOpacity accessibilityLabel="Delete"
                         onPress={() => setTiers((cur) => cur.filter((x) => x.key !== t.key))}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         style={{ marginLeft: 'auto' }}
                       >
                         <Feather name="trash-2" size={16} color={colors.textFaint} />
-                      </TouchableOpacity>
+                      </PressableOpacity>
                     )}
                   </View>
                 ))}
                 {tiers.length < MAX_TIERS && (
-                  <TouchableOpacity
+                  <PressableOpacity
                     onPress={() => setTiers((cur) => [...cur, { key: newKey(), size: '1', hours: '1' }])}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 12 }}
                   >
                     <Feather name="plus-circle" size={16} color={colors.brand} />
                     <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>Add group</Text>
-                  </TouchableOpacity>
+                  </PressableOpacity>
                 )}
               </View>
               <Text style={styles.hint}>
@@ -313,14 +314,14 @@ export default function GroupPriorityScreen() {
                 </View>
                 {quietEnabled && (
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                    <TouchableOpacity style={styles.timeBtn} onPress={() => setPicker('start')}>
+                    <PressableOpacity style={styles.timeBtn} onPress={() => setPicker('start')}>
                       <Text style={styles.timeLabel}>From</Text>
                       <Text style={styles.timeValue}>{quietStart}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.timeBtn} onPress={() => setPicker('end')}>
+                    </PressableOpacity>
+                    <PressableOpacity style={styles.timeBtn} onPress={() => setPicker('end')}>
                       <Text style={styles.timeLabel}>Until</Text>
                       <Text style={styles.timeValue}>{quietEnd}</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                   </View>
                 )}
               </View>
@@ -339,15 +340,15 @@ export default function GroupPriorityScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.headerBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+        <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()} style={styles.iconBtn}>
           <Feather name="arrow-left" size={24} color={colors.textMuted} />
-        </TouchableOpacity>
+        </PressableOpacity>
         <Text style={styles.headerTitle}>Priority RSVP</Text>
-        <TouchableOpacity onPress={save} disabled={saving || !isPremium || noRsvpWindow} style={{ minWidth: 40, alignItems: 'flex-end' }}>
+        <PressableOpacity onPress={save} disabled={saving || !isPremium || noRsvpWindow} style={{ minWidth: 40, alignItems: 'flex-end' }}>
           {saving
             ? <ActivityIndicator size="small" color={colors.brand} />
             : <Text style={[styles.saveText, (!isPremium || noRsvpWindow) && { opacity: 0.4 }]}>Save</Text>}
-        </TouchableOpacity>
+        </PressableOpacity>
       </View>
 
       <DraggableList

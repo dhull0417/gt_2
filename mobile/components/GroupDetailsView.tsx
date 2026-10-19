@@ -3,7 +3,6 @@ import {
     View,
     Text,
     Image,
-    TouchableOpacity,
     StyleSheet,
     Share,
     ActivityIndicator,
@@ -12,6 +11,7 @@ import {
     LayoutAnimation,
     UIManager,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
 import { useRouter } from 'expo-router';
@@ -200,15 +200,15 @@ export const GroupDetailsView = ({
 
             {/* Invite Friends — hidden for DMs */}
             {!isDM && (
-                <TouchableOpacity onPress={handleInvitePress} style={[styles.inviteButton, chipTeal]} activeOpacity={0.7}>
+                <PressableOpacity onPress={handleInvitePress} style={[styles.inviteButton, chipTeal]} activeOpacity={0.7}>
                     <Feather name="user-plus" size={16} color={colors.accentTeal} />
                     <Text style={[styles.inviteButtonText, { color: colors.accentTeal }]}>Invite Friends</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
             )}
 
             {/* 1. Details — collapsible, hidden for DMs */}
             {!isDM && <View style={[styles.card, { backgroundColor: colors.surface }]}>
-                <TouchableOpacity style={styles.collapsibleHeader} onPress={toggleDetails} activeOpacity={0.7}>
+                <PressableOpacity style={styles.collapsibleHeader} onPress={toggleDetails} activeOpacity={0.7}>
                     <View style={styles.collapsibleHeaderLeft}>
                         <View style={[styles.iconWrap, styles.iconWrapSmall, chipBlue]}>
                             <Feather name="info" size={14} color={colors.brand} />
@@ -216,7 +216,7 @@ export const GroupDetailsView = ({
                         <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Details</Text>
                     </View>
                     <Feather name={detailsExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textFaint} />
-                </TouchableOpacity>
+                </PressableOpacity>
 
                 {detailsExpanded && (
                     <View style={[styles.collapsibleBody, { borderTopColor: colors.border }]}>
@@ -318,7 +318,7 @@ export const GroupDetailsView = ({
                     const canTap = !isDM && !isSelf && !!onMemberPress;
                     const canRemove = !isDM && !isMemberOwner && (isOwner || (canManage && !isMemberMod));
 
-                    const Wrapper = canTap ? TouchableOpacity : View;
+                    const Wrapper = canTap ? PressableOpacity : View;
                     const wrapperProps = canTap ? { onPress: () => onMemberPress!(member), activeOpacity: 0.7 } : {};
 
                     return (
@@ -342,13 +342,13 @@ export const GroupDetailsView = ({
                                     </View>
                                 )}
                                 {canRemove && (
-                                    <TouchableOpacity
+                                    <PressableOpacity accessibilityLabel="Remove"
                                         style={[styles.removeBadge, { borderColor: colors.surface }]}
                                         onPress={() => onRemoveMember(member._id)}
                                         disabled={isRemovingMember}
                                     >
                                         <Feather name="x" size={12} color="white" />
-                                    </TouchableOpacity>
+                                    </PressableOpacity>
                                 )}
                             </View>
                             <Text style={[styles.gridName, { color: colors.textSecondary }]} numberOfLines={1}>{getUserDisplayName(member)}</Text>
@@ -388,12 +388,12 @@ export const GroupDetailsView = ({
             {/* --- LEAVE GROUP BUTTON (for non-managers) --- */}
             {!canManage && (
                 <View style={[styles.footerActionContainer, { borderTopColor: colors.border }]}>
-                    <TouchableOpacity onPress={handleLeaveGroup} style={[styles.leaveButton, { backgroundColor: colors.danger }]} disabled={isLeaving}>
+                    <PressableOpacity onPress={handleLeaveGroup} style={[styles.leaveButton, { backgroundColor: colors.danger }]} disabled={isLeaving}>
                         {isLeaving
                             ? <ActivityIndicator color="#fff" />
                             : <Text style={styles.leaveButtonText}>Leave Group</Text>
                         }
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
             )}
         </View>

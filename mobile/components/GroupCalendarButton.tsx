@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { TouchableOpacity, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import GroupMeetupsModal from '@/components/GroupMeetupsModal';
 import { useAppearance } from '@/contexts/AppearanceContext';
@@ -19,12 +20,12 @@ export const GroupCalendarButton = ({ groupId, isDM }: GroupCalendarButtonProps)
 
   return (
     <>
-      <TouchableOpacity
+      <PressableOpacity accessibilityLabel="Calendar"
         onPress={() => setModalVisible(true)}
         style={[styles.iconButton, { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB', borderColor: isDark ? '#5C4A1E' : '#FDE68A' }]}
       >
         <Feather name="calendar" size={18} color="#D97706" />
-      </TouchableOpacity>
+      </PressableOpacity>
 
       <GroupMeetupsModal
         visible={modalVisible}

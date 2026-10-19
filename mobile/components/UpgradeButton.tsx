@@ -1,5 +1,6 @@
 import React from 'react';
-import { Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Text, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -27,7 +28,7 @@ export function UpgradeButton({ owner, style }: { owner?: string | { _id: string
   if (!ownerId || !me || me._id !== ownerId || me.isPremium) return null;
 
   return (
-    <TouchableOpacity
+    <PressableOpacity
       onPress={() => router.push('/paywall')}
       activeOpacity={0.85}
       accessibilityRole="button"
@@ -36,7 +37,7 @@ export function UpgradeButton({ owner, style }: { owner?: string | { _id: string
     >
       <Feather name="star" size={14} color="white" />
       <Text style={styles.text}>Get Premium</Text>
-    </TouchableOpacity>
+    </PressableOpacity>
   );
 }
 

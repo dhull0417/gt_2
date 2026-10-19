@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -24,7 +25,7 @@ const AccountSettingsScreen = () => {
         <SafeAreaView className="flex-1 bg-gray-100 dark:bg-black">
             <View className="mt-6 mx-4">
                 {settings.map((item, index) => (
-                    <TouchableOpacity
+                    <PressableOpacity
                         key={item.id}
                         onPress={() => router.push(item.href)}
                         activeOpacity={0.7}
@@ -40,7 +41,7 @@ const AccountSettingsScreen = () => {
                         </View>
                         <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>{item.label}</Text>
                         <Feather name="chevron-right" size={18} color={colors.textFaint} />
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 ))}
             </View>
         </SafeAreaView>

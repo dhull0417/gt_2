@@ -1,7 +1,9 @@
 import { useSocialAuth } from "@/hooks/useSocialAuth";
 import { useAppleAuth } from "@/hooks/useAppleAuth";
-import { useRef, useState } from "react";
-import { Animated, Dimensions, Text, Image, View, TouchableOpacity, ActivityIndicator, StyleSheet, Linking } from "react-native";
+import { useState } from "react";
+import Reanimated, { interpolate, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { Dimensions, Text, Image, View, ActivityIndicator, StyleSheet, Linking } from "react-native";
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from '@expo/vector-icons';
@@ -17,26 +19,19 @@ export default function Index() {
   const router = useRouter();
   const colors = useThemeColors();
   const [showOtherOptions, setShowOtherOptions] = useState(false);
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const slide = useSharedValue(0);
 
   const toggleOtherOptions = () => {
-    const toValue = showOtherOptions ? 0 : 1;
-    Animated.timing(slideAnim, {
-      toValue,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
+    slide.value = withTiming(showOtherOptions ? 0 : 1, { duration: 300 });
     setShowOtherOptions(!showOtherOptions);
   };
 
-  const primaryTranslateX = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -SCREEN_WIDTH],
-  });
-  const otherTranslateX = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [SCREEN_WIDTH, 0],
-  });
+  const primaryPaneStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(slide.value, [0, 1], [0, -SCREEN_WIDTH]) }],
+  }));
+  const otherPaneStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(slide.value, [0, 1], [SCREEN_WIDTH, 0]) }],
+  }));
 
   const handleOpenPrivacyPolicy = () => {
     Linking.openURL("https://groupthatapp.com/privacy-policy/").catch((err) =>
@@ -62,11 +57,11 @@ export default function Index() {
           <View style={[styles.buttonGroup, { marginTop: 118 }]}>
             <View style={styles.slideStage}>
               {/* Primary: Google + Email */}
-              <Animated.View
-                style={[styles.slidePane, { transform: [{ translateX: primaryTranslateX }] }]}
+              <Reanimated.View
+                style={[styles.slidePane, primaryPaneStyle]}
                 pointerEvents={showOtherOptions ? 'none' : 'auto'}
               >
-                <TouchableOpacity
+                <PressableOpacity
                   style={[styles.button, styles.shadow, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
                   onPress={() => handleSocialAuth("oauth_google")}
                   disabled={isAnyLoading}
@@ -77,9 +72,9 @@ export default function Index() {
                       <Text style={[styles.buttonText, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Google</Text>
                     </View>
                   )}
-                </TouchableOpacity>
+                </PressableOpacity>
 
-                <TouchableOpacity
+                <PressableOpacity
                   style={[styles.button, styles.shadow, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
                   onPress={() => router.push('/(auth)/sign-in')}
                 >
@@ -87,12 +82,12 @@ export default function Index() {
                       <Feather name="mail" size={24} color={colors.textPrimary} style={{ marginRight: 12 }} />
                       <Text style={[styles.buttonText, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Email</Text>
                   </View>
-                </TouchableOpacity>
-              </Animated.View>
+                </PressableOpacity>
+              </Reanimated.View>
 
               {/* Other: Apple + Phone */}
-              <Animated.View
-                style={[styles.slidePane, styles.slidePaneOverlay, { transform: [{ translateX: otherTranslateX }] }]}
+              <Reanimated.View
+                style={[styles.slidePane, styles.slidePaneOverlay, otherPaneStyle]}
                 pointerEvents={showOtherOptions ? 'auto' : 'none'}
               >
                 {appleIsLoading ? (
@@ -111,7 +106,7 @@ export default function Index() {
                   />
                 )}
 
-                <TouchableOpacity
+                <PressableOpacity
                   style={[styles.button, styles.shadow, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
                   onPress={() => router.push('/(auth)/phone-login')}
                   disabled={isAnyLoading}
@@ -120,18 +115,18 @@ export default function Index() {
                     <Feather name="phone" size={22} color={colors.textPrimary} style={{ marginRight: 12 }} />
                     <Text style={[styles.buttonText, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Phone</Text>
                   </View>
-                </TouchableOpacity>
-              </Animated.View>
+                </PressableOpacity>
+              </Reanimated.View>
             </View>
 
             {/* Other Options Toggle */}
-            <TouchableOpacity
+            <PressableOpacity
               style={styles.otherOptionsToggle}
               onPress={toggleOtherOptions}
             >
               <Text style={[styles.otherOptionsText, { color: colors.textMuted }]}>Other Options</Text>
               <Feather name={showOtherOptions ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} style={{ marginLeft: 4 }} />
-            </TouchableOpacity>
+            </PressableOpacity>
           </View>
 
           <View style={{ flex: 1 }} />

@@ -1,4 +1,5 @@
-import { useEffect, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useCallback, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { useAuth } from '@clerk/expo';
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -6,8 +7,9 @@ import { getSupabaseClient } from '@/utils/supabase';
 import { SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
 import type { ChatMessage, PendingImage, ReactionResult } from '@/types/chat';
 import { useIsOnline } from '@/hooks/useIsOnline';
+import { mergeLatestPage, mergeOlderPage, upsertMessage } from '@/utils/chatCache';
 
-// Only the most recent page is fetched/cached — no pagination yet.
+// The newest page loads first; older pages are fetched on demand as the user scrolls back (fetchOlder).
 const MESSAGE_PAGE_SIZE = 50;
 
 export function useMessages(groupId: string) {
@@ -22,6 +24,18 @@ export function useMessages(groupId: string) {
   const realtimeClientRef = useRef<ReturnType<typeof getSupabaseClient> | null>(null);
   const isOnline = useIsOnline();
 
+  // History paging: true once the start of the conversation has been loaded.
+  const [reachedStart, setReachedStart] = useState(false);
+  const reachedStartRef = useRef(false);
+  reachedStartRef.current = reachedStart;
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
+  useEffect(() => {
+    setReachedStart(false);
+    setLoadingOlder(false);
+    loadingOlderRef.current = false;
+  }, [groupId]);
+
   const fetchMessages = useCallback(async (): Promise<ChatMessage[]> => {
     const token = await getTokenRef.current({ template: 'supabase' });
     if (!token) throw new Error('No auth token');
@@ -33,8 +47,14 @@ export function useMessages(groupId: string) {
       .order('created_at', { ascending: false })
       .limit(MESSAGE_PAGE_SIZE);
     if (sbError) throw sbError;
-    return (data ?? []).reverse();
-  }, [groupId]);
+    const page = (data ?? []).reverse();
+    // A short first page means the whole conversation fits in it — nothing older to load.
+    if (page.length < MESSAGE_PAGE_SIZE) setReachedStart(true);
+    // Merge into whatever the cache holds *now* (read after the await) rather than
+    // replacing it: a realtime INSERT or send result that landed while this request
+    // was in flight must not be wiped out by an older snapshot.
+    return mergeLatestPage(queryClient.getQueryData<ChatMessage[]>(queryKey), page, MESSAGE_PAGE_SIZE);
+  }, [groupId, queryClient, queryKey]);
 
   const { data: messages = [], isLoading: loading, error, refetch } = useQuery<ChatMessage[], Error>({
     queryKey,
@@ -42,10 +62,44 @@ export function useMessages(groupId: string) {
     enabled: !!groupId,
   });
 
+  // Loads the page of messages just before the oldest one we have. Keyset on (created_at, id)
+  // so messages sharing a timestamp are never skipped or repeated.
+  const fetchOlder = useCallback(async () => {
+    if (loadingOlderRef.current || reachedStartRef.current) return;
+    const oldest = queryClient.getQueryData<ChatMessage[]>(queryKey)?.[0];
+    if (!oldest) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const token = await getTokenRef.current({ template: 'supabase' });
+      if (!token) throw new Error('No auth token');
+      const supabase = getSupabaseClient(token);
+      const { data, error: sbError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('group_id', groupId)
+        .or(`created_at.lt.${oldest.created_at},and(created_at.eq.${oldest.created_at},id.lt.${oldest.id})`)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(MESSAGE_PAGE_SIZE);
+      if (sbError) throw sbError;
+      const rows = (data ?? []).reverse() as ChatMessage[];
+      if (rows.length < MESSAGE_PAGE_SIZE) setReachedStart(true);
+      if (rows.length > 0) {
+        queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) => mergeOlderPage(prev, rows));
+      }
+    } catch {
+      // Leave it: scrolling to the top again retries.
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [groupId, queryClient, queryKey]);
+
   // mutationFn lives in the shared registry (utils/chatMutations.ts), not here,
   // so a send that's paused for being offline can be resumed after an app
   // restart even before this screen (or any component) has remounted.
-  const sendMessageMutation = useMutation<void, Error, SendMessageVariables>({
+  const sendMessageMutation = useMutation<ChatMessage, Error, SendMessageVariables>({
     mutationKey: SEND_MESSAGE_MUTATION_KEY,
   });
   const mutateSendMessage = sendMessageMutation.mutateAsync;
@@ -56,7 +110,8 @@ export function useMessages(groupId: string) {
       senderId: string,
       senderName: string,
       replyTo?: { id: string; content: string; senderName: string },
-      image?: PendingImage
+      image?: PendingImage,
+      mentions?: string[]
     ) => {
       return mutateSendMessage({
         clientId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -67,6 +122,7 @@ export function useMessages(groupId: string) {
         createdAt: new Date().toISOString(),
         replyTo,
         image,
+        mentions,
       });
     },
     [groupId, mutateSendMessage]
@@ -90,6 +146,7 @@ export function useMessages(groupId: string) {
   const toPlaceholder = useCallback(
     (v: SendMessageVariables, mutationId: number, extra: Partial<ChatMessage>): ChatMessage => ({
       id: `pending-${v.clientId}`,
+      client_id: v.clientId,
       group_id: v.groupId,
       sender_id: v.senderId,
       sender_name: v.senderName,
@@ -101,26 +158,36 @@ export function useMessages(groupId: string) {
       image_url: v.image?.url ?? null,
       image_width: v.image?.width ?? null,
       image_height: v.image?.height ?? null,
+      mentions: v.mentions ?? null,
       mutationId,
       ...extra,
     }),
     []
   );
 
+  // client_ids the server already has. A placeholder whose message has landed is dropped so the
+  // same message never shows twice: the realtime INSERT can beat the HTTP response, and a send whose
+  // response was lost may be retried (or even marked failed) although it was actually saved.
+  const savedClientIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of messages) if (m.client_id) ids.add(m.client_id);
+    return ids;
+  }, [messages]);
+
   const pendingMessages = useMemo<ChatMessage[]>(
     () =>
       pendingSends
-        .filter((s) => s?.variables?.groupId === groupId)
+        .filter((s) => s?.variables?.groupId === groupId && !savedClientIds.has(s.variables.clientId))
         .map((s) => toPlaceholder(s.variables, s.mutationId, { pending: true })),
-    [pendingSends, groupId, toPlaceholder]
+    [pendingSends, groupId, toPlaceholder, savedClientIds]
   );
 
   const failedMessages = useMemo<ChatMessage[]>(
     () =>
       failedSends
-        .filter((s) => s?.variables?.groupId === groupId)
+        .filter((s) => s?.variables?.groupId === groupId && !savedClientIds.has(s.variables.clientId))
         .map((s) => toPlaceholder(s.variables, s.mutationId, { failed: true })),
-    [failedSends, groupId, toPlaceholder]
+    [failedSends, groupId, toPlaceholder, savedClientIds]
   );
 
   const messagesWithPending = useMemo(
@@ -188,8 +255,22 @@ export function useMessages(groupId: string) {
       );
 
       const supabase = getSupabaseClient(token);
-      const { error: sbError } = await supabase
-        .from('messages').update({ reactions: newReactions }).eq('id', messageId);
+      // toggle_reaction locks the row and applies this one change on the server, so two people
+      // reacting at the same moment can no longer overwrite each other's reaction.
+      const { data: saved, error: rpcError } = await supabase.rpc('toggle_reaction', {
+        p_message_id: messageId,
+        p_emoji: emoji,
+      });
+      let sbError = rpcError;
+      if (rpcError && (rpcError.code === 'PGRST202' || rpcError.code === '42883')) {
+        // Database predates toggle_reaction: fall back to the old whole-object write.
+        const legacy = await supabase.from('messages').update({ reactions: newReactions }).eq('id', messageId);
+        sbError = legacy.error;
+      } else if (!rpcError && saved) {
+        queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) =>
+          prev ? upsertMessage(prev, saved as ChatMessage) : prev
+        );
+      }
 
       if (sbError) {
         queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) =>
@@ -250,13 +331,16 @@ export function useMessages(groupId: string) {
   useEffect(() => {
     // Also re-runs on reconnect (isOnline flips false -> true): the channel
     // from before going offline is torn down by this effect's own cleanup,
-    // and a stale/dropped socket wouldn't otherwise resubscribe on its own,
-    // silently missing any INSERT events sent while it was down.
+    // and a stale/dropped socket wouldn't otherwise resubscribe on its own.
     if (!groupId || !isOnline) return;
     let active = true;
-    // Catches up on anything missed while disconnected, before the fresh
-    // subscription below is listening.
-    refetch();
+
+    // Pulls in anything missed while the channel wasn't listening. The queryFn
+    // merges into the cache (see fetchMessages), so this can never wipe out a
+    // message that arrived while the request was in flight.
+    const catchUp = () => { refetch({ cancelRefetch: false }); };
+    catchUp();
+
     const setupRealtime = async () => {
       const token = await getTokenRef.current({ template: 'supabase' });
       if (!token || !active) return;
@@ -281,8 +365,9 @@ export function useMessages(groupId: string) {
           (payload) => {
             if (!active) return;
             const incoming = payload.new as ChatMessage;
-            queryClient.setQueryData<ChatMessage[]>(queryKey, (prev = []) =>
-              prev.some((m) => m.id === incoming.id) ? prev : [...prev, incoming]
+            // No cached thread yet means the initial fetch is still running and will include it.
+            queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) =>
+              prev ? upsertMessage(prev, incoming) : prev
             );
           }
         )
@@ -290,12 +375,22 @@ export function useMessages(groupId: string) {
           { event: 'UPDATE', schema: 'public', table: 'messages', filter: `group_id=eq.${groupId}` },
           (payload) => {
             if (!active) return;
-            queryClient.setQueryData<ChatMessage[]>(queryKey, (prev = []) =>
-              prev.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m))
+            const before = queryClient.getQueryData<ChatMessage[]>(queryKey)?.find((m) => m.id === payload.new.id);
+            queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) =>
+              prev?.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m))
             );
+            // A pin, unpin, or deletion of a pinned message changes the pinned list.
+            if (payload.new.pinned_at || before?.pinned_at) {
+              queryClient.invalidateQueries({ queryKey: ['pins', groupId] });
+            }
           }
         )
-        .subscribe();
+        // SUBSCRIBED fires on the first join and again each time supabase-js rejoins after a
+        // dropped socket or channel error. Events sent in between were never delivered, so
+        // catch up every time (this also closes the gap between the initial fetch and going live).
+        .subscribe((status) => {
+          if (active && status === 'SUBSCRIBED') catchUp();
+        });
       channelRef.current = channel;
     };
     setupRealtime();
@@ -307,5 +402,29 @@ export function useMessages(groupId: string) {
     };
   }, [groupId, isOnline, queryClient, queryKey, refetch]);
 
-  return { messages: messagesWithPending, loading, error, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage, refetch };
+  // Back in the foreground: the OS may have suspended the socket, so pull anything missed
+  // right away instead of waiting for the heartbeat to notice.
+  useEffect(() => {
+    if (!groupId) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refetch({ cancelRefetch: false });
+    });
+    return () => sub.remove();
+  }, [groupId, refetch]);
+
+  return {
+    messages: messagesWithPending,
+    loading,
+    error,
+    sendMessage,
+    retrySend,
+    discardSend,
+    addReaction,
+    deleteMessage,
+    editMessage,
+    refetch,
+    fetchOlder,
+    loadingOlder,
+    reachedStart,
+  };
 }

@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
     StyleSheet,
     Modal,
     ActivityIndicator,
     ScrollView,
     Alert,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateTime } from 'luxon';
@@ -98,9 +98,9 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
             <View style={styles.modalHeader}>
                 <View style={{ width: 24 }} />
                 <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>Polls</Text>
-                <TouchableOpacity onPress={onClose}>
+                <PressableOpacity accessibilityLabel="Close" onPress={onClose}>
                     <Feather name="x" size={24} color={colors.textSecondary} />
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
 
             {isLoading ? (
@@ -113,7 +113,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                         const hasVoted = poll.options.some(opt => voterIds(opt).includes(currentUserId));
                         const isActive = poll.status === 'active';
                         return (
-                            <TouchableOpacity key={poll._id} style={[styles.pollRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => openPoll(poll)} activeOpacity={0.7}>
+                            <PressableOpacity key={poll._id} style={[styles.pollRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => openPoll(poll)} activeOpacity={0.7}>
                                 <View style={[
                                     styles.pollIconChip,
                                     isActive
@@ -141,7 +141,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                                     </View>
                                 )}
                                 <Feather name="chevron-right" size={18} color={colors.textFaint} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         );
                     })}
                 </ScrollView>
@@ -158,13 +158,13 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
         return (
             <>
                 <View style={styles.modalHeader}>
-                    <TouchableOpacity onPress={backToList}>
+                    <PressableOpacity accessibilityLabel="Go back" onPress={backToList}>
                         <Feather name="chevron-left" size={24} color={colors.textSecondary} />
-                    </TouchableOpacity>
+                    </PressableOpacity>
                     <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>{isExpired ? 'Results' : 'Vote'}</Text>
-                    <TouchableOpacity onPress={onClose}>
+                    <PressableOpacity accessibilityLabel="Close" onPress={onClose}>
                         <Feather name="x" size={24} color={colors.textSecondary} />
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
 
                 <ScrollView showsVerticalScrollIndicator={false}>
@@ -221,7 +221,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                         }
 
                         return (
-                            <TouchableOpacity
+                            <PressableOpacity
                                 key={option._id}
                                 style={[
                                     styles.optionRow,
@@ -242,7 +242,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                                 />
                                 <Text style={[styles.optionText, { color: colors.textSecondary }, isSelected && { color: colors.textPrimary, fontWeight: '700' }]}>{option.text}</Text>
                                 <Text style={[styles.optionCount, { color: colors.textFaint }]}>{count}</Text>
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         );
                     })}
 
@@ -254,20 +254,20 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                     )}
 
                     {(canManage || selectedPoll.creator._id === currentUserId) && !isExpired && (
-                        <TouchableOpacity onPress={() => handleCancelPoll(selectedPoll)} disabled={isCancelling} style={[styles.cancelPollBtn, { borderColor: colors.danger, backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2' }]} activeOpacity={0.7}>
+                        <PressableOpacity onPress={() => handleCancelPoll(selectedPoll)} disabled={isCancelling} style={[styles.cancelPollBtn, { borderColor: colors.danger, backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2' }]} activeOpacity={0.7}>
                             <Text style={[styles.cancelPollText, { color: colors.danger }]}>Cancel Poll</Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     )}
                 </ScrollView>
 
                 {!isExpired && (
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={handleSubmitVote}
                         disabled={selectedOptionIds.length === 0 || isVoting}
                         style={[styles.submitBtn, { backgroundColor: colors.brand }, (selectedOptionIds.length === 0 || isVoting) && { backgroundColor: colors.borderStrong }]}
                     >
                         {isVoting ? <ActivityIndicator color="white" /> : <Text style={styles.submitBtnText}>Submit Vote</Text>}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 )}
             </>
         );

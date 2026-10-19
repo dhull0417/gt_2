@@ -1,4 +1,5 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable, Platform, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable, Platform, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useCallback, useMemo, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TAB_BAR_HEIGHT } from '@/utils/layout';
@@ -238,7 +239,7 @@ const HomeScreen = () => {
         ) : (
           <>
             <View className="items-center p-6 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-              <TouchableOpacity onPress={handleChangePhoto} disabled={photoUploading} className="relative">
+              <PressableOpacity onPress={handleChangePhoto} disabled={photoUploading} className="relative">
                 {photoUploading ? (
                   <View style={styles.avatar} className="border-4 border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 items-center justify-center">
                     <ActivityIndicator color={colors.brand} />
@@ -259,7 +260,7 @@ const HomeScreen = () => {
                 <View className="absolute bottom-0 right-0 rounded-full p-3.5" style={{ backgroundColor: colors.brand }}>
                   <Feather name="camera" size={14} color="white" />
                 </View>
-              </TouchableOpacity>
+              </PressableOpacity>
               <Text style={styles.name}>
                   {getUserDisplayName(currentUser)}
               </Text>
@@ -279,7 +280,7 @@ const HomeScreen = () => {
                   {APPEARANCE_OPTIONS.map((option) => {
                     const active = preference === option.key;
                     return (
-                      <TouchableOpacity
+                      <PressableOpacity
                         key={option.key}
                         onPress={() => setPreference(option.key)}
                         activeOpacity={0.8}
@@ -292,14 +293,14 @@ const HomeScreen = () => {
                         <Text style={[styles.appearanceSegmentLabel, active && { color: 'white' }]}>
                           {option.label}
                         </Text>
-                      </TouchableOpacity>
+                      </PressableOpacity>
                     );
                   })}
                 </View>
 
                 <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Account</Text>
                 {ACTIONS.map((action, index) => (
-                  <TouchableOpacity
+                  <PressableOpacity
                     key={action.id}
                     onPress={action.onPress}
                     disabled={action.loading}
@@ -313,17 +314,17 @@ const HomeScreen = () => {
                     {action.loading
                       ? <ActivityIndicator size="small" color={colors.textFaint} />
                       : <Feather name="chevron-right" size={18} color={colors.textFaint} />}
-                  </TouchableOpacity>
+                  </PressableOpacity>
                 ))}
 
-                <TouchableOpacity
+                <PressableOpacity
                     onPress={() => { queryClient.clear(); signOut(); }}
                     style={[styles.signOutBtn, { marginTop: 28 }]}
                     activeOpacity={0.85}
                 >
                     <Feather name="log-out" size={18} color="white" />
                     <Text style={styles.signOutText}>Sign Out</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
           </>
         )}
@@ -345,18 +346,18 @@ const HomeScreen = () => {
 
               {googleStep ? (
                 <>
-                  <TouchableOpacity
+                  <PressableOpacity
                     onPress={() => setGoogleStep(false)}
                     className="flex-row items-center mb-4"
                   >
                     <Feather name="arrow-left" size={18} color={colors.textMuted} />
                     <Text className="text-gray-500 dark:text-gray-400 text-sm ml-1">Back</Text>
-                  </TouchableOpacity>
+                  </PressableOpacity>
                   <Text className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">Step 1 of 2</Text>
                   <Text className="text-sm text-gray-500 dark:text-gray-400 mb-6">
                     Copy your sync link now — you'll paste it into Google Calendar on the next screen.
                   </Text>
-                  <TouchableOpacity
+                  <PressableOpacity
                     onPress={handleCopyLink}
                     className="flex-row items-center justify-center py-4 rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 mb-4"
                   >
@@ -364,14 +365,14 @@ const HomeScreen = () => {
                     <Text className={`ml-2 font-semibold text-base ${urlCopied ? 'text-green-600 dark:text-green-400' : ''}`} style={urlCopied ? undefined : { color: colors.brand }}>
                       {urlCopied ? 'Copied!' : 'Copy Sync Link'}
                     </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                  </PressableOpacity>
+                  <PressableOpacity
                     onPress={handleGoogleNext}
                     className="flex-row items-center justify-center py-4 bg-[#4285F4] rounded-xl"
                   >
                     <Text className="text-white font-bold text-base mr-2">Next — Open Google Calendar</Text>
                     <Feather name="arrow-right" size={18} color="white" />
-                  </TouchableOpacity>
+                  </PressableOpacity>
                 </>
               ) : (
                 <>
@@ -383,7 +384,7 @@ const HomeScreen = () => {
                   {CALENDAR_OPTIONS.map((option) => {
                     const iconColor = scheme === 'dark' && option.darkColor ? option.darkColor : option.color;
                     return (
-                      <TouchableOpacity
+                      <PressableOpacity
                         key={option.id}
                         onPress={() => handleOpenCalendarApp(option)}
                         className="flex-row items-center py-4 border-b border-gray-100 dark:border-gray-800"
@@ -393,11 +394,11 @@ const HomeScreen = () => {
                         </View>
                         <Text className="text-gray-800 dark:text-gray-200 text-base font-semibold flex-1">{option.label}</Text>
                         <Feather name="chevron-right" size={18} color={colors.textFaint} />
-                      </TouchableOpacity>
+                      </PressableOpacity>
                     );
                   })}
 
-                  <TouchableOpacity
+                  <PressableOpacity
                     onPress={() => setShowOtherInstructions(prev => !prev)}
                     className="flex-row items-center py-4"
                   >
@@ -406,14 +407,14 @@ const HomeScreen = () => {
                     </View>
                     <Text className="text-gray-800 dark:text-gray-200 text-base font-semibold flex-1">Other</Text>
                     <Feather name={showOtherInstructions ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textFaint} />
-                  </TouchableOpacity>
+                  </PressableOpacity>
 
                   {showOtherInstructions && (
                     <View className="bg-gray-50 dark:bg-gray-800 rounded-xl px-4 py-4 mb-2">
                       <Text className="text-sm text-gray-600 dark:text-gray-300 leading-5 mb-4">
                         Copy the link below and paste it into your calendar app's "Subscribe from URL" or "Add calendar by URL" setting to stay in sync.
                       </Text>
-                      <TouchableOpacity
+                      <PressableOpacity
                         onPress={handleCopyLink}
                         className="flex-row items-center justify-center py-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900"
                       >
@@ -421,7 +422,7 @@ const HomeScreen = () => {
                         <Text className={`ml-2 font-semibold text-sm ${urlCopied ? 'text-green-600 dark:text-green-400' : ''}`} style={urlCopied ? undefined : { color: colors.brand }}>
                           {urlCopied ? 'Copied!' : 'Copy Sync Link'}
                         </Text>
-                      </TouchableOpacity>
+                      </PressableOpacity>
                     </View>
                   )}
                 </>

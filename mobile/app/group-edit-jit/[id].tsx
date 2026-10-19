@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from "react";
 import {
     View,
     Text,
-    TouchableOpacity,
     ScrollView,
     StyleSheet,
     Alert,
     ActivityIndicator,
-    Animated,
 } from "react-native";
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/expo";
@@ -30,32 +30,6 @@ const timeToMinutes = (time: string): number => {
     return t.getHours() * 60 + t.getMinutes();
 };
 
-// ─── ToggleSwitch ─────────────────────────────────────────────────────────────
-
-const ToggleSwitch = ({ value, onValueChange, activeColor }: {
-    value: boolean; onValueChange: (v: boolean) => void; activeColor?: string;
-}) => {
-    const colors = useThemeColors();
-    const resolvedActiveColor = activeColor ?? colors.brand;
-    const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
-    const scale = useRef(new Animated.Value(1)).current;
-    useEffect(() => {
-        Animated.timing(anim, { toValue: value ? 1 : 0, duration: 180, useNativeDriver: false }).start();
-        Animated.sequence([
-            Animated.timing(scale, { toValue: 1.3, duration: 90, useNativeDriver: false }),
-            Animated.spring(scale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: false }),
-        ]).start();
-    }, [value]);
-    const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: [colors.border, resolvedActiveColor] });
-    const thumbLeft = anim.interpolate({ inputRange: [0, 1], outputRange: [2, 20] });
-    return (
-        <TouchableOpacity activeOpacity={0.8} onPress={() => onValueChange(!value)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Animated.View style={[s.switchTrack, { backgroundColor: trackColor }]}>
-                <Animated.View style={[s.switchThumb, { left: thumbLeft, transform: [{ scale }] }]} />
-            </Animated.View>
-        </TouchableOpacity>
-    );
-};
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -187,9 +161,9 @@ const EditJitScreen = () => {
             <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
                 <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
                     <Text style={[s.screenSub, { color: colors.textFaint }]}>This schedule couldn't be found. It may have been removed.</Text>
-                    <TouchableOpacity style={[s.primaryBtn, { backgroundColor: colors.brand }]} onPress={() => router.back()}>
+                    <PressableOpacity style={[s.primaryBtn, { backgroundColor: colors.brand }]} onPress={() => router.back()}>
                         <Text style={s.primaryBtnText}>Go back</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
             </SafeAreaView>
         );
@@ -203,9 +177,9 @@ const EditJitScreen = () => {
         <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
             <View style={s.screen}>
                 <View style={[s.screenHeader, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                    <TouchableOpacity onPress={() => router.back()} style={s.iconBtn}>
+                    <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()} style={s.iconBtn}>
                         <Feather name="arrow-left" size={24} color={colors.textSecondary} />
-                    </TouchableOpacity>
+                    </PressableOpacity>
                     <Text style={[s.headerTitle, { color: colors.textPrimary }]}>RSVP Settings</Text>
                     <View style={{ width: 36 }} />
                 </View>
@@ -219,14 +193,14 @@ const EditJitScreen = () => {
 
                     <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Limit when people can RSVP?</Text>
                     <View style={s.boolRow}>
-                        <TouchableOpacity style={[s.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, !rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
+                        <PressableOpacity style={[s.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, !rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                             onPress={() => setRsvpRestricted(false)}>
                             <Text style={[s.boolBtnText, { color: colors.textMuted }, !rsvpRestricted && { color: colors.brand }]}>Allow anytime</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[s.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
+                        </PressableOpacity>
+                        <PressableOpacity style={[s.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                             onPress={() => setRsvpRestricted(true)}>
                             <Text style={[s.boolBtnText, { color: colors.textMuted }, rsvpRestricted && { color: colors.brand }]}>Limit RSVPs</Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
 
                     {rsvpRestricted && (
@@ -252,7 +226,7 @@ const EditJitScreen = () => {
                                 {leadEnabled && (
                                     <View style={{ marginTop: 10 }}>
                                         <View style={[s.leadRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                            <TouchableOpacity onPress={() => {
+                                            <PressableOpacity accessibilityLabel="Decrease" onPress={() => {
                                                 const nextLeadDays = Math.max(deadlineEnabled ? deadlineDays : 0, leadDays - 1);
                                                 setLeadDays(nextLeadDays);
                                                 if (deadlineEnabled && nextLeadDays === deadlineDays && timeToMinutes(leadTime) > timeToMinutes(deadlineTime)) {
@@ -260,21 +234,21 @@ const EditJitScreen = () => {
                                                 }
                                             }} style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]}>
                                                 <Feather name="minus" size={18} color={colors.brand} />
-                                            </TouchableOpacity>
+                                            </PressableOpacity>
                                             <View style={s.leadCenter}>
                                                 <Text style={[s.leadVal, { color: colors.textPrimary }]}>{leadDays}</Text>
                                                 <Text style={[s.leadSub, { color: colors.textFaint }]}>days before</Text>
                                             </View>
-                                            <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]}>
+                                            <PressableOpacity accessibilityLabel="Increase" onPress={() => setLeadDays(leadDays + 1)} style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]}>
                                                 <Feather name="plus" size={18} color={colors.brand} />
-                                            </TouchableOpacity>
+                                            </PressableOpacity>
                                         </View>
                                         <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                                        <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={openLeadTimePicker}>
+                                        <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={openLeadTimePicker}>
                                             <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                                             <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{leadTime}</Text>
                                             <Feather name={showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                        </TouchableOpacity>
+                                        </PressableOpacity>
                                     </View>
                                 )}
                             </View>
@@ -300,14 +274,14 @@ const EditJitScreen = () => {
                                 {deadlineEnabled && (
                                     <View style={{ marginTop: 10 }}>
                                         <View style={[s.leadRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                            <TouchableOpacity onPress={() => setDeadlineDays(Math.max(0, deadlineDays - 1))} style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]}>
+                                            <PressableOpacity accessibilityLabel="Decrease" onPress={() => setDeadlineDays(Math.max(0, deadlineDays - 1))} style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]}>
                                                 <Feather name="minus" size={18} color={colors.brand} />
-                                            </TouchableOpacity>
+                                            </PressableOpacity>
                                             <View style={s.leadCenter}>
                                                 <Text style={[s.leadVal, { color: colors.textPrimary }]}>{deadlineDays}</Text>
                                                 <Text style={[s.leadSub, { color: colors.textFaint }]}>days before</Text>
                                             </View>
-                                            <TouchableOpacity onPress={() => {
+                                            <PressableOpacity accessibilityLabel="Increase" onPress={() => {
                                                 const nextDeadlineDays = leadEnabled ? Math.min(leadDays, deadlineDays + 1) : deadlineDays + 1;
                                                 setDeadlineDays(nextDeadlineDays);
                                                 if (leadEnabled && nextDeadlineDays === leadDays && timeToMinutes(deadlineTime) < timeToMinutes(leadTime)) {
@@ -315,14 +289,14 @@ const EditJitScreen = () => {
                                                 }
                                             }} style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]}>
                                                 <Feather name="plus" size={18} color={colors.brand} />
-                                            </TouchableOpacity>
+                                            </PressableOpacity>
                                         </View>
                                         <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                                        <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={openDeadlineTimePicker}>
+                                        <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={openDeadlineTimePicker}>
                                             <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                                             <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{deadlineTime}</Text>
                                             <Feather name={showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                        </TouchableOpacity>
+                                        </PressableOpacity>
                                     </View>
                                 )}
                             </View>
@@ -334,7 +308,7 @@ const EditJitScreen = () => {
                     {!hasChanged && (
                         <Text style={[s.noChangeHint, { color: colors.textFaint }]}>No changes yet</Text>
                     )}
-                    <TouchableOpacity
+                    <PressableOpacity
                         style={[s.primaryBtn, { backgroundColor: colors.brand }, (!hasChanged || isSaving) && { backgroundColor: disabledBtnBg }]}
                         onPress={handleSave}
                         disabled={!hasChanged || isSaving}
@@ -343,7 +317,7 @@ const EditJitScreen = () => {
                             ? <ActivityIndicator color="#fff" size="small" />
                             : <><Text style={s.primaryBtnText}>Save Changes</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>
                         }
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
             </View>
 
@@ -401,8 +375,6 @@ const s = StyleSheet.create({
     toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     toggleRowLabelWrap: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, marginRight: 12 },
     toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151" },
-    switchTrack: { width: 44, height: 26, borderRadius: 13, padding: 2, justifyContent: "center" },
-    switchThumb: { position: "absolute", width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.25, shadowRadius: 2, elevation: 2 },
     leadRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
     stepperBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
     leadCenter: { alignItems: "center", minWidth: 60 },

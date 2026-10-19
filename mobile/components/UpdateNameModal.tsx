@@ -1,4 +1,5 @@
-import { View, Text, TextInput, TouchableOpacity, Modal, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, Modal, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, userApi, User } from '@/utils/api';
@@ -65,7 +66,7 @@ export function UpdateNameModal({ visible, onClose }: UpdateNameModalProps) {
             placeholderTextColor={colors.placeholder}
           />
 
-          <TouchableOpacity
+          <PressableOpacity
             onPress={() => saveName.mutate()}
             disabled={!canSave || saveName.isPending}
             className={`w-full py-4 rounded-lg items-center shadow ${canSave ? 'bg-[#4A90E2]' : 'bg-gray-300 dark:bg-gray-700'}`}
@@ -73,11 +74,11 @@ export function UpdateNameModal({ visible, onClose }: UpdateNameModalProps) {
             {saveName.isPending
               ? <ActivityIndicator color="#fff" />
               : <Text className="text-white text-lg font-bold">Save</Text>}
-          </TouchableOpacity>
+          </PressableOpacity>
 
-          <TouchableOpacity onPress={onClose} className="mt-3 items-center">
+          <PressableOpacity onPress={onClose} className="mt-3 items-center">
             <Text className="text-sm text-gray-400 dark:text-gray-500">Skip for now</Text>
-          </TouchableOpacity>
+          </PressableOpacity>
         </View>
       </KeyboardAvoidingView>
     </Modal>

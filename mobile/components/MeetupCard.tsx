@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ActivityIndicator } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import ReanimatedAnimated from 'react-native-reanimated';
 import { Meetup, User } from '@/utils/api';
@@ -133,7 +134,7 @@ export const MeetupCard = ({
         ...(!isReadOnly ? { backgroundColor: rsvpBackgroundColor } : {}),
       }}
     >
-      <TouchableOpacity onPress={onPress}>
+      <PressableOpacity onPress={onPress}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={{ marginRight: 12 }}>
             <GroupAvatar name={meetup.group.name} imageUrl={meetup.group.image} size={44} borderRadius={12} />
@@ -226,7 +227,7 @@ export const MeetupCard = ({
             </View>
           )}
         </View>
-      </TouchableOpacity>
+      </PressableOpacity>
 
       {showRsvpButtons && !isReadOnly && (isRsvpLocked || isRsvpDeadlinePassed || !hasRsvpResponse) && (
         <View className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
@@ -263,7 +264,7 @@ export const MeetupCard = ({
                         borderWidth: inFilled ? 0 : 1.5,
                         borderColor: colors.accentTeal,
                       }, boxStyle]}>
-                        <TouchableOpacity
+                        <PressableOpacity
                           onPress={() => { setGuestExpanded(false); onRsvp('in', 0); }}
                           disabled={isRsvping || waitlistLocked}
                           style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
@@ -271,9 +272,9 @@ export const MeetupCard = ({
                           <ReanimatedAnimated.Text style={[{ color: inFilled ? 'white' : colors.accentTeal, fontWeight: 'bold', fontSize: 16 }, inTextStyle]}>
                             {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? (canBump ? "Priority In" : "Join Waitlist") : "I'm In"}
                           </ReanimatedAnimated.Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                         <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : colors.border }} />
-                        <TouchableOpacity
+                        <PressableOpacity
                           onPress={() => { setLocalGuestCount(0); setGuestExpanded(v => !v); }}
                           disabled={isRsvping || waitlistLocked}
                           style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
@@ -282,7 +283,7 @@ export const MeetupCard = ({
                             ? <Feather name="x" size={18} color={inFilled ? 'white' : colors.accentTeal} />
                             : <MaterialIcons name="group-add" size={20} color={inFilled ? 'white' : colors.accentTeal} />
                           }
-                        </TouchableOpacity>
+                        </PressableOpacity>
                       </ReanimatedAnimated.View>
                     </View>
                     {/* Split I'm Out button: left 70% = RSVP out, right 30% = RSVP out + mute group */}
@@ -295,21 +296,21 @@ export const MeetupCard = ({
                         borderWidth: outFilled ? 0 : 1.5,
                         borderColor: colors.accentCoral,
                       }, boxStyle]}>
-                        <TouchableOpacity
+                        <PressableOpacity
                           onPress={() => { setGuestExpanded(false); onRsvp('out'); }}
                           disabled={isRsvping}
                           style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                         >
                           <ReanimatedAnimated.Text style={[{ color: outFilled ? 'white' : colors.accentCoral, fontWeight: 'bold', fontSize: 16 }, outTextStyle]}>I'm Out</ReanimatedAnimated.Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                         <View style={{ width: 1, backgroundColor: outFilled ? 'rgba(255,255,255,0.35)' : colors.border }} />
-                        <TouchableOpacity
+                        <PressableOpacity
                           onPress={() => { setGuestExpanded(false); onRsvp('out', 0, true); }}
                           disabled={isRsvping}
                           style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                         >
                           <Feather name="bell-off" size={18} color={outFilled ? 'white' : colors.accentCoral} />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                       </ReanimatedAnimated.View>
                     </View>
                   </View>
@@ -321,7 +322,7 @@ export const MeetupCard = ({
                 <View style={{ alignItems: 'center', marginTop: 10 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Add Guests?</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-                  <TouchableOpacity
+                  <PressableOpacity accessibilityLabel="Decrease"
                     onPress={() => setLocalGuestCount(c => Math.max(0, c - 1))}
                     disabled={localGuestCount === 0}
                     style={{
@@ -333,13 +334,13 @@ export const MeetupCard = ({
                     }}
                   >
                     <Feather name="minus" size={16} color={localGuestCount === 0 ? colors.borderStrong : colors.brand} />
-                  </TouchableOpacity>
+                  </PressableOpacity>
 
                   <Text style={{ fontSize: 24, fontWeight: '900', color: colors.textPrimary, minWidth: 28, textAlign: 'center' }}>
                     {localGuestCount}
                   </Text>
 
-                  <TouchableOpacity
+                  <PressableOpacity accessibilityLabel="Increase"
                     onPress={() => setLocalGuestCount(c => c + 1)}
                     style={{
                       width: 36, height: 36, borderRadius: 18,
@@ -349,10 +350,10 @@ export const MeetupCard = ({
                     }}
                   >
                     <Feather name="plus" size={16} color={colors.brand} />
-                  </TouchableOpacity>
+                  </PressableOpacity>
 
                   {/* Confirm */}
-                  <TouchableOpacity
+                  <PressableOpacity
                     onPress={() => { setGuestExpanded(false); onRsvp('in', localGuestCount); }}
                     disabled={isRsvping}
                     style={{
@@ -367,7 +368,7 @@ export const MeetupCard = ({
                       ? <ActivityIndicator size="small" color="white" />
                       : <Feather name="check" size={18} color="white" />
                     }
-                  </TouchableOpacity>
+                  </PressableOpacity>
                 </View>
                 </View>
               )}

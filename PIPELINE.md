@@ -84,11 +84,40 @@ processing (code signing, Hermes, R8/ProGuard) — the thing that actually
 causes "works in preview, breaks in the submitted build" issues. A build
 that hasn't passed through these first should not go to public review.
 
+## Scheduled jobs (cron-job.org)
+
+All background work is driven by cron-job.org calling the backend. Every job is
+`POST https://<backend-host>/api/jobs/<name>` with the header
+`Authorization: Bearer <CRON_SECRET>` (same value as `CRON_SECRET` in Vercel).
+A job answers 401 on a wrong secret and 500 if `CRON_SECRET` isn't configured.
+Production host is `gt-2-peach.vercel.app`. Create the same jobs against the
+staging URL only if you want the staging deployment to run them.
+
+Suggested intervals, taken from each handler's own comments (these are
+recommendations, not a record of what is currently configured):
+
+| Job | Endpoint | Suggested interval | Why |
+|---|---|---|---|
+| Open RSVPs / priority-group announcements | `notify-rsvp-open` | every 1 min | RSVP open times should land on time |
+| Minimum-headcount auto-cancel (Premium) | `cancel-under-minimum` | every 1 min | runs right after an RSVP deadline |
+| "Starting soon" push | `notify-meetup-reminder` | every 1-5 min | fires 30 min before start |
+| Staged "you haven't RSVP'd" reminders | `notify-rsvp-reminder-stages` | every 5-15 min | stages are hours apart |
+| Generate upcoming meetups | `regenerate-meetups` | every 5-15 min | idle runs are cheap; only due groups load |
+| Expire polls | `expire-polls` | every 5 min | notifies the winning option |
+| Lifecycle emails (Resend) | `send-lifecycle-emails` | every 5 min | sends at most 60 per run, inside each user's 9am-7pm window; add `?dryRun=1` to preview without sending |
+| Expire past meetups | `expire-meetups` | every 5-10 min | meetups expire 1 hr after start |
+| Clean up old meetups | `cleanup-meetups` | once a day | deletes meetups expired > 10 days |
+
+`send-lifecycle-emails` does nothing until `LIFECYCLE_EMAILS_ENABLED=true`.
+Because Mongo is shared across environments, do not point two environments'
+cron jobs at the same work: each job should have exactly one caller.
+
 ## Known gaps (flagged, not fixed)
 
-- No backend CI (lint/test workflow) — `backend/package.json`'s `test`
-  script is currently a stub. The only GitHub Actions workflow in the repo
-  is the PR-source-branch check.
+- Backend CI only runs unit tests (`.github/workflows/backend-tests.yml`, same
+  command as `npm test` in `backend/`). There is no lint step, and no mobile
+  type-check/jest workflow yet. The backend tests stub the database, so none
+  of them exercise real Mongo queries.
 - Stream Chat webhook handler (`backend/src/controllers/webhook.controller.js`)
   does not verify the signature it receives.
 - The `/join/:token` group-invite landing page

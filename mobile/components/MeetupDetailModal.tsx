@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
     ScrollView,
     Image,
     Alert,
@@ -16,6 +15,9 @@ import {
     Dimensions,
     Share
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import { getMaxAttendeesError } from '@/utils/scheduleConstants';
+import { FREQUENCY_LABELS, buildFrequencyDetail } from '@/utils/meetupFrequency';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import VideoServiceIcon from './VideoServiceIcon';
@@ -28,8 +30,6 @@ import Animated, {
     LinearTransition,
     useSharedValue,
     useAnimatedStyle,
-    withRepeat,
-    withSequence,
     withTiming,
     withSpring,
     Easing,
@@ -48,7 +48,6 @@ import { questionsActive, hasAnsweredAny } from '@/utils/questions';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
-import { DateTime } from 'luxon';
 import { RsvpBreather } from '@/components/RsvpBreather';
 import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
@@ -57,71 +56,9 @@ import LocationField from './LocationField';
 import LocationSearchModal from './LocationSearchModal';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
-import type { ThemeColors } from '@/constants/theme';
-
-// Watermark that slowly breathes between a base and darker opacity, one full cycle every 5 seconds.
-const PulsingWatermark = ({ label, style, baseOpacity, peakOpacity }: {
-    label: string;
-    style: any;
-    baseOpacity: number;
-    peakOpacity: number;
-}) => {
-    const opacity = useSharedValue(baseOpacity);
-
-    useEffect(() => {
-        opacity.value = withRepeat(
-            withTiming(peakOpacity, { duration: 2500, easing: Easing.inOut(Easing.sin) }),
-            -1,
-            true
-        );
-    }, []);
-
-    const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-
-    return (
-        <Animated.Text style={[style, animatedStyle]} pointerEvents="none">
-            {label}
-        </Animated.Text>
-    );
-};
-
-// Repeat icon split into two color halves that spin together in a burst on tap
-const InOutSwapIcon = ({ burstNonce }: { burstNonce: number }) => {
-    const burst = useSharedValue(0);
-    const isFirstRender = useRef(true);
-
-    useEffect(() => {
-        if (isFirstRender.current) {
-            isFirstRender.current = false;
-            return;
-        }
-        burst.value = withSequence(
-            withTiming(1, { duration: 450, easing: Easing.out(Easing.cubic) }),
-            withTiming(0, { duration: 0 })
-        );
-    }, [burstNonce]);
-
-    const spinStyle = useAnimatedStyle(() => ({
-        transform: [{ rotate: `${burst.value * 360}deg` }],
-    }));
-    const greenStyle = spinStyle;
-    const redStyle = spinStyle;
-
-    return (
-        <View style={{ width: 20, height: 20 }}>
-            <View style={{ position: 'absolute', top: 0, left: 0, width: 20, height: 10, overflow: 'hidden' }}>
-                <Animated.View style={[{ position: 'absolute', top: 0, left: 0 }, greenStyle]}>
-                    <Feather name="repeat" size={20} color="#3FABA1" />
-                </Animated.View>
-            </View>
-            <View style={{ position: 'absolute', top: 10, left: 0, width: 20, height: 10, overflow: 'hidden' }}>
-                <Animated.View style={[{ position: 'absolute', top: -10, left: 0 }, redStyle]}>
-                    <Feather name="repeat" size={20} color="#FF7A6E" />
-                </Animated.View>
-            </View>
-        </View>
-    );
-};
+import { PulsingWatermark } from '@/components/meetup-detail/PulsingWatermark';
+import { InOutSwapIcon } from '@/components/meetup-detail/InOutSwapIcon';
+import { styles, dmStyles } from '@/components/meetup-detail/styles';
 
 interface MeetupDetailModalProps {
   meetup: Meetup | null;
@@ -130,58 +67,6 @@ interface MeetupDetailModalProps {
 
 // Extracts user ID whether the array holds strings or populated objects
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
-
-const FREQUENCY_LABELS: Record<string, string> = {
-    daily: 'Daily',
-    weekly: 'Weekly',
-    biweekly: 'Bi-Weekly',
-    monthly: 'Monthly',
-    ordinal: 'Monthly',
-};
-
-const DAY_ABBR: Record<number, string> = { 0: 'Su', 1: 'M', 2: 'T', 3: 'W', 4: 'Th', 5: 'F', 6: 'Sa' };
-
-const ordSfx = (n: number) => {
-    if (n > 3 && n < 21) return 'th';
-    switch (n % 10) {
-        case 1: return 'st';
-        case 2: return 'nd';
-        case 3: return 'rd';
-        default: return 'th';
-    }
-};
-
-// Short parenthetical detail for the frequency label, e.g. "W" or "13th day" or "Last W".
-// Derived straight off this occurrence's own date/timezone — not the group's stored
-// routine — so it can't go stale or miss when the schedule that generated it was
-// since edited, deleted, or hasn't loaded into cache yet.
-const buildFrequencyDetail = (meetup: Meetup): string | null => {
-    if (!meetup.frequency) return null;
-    const dt = DateTime.fromJSDate(new Date(meetup.date)).setZone(meetup.timezone);
-    if (!dt.isValid) return null;
-
-    if (meetup.frequency === 'weekly' || meetup.frequency === 'biweekly') {
-        return DAY_ABBR[dt.weekday % 7];
-    }
-    if (meetup.frequency === 'monthly') {
-        return `${dt.day}${ordSfx(dt.day)} day`;
-    }
-    if (meetup.frequency === 'ordinal') {
-        const isLast = dt.day + 7 > dt.daysInMonth;
-        const occurrence = isLast ? 'Last' : `${Math.ceil(dt.day / 7)}${ordSfx(Math.ceil(dt.day / 7))}`;
-        return `${occurrence} ${DAY_ABBR[dt.weekday % 7]}`;
-    }
-    return null;
-};
-
-// Mirrors Max Attendees validation across create-group, AddMeetupWizard, and group settings.
-const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
-    if (mode !== "limited" || input === "") return null;
-    if (!/^\d+$/.test(input)) return "Numbers only, please.";
-    const n = parseInt(input, 10);
-    if (n < 1 || n > 200) return "Enter a number between 1 and 200.";
-    return null;
-};
 
 const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModalProps) => {
     const api = useApiClient();
@@ -704,7 +589,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const renderUserTile = (user: User, key: string, opts?: { waitlistPosition?: number }) => {
         const isSelf = user._id === currentUser._id;
-        const Wrapper = isSelf ? View : TouchableOpacity;
+        const Wrapper = isSelf ? View : PressableOpacity;
         const wrapperProps = isSelf ? {} : { onPress: () => setDmTargetUser(user), activeOpacity: 0.7 };
         return (
             <Wrapper key={key} style={styles.gridItem} {...wrapperProps}>
@@ -797,9 +682,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: modalBackgroundColor }]} edges={['top', 'bottom']}>
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <PressableOpacity onPress={onClose} style={styles.closeButton}>
                     <Feather name="x" size={28} color={colors.textFaint} />
-                </TouchableOpacity>
+                </PressableOpacity>
                 <Animated.View layout={LinearTransition.duration(300).easing(Easing.out(Easing.cubic))} style={styles.headerTitleContainer}>
                     <Text style={[styles.headerTitle, { color: colors.textFaint }]}>
                         {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })} • {meetup.time}
@@ -881,9 +766,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 </View>
                             </View>
                             {canCancelOrRestore && (
-                                <TouchableOpacity onPress={handleCancelMeetup} style={[styles.reactivateBannerBtn, { backgroundColor: colors.brand }]}>
+                                <PressableOpacity onPress={handleCancelMeetup} style={[styles.reactivateBannerBtn, { backgroundColor: colors.brand }]}>
                                     <Text style={styles.reactivateBannerBtnText}>Reactivate</Text>
-                                </TouchableOpacity>
+                                </PressableOpacity>
                             )}
                         </View>
                     )}
@@ -960,16 +845,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     </Animated.View>
 
                     <Animated.View layout={LinearTransition.duration(350).easing(Easing.out(Easing.cubic))} style={[styles.actionRow, { justifyContent: 'center' }]}>
-                        <TouchableOpacity
+                        <PressableOpacity
                             ref={moreBtnRef}
                             onPress={openActionsMenu}
                             style={[styles.actionBtn, styles.moreActionBtn, { backgroundColor: colors.brandSoft, borderColor: colors.brand }]}
                             activeOpacity={0.7}
                         >
                             <Ionicons name="ellipsis-horizontal-circle-outline" size={22} color={colors.brand} />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                         {!isReadOnly && !isRsvpLocked && !isRsvpDeadlinePassed && hasRsvpResponse && (
-                            <TouchableOpacity
+                            <PressableOpacity
                                 onPress={() => {
                                     setManualRsvpEdit(v => !v);
                                     setSwapIconNonce(n => n + 1);
@@ -980,7 +865,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <View style={[StyleSheet.absoluteFill, { top: 0, height: '50%', backgroundColor: isDark ? '#123330' : '#F0FDFB', borderTopLeftRadius: 9, borderTopRightRadius: 9 }]} />
                                 <View style={[StyleSheet.absoluteFill, { top: '50%', height: '50%', backgroundColor: isDark ? '#3B1E1E' : '#FFE4E1', borderBottomLeftRadius: 9, borderBottomRightRadius: 9 }]} />
                                 <InOutSwapIcon burstNonce={swapIconNonce} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         )}
                     </Animated.View>
                 </View>
@@ -1025,7 +910,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                     borderWidth: inFilled ? 0 : 1.5,
                                                     borderColor: colors.accentTeal,
                                                 }, boxStyle]}>
-                                                    <TouchableOpacity
+                                                    <PressableOpacity
                                                         onPress={() => { setGuestExpanded(false); handleRsvpAction('in'); }}
                                                         disabled={isRsvping || waitlistLocked}
                                                         style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
@@ -1033,9 +918,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                         <Animated.Text style={[{ color: inFilled ? 'white' : colors.accentTeal, fontWeight: 'bold', fontSize: 18 }, inTextStyle]}>
                                                             {isWaitlisted ? "Waitlisted" : waitlistLocked ? "Full" : (isFull && !isIn) ? (canBump ? "Priority In" : "Join Waitlist") : "I'm In"}
                                                         </Animated.Text>
-                                                    </TouchableOpacity>
+                                                    </PressableOpacity>
                                                     <View style={{ width: 1, backgroundColor: inFilled ? 'rgba(255,255,255,0.35)' : colors.border }} />
-                                                    <TouchableOpacity
+                                                    <PressableOpacity
                                                         onPress={() => setGuestExpanded(v => !v)}
                                                         disabled={isRsvping || waitlistLocked}
                                                         style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
@@ -1044,7 +929,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                             ? <Feather name="x" size={20} color={inFilled ? 'white' : colors.accentTeal} />
                                                             : <MaterialIcons name="group-add" size={22} color={inFilled ? 'white' : colors.accentTeal} />
                                                         }
-                                                    </TouchableOpacity>
+                                                    </PressableOpacity>
                                                 </Animated.View>
                                             </View>
 
@@ -1058,21 +943,21 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                     borderWidth: outFilled ? 0 : 1.5,
                                                     borderColor: colors.accentCoral,
                                                 }, boxStyle]}>
-                                                    <TouchableOpacity
+                                                    <PressableOpacity
                                                         onPress={() => { setGuestExpanded(false); handleRsvpAction('out'); }}
                                                         disabled={isRsvping}
                                                         style={{ flex: 7, alignItems: 'center', justifyContent: 'center' }}
                                                     >
                                                         <Animated.Text style={[{ color: outFilled ? 'white' : colors.accentCoral, fontWeight: 'bold', fontSize: 18 }, outTextStyle]}>I'm Out</Animated.Text>
-                                                    </TouchableOpacity>
+                                                    </PressableOpacity>
                                                     <View style={{ width: 1, backgroundColor: outFilled ? 'rgba(255,255,255,0.35)' : colors.border }} />
-                                                    <TouchableOpacity
+                                                    <PressableOpacity
                                                         onPress={handleRsvpOutAndMute}
                                                         disabled={isRsvping}
                                                         style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
                                                     >
                                                         <Feather name="bell-off" size={20} color={outFilled ? 'white' : colors.accentCoral} />
-                                                    </TouchableOpacity>
+                                                    </PressableOpacity>
                                                 </Animated.View>
                                             </View>
                                         </View>
@@ -1084,7 +969,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     <View style={{ alignItems: 'center', marginTop: 10 }}>
                                         <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Add Guests?</Text>
                                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-                                            <TouchableOpacity
+                                            <PressableOpacity
                                                 onPress={() => setLocalGuestCount(c => Math.max(0, c - 1))}
                                                 disabled={localGuestCount === 0}
                                                 style={{
@@ -1096,13 +981,13 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                 }}
                                             >
                                                 <Feather name="minus" size={16} color={localGuestCount === 0 ? colors.borderStrong : colors.brand} />
-                                            </TouchableOpacity>
+                                            </PressableOpacity>
 
                                             <Text style={{ fontSize: 24, fontWeight: '900', color: colors.textPrimary, minWidth: 28, textAlign: 'center' }}>
                                                 {localGuestCount}
                                             </Text>
 
-                                            <TouchableOpacity
+                                            <PressableOpacity
                                                 onPress={() => setLocalGuestCount(c => c + 1)}
                                                 style={{
                                                     width: 36, height: 36, borderRadius: 18,
@@ -1112,9 +997,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                 }}
                                             >
                                                 <Feather name="plus" size={16} color={colors.brand} />
-                                            </TouchableOpacity>
+                                            </PressableOpacity>
 
-                                            <TouchableOpacity
+                                            <PressableOpacity
                                                 onPress={async () => {
                                                     setGuestExpanded(false);
                                                     await performSetGuests(localGuestCount);
@@ -1133,7 +1018,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                     ? <ActivityIndicator size="small" color="white" />
                                                     : <Feather name="check" size={18} color="white" />
                                                 }
-                                            </TouchableOpacity>
+                                            </PressableOpacity>
                                         </View>
                                     </View>
                                 )}
@@ -1206,10 +1091,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
                     {renderSectionHeader('Undecided', undecidedUsers.length, colors.textFaint,
                         canManage && undecidedUsers.length > 0 ? (
-                            <TouchableOpacity onPress={handleRemindAll} disabled={isSendingReminder} style={[styles.remindAllBtn, { backgroundColor: colors.brandSoft, borderColor: colors.brand }]} activeOpacity={0.7}>
+                            <PressableOpacity onPress={handleRemindAll} disabled={isSendingReminder} style={[styles.remindAllBtn, { backgroundColor: colors.brandSoft, borderColor: colors.brand }]} activeOpacity={0.7}>
                                 <Feather name="bell" size={12} color={colors.brand} />
                                 <Text style={[styles.remindAllText, { color: colors.brand }]}>Remind All</Text>
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         ) : undefined
                     )}
                     <View style={styles.grid}>
@@ -1229,9 +1114,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
                 {canCancelOrRestore && !isCancelled && (
                     <View style={[styles.ownerSection, { borderTopColor: colors.border }]}>
-                        <TouchableOpacity onPress={handleCancelMeetup} style={[styles.cancelToggle, { borderColor: colors.danger, backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2' }]}>
+                        <PressableOpacity onPress={handleCancelMeetup} style={[styles.cancelToggle, { borderColor: colors.danger, backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2' }]}>
                             <Text style={[styles.cancelToggleText, { color: colors.danger }]}>Cancel This Meetup</Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
                 )}
             </ScrollView>
@@ -1245,7 +1130,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         )}
                         {canEditOrCancel && (
                             <>
-                                <TouchableOpacity
+                                <PressableOpacity
                                     style={styles.actionsMenuItem}
                                     onPress={() => { setIsActionsMenuVisible(false); openEditModal(); }}
                                 >
@@ -1253,11 +1138,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         <Feather name="edit-2" size={18} color="#F59E0B" />
                                     </View>
                                     <Text style={styles.actionsMenuLabel}>Edit Meetup</Text>
-                                </TouchableOpacity>
+                                </PressableOpacity>
                                 <View style={styles.actionsMenuDivider} />
                             </>
                         )}
-                        <TouchableOpacity
+                        <PressableOpacity
                             style={styles.actionsMenuItem}
                             onPress={() => { setIsActionsMenuVisible(false); handleAddToCalendar(); }}
                         >
@@ -1265,9 +1150,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Feather name="calendar" size={18} color="#16A34A" />
                             </View>
                             <Text style={styles.actionsMenuLabel}>Add to Calendar</Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                         <View style={styles.actionsMenuDivider} />
-                        <TouchableOpacity
+                        <PressableOpacity
                             style={styles.actionsMenuItem}
                             onPress={() => { setIsActionsMenuVisible(false); handleGoToChat(); }}
                         >
@@ -1275,9 +1160,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Feather name="message-circle" size={18} color="#0EA5E9" />
                             </View>
                             <Text style={styles.actionsMenuLabel}>Go to Chat</Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                         <View style={styles.actionsMenuDivider} />
-                        <TouchableOpacity
+                        <PressableOpacity
                             style={styles.actionsMenuItem}
                             onPress={() => { setIsActionsMenuVisible(false); handleInviteToMeetup(); }}
                         >
@@ -1285,7 +1170,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Feather name="user-plus" size={18} color="#0D9488" />
                             </View>
                             <Text style={styles.actionsMenuLabel}>Invite to Meetup</Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
                 </Pressable>
             </Modal>
@@ -1309,7 +1194,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Text style={[dmStyles.name, { color: colors.textPrimary }]}>
                                     {getUserDisplayName(dmTargetUser)}
                                 </Text>
-                                <TouchableOpacity
+                                <PressableOpacity
                                     style={[dmStyles.dmBtn, { backgroundColor: colors.brand }]}
                                     onPress={handleSendDM}
                                     disabled={isCreatingDM}
@@ -1319,9 +1204,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         ? <ActivityIndicator color="#fff" size="small" />
                                         : <Text style={dmStyles.dmBtnText}>Send DM</Text>
                                     }
-                                </TouchableOpacity>
+                                </PressableOpacity>
                                 {canManage && undecidedUsers.some(u => u._id === dmTargetUser._id) && (
-                                    <TouchableOpacity
+                                    <PressableOpacity
                                         style={[dmStyles.remindBtn, { backgroundColor: colors.brandSoft, borderColor: colors.brand }]}
                                         onPress={() => handleSendReminder(dmTargetUser._id)}
                                         disabled={isSendingReminder}
@@ -1331,14 +1216,14 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                             ? <ActivityIndicator color={colors.brand} size="small" />
                                             : <Text style={[dmStyles.remindBtnText, { color: colors.brand }]}>Send Reminder</Text>
                                         }
-                                    </TouchableOpacity>
+                                    </PressableOpacity>
                                 )}
                                 {canManageTarget(dmTargetUser) && (() => {
                                     const targetIsIn = meetup.in?.some(u => getUserId(u) === dmTargetUser._id) ?? false;
                                     const targetIsOut = meetup.out?.some(u => getUserId(u) === dmTargetUser._id) ?? false;
                                     return (
                                         <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                                            <TouchableOpacity
+                                            <PressableOpacity
                                                 style={[dmStyles.rsvpActionBtn, { backgroundColor: colors.accentTeal }, targetIsIn && dmStyles.rsvpActionBtnDisabled]}
                                                 onPress={() => handleAdminRsvpChange(dmTargetUser._id, 'in')}
                                                 disabled={isUpdatingTargetRsvp || targetIsIn}
@@ -1348,8 +1233,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                     ? <ActivityIndicator color="#fff" size="small" />
                                                     : <Text style={dmStyles.rsvpActionBtnText}>Mark as In</Text>
                                                 }
-                                            </TouchableOpacity>
-                                            <TouchableOpacity
+                                            </PressableOpacity>
+                                            <PressableOpacity
                                                 style={[dmStyles.rsvpActionBtn, { backgroundColor: colors.accentCoral }, targetIsOut && dmStyles.rsvpActionBtnDisabled]}
                                                 onPress={() => handleAdminRsvpChange(dmTargetUser._id, 'out')}
                                                 disabled={isUpdatingTargetRsvp || targetIsOut}
@@ -1359,13 +1244,13 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                     ? <ActivityIndicator color="#fff" size="small" />
                                                     : <Text style={dmStyles.rsvpActionBtnText}>Mark as Out</Text>
                                                 }
-                                            </TouchableOpacity>
+                                            </PressableOpacity>
                                         </View>
                                     );
                                 })()}
                                 {canManageTarget(dmTargetUser) && assignmentsActive(meetup)
                                     && (meetup.in?.some(u => getUserId(u) === dmTargetUser._id) ?? false) && (
-                                    <TouchableOpacity
+                                    <PressableOpacity
                                         style={dmStyles.remindBtn}
                                         onPress={() => {
                                             const target = dmTargetUser;
@@ -1376,7 +1261,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         activeOpacity={0.8}
                                     >
                                         <Text style={dmStyles.remindBtnText}>Edit Assignments</Text>
-                                    </TouchableOpacity>
+                                    </PressableOpacity>
                                 )}
                             </>
                         )}
@@ -1406,27 +1291,27 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <View style={styles.modalOverlay}>
                         <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
                             <View style={styles.modalHeaderInner}>
-                                <TouchableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color={colors.textFaint} /></TouchableOpacity>
+                                <PressableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color={colors.textFaint} /></PressableOpacity>
                                 <Text style={[styles.modalTitleInner, { color: colors.textPrimary }]}>Edit Meetup</Text>
-                                <TouchableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating || !canSaveCapacity}>
+                                <PressableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating || !canSaveCapacity}>
                                     {isUpdating ? <ActivityIndicator size="small" color={colors.brand} /> : <Text style={[styles.saveBtnText, { color: colors.brand }, !canSaveCapacity && styles.saveBtnTextDisabled]}>Save</Text>}
-                                </TouchableOpacity>
+                                </PressableOpacity>
                             </View>
 
                             <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
                                 <Text style={[styles.fieldLabel, { color: colors.textFaint }]}>Date</Text>
-                                <TouchableOpacity style={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} onPress={() => setShowDatePicker(true)}>
+                                <PressableOpacity style={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} onPress={() => setShowDatePicker(true)}>
                                     <Feather name="calendar" size={18} color={colors.brand} />
                                     <Text style={[styles.dateInputText, { color: colors.textSecondary }]}>
                                         {newDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                                     </Text>
-                                </TouchableOpacity>
+                                </PressableOpacity>
 
                                 <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Time</Text>
-                                <TouchableOpacity style={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} onPress={() => setShowTimePicker(true)}>
+                                <PressableOpacity style={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} onPress={() => setShowTimePicker(true)}>
                                     <Feather name="clock" size={18} color={colors.brand} />
                                     <Text style={[styles.dateInputText, { color: colors.textSecondary }]}>{newTime}</Text>
-                                </TouchableOpacity>
+                                </PressableOpacity>
 
                                 <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Location Override</Text>
                                 <LocationField
@@ -1438,18 +1323,18 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
                                 <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Max Attendees</Text>
                                 <View style={styles.boolRow}>
-                                    <TouchableOpacity
+                                    <PressableOpacity
                                         style={[styles.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, capacityMode === "unlimited" && [styles.boolBtnActive, { borderColor: colors.brand, backgroundColor: colors.brandSoft }]]}
                                         onPress={() => { setCapacityMode("unlimited"); setNewCapacity(""); }}
                                     >
                                         <Text style={[styles.boolBtnText, { color: colors.textMuted }, capacityMode === "unlimited" && { color: colors.brand }]}>Unlimited</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
+                                    </PressableOpacity>
+                                    <PressableOpacity
                                         style={[styles.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, capacityMode === "limited" && [styles.boolBtnActive, { borderColor: colors.brand, backgroundColor: colors.brandSoft }]]}
                                         onPress={() => setCapacityMode("limited")}
                                     >
                                         <Text style={[styles.boolBtnText, { color: colors.textMuted }, capacityMode === "limited" && { color: colors.brand }]}>Limited</Text>
-                                    </TouchableOpacity>
+                                    </PressableOpacity>
                                 </View>
                                 {capacityMode === "limited" && (
                                     <View style={{ marginTop: 10 }}>
@@ -1507,9 +1392,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         onChange={onDateChange}
                                         textColor={isDark ? colors.textPrimary : 'black'}
                                     />
-                                    <TouchableOpacity onPress={confirmIosDate} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
+                                    <PressableOpacity onPress={confirmIosDate} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
                                         <Text style={styles.doneButtonText}>Done</Text>
-                                    </TouchableOpacity>
+                                    </PressableOpacity>
                                 </View>
                             </View>
                         </View>
@@ -1532,199 +1417,5 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         </SafeAreaView>
     );
 };
-
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: 'white' },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-    closeButton: { padding: 4 },
-    // Fixed minHeight reserves room for the location line so header height never shifts.
-    headerTitleContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
-    headerTitle: { fontSize: 14, fontWeight: '900', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
-    headerLocationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, maxWidth: '100%', flexShrink: 1 },
-    headerLocationTextWrap: { flexShrink: 1 },
-    headerLocationInnerRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
-    headerLocationIcon: { marginRight: 5, flexShrink: 0 },
-    headerLocation: { fontSize: 14, fontWeight: '500', fontStyle: 'italic', color: '#B0B7C3', textTransform: 'none', letterSpacing: 0.2, textAlign: 'center', textDecorationLine: 'underline', flexShrink: 1 },
-    headerLocationWrap: { width: '100%', alignItems: 'center' },
-    // Absolutely positioned + invisible: exists only so onTextLayout can report
-    // the real (unlimited-line) layout, used to decide whether to show the chevron.
-    headerLocationMeasure: { position: 'absolute', opacity: 0, width: '100%' },
-    headerLocationChevron: { marginLeft: 4, flexShrink: 0 },
-    content: { flex: 1, padding: 24 },
-    cancelBanner: { backgroundColor: '#FEF2F2', padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#FEE2E2' },
-    cancelBannerText: { color: '#B91C1C', fontWeight: '800', marginLeft: 8, fontSize: 12, textTransform: 'uppercase' },
-    cancelBannerSubtext: { color: '#B91C1C', marginLeft: 8, marginTop: 3, fontSize: 12, lineHeight: 16 },
-    reactivateBannerBtn: { backgroundColor: '#4A90E2', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12, marginLeft: 8 },
-    reactivateBannerBtnText: { color: 'white', fontWeight: '800', fontSize: 11, textTransform: 'uppercase' },
-    nameCard: { alignItems: 'center' },
-    meetupTitle: { fontSize: 26, fontWeight: '900', color: '#111827', letterSpacing: -0.5, lineHeight: 30, marginBottom: 4, textAlign: 'center' },
-    meetupDescriptionChip: {
-        marginTop: 10,
-        backgroundColor: '#F9FAFB',
-        borderRadius: 20,
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        maxWidth: 260,
-    },
-    meetupDescriptionChipExpanded: { maxWidth: '100%', borderRadius: 14 },
-    meetupDescriptionRow: { flexDirection: 'row', alignItems: 'center' },
-    meetupDescriptionIcon: { marginRight: 6 },
-    meetupDescriptionText: { flexShrink: 1, fontSize: 13, color: '#6B7280', textAlign: 'center' },
-    meetupDescriptionChevron: { marginLeft: 6 },
-    meetupFrequencyLabel: {
-        position: 'absolute',
-        top: -16,
-        left: 0,
-        right: 0,
-        textAlign: 'center',
-        fontSize: 12,
-        fontStyle: 'italic',
-        color: '#9CA3AF',
-    },
-    inWatermark: {
-        position: 'absolute',
-        top: '50%',
-        left: 0,
-        right: 0,
-        textAlign: 'center',
-        fontSize: 116,
-        fontWeight: '900',
-        color: '#4FD1C5',
-        letterSpacing: 4,
-        transform: [{ translateY: -60 }],
-    },
-    outWatermark: {
-        position: 'absolute',
-        top: '50%',
-        left: 0,
-        right: 0,
-        textAlign: 'center',
-        fontSize: 96,
-        fontWeight: '900',
-        color: '#FF7A6E',
-        letterSpacing: 4,
-        transform: [{ translateY: -45 }],
-    },
-    actionRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
-    actionBtn: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-    moreActionBtn: { backgroundColor: '#EEF6FF', borderColor: '#93C5FD' },
-    actionsMenuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.15)' },
-    actionsMenuCard: {
-        position: 'absolute',
-        backgroundColor: '#1F2937',
-        borderRadius: 16,
-        paddingVertical: 6,
-        width: 200,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.25,
-        shadowRadius: 12,
-        elevation: 8,
-    },
-    actionsMenuPointer: {
-        position: 'absolute',
-        top: -6,
-        width: 14,
-        height: 14,
-        borderRadius: 3,
-        backgroundColor: '#1F2937',
-        transform: [{ rotate: '45deg' }],
-    },
-    actionsMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14 },
-    actionsMenuIconWrap: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-    actionsMenuLabel: { color: 'white', fontSize: 15, fontWeight: '600' },
-    actionsMenuDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginLeft: 14 + 32 + 12 },
-    inOutActionBtn: { borderColor: '#4FD1C5', overflow: 'hidden' },
-    strikeThrough: { textDecorationLine: 'line-through', color: '#D1D5DB' },
-    detailSeparator: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 12 },
-    guestAvatarPlaceholder: { backgroundColor: '#4FD1C5', alignItems: 'center', justifyContent: 'center' },
-    rsvpLockedBanner: { 
-    flex: 1, 
-    alignItems: 'center', 
-    justifyContent: 'center',
-    backgroundColor: '#F9FAFB', 
-    borderRadius: 16, 
-    paddingVertical: 20,
-    borderWidth: 1, 
-    borderColor: '#E5E7EB',
-    borderStyle: 'dashed',
-    gap: 4
-},
-rsvpLockedTitle: { 
-    fontSize: 14, 
-    fontWeight: '900', 
-    color: '#6B7280', 
-    textTransform: 'uppercase', 
-    letterSpacing: 0.5,
-    marginTop: 4
-},
-rsvpLockedSubtitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#9CA3AF'
-},
-    // Roster sections
-    sectionHeaderWrap: { marginTop: 8, marginBottom: 14 },
-    sectionHeaderText: { fontSize: 15, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
-    sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-    sectionHeaderLine: { height: 3, borderRadius: 2, opacity: 0.85 },
-    remindAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#EEF6FF', borderWidth: 1, borderColor: '#93C5FD', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
-    remindAllText: { color: '#4A90E2', fontWeight: '800', fontSize: 11, textTransform: 'uppercase' },
-    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 8 },
-    gridItem: { width: '30%', alignItems: 'center' },
-    gridAvatarWrap: { width: '100%', position: 'relative' },
-    gridAvatar: { width: '100%', aspectRatio: 1, borderRadius: 14, backgroundColor: '#F3F4F6' },
-    gridAvatarPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-    pillStack: { alignItems: 'center', gap: 3, marginTop: 4, maxWidth: '100%' },
-    assignPill: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2, maxWidth: '100%' },
-    assignPillText: { fontSize: 10, fontWeight: '700', flexShrink: 1 },
-    gridName: { fontSize: 12, fontWeight: '700', color: '#374151', marginTop: 6, textAlign: 'center' },
-    waitlistBadge: { position: 'absolute', top: -6, left: -6, backgroundColor: '#2563EB', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
-    waitlistBadgeText: { color: 'white', fontSize: 11, fontWeight: '800' },
-    emptyText: { color: '#9CA3AF', fontStyle: 'italic', marginBottom: 20 },
-    ownerSection: { marginTop: 40, paddingBottom: 60, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 24 },
-    cancelToggle: { height: 50, borderRadius: 14, borderWidth: 2, borderColor: '#EF4444', backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
-    cancelToggleText: { color: '#EF4444', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-    modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 60 },
-    modalHeaderInner: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-    modalTitleInner: { fontSize: 18, fontWeight: '900', color: '#111827' },
-    saveBtnText: { color: '#4A90E2', fontWeight: '900', fontSize: 16 },
-    saveBtnTextDisabled: { color: '#BFDBFE' },
-    modalBody: { paddingBottom: 60 },
-    fieldLabel: { fontSize: 12, fontWeight: 'bold', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 4 },
-    inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
-    inputContainerError: { borderColor: '#EF4444' },
-    textInput: { flex: 1, marginLeft: 12, fontSize: 16, color: '#374151' },
-    descriptionInputContainer: { height: 100, alignItems: 'flex-start', paddingVertical: 12 },
-    descriptionInput: { marginLeft: 0, height: '100%' },
-    errorText: { fontSize: 12, fontWeight: '600', color: '#EF4444', marginTop: 6, marginLeft: 2 },
-    boolRow: { flexDirection: 'row', gap: 10 },
-    boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', backgroundColor: '#fff' },
-    boolBtnActive: { borderColor: '#4A90E2', backgroundColor: '#EEF6FF' },
-    boolBtnText: { fontSize: 14, fontWeight: '700', color: '#6B7280' },
-    boolBtnTextActive: { color: '#4A90E2' },
-    dateInput: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 14, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: '#E5E7EB' },
-    dateInputText: { marginLeft: 12, fontSize: 16, color: '#374151', fontWeight: '600' },
-    datePickerOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-    datePickerContent: { backgroundColor: 'white', borderTopRightRadius: 20, borderTopLeftRadius: 20, padding: 16 },
-    doneButton: { backgroundColor: '#4A90E2', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 10 },
-    doneButtonText: { color: 'white', fontSize: 18, fontWeight: '600' },
-});
-
-const dmStyles = StyleSheet.create({
-    backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-    sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12, alignItems: 'center' },
-    dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginBottom: 24 },
-    avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 14, backgroundColor: '#F3F4F6' },
-    name: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 28 },
-    dmBtn: { backgroundColor: '#4A90E2', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
-    dmBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-    remindBtn: { marginTop: 12, backgroundColor: '#EEF6FF', borderWidth: 1.5, borderColor: '#93C5FD', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
-    remindBtnText: { color: '#4A90E2', fontWeight: '700', fontSize: 16 },
-    rsvpActionBtn: { flex: 1, paddingVertical: 14, borderRadius: 16, alignItems: 'center' },
-    rsvpActionBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-    rsvpActionBtnDisabled: { opacity: 0.45 },
-});
 
 export default MeetupDetailModal;

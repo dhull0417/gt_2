@@ -1,4 +1,5 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Platform } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, StyleSheet, Modal, Platform } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
@@ -80,16 +81,16 @@ const MeetupEditScreen = () => {
             <ScrollView style={{ padding: 24 }} keyboardShouldPersistTaps="handled">
                  <View style={{ marginBottom: 24 }}>
                     <Text style={[styles.title, { color: colors.textSecondary }]}>Set New Date</Text>
-                    <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.dateButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
+                    <PressableOpacity onPress={() => setShowDatePicker(true)} style={[styles.dateButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
                         <Text style={[styles.dateButtonText, { color: colors.brand }]}>{date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: meetupToEdit?.timezone })}</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
 
                 <View style={{ marginBottom: 24 }}>
                     <Text style={[styles.title, { color: colors.textSecondary }]}>Set New Time</Text>
-                    <TouchableOpacity onPress={() => setShowTimePicker(true)} style={[styles.dateButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
+                    <PressableOpacity onPress={() => setShowTimePicker(true)} style={[styles.dateButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
                         <Text style={[styles.dateButtonText, { color: colors.brand }]}>{meetTime}</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
 
                 <View style={styles.timezoneContainer}>
@@ -107,13 +108,13 @@ const MeetupEditScreen = () => {
                     </View>
                 </View>
 
-                <TouchableOpacity
+                <PressableOpacity
                     onPress={handleSaveChanges}
                     disabled={isPending}
                     style={[styles.saveButton, { backgroundColor: colors.accentTeal }, isPending && { backgroundColor: colors.accentTeal, opacity: 0.7 }]}
                 >
                     <Text style={styles.saveButtonText}>{isPending ? "Saving..." : "Save Changes"}</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
             </ScrollView>
 
             {showDatePicker && (
@@ -134,9 +135,9 @@ const MeetupEditScreen = () => {
                                     onChange={onDateChange}
                                     textColor={colors.textPrimary} // Fix for invisible text
                                 />
-                                <TouchableOpacity onPress={confirmDate} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
+                                <PressableOpacity onPress={confirmDate} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
                                     <Text style={styles.doneButtonText}>Done</Text>
-                                </TouchableOpacity>
+                                </PressableOpacity>
                             </View>
                         </View>
                     </Modal>

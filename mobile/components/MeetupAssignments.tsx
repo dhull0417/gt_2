@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useApiClient, meetupApi, Meetup } from '@/utils/api';
@@ -44,7 +45,7 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
   return (
     <Animated.View layout={LinearTransition.duration(260)} style={[styles.card, { overflow: 'hidden' }]}>
       <View style={styles.headerRow}>
-        <TouchableOpacity
+        <PressableOpacity
           onPress={() => setCollapsed((c) => !c)}
           activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 0, right: 8 }}
@@ -52,11 +53,11 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
         >
           <Feather name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
           <Text style={styles.title}>Assignments</Text>
-        </TouchableOpacity>
+        </PressableOpacity>
         {isIn && (
-          <TouchableOpacity onPress={() => setSheetOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <PressableOpacity onPress={() => setSheetOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.action}>{hasChoices ? 'Edit mine' : 'Choose'}</Text>
-          </TouchableOpacity>
+          </PressableOpacity>
         )}
       </View>
 
@@ -190,9 +191,9 @@ export function AssignmentsSheet({
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{forUser ? `${forUser.name}'s assignments` : meetup.name}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <PressableOpacity accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Feather name="x" size={22} color={colors.textMuted} />
-            </TouchableOpacity>
+            </PressableOpacity>
           </View>
 
           <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ paddingBottom: 8 }}>
@@ -206,7 +207,7 @@ export function AssignmentsSheet({
                   const takenByOthers = item.claimedBy.length - (alreadyMine ? 1 : 0);
                   const unavailable = item.max !== null && takenByOthers >= item.max && !mine;
                   return (
-                    <TouchableOpacity
+                    <PressableOpacity
                       key={item._id}
                       disabled={unavailable}
                       onPress={() => toggle(item._id)}
@@ -221,7 +222,7 @@ export function AssignmentsSheet({
                           </Text>
                         )}
                       </View>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                   );
                 })}
               </View>
@@ -232,14 +233,14 @@ export function AssignmentsSheet({
                 <Text style={styles.sheetSection}>Getting there</Text>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   {(['driver', 'passenger'] as const).map((r) => (
-                    <TouchableOpacity
+                    <PressableOpacity
                       key={r}
                       onPress={() => setRole(r)}
                       style={[styles.roleBtn, role === r && styles.roleBtnOn]}
                     >
                       <Feather name={r === 'driver' ? 'truck' : 'user'} size={16} color={role === r ? '#fff' : colors.accentTeal} />
                       <Text style={[styles.roleText, role === r && { color: '#fff' }]}>{r === 'driver' ? (forUser ? 'Driving' : "I'm driving") : (forUser ? 'Needs a ride' : 'I need a ride')}</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                   ))}
                 </View>
 
@@ -247,20 +248,20 @@ export function AssignmentsSheet({
                   <View style={{ alignItems: 'center', marginTop: 16 }}>
                     <Text style={styles.sheetHint}>{forUser ? 'How many passengers can they bring?' : 'How many passengers can you bring?'}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, marginTop: 10 }}>
-                      <TouchableOpacity
+                      <PressableOpacity accessibilityLabel="Decrease"
                         onPress={() => setSeats((n) => Math.max(0, n - 1))}
                         disabled={seats === 0}
                         style={[styles.stepBtn, seats === 0 && styles.stepBtnOff]}
                       >
                         <Feather name="minus" size={18} color={seats === 0 ? colors.borderStrong : colors.brand} />
-                      </TouchableOpacity>
+                      </PressableOpacity>
                       <Text style={styles.seatCount}>{seats}</Text>
-                      <TouchableOpacity
+                      <PressableOpacity accessibilityLabel="Increase"
                         onPress={() => setSeats((n) => Math.min(20, n + 1))}
                         style={styles.stepBtn}
                       >
                         <Feather name="plus" size={18} color={colors.brand} />
-                      </TouchableOpacity>
+                      </PressableOpacity>
                     </View>
                   </View>
                 )}
@@ -268,16 +269,16 @@ export function AssignmentsSheet({
             )}
           </ScrollView>
 
-          <TouchableOpacity
+          <PressableOpacity
             onPress={save}
             disabled={saving || needsRole}
             style={[styles.saveBtn, (saving || needsRole) && { opacity: 0.5 }]}
           >
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onClose} style={{ alignItems: 'center', paddingTop: 12 }}>
+          </PressableOpacity>
+          <PressableOpacity onPress={onClose} style={{ alignItems: 'center', paddingTop: 12 }}>
             <Text style={{ color: colors.textMuted, fontWeight: '600' }}>Not now</Text>
-          </TouchableOpacity>
+          </PressableOpacity>
         </View>
       </View>
     </Modal>

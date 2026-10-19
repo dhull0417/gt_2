@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { Dimensions, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
@@ -9,7 +10,7 @@ import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const PANEL_WIDTH = 244;
 const REACTIONS_PANEL_WIDTH = 300;
-const ESTIMATED_PANEL_HEIGHT = 220;
+const ESTIMATED_PANEL_HEIGHT = 270;
 const SAFE_MARGIN = 14;
 const REACTIONS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
 
@@ -23,6 +24,10 @@ interface Props {
   onReply: () => void;
   showCopy: boolean;
   onCopy: () => void;
+  // Pin / unpin for the group's pinned-messages banner. Omit to hide.
+  showPin?: boolean;
+  isPinned?: boolean;
+  onPin?: () => void;
   showEdit: boolean;
   onEdit: () => void;
   showDelete: boolean;
@@ -41,9 +46,9 @@ function ReactionButton({ emoji, index, onPress }: { emoji: string; index: numbe
   }));
   return (
     <Animated.View style={style}>
-      <TouchableOpacity style={styles.emojiBtn} onPress={onPress} activeOpacity={0.7}>
+      <PressableOpacity style={styles.emojiBtn} onPress={onPress} activeOpacity={0.7}>
         <Text style={{ fontSize: 24 }}>{emoji}</Text>
-      </TouchableOpacity>
+      </PressableOpacity>
     </Animated.View>
   );
 }
@@ -58,6 +63,9 @@ export function ChatActionPanel({
   onReply,
   showCopy,
   onCopy,
+  showPin,
+  isPinned,
+  onPin,
   showEdit,
   onEdit,
   showDelete,
@@ -113,20 +121,26 @@ export function ChatActionPanel({
           </View>
         )}
 
-        {(showReply || showCopy) && (
+        {(showReply || showCopy || showPin) && (
           <>
             {showReactions && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
             {showReply && (
-              <TouchableOpacity style={styles.actionRow} onPress={onReply}>
+              <PressableOpacity style={styles.actionRow} onPress={onReply}>
                 <Feather name="corner-up-left" size={17} color={colors.textPrimary} />
                 <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>Reply</Text>
-              </TouchableOpacity>
+              </PressableOpacity>
             )}
             {showCopy && (
-              <TouchableOpacity style={styles.actionRow} onPress={onCopy}>
+              <PressableOpacity style={styles.actionRow} onPress={onCopy}>
                 <Feather name="copy" size={16} color={colors.textPrimary} />
                 <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>Copy</Text>
-              </TouchableOpacity>
+              </PressableOpacity>
+            )}
+            {showPin && (
+              <PressableOpacity style={styles.actionRow} onPress={onPin}>
+                <Feather name="map-pin" size={16} color={colors.textPrimary} />
+                <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>{isPinned ? 'Unpin' : 'Pin'}</Text>
+              </PressableOpacity>
             )}
           </>
         )}
@@ -135,16 +149,16 @@ export function ChatActionPanel({
           <>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             {showEdit && (
-              <TouchableOpacity style={styles.actionRow} onPress={onEdit}>
+              <PressableOpacity style={styles.actionRow} onPress={onEdit}>
                 <Feather name="edit-2" size={16} color={colors.textPrimary} />
                 <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>Edit</Text>
-              </TouchableOpacity>
+              </PressableOpacity>
             )}
             {showDelete && (
-              <TouchableOpacity style={styles.actionRow} onPress={onDelete}>
+              <PressableOpacity style={styles.actionRow} onPress={onDelete}>
                 <Feather name="trash-2" size={16} color={colors.danger} />
                 <Text style={[styles.actionLabel, { color: colors.danger }]}>Delete</Text>
-              </TouchableOpacity>
+              </PressableOpacity>
             )}
           </>
         )}

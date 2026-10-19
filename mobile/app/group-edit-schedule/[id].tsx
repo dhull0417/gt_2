@@ -1,9 +1,8 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useRef } from "react";
 import {
     View,
     Text,
     TextInput,
-    TouchableOpacity,
     ScrollView,
     StyleSheet,
     Alert,
@@ -11,10 +10,13 @@ import {
     ActivityIndicator,
     LayoutAnimation,
     UIManager,
-    Animated,
     Switch,
     KeyboardAvoidingView,
 } from "react-native";
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
+import { DAYS_OF_WEEK, DAY_COLORS_LIGHT, ORDINAL_OCCURRENCES, USA_TIMEZONES, TZ_ABBR, FREQ_LABELS, uid, ordSfx, timeToMinutes, getMaxAttendeesError } from '@/utils/scheduleConstants';
+import { getMinAttendeesError, WeekdayRow, MonthlyDateEntry, OrdinalEntry, BuiltRoutine, newBringItemKey, getBringItemsError, ScheduleData, defaultSchedule, buildLabel, buildSchedulePayload, scheduleFromNamedSchedule } from '@/utils/editScheduleDraft';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
@@ -22,10 +24,10 @@ import { DateTime } from "luxon";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/expo";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
-import { useApiClient, groupApi, GroupDetails, NamedSchedule, Frequency, DayTime, Routine } from "../../utils/api";
+import { useApiClient, groupApi, Frequency, DayTime } from "../../utils/api";
 import { broadcastGroupUpdate, broadcastMeetupUpdate } from "../../utils/groupRealtime";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
-import NativeTimePicker, { timeStringToDate } from "../../components/NativeTimePicker";
+import NativeTimePicker from "../../components/NativeTimePicker";
 import OptionPickerModal from "../../components/OptionPickerModal";
 import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
@@ -39,30 +41,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DAYS_OF_WEEK = [
-    { label: "Sunday",    short: "Sun", value: 0 },
-    { label: "Monday",    short: "Mon", value: 1 },
-    { label: "Tuesday",   short: "Tue", value: 2 },
-    { label: "Wednesday", short: "Wed", value: 3 },
-    { label: "Thursday",  short: "Thu", value: 4 },
-    { label: "Friday",    short: "Fri", value: 5 },
-    { label: "Saturday",  short: "Sat", value: 6 },
-];
 
-// One accent color per weekday so day rows/cards are distinguishable at a glance.
-// Dark variants swap the pastel background for a muted, low-saturation version of
-// the same hue (mirrors the pastel icon-chip treatment used elsewhere in the app);
-// the foreground stays the same saturated color in both themes since it still reads
-// fine against the much darker background.
-const DAY_COLORS_LIGHT: { bg: string; fg: string }[] = [
-    { bg: "#FEE2E2", fg: "#DC2626" }, // Sunday
-    { bg: "#DBEAFE", fg: "#2563EB" }, // Monday
-    { bg: "#EDE9FE", fg: "#7C3AED" }, // Tuesday
-    { bg: "#D1FAE5", fg: "#059669" }, // Wednesday
-    { bg: "#FEF3C7", fg: "#D97706" }, // Thursday
-    { bg: "#FCE7F3", fg: "#DB2777" }, // Friday
-    { bg: "#CFFAFE", fg: "#0891B2" }, // Saturday
-];
 // Friday (pink) has no established pastel-chip dark equivalent elsewhere in the
 // app; #3D1530 extrapolates the same treatment used for the other named hues.
 const DAY_COLORS_DARK: { bg: string; fg: string }[] = [
@@ -75,465 +54,13 @@ const DAY_COLORS_DARK: { bg: string; fg: string }[] = [
     { bg: "#123338", fg: "#0891B2" }, // Saturday (cyan)
 ];
 
-const ORDINAL_OCCURRENCES = ["1st", "2nd", "3rd", "4th", "5th", "Last"];
 
-const USA_TIMEZONES = [
-    { label: "Eastern (ET)",      value: "America/New_York"    },
-    { label: "Central (CT)",      value: "America/Chicago"     },
-    { label: "Mountain (MT)",     value: "America/Denver"      },
-    { label: "Mountain (no DST)", value: "America/Phoenix"     },
-    { label: "Pacific (PT)",      value: "America/Los_Angeles" },
-    { label: "Alaska (AKT)",      value: "America/Anchorage"   },
-    { label: "Hawaii (HT)",       value: "Pacific/Honolulu"    },
-];
 
-// Short badge for the compact timezone pill — mirrors the abbreviations already
-// used elsewhere (e.g. GroupDetailsView) so the same zone reads the same way everywhere.
-const TZ_ABBR: Record<string, string> = {
-    "America/New_York": "ET",
-    "America/Chicago": "CT",
-    "America/Denver": "MT",
-    "America/Phoenix": "MST",
-    "America/Los_Angeles": "PT",
-    "America/Anchorage": "AKST",
-    "Pacific/Honolulu": "HST",
-};
 
-const FREQ_LABELS: Record<string, string> = {
-    daily: "Daily", weekly: "Weekly", biweekly: "Bi-Weekly",
-    monthly: "Monthly", custom: "Multiple Rules",
-};
 
-const uid = () => Math.random().toString(36).slice(2);
-const ordSfx = (n: number) => n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th";
 const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
-// Time-of-day matters when RSVP open/deadline land on the same day-count —
-// comparing leadDays >= deadlineDays alone isn't enough.
-const timeToMinutes = (time: string): number => {
-    const t = timeStringToDate(time);
-    return t.getHours() * 60 + t.getMinutes();
-};
 
-const getMaxAttendeesError = (mode: "unlimited" | "limited", input: string): string | null => {
-    if (mode !== "limited" || input === "") return null;
-    if (!/^\d+$/.test(input)) return "Numbers only, please.";
-    const n = parseInt(input, 10);
-    if (n < 1 || n > 200) return "Enter a number between 1 and 200.";
-    return null;
-};
-
-// Minimum headcount: optional, a whole number of at least 1, and no more than the max when there is one.
-const getMinAttendeesError = (minInput: string, maxMode: "unlimited" | "limited", maxInput: string): string | null => {
-    if (minInput === "") return null;
-    if (!/^\d+$/.test(minInput)) return "Numbers only, please.";
-    const n = parseInt(minInput, 10);
-    if (n < 1) return "Enter 1 or more, or leave blank for no minimum.";
-    if (maxMode === "limited" && /^\d+$/.test(maxInput) && n > parseInt(maxInput, 10)) return "Can't be more than the max attendees.";
-    return null;
-};
-
-// ─── ToggleSwitch ─────────────────────────────────────────────────────────────
-
-const ToggleSwitch = ({ value, onValueChange, activeColor = "#7C3AED" }: {
-    value: boolean; onValueChange: (v: boolean) => void; activeColor?: string;
-}) => {
-    const colors = useThemeColors();
-    const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
-    const scale = useRef(new Animated.Value(1)).current;
-    useEffect(() => {
-        Animated.timing(anim, { toValue: value ? 1 : 0, duration: 180, useNativeDriver: false }).start();
-        Animated.sequence([
-            Animated.timing(scale, { toValue: 1.3, duration: 90, useNativeDriver: false }),
-            Animated.spring(scale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: false }),
-        ]).start();
-    }, [value]);
-    const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: [colors.border, activeColor] });
-    const thumbLeft = anim.interpolate({ inputRange: [0, 1], outputRange: [2, 20] });
-    return (
-        <TouchableOpacity activeOpacity={0.8} onPress={() => onValueChange(!value)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Animated.View style={[s.switchTrack, { backgroundColor: trackColor }]}>
-                <Animated.View style={[s.switchThumb, { left: thumbLeft, transform: [{ scale }] }]} />
-            </Animated.View>
-        </TouchableOpacity>
-    );
-};
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface WeekdayRow {
-    id: string;
-    day: number | null;
-    time: string;
-    startDate: string | null;
-    showTimePicker: boolean;
-    showDayPicker: boolean;
-    showStartDatePicker: boolean;
-}
-
-interface MonthlyDateEntry {
-    id: string;
-    date: number;
-    time: string;
-    expanded: boolean;
-    showTimePicker: boolean;
-}
-
-interface OrdinalEntry {
-    id: string;
-    occurrence: string;
-    day: number;
-    time: string;
-    expanded: boolean;
-    showTimePicker: boolean;
-    showOccurrencePicker: boolean;
-    showDayOfWeekPicker: boolean;
-}
-
-interface BuiltRoutine {
-    id: string;
-    frequency: Frequency;
-    label: string;
-    dayTimes: DayTime[];
-    rules?: any[];
-    editing: boolean;
-    snapshot: Partial<ScheduleData>;
-}
-
-interface BringItemDraft {
-    key: string;
-    _id?: string; // present for items already saved, so claims follow edits
-    name: string;
-    max: string; // "" = no limit
-}
-
-const newBringItemKey = () => `bi_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-
-const getBringItemsError = (items: BringItemDraft[]): string | null => {
-    const seen = new Set<string>();
-    for (const i of items) {
-        const name = i.name.trim();
-        if (!name) return "Give every item a name, or remove the empty row.";
-        if (name.length > 40) return "Item names can be at most 40 characters.";
-        if (seen.has(name.toLowerCase())) return `"${name}" is listed twice.`;
-        seen.add(name.toLowerCase());
-        if (i.max !== "" && !/^\d+$/.test(i.max)) return `Enter a whole number for "${name}", or leave it blank for no limit.`;
-        if (i.max !== "" && (parseInt(i.max, 10) < 1 || parseInt(i.max, 10) > 99)) return `The number for "${name}" must be 1 to 99.`;
-    }
-    return null;
-};
-
-interface ScheduleData {
-    name: string;
-    location: string;
-    description: string;
-    maxAttendeesMode: "unlimited" | "limited";
-    maxAttendeesInput: string;
-    minAttendeesInput: string; // Premium minimum headcount; "" = none
-    bringItems: BringItemDraft[]; // Premium assignments: things to bring
-    ridesEnabled: boolean; // Premium assignments: carpool coordination
-    rsvpRestricted: boolean;
-    leadEnabled: boolean;
-    leadDays: number;
-    leadTime: string;
-    showLeadTimePicker: boolean;
-    deadlineEnabled: boolean;
-    deadlineDays: number;
-    deadlineTime: string;
-    showDeadlineTimePicker: boolean;
-    startDate: string;
-    timezone: string;
-    frequency: Frequency | null;
-    showStartDatePicker: boolean;
-    showTZPicker: boolean;
-    showFreqPicker: boolean;
-    dailySameTime: boolean | null;
-    dailySharedTime: string;
-    showDailySameTimePicker: boolean;
-    dailyRows: WeekdayRow[];
-    weekdayRows: WeekdayRow[];
-    monthlyMode: "date" | "ordinal" | null;
-    monthlyDates: MonthlyDateEntry[];
-    ordinalEntries: OrdinalEntry[];
-    builtRoutines: BuiltRoutine[];
-    customBuilding: boolean;
-    customFreq: Frequency | null;
-    customShowFreqPicker: boolean;
-}
-
-const defaultSchedule = (): ScheduleData => ({
-    name: "",
-    location: "",
-    description: "",
-    maxAttendeesMode: "unlimited",
-    maxAttendeesInput: "",
-    minAttendeesInput: "",
-    bringItems: [],
-    ridesEnabled: false,
-    rsvpRestricted: false,
-    leadEnabled: true,
-    leadDays: 5,
-    leadTime: "09:00 AM",
-    showLeadTimePicker: false,
-    deadlineEnabled: false,
-    deadlineDays: 2,
-    deadlineTime: "09:00 AM",
-    showDeadlineTimePicker: false,
-    startDate: DateTime.now().toISODate()!,
-    timezone: "America/Denver",
-    frequency: null,
-    showStartDatePicker: false,
-    showTZPicker: false,
-    showFreqPicker: false,
-    dailySameTime: null,
-    dailySharedTime: "05:00 PM",
-    showDailySameTimePicker: false,
-    dailyRows: DAYS_OF_WEEK.map(dw => ({
-        id: uid(), day: dw.value, time: "05:00 PM",
-        startDate: null, showTimePicker: false, showDayPicker: false, showStartDatePicker: false,
-    })),
-    weekdayRows: [],
-    monthlyMode: null,
-    monthlyDates: [],
-    ordinalEntries: [],
-    builtRoutines: [],
-    customBuilding: false,
-    customFreq: null,
-    customShowFreqPicker: false,
-});
-
-// ─── Build label (for custom routine chips) ───────────────────────────────────
-
-const buildLabel = (freq: Frequency, dayTimes: DayTime[], ordEntries?: OrdinalEntry[]): string => {
-    if (freq === "ordinal" && ordEntries?.length) {
-        const parts = ordEntries.slice(0, 2).map(e =>
-            `${e.occurrence} ${DAYS_OF_WEEK.find(dw => dw.value === e.day)?.short} @ ${e.time}`
-        );
-        return `Ordinal · ${parts.join(", ")}${ordEntries.length > 2 ? ` +${ordEntries.length - 2}` : ""}`;
-    }
-    const freqStr = FREQ_LABELS[freq] || freq;
-    const parts = dayTimes.slice(0, 2).map(dt => {
-        if (dt.day !== undefined) return `${DAYS_OF_WEEK.find(dw => dw.value === dt.day)?.short} @ ${dt.time}`;
-        if (dt.date !== undefined) return `${dt.date}${ordSfx(dt.date)} @ ${dt.time}`;
-        return "";
-    });
-    return `${freqStr} · ${parts.join(", ")}${dayTimes.length > 2 ? ` +${dayTimes.length - 2}` : ""}`;
-};
-
-// ─── Build schedule payload ───────────────────────────────────────────────────
-
-const buildSchedulePayload = (d: ScheduleData) => {
-    if (!d.frequency) return null;
-    let routines: any[] = [];
-
-    if (d.frequency === "custom") {
-        routines = d.builtRoutines.map(r => ({ frequency: r.frequency, dayTimes: r.dayTimes, rules: r.rules }));
-    } else if (d.frequency === "daily") {
-        const dayTimes = d.dailySameTime
-            ? DAYS_OF_WEEK.map(dw => ({ day: dw.value, time: d.dailySharedTime }))
-            : d.dailyRows.map(r => ({ day: r.day!, time: r.time }));
-        routines = [{ frequency: "daily", dayTimes }];
-    } else if (d.frequency === "weekly" || d.frequency === "biweekly") {
-        routines = [{ frequency: d.frequency, dayTimes: d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time, ...(r.startDate ? { startDate: r.startDate } : {}) })) }];
-    } else if (d.frequency === "monthly") {
-        if (d.monthlyMode === "date") {
-            routines = [{ frequency: "monthly", dayTimes: d.monthlyDates.map(e => ({ date: e.date, time: e.time })) }];
-        } else if (d.monthlyMode === "ordinal") {
-            const rules = d.ordinalEntries.map(e => ({
-                type: "byDay",
-                occurrence: e.occurrence ?? "1st",
-                day: e.day ?? 1,
-            }));
-            routines = [{
-                frequency: "ordinal",
-                dayTimes: d.ordinalEntries.map(e => ({ day: e.day, time: e.time })),
-                rules,
-            }];
-        }
-    }
-
-    return {
-        name: d.name.trim(),
-        startDate: d.startDate,
-        routines,
-        defaultLocation: d.location.trim(),
-        defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
-        // The minimum is checked at the RSVP deadline, so without one it's sent as off.
-        defaultMinAttendees: d.rsvpRestricted && d.deadlineEnabled && d.minAttendeesInput !== "" ? parseInt(d.minAttendeesInput, 10) : 0,
-        defaultBringItems: d.bringItems.map(i => ({
-            ...(i._id ? { _id: i._id } : {}),
-            name: i.name.trim(),
-            max: i.max === "" ? null : parseInt(i.max, 10),
-        })),
-        defaultRidesEnabled: d.ridesEnabled,
-        defaultDescription: d.description.trim(),
-        generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
-        generationLeadTime: d.leadTime,
-        generationDeadlineDays: d.rsvpRestricted && d.deadlineEnabled ? d.deadlineDays : null,
-        generationDeadlineTime: d.deadlineTime,
-        timezone: d.timezone,
-    };
-};
-
-// ─── Convert API routine → BuiltRoutine ──────────────────────────────────────
-
-const apiRoutineToBuiltRoutine = (r: Routine): BuiltRoutine => {
-    let snapshot: Partial<ScheduleData> = {};
-
-    if (r.frequency === "daily") {
-        const dts = r.dayTimes;
-        const allSame = dts.length > 0 && dts.every(dt => dt.time === dts[0].time);
-        snapshot = {
-            dailySameTime: allSame,
-            dailySharedTime: allSame ? (dts[0]?.time ?? "05:00 PM") : "05:00 PM",
-            dailyRows: DAYS_OF_WEEK.map(dw => {
-                const dt = dts.find(d => d.day === dw.value);
-                return { id: uid(), day: dw.value, time: dt?.time || "05:00 PM", startDate: null, showTimePicker: false, showDayPicker: false, showStartDatePicker: false };
-            }),
-        };
-    } else if (r.frequency === "weekly" || r.frequency === "biweekly") {
-        snapshot = {
-            weekdayRows: r.dayTimes.map(dt => ({
-                id: uid(), day: dt.day ?? null, time: dt.time,
-                startDate: dt.startDate ? DateTime.fromISO(dt.startDate as unknown as string).toISODate() : null,
-                showTimePicker: false, showDayPicker: false, showStartDatePicker: false,
-            })),
-        };
-    } else if (r.frequency === "monthly") {
-        snapshot = {
-            monthlyMode: "date",
-            monthlyDates: r.dayTimes.map(dt => ({
-                id: uid(), date: dt.date ?? 1, time: dt.time, expanded: false, showTimePicker: false,
-            })),
-        };
-    } else if (r.frequency === "ordinal") {
-        snapshot = {
-            monthlyMode: "ordinal",
-            ordinalEntries: (r.rules || []).map((rule, i) => ({
-                id: uid(), occurrence: rule.occurrence || "1st", day: rule.day ?? 1,
-                time: r.dayTimes[i]?.time || "05:00 PM", expanded: false, showTimePicker: false,
-                showOccurrencePicker: false, showDayOfWeekPicker: false,
-            })),
-        };
-    }
-
-    const ordEntriesForLabel: OrdinalEntry[] | undefined = r.frequency === "ordinal"
-        ? (snapshot.ordinalEntries ?? [])
-        : undefined;
-
-    return {
-        id: uid(),
-        frequency: r.frequency,
-        label: buildLabel(r.frequency, r.dayTimes, ordEntriesForLabel),
-        dayTimes: r.dayTimes,
-        rules: r.rules,
-        editing: false,
-        snapshot,
-    };
-};
-
-// ─── Convert a named schedule (or none, for creation) → ScheduleData ─────────
-
-const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSchedule | null): ScheduleData => {
-    const base = defaultSchedule();
-    const tz = group.timezone || "America/Denver";
-
-    if (!sched) {
-        return { ...base, timezone: tz };
-    }
-
-    const common = {
-        name: sched.name,
-        location: sched.defaultLocation || "",
-        description: sched.defaultDescription || "",
-        maxAttendeesMode: (sched.defaultCapacity > 0 ? "limited" : "unlimited") as "unlimited" | "limited",
-        maxAttendeesInput: sched.defaultCapacity ? String(sched.defaultCapacity) : "",
-        minAttendeesInput: sched.defaultMinAttendees ? String(sched.defaultMinAttendees) : "",
-        bringItems: (sched.defaultBringItems || []).map(i => ({ key: i._id, _id: i._id, name: i.name, max: i.max ? String(i.max) : "" })),
-        ridesEnabled: !!sched.defaultRidesEnabled,
-        rsvpRestricted: sched.generationLeadDays != null || sched.generationDeadlineDays != null,
-        leadEnabled: sched.generationLeadDays != null,
-        leadDays: sched.generationLeadDays ?? 5,
-        leadTime: sched.generationLeadTime || "09:00 AM",
-        deadlineEnabled: sched.generationDeadlineDays != null,
-        deadlineDays: sched.generationDeadlineDays ?? 2,
-        deadlineTime: sched.generationDeadlineTime || "09:00 AM",
-    };
-
-    const routines = (sched.routines ?? []) as Routine[];
-
-    // schedule.frequency is not persisted by the backend schema — infer it from routines
-    if (!routines.length) {
-        return { ...base, ...common, timezone: tz };
-    }
-
-    const startDate = sched.startDate
-        ? DateTime.fromISO(sched.startDate as unknown as string).toISODate() ?? DateTime.now().toISODate()!
-        : DateTime.now().toISODate()!;
-
-    const inferredFreq = routines.length > 1 ? "custom" : routines[0].frequency;
-
-    if (inferredFreq === "custom") {
-        return {
-            ...base, ...common, timezone: tz, startDate,
-            frequency: "custom",
-            builtRoutines: routines.map(apiRoutineToBuiltRoutine),
-        };
-    }
-
-    if (inferredFreq === "daily" && routines[0]) {
-        const dts = routines[0].dayTimes;
-        const allSame = dts.length > 0 && dts.every(dt => dt.time === dts[0].time);
-        return {
-            ...base, ...common, timezone: tz, startDate, frequency: "daily",
-            dailySameTime: allSame,
-            dailySharedTime: allSame ? (dts[0]?.time ?? "05:00 PM") : "05:00 PM",
-            dailyRows: allSame ? base.dailyRows : DAYS_OF_WEEK.map(dw => {
-                const dt = dts.find(d => d.day === dw.value);
-                return { id: uid(), day: dw.value, time: dt?.time || "05:00 PM", startDate: null, showTimePicker: false, showDayPicker: false, showStartDatePicker: false };
-            }),
-        };
-    }
-
-    if ((inferredFreq === "weekly" || inferredFreq === "biweekly") && routines[0]) {
-        return {
-            ...base, ...common, timezone: tz, startDate, frequency: inferredFreq,
-            weekdayRows: routines[0].dayTimes.map(dt => ({
-                id: uid(), day: dt.day ?? null, time: dt.time,
-                startDate: dt.startDate ? DateTime.fromISO(dt.startDate as unknown as string).toISODate() : null,
-                showTimePicker: false, showDayPicker: false, showStartDatePicker: false,
-            })),
-        };
-    }
-
-    if (inferredFreq === "monthly" && routines[0]) {
-        return {
-            ...base, ...common, timezone: tz, startDate, frequency: "monthly",
-            monthlyMode: "date",
-            monthlyDates: routines[0].dayTimes.map(dt => ({
-                id: uid(), date: dt.date ?? 1, time: dt.time, expanded: false, showTimePicker: false,
-            })),
-        };
-    }
-
-    if (inferredFreq === "ordinal" && routines[0]) {
-        const routine = routines[0];
-        return {
-            ...base, ...common, timezone: tz, startDate, frequency: "monthly",
-            monthlyMode: "ordinal",
-            ordinalEntries: (routine.rules ?? []).map((rule, i) => ({
-                id: uid(),
-                occurrence: rule.occurrence || "1st",
-                day: rule.day ?? 1,
-                time: routine.dayTimes[i]?.time || "05:00 PM",
-                expanded: false, showTimePicker: false,
-                showOccurrencePicker: false, showDayOfWeekPicker: false,
-            })),
-        };
-    }
-
-    return { ...base, ...common, timezone: tz, startDate };
-};
 
 // ─── InlineCalendar ───────────────────────────────────────────────────────────
 
@@ -556,13 +83,13 @@ const InlineCalendar = ({ value, onChange, minDate }: {
     return (
         <View style={[cal.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={cal.nav}>
-                <TouchableOpacity onPress={() => setMonth(m => m.minus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
+                <PressableOpacity onPress={() => setMonth(m => m.minus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
                     <Feather name="chevron-left" size={18} color={colors.brand} />
-                </TouchableOpacity>
+                </PressableOpacity>
                 <Text style={[cal.monthLabel, { color: colors.textPrimary }]}>{month.toFormat("MMMM yyyy")}</Text>
-                <TouchableOpacity onPress={() => setMonth(m => m.plus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
+                <PressableOpacity onPress={() => setMonth(m => m.plus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
                     <Feather name="chevron-right" size={18} color={colors.brand} />
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
             <View style={cal.grid}>
                 {["S","M","T","W","T","F","S"].map((d, i) => (
@@ -574,7 +101,7 @@ const InlineCalendar = ({ value, onChange, minDate }: {
                     const selected = iso === value;
                     const disabled = day < minDT;
                     return (
-                        <TouchableOpacity
+                        <PressableOpacity
                             key={iso}
                             style={[cal.cell, selected && cal.cellSelected, selected && { backgroundColor: colors.brand }, disabled && cal.cellDisabled]}
                             onPress={() => !disabled && onChange(iso)}
@@ -583,7 +110,7 @@ const InlineCalendar = ({ value, onChange, minDate }: {
                             <Text style={[cal.cellText, { color: colors.textSecondary }, selected && cal.cellTextSelected, disabled && { color: colors.borderStrong }]}>
                                 {day.day}
                             </Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     );
                 })}
             </View>
@@ -943,25 +470,25 @@ const EditScheduleScreen = () => {
             <Text style={[s.expandBoxTitle, { color: blueTextActive }]}>Daily Options</Text>
             <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Same time every day?</Text>
             <View style={s.boolRow}>
-                <TouchableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.dailySameTime === true && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
+                <PressableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.dailySameTime === true && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                     onPress={() => upd({ dailySameTime: true })}>
                     <Text style={[s.boolBtnText, { color: colors.textMuted }, d.dailySameTime === true && { color: colors.brand }]}>Yes</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.dailySameTime === false && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
+                </PressableOpacity>
+                <PressableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.dailySameTime === false && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                     onPress={() => upd({ dailySameTime: false })}>
                     <Text style={[s.boolBtnText, { color: colors.textMuted }, d.dailySameTime === false && { color: colors.brand }]}>No, varies</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
 
             {d.dailySameTime === true && (
                 <View style={{ marginTop: 12 }}>
                     <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                    <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => upd({ showDailySameTimePicker: !d.showDailySameTimePicker })}>
                         <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                         <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{d.dailySharedTime}</Text>
                         <Feather name={d.showDailySameTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
+                    </PressableOpacity>
                     {d.showDailySameTimePicker && (
                         <NativeTimePicker value={d.dailySharedTime} onChange={t => upd({ dailySharedTime: t })}
                             onClose={() => upd({ showDailySameTimePicker: false })} />
@@ -974,7 +501,7 @@ const EditScheduleScreen = () => {
                     {d.dailyRows.map(row => (
                         <View key={row.id}>
                             <Text style={s.dayRowLabel}>{DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label}</Text>
-                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                 onPress={() => setD(prev => ({
                                     ...prev,
                                     dailyRows: prev.dailyRows.map(r =>
@@ -986,7 +513,7 @@ const EditScheduleScreen = () => {
                                 <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                                 <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{row.time}</Text>
                                 <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                             {row.showTimePicker && (
                                 <NativeTimePicker value={row.time}
                                     onChange={t => setD(prev => ({
@@ -1012,7 +539,7 @@ const EditScheduleScreen = () => {
                 <View key={row.id} style={[s.dayCard, { backgroundColor: colors.surface, borderColor: colors.border }, row.day !== null && { borderLeftColor: DAY_COLORS[row.day].fg }]}>
                     {isBiweekly && <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Day of Week</Text>}
                     <View style={s.dayRow}>
-                        <TouchableOpacity style={[s.dayPickerTrigger, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        <PressableOpacity style={[s.dayPickerTrigger, { backgroundColor: colors.surface, borderColor: colors.border }]}
                             onPress={() => updWeekdayRow(row.id, { showDayPicker: !row.showDayPicker, showTimePicker: false, showStartDatePicker: false })}>
                             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
                                 <View style={[s.dayBadge, { backgroundColor: row.day !== null ? DAY_COLORS[row.day].bg : colors.backgroundAlt }]}>
@@ -1025,10 +552,10 @@ const EditScheduleScreen = () => {
                                 </Text>
                             </View>
                             <Feather name={row.showDayPicker ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => removeWeekdayRow(row.id)} style={{ marginLeft: 8 }}>
+                        </PressableOpacity>
+                        <PressableOpacity onPress={() => removeWeekdayRow(row.id)} style={{ marginLeft: 8 }}>
                             <Feather name="trash-2" size={16} color="#F87171" />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
 
                     {row.showDayPicker && (
@@ -1042,12 +569,12 @@ const EditScheduleScreen = () => {
                     {row.day !== null && (
                         <View style={{ marginTop: 8 }}>
                             <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                 onPress={() => updWeekdayRow(row.id, { showTimePicker: !row.showTimePicker, showDayPicker: false, showStartDatePicker: false })}>
                                 <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                                 <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{row.time}</Text>
                                 <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
                     )}
 
@@ -1060,14 +587,14 @@ const EditScheduleScreen = () => {
                     {isBiweekly && row.day !== null && (
                         <View style={{ marginTop: 8 }}>
                             <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Start Date</Text>
-                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                 onPress={() => updWeekdayRow(row.id, { showStartDatePicker: !row.showStartDatePicker, showTimePicker: false, showDayPicker: false })}>
                                 <Feather name="calendar" size={14} color={colors.brand} style={{ marginRight: 6 }} />
                                 <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>
                                     {row.startDate ? DateTime.fromISO(row.startDate).toLocaleString(DateTime.DATE_MED) : "Set start date"}
                                 </Text>
                                 <Feather name={row.showStartDatePicker ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                             {row.showStartDatePicker && (
                                 <InlineCalendar value={row.startDate || DateTime.now().toISODate()!}
                                     onChange={iso => updWeekdayRow(row.id, { startDate: iso, showStartDatePicker: false })}
@@ -1077,52 +604,52 @@ const EditScheduleScreen = () => {
                     )}
                 </View>
             ))}
-            <TouchableOpacity style={s.addRowBtn} onPress={addWeekdayRow}>
+            <PressableOpacity style={s.addRowBtn} onPress={addWeekdayRow}>
                 <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
                 <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add day</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
         </View>
     );
 
     const renderMonthlyDateEntry = (entry: MonthlyDateEntry) => (
         <View key={entry.id} style={[s.ordinalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {!entry.expanded ? (
-                <TouchableOpacity style={s.collapsedRuleRow} onPress={() => updMonthlyDate(entry.id, { expanded: true })}>
+                <PressableOpacity style={s.collapsedRuleRow} onPress={() => updMonthlyDate(entry.id, { expanded: true })}>
                     <Text style={[s.collapsedRuleText, { color: blueTextActive }]}>{entry.date}{ordSfx(entry.date)} of month · {entry.time}</Text>
                     <View style={s.collapsedRuleActions}>
                         <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
-                        <TouchableOpacity onPress={() => removeMonthlyDate(entry.id)}>
+                        <PressableOpacity onPress={() => removeMonthlyDate(entry.id)}>
                             <Feather name="trash-2" size={14} color="#F87171" />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
-                </TouchableOpacity>
+                </PressableOpacity>
             ) : (
                 <View>
                     <View style={s.ordinalRow}>
                         <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Select date of month</Text>
-                        <TouchableOpacity onPress={() => removeMonthlyDate(entry.id)}>
+                        <PressableOpacity onPress={() => removeMonthlyDate(entry.id)}>
                             <Feather name="trash-2" size={16} color="#F87171" />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
                     <View style={s.dateGrid}>
                         {Array.from({ length: 31 }, (_, i) => i + 1).map(n => (
-                            <TouchableOpacity key={n} style={[s.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }, entry.date === n && { backgroundColor: colors.brand, borderColor: colors.brand }]}
+                            <PressableOpacity key={n} style={[s.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }, entry.date === n && { backgroundColor: colors.brand, borderColor: colors.brand }]}
                                 onPress={() => updMonthlyDate(entry.id, { date: n })}>
                                 <Text style={[s.dateBoxText, { color: colors.textSecondary }, entry.date === n && s.dateBoxTextActive]}>{n}</Text>
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         ))}
                     </View>
                     <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                    <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => updMonthlyDate(entry.id, { showTimePicker: !entry.showTimePicker })}>
                         <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                         <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.time}</Text>
                         <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10, backgroundColor: colors.brand }]}
+                    </PressableOpacity>
+                    <PressableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10, backgroundColor: colors.brand }]}
                         onPress={() => updMonthlyDate(entry.id, { expanded: false, showTimePicker: false })}>
                         <Text style={s.doneBtnText}>Done</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                     {entry.showTimePicker && (
                         <NativeTimePicker value={entry.time}
                             onChange={t => updMonthlyDate(entry.id, { time: t })}
@@ -1136,46 +663,46 @@ const EditScheduleScreen = () => {
     const renderOrdinalEntry = (entry: OrdinalEntry) => (
         <View key={entry.id} style={[s.ordinalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {!entry.expanded ? (
-                <TouchableOpacity style={s.collapsedRuleRow} onPress={() => updOrdinal(entry.id, { expanded: true })}>
+                <PressableOpacity style={s.collapsedRuleRow} onPress={() => updOrdinal(entry.id, { expanded: true })}>
                     <Text style={[s.collapsedRuleText, { color: blueTextActive }]}>
                         {entry.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label} · {entry.time}
                     </Text>
                     <View style={s.collapsedRuleActions}>
                         <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
-                        <TouchableOpacity onPress={() => removeOrdinal(entry.id)}>
+                        <PressableOpacity onPress={() => removeOrdinal(entry.id)}>
                             <Feather name="trash-2" size={14} color="#F87171" />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
-                </TouchableOpacity>
+                </PressableOpacity>
             ) : (
                 <View>
                     <View style={s.ordinalRow}>
                         <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Occurrence &amp; day</Text>
-                        <TouchableOpacity onPress={() => removeOrdinal(entry.id)}>
+                        <PressableOpacity onPress={() => removeOrdinal(entry.id)}>
                             <Feather name="trash-2" size={16} color="#F87171" />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
-                    <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => updOrdinal(entry.id, { showOccurrencePicker: true, showDayOfWeekPicker: false, showTimePicker: false })}>
                         <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.occurrence}</Text>
                         <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    </PressableOpacity>
+                    <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => updOrdinal(entry.id, { showDayOfWeekPicker: true, showOccurrencePicker: false, showTimePicker: false })}>
                         <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label}</Text>
                         <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
+                    </PressableOpacity>
                     <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                    <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => updOrdinal(entry.id, { showTimePicker: !entry.showTimePicker, showOccurrencePicker: false, showDayOfWeekPicker: false })}>
                         <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                         <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.time}</Text>
                         <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10, backgroundColor: colors.brand }]}
+                    </PressableOpacity>
+                    <PressableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10, backgroundColor: colors.brand }]}
                         onPress={() => updOrdinal(entry.id, { expanded: false, showTimePicker: false })}>
                         <Text style={s.doneBtnText}>Done</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                     {entry.showTimePicker && (
                         <NativeTimePicker value={entry.time}
                             onChange={t => updOrdinal(entry.id, { time: t })}
@@ -1205,7 +732,7 @@ const EditScheduleScreen = () => {
             <Text style={[s.expandBoxTitle, { color: blueTextActive }]}>Monthly Options</Text>
             <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Recur by</Text>
             <View style={s.monthlyModeList}>
-                <TouchableOpacity style={[s.monthlyModeCard, { backgroundColor: colors.surface, borderColor: colors.border }, d.monthlyMode === "date" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
+                <PressableOpacity style={[s.monthlyModeCard, { backgroundColor: colors.surface, borderColor: colors.border }, d.monthlyMode === "date" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                     onPress={() => upd({ monthlyMode: "date" })}>
                     <View style={[s.monthlyModeRadio, { borderColor: colors.borderStrong }, d.monthlyMode === "date" && { borderColor: colors.brand }]}>
                         {d.monthlyMode === "date" && <View style={[s.monthlyModeRadioDot, { backgroundColor: colors.brand }]} />}
@@ -1217,8 +744,8 @@ const EditScheduleScreen = () => {
                         <Text style={[s.monthlyModeTitle, { color: colors.textSecondary }, d.monthlyMode === "date" && { color: blueTextActive }]}>Same date every month</Text>
                         <Text style={[s.monthlyModeExample, { color: colors.textFaint }]}>e.g. the 15th</Text>
                     </View>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.monthlyModeCard, { backgroundColor: colors.surface, borderColor: colors.border }, d.monthlyMode === "ordinal" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
+                </PressableOpacity>
+                <PressableOpacity style={[s.monthlyModeCard, { backgroundColor: colors.surface, borderColor: colors.border }, d.monthlyMode === "ordinal" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                     onPress={() => upd({ monthlyMode: "ordinal" })}>
                     <View style={[s.monthlyModeRadio, { borderColor: colors.borderStrong }, d.monthlyMode === "ordinal" && { borderColor: colors.brand }]}>
                         {d.monthlyMode === "ordinal" && <View style={[s.monthlyModeRadioDot, { backgroundColor: colors.brand }]} />}
@@ -1230,24 +757,24 @@ const EditScheduleScreen = () => {
                         <Text style={[s.monthlyModeTitle, { color: colors.textSecondary }, d.monthlyMode === "ordinal" && { color: blueTextActive }]}>Same weekday every month</Text>
                         <Text style={[s.monthlyModeExample, { color: colors.textFaint }]}>e.g. the 2nd Tuesday</Text>
                     </View>
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
             {d.monthlyMode === "date" && (
                 <View style={{ marginTop: 12, gap: 8 }}>
                     {d.monthlyDates.map(renderMonthlyDateEntry)}
-                    <TouchableOpacity style={s.addRowBtn} onPress={addMonthlyDate}>
+                    <PressableOpacity style={s.addRowBtn} onPress={addMonthlyDate}>
                         <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
                         <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add date</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
             )}
             {d.monthlyMode === "ordinal" && (
                 <View style={{ marginTop: 12, gap: 8 }}>
                     {d.ordinalEntries.map(renderOrdinalEntry)}
-                    <TouchableOpacity style={s.addRowBtn} onPress={addOrdinalEntry}>
+                    <PressableOpacity style={s.addRowBtn} onPress={addOrdinalEntry}>
                         <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
                         <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add pattern</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
             )}
         </View>
@@ -1256,20 +783,20 @@ const EditScheduleScreen = () => {
     const renderCustomSubBuilder = () => (
         <View style={[s.ordinalCard, { marginTop: 8, backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Rule type</Text>
-            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 onPress={() => upd({ customShowFreqPicker: !d.customShowFreqPicker })}>
                 <Text style={d.customFreq ? [s.dateFieldText, { color: colors.textSecondary }] : [s.dayPickerPlaceholder, { color: colors.textFaint }]}>
                     {d.customFreq ? FREQ_LABELS[d.customFreq] : "Select frequency"}
                 </Text>
                 <Feather name={d.customShowFreqPicker ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-            </TouchableOpacity>
+            </PressableOpacity>
             {d.customShowFreqPicker && (
                 <View style={[s.inlineDayPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                     {(["daily", "weekly", "biweekly", "monthly"] as Frequency[]).map(f => (
-                        <TouchableOpacity key={f} style={[s.dayOption, { borderBottomColor: colors.border }, d.customFreq === f && { backgroundColor: colors.brandSoft }]}
+                        <PressableOpacity key={f} style={[s.dayOption, { borderBottomColor: colors.border }, d.customFreq === f && { backgroundColor: colors.brandSoft }]}
                             onPress={() => { animate(); setD(prev => ({ ...prev, customFreq: f, customShowFreqPicker: false, weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null })); }}>
                             <Text style={[s.dayOptionText, { color: colors.textSecondary }, d.customFreq === f && { color: colors.brand }]}>{FREQ_LABELS[f]}</Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     ))}
                 </View>
             )}
@@ -1278,14 +805,14 @@ const EditScheduleScreen = () => {
             {d.customFreq === "biweekly" && renderWeekdayRows(true)}
             {d.customFreq === "monthly" && renderMonthlyOptions()}
             <View style={[s.boolRow, { marginTop: 14 }]}>
-                <TouchableOpacity style={s.skipBtn}
+                <PressableOpacity style={s.skipBtn}
                     onPress={() => { animate(); upd({ customBuilding: false, customFreq: null, builtRoutines: d.builtRoutines.map(r => ({ ...r, editing: false })) }); }}>
                     <Text style={[s.skipBtnText, { color: colors.textFaint }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.primaryBtn, { backgroundColor: colors.brand }]}
+                </PressableOpacity>
+                <PressableOpacity style={[s.primaryBtn, { backgroundColor: colors.brand }]}
                     onPress={() => editingRoutineId ? saveEditedRoutine(editingRoutineId) : finishCustomRoutine()}>
                     <Text style={s.primaryBtnText}>{editingRoutineId ? "Save changes" : "Add rule"}</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
         </View>
     );
@@ -1297,22 +824,22 @@ const EditScheduleScreen = () => {
                 r.editing ? (
                     <View key={r.id}>{renderCustomSubBuilder()}</View>
                 ) : (
-                    <TouchableOpacity key={r.id} style={[s.routineCard, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]} onPress={() => startEditingRoutine(r.id)}>
+                    <PressableOpacity key={r.id} style={[s.routineCard, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]} onPress={() => startEditingRoutine(r.id)}>
                         <View style={{ flex: 1 }}>
                             <Text style={[s.routineCardLabel, { color: blueTextActive }]}>{r.label}</Text>
                             <Text style={[s.routineCardSub, { color: mutedBlueText }]}>Tap to edit</Text>
                         </View>
-                        <TouchableOpacity onPress={() => removeBuiltRoutine(r.id)}>
+                        <PressableOpacity onPress={() => removeBuiltRoutine(r.id)}>
                             <Feather name="x-circle" size={18} color="#F87171" />
-                        </TouchableOpacity>
-                    </TouchableOpacity>
+                        </PressableOpacity>
+                    </PressableOpacity>
                 )
             )}
             {d.builtRoutines.length < 5 && !d.customBuilding && (
-                <TouchableOpacity style={s.addRowBtn} onPress={() => upd({ customBuilding: true, customFreq: null })}>
+                <PressableOpacity style={s.addRowBtn} onPress={() => upd({ customBuilding: true, customFreq: null })}>
                     <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
                     <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add rule</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
             )}
             {d.customBuilding && !editingRoutineId && renderCustomSubBuilder()}
         </View>
@@ -1336,9 +863,9 @@ const EditScheduleScreen = () => {
         <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
             <View style={s.screen}>
                 <View style={[s.screenHeader, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                    <TouchableOpacity onPress={() => router.back()} style={s.iconBtn}>
+                    <PressableOpacity onPress={() => router.back()} style={s.iconBtn}>
                         <Feather name="arrow-left" size={24} color={colors.textMuted} />
-                    </TouchableOpacity>
+                    </PressableOpacity>
                     <Text style={[s.headerTitle, { color: colors.textPrimary }]}>{isNew ? "New Schedule" : "Edit Schedule"}</Text>
                     <View style={{ width: 36 }} />
                 </View>
@@ -1362,14 +889,14 @@ const EditScheduleScreen = () => {
                     <View style={s.tzSection}>
                         <View style={s.tzRow}>
                             <Text style={[s.fieldLabel, s.fieldLabelFirst, { marginBottom: 0, color: colors.textFaint }]}>Timezone</Text>
-                            <TouchableOpacity style={[s.tzPill, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]} onPress={() => upd({
+                            <PressableOpacity style={[s.tzPill, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]} onPress={() => upd({
                                 showTZPicker: !d.showTZPicker,
                                 showFreqPicker: false, showStartDatePicker: false, showLeadTimePicker: false, showDeadlineTimePicker: false,
                             })}>
                                 <Feather name="globe" size={13} color={colors.brand} />
                                 <Text style={[s.tzPillText, { color: colors.brand }]}>{TZ_ABBR[d.timezone] ?? d.timezone}</Text>
                                 <Feather name={d.showTZPicker ? "chevron-up" : "chevron-down"} size={13} color={colors.brand} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
                     </View>
 
@@ -1437,21 +964,21 @@ const EditScheduleScreen = () => {
                         </View>
 
                         <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>How often?</Text>
-                        <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                             onPress={() => upd({ showFreqPicker: !d.showFreqPicker, showStartDatePicker: false, showTZPicker: false })}>
                             <Feather name="repeat" size={16} color={colors.brand} style={{ marginRight: 8 }} />
                             <Text style={d.frequency ? [s.dateFieldText, { color: colors.textSecondary }] : [s.dayPickerPlaceholder, { color: colors.textFaint }]}>
                                 {d.frequency ? FREQ_LABELS[d.frequency] : "Select frequency"}
                             </Text>
                             <Feather name={d.showFreqPicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                         {d.showFreqPicker && (
                             <View style={[s.inlineDayPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                                 {(["daily", "weekly", "biweekly", "monthly", "custom"] as Frequency[]).map(f => (
-                                    <TouchableOpacity key={f} style={[s.dayOption, { borderBottomColor: colors.border }, d.frequency === f && { backgroundColor: colors.brandSoft }]}
+                                    <PressableOpacity key={f} style={[s.dayOption, { borderBottomColor: colors.border }, d.frequency === f && { backgroundColor: colors.brandSoft }]}
                                         onPress={() => selectFreq(f)}>
                                         <Text style={[s.dayOptionText, { color: colors.textSecondary }, d.frequency === f && { color: colors.brand }]}>{FREQ_LABELS[f]}</Text>
-                                    </TouchableOpacity>
+                                    </PressableOpacity>
                                 ))}
                             </View>
                         )}
@@ -1466,12 +993,12 @@ const EditScheduleScreen = () => {
                         {d.frequency !== "biweekly" && (
                             <>
                                 <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Start date</Text>
-                                <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                                <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                     onPress={() => upd({ showStartDatePicker: !d.showStartDatePicker, showFreqPicker: false, showTZPicker: false })}>
                                     <Feather name="calendar" size={16} color={colors.brand} style={{ marginRight: 8 }} />
                                     <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
                                     <Feather name={d.showStartDatePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                </TouchableOpacity>
+                                </PressableOpacity>
                                 {d.showStartDatePicker && (
                                     <InlineCalendar value={d.startDate}
                                         onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
@@ -1492,14 +1019,14 @@ const EditScheduleScreen = () => {
 
                         <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>Limit when people can RSVP?</Text>
                         <View style={s.boolRow}>
-                            <TouchableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, !d.rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
+                            <PressableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, !d.rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => upd({ rsvpRestricted: false })}>
                                 <Text style={[s.boolBtnText, { color: colors.textMuted }, !d.rsvpRestricted && { color: colors.brand }]}>Allow anytime</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
+                            </PressableOpacity>
+                            <PressableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => upd({ rsvpRestricted: true })}>
                                 <Text style={[s.boolBtnText, { color: colors.textMuted }, d.rsvpRestricted && { color: colors.brand }]}>Limit RSVPs</Text>
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
 
                         {d.rsvpRestricted && (
@@ -1513,7 +1040,7 @@ const EditScheduleScreen = () => {
                                                 description={"This sets the earliest time and day people can respond.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs as soon as the meetup is created."}
                                             />
                                         </View>
-                                        <ToggleSwitch value={d.leadEnabled} onValueChange={v => {
+                                        <ToggleSwitch activeColor="#7C3AED" value={d.leadEnabled} onValueChange={v => {
                                             const leadDays = v && d.deadlineEnabled && d.leadDays < d.deadlineDays ? d.deadlineDays : d.leadDays;
                                             const sameDayViolation = v && d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
                                             upd({
@@ -1526,28 +1053,28 @@ const EditScheduleScreen = () => {
                                     {d.leadEnabled && (
                                         <View style={{ marginTop: 10 }}>
                                             <View style={[s.leadRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                                <TouchableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => {
+                                                <PressableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => {
                                                     const leadDays = Math.max(d.deadlineEnabled ? d.deadlineDays : 0, d.leadDays - 1);
                                                     const sameDayViolation = d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
                                                     upd({ leadDays, ...(sameDayViolation ? { leadTime: d.deadlineTime } : {}) });
                                                 }}>
                                                     <Feather name="minus" size={18} color={colors.brand} />
-                                                </TouchableOpacity>
+                                                </PressableOpacity>
                                                 <View style={s.leadCenter}>
                                                     <Text style={[s.leadVal, { color: colors.textPrimary }]}>{d.leadDays}</Text>
                                                     <Text style={[s.leadSub, { color: colors.textFaint }]}>days before</Text>
                                                 </View>
-                                                <TouchableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => upd({ leadDays: d.leadDays + 1 })}>
+                                                <PressableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => upd({ leadDays: d.leadDays + 1 })}>
                                                     <Feather name="plus" size={18} color={colors.brand} />
-                                                </TouchableOpacity>
+                                                </PressableOpacity>
                                             </View>
                                             <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                                            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                                 onPress={() => upd({ showLeadTimePicker: !d.showLeadTimePicker, showDeadlineTimePicker: false, showStartDatePicker: false, showFreqPicker: false, showTZPicker: false })}>
                                                 <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                                                 <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{d.leadTime}</Text>
                                                 <Feather name={d.showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                            </TouchableOpacity>
+                                            </PressableOpacity>
                                         </View>
                                     )}
                                     {d.leadEnabled && d.showLeadTimePicker && (
@@ -1574,7 +1101,7 @@ const EditScheduleScreen = () => {
                                                 description={"This sets the cutoff for responding.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs right up until the meetup starts."}
                                             />
                                         </View>
-                                        <ToggleSwitch value={d.deadlineEnabled} onValueChange={v => {
+                                        <ToggleSwitch activeColor="#7C3AED" value={d.deadlineEnabled} onValueChange={v => {
                                             const deadlineDays = v && d.leadEnabled && d.deadlineDays > d.leadDays ? d.leadDays : d.deadlineDays;
                                             const sameDayViolation = v && d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
                                             upd({
@@ -1587,28 +1114,28 @@ const EditScheduleScreen = () => {
                                     {d.deadlineEnabled && (
                                         <View style={{ marginTop: 10 }}>
                                             <View style={[s.leadRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                                <TouchableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => upd({ deadlineDays: Math.max(0, d.deadlineDays - 1) })}>
+                                                <PressableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => upd({ deadlineDays: Math.max(0, d.deadlineDays - 1) })}>
                                                     <Feather name="minus" size={18} color={colors.brand} />
-                                                </TouchableOpacity>
+                                                </PressableOpacity>
                                                 <View style={s.leadCenter}>
                                                     <Text style={[s.leadVal, { color: colors.textPrimary }]}>{d.deadlineDays}</Text>
                                                     <Text style={[s.leadSub, { color: colors.textFaint }]}>days before</Text>
                                                 </View>
-                                                <TouchableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => {
+                                                <PressableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => {
                                                     const deadlineDays = d.leadEnabled ? Math.min(d.leadDays, d.deadlineDays + 1) : d.deadlineDays + 1;
                                                     const sameDayViolation = d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
                                                     upd({ deadlineDays, ...(sameDayViolation ? { deadlineTime: d.leadTime } : {}) });
                                                 }}>
                                                     <Feather name="plus" size={18} color={colors.brand} />
-                                                </TouchableOpacity>
+                                                </PressableOpacity>
                                             </View>
                                             <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                                            <TouchableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                                            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                                 onPress={() => upd({ showDeadlineTimePicker: !d.showDeadlineTimePicker, showLeadTimePicker: false, showStartDatePicker: false, showFreqPicker: false, showTZPicker: false })}>
                                                 <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
                                                 <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{d.deadlineTime}</Text>
                                                 <Feather name={d.showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                            </TouchableOpacity>
+                                            </PressableOpacity>
                                         </View>
                                     )}
                                     {d.deadlineEnabled && d.showDeadlineTimePicker && (
@@ -1640,18 +1167,18 @@ const EditScheduleScreen = () => {
 
                         <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>Max Attendees</Text>
                         <View style={s.boolRow}>
-                            <TouchableOpacity
+                            <PressableOpacity
                                 style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.maxAttendeesMode === "unlimited" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => upd({ maxAttendeesMode: "unlimited", maxAttendeesInput: "" })}
                             >
                                 <Text style={[s.boolBtnText, { color: colors.textMuted }, d.maxAttendeesMode === "unlimited" && { color: colors.brand }]}>Unlimited</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
+                            </PressableOpacity>
+                            <PressableOpacity
                                 style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.maxAttendeesMode === "limited" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => upd({ maxAttendeesMode: "limited" })}
                             >
                                 <Text style={[s.boolBtnText, { color: colors.textMuted }, d.maxAttendeesMode === "limited" && { color: colors.brand }]}>Limited</Text>
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
                         {d.maxAttendeesMode === "limited" && (() => {
                             const maxAttendeesError = getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput);
@@ -1751,24 +1278,24 @@ const EditScheduleScreen = () => {
                                             value={item.max}
                                             onChangeText={v => upd({ bringItems: d.bringItems.map(i => i.key === item.key ? { ...i, max: v.replace(/[^0-9]/g, "") } : i) })}
                                         />
-                                        <TouchableOpacity
+                                        <PressableOpacity
                                             onPress={() => upd({ bringItems: d.bringItems.filter(i => i.key !== item.key) })}
                                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                             style={{ marginLeft: 10 }}
                                         >
                                             <Feather name="trash-2" size={16} color="#9CA3AF" />
-                                        </TouchableOpacity>
+                                        </PressableOpacity>
                                     </View>
                                 ))}
                                 {getBringItemsError(d.bringItems) && <Text style={s.errorText}>{getBringItemsError(d.bringItems)}</Text>}
                                 {d.bringItems.length < 20 && (
-                                    <TouchableOpacity
+                                    <PressableOpacity
                                         onPress={() => upd({ bringItems: [...d.bringItems, { key: newBringItemKey(), name: "", max: "" }] })}
                                         style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8 }}
                                     >
                                         <Feather name="plus-circle" size={16} color="#4A90E2" />
                                         <Text style={{ color: "#4A90E2", fontWeight: "700", fontSize: 14 }}>Add item to bring</Text>
-                                    </TouchableOpacity>
+                                    </PressableOpacity>
                                 )}
 
                                 <View style={[s.inputRow, { marginTop: 8, marginBottom: 0, justifyContent: "space-between" }]}>
@@ -1797,7 +1324,7 @@ const EditScheduleScreen = () => {
                                         </View>
                                     </View>
                                 ) : (
-                                    <TouchableOpacity
+                                    <PressableOpacity
                                         style={[s.inputRow, { marginBottom: 0, justifyContent: "space-between" }]}
                                         onPress={() => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId! } })}
                                         activeOpacity={0.7}
@@ -1809,7 +1336,7 @@ const EditScheduleScreen = () => {
                                             <Text style={s.premiumLockText}>Rank members and give each group an RSVP head start.</Text>
                                         </View>
                                         <Feather name="chevron-right" size={20} color="#9CA3AF" />
-                                    </TouchableOpacity>
+                                    </PressableOpacity>
                                 )}
 
                                 <Text style={s.fieldLabel}>RSVP Questions</Text>
@@ -1825,7 +1352,7 @@ const EditScheduleScreen = () => {
                                         </View>
                                     </View>
                                 ) : (
-                                    <TouchableOpacity
+                                    <PressableOpacity
                                         style={[s.inputRow, { marginBottom: 0, justifyContent: "space-between" }]}
                                         onPress={() => router.push({ pathname: "/group-questions/[id]", params: { id: id!, scheduleId: scheduleId! } })}
                                         activeOpacity={0.7}
@@ -1839,7 +1366,7 @@ const EditScheduleScreen = () => {
                                             <Text style={s.premiumLockText}>Collect answers like dietary needs or skill level.</Text>
                                         </View>
                                         <Feather name="chevron-right" size={20} color="#9CA3AF" />
-                                    </TouchableOpacity>
+                                    </PressableOpacity>
                                 )}
                             </>
                         )}
@@ -1867,17 +1394,17 @@ const EditScheduleScreen = () => {
 
                 <View style={[s.screenFooter, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
                     {!isNew && (
-                        <TouchableOpacity style={[s.deleteBtn, { backgroundColor: deleteChipBg, borderColor: deleteChipBorder }]} onPress={handleDelete} disabled={isDeleting}>
+                        <PressableOpacity style={[s.deleteBtn, { backgroundColor: deleteChipBg, borderColor: deleteChipBorder }]} onPress={handleDelete} disabled={isDeleting}>
                             {isDeleting
                                 ? <ActivityIndicator color={colors.danger} size="small" />
                                 : <Feather name="trash-2" size={18} color={colors.danger} />
                             }
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     )}
                     {!hasChanged && isScheduleValid() && (
                         <Text style={[s.noChangeHint, { color: colors.textFaint }]}>No changes yet</Text>
                     )}
-                    <TouchableOpacity
+                    <PressableOpacity
                         style={[s.primaryBtn, { backgroundColor: colors.brand }, !saveEnabled && { backgroundColor: primaryDisabledBg }]}
                         onPress={handleSave}
                         disabled={!saveEnabled}
@@ -1886,7 +1413,7 @@ const EditScheduleScreen = () => {
                             ? <ActivityIndicator color="#fff" size="small" />
                             : <><Text style={s.primaryBtnText}>{isNew ? "Create Schedule" : "Save Changes"}</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>
                         }
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
             </View>
         </SafeAreaView>
@@ -1925,8 +1452,6 @@ const s = StyleSheet.create({
     toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     toggleRowLabelWrap: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, marginRight: 12 },
     toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151" },
-    switchTrack: { width: 44, height: 26, borderRadius: 13, padding: 2, justifyContent: "center" },
-    switchThumb: { position: "absolute", width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.25, shadowRadius: 2, elevation: 2 },
     leadRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
     stepperBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
     leadCenter: { alignItems: "center", minWidth: 60 },

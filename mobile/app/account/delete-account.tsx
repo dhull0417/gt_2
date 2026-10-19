@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, Alert, ActivityIndicator, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
@@ -66,7 +67,7 @@ const DeleteAccountScreen = () => {
                     </Text>
                 </View>
 
-                <TouchableOpacity
+                <PressableOpacity
                     onPress={handleDeleteAccount}
                     disabled={deleteLoading}
                     style={[
@@ -78,7 +79,7 @@ const DeleteAccountScreen = () => {
                     {deleteLoading
                         ? <ActivityIndicator size="small" color={colors.danger} />
                         : <Text style={[styles.deleteText, { color: colors.danger }]}>Delete Account</Text>}
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
         </SafeAreaView>
     );

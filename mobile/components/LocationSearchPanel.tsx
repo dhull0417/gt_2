@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AppState, View, Text, TextInput, TouchableOpacity, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
+import { AppState, View, Text, TextInput, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
 import * as Location from 'expo-location';
@@ -174,17 +175,17 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
   return (
     <View style={{ flex: 1 }}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={onCancel} style={styles.backButton} activeOpacity={0.7}>
+        <PressableOpacity accessibilityLabel="Go back" onPress={onCancel} style={styles.backButton} activeOpacity={0.7}>
           <Feather name="arrow-left" size={22} color={colors.textSecondary} />
-        </TouchableOpacity>
+        </PressableOpacity>
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Set Location</Text>
-        <TouchableOpacity
+        <PressableOpacity
           onPress={() => onDone(resolvedPlace ? buildDisplayText(resolvedPlace, text) : text, resolvedPlace)}
           style={styles.doneButton}
           activeOpacity={0.7}
         >
             <Text style={[styles.doneText, { color: colors.brand }]}>Done</Text>
-        </TouchableOpacity>
+        </PressableOpacity>
       </View>
 
       <View style={[styles.inputBox, { borderBottomColor: colors.border }]}>
@@ -210,13 +211,13 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
         keyExtractor={item => item.placeId}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
-          <TouchableOpacity style={[styles.row, { borderBottomColor: colors.border }]} onPress={() => handleSelectSuggestion(item)} activeOpacity={0.6}>
+          <PressableOpacity style={[styles.row, { borderBottomColor: colors.border }]} onPress={() => handleSelectSuggestion(item)} activeOpacity={0.6}>
             <Feather name="map-pin" size={16} color={colors.textFaint} style={{ marginRight: 12 }} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.mainText, { color: colors.textPrimary }]} numberOfLines={1}>{item.mainText}</Text>
               {!!item.secondaryText && <Text style={[styles.secondaryText, { color: colors.textMuted }]} numberOfLines={1}>{item.secondaryText}</Text>}
             </View>
-          </TouchableOpacity>
+          </PressableOpacity>
         )}
         ListEmptyComponent={
           isLoading ? (
@@ -236,12 +237,12 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
             <Text style={[styles.locationTitle, { color: colors.textPrimary }]}>Use Your Location?</Text>
             <Text style={[styles.locationBullet, { color: colors.textMuted }]}>•  See nearby places first</Text>
             <Text style={[styles.locationBullet, { color: colors.textMuted }]}>•  Skip typing your city or area</Text>
-            <TouchableOpacity onPress={handleEnableLocation} style={[styles.locationEnableButton, { backgroundColor: colors.brand }]} activeOpacity={0.8}>
+            <PressableOpacity onPress={handleEnableLocation} style={[styles.locationEnableButton, { backgroundColor: colors.brand }]} activeOpacity={0.8}>
               <Text style={styles.locationEnableText}>Enable Location</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowLocationPrompt(false)} activeOpacity={0.7}>
+            </PressableOpacity>
+            <PressableOpacity onPress={() => setShowLocationPrompt(false)} activeOpacity={0.7}>
               <Text style={[styles.locationDismissText, { color: colors.textFaint }]}>Not Now</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
           </View>
         </View>
       )}

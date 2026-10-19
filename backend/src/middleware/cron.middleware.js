@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import asyncHandler from "express-async-handler";
 
 export const protectCron = asyncHandler(async (req, res, next) => {
@@ -13,7 +14,9 @@ export const protectCron = asyncHandler(async (req, res, next) => {
   const token = authHeader && authHeader.split(" ")[1];
 
 
-  if (token === cronSecret) {
+  const given = Buffer.from(token ?? "");
+  const expected = Buffer.from(cronSecret);
+  if (given.length === expected.length && crypto.timingSafeEqual(given, expected)) {
     next();
   } else {
     console.warn("Unauthorized cron job attempt detected.");

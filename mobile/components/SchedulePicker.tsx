@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, FlatList, Alert } from 'react-native';
+import { View, Text, StyleSheet, Modal, FlatList, Alert } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { Schedule } from '@/utils/api';
 import { useThemeColors } from '@/contexts/AppearanceContext';
@@ -68,7 +69,7 @@ useEffect(() => {
             {/* Frequency Selector */}
             <View style={styles.row}>
                 {(['daily', 'weekly', 'biweekly', 'monthly'] as const).map((freq) => (
-                    <TouchableOpacity
+                    <PressableOpacity
                         key={freq}
                         style={[styles.freqButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }, frequency === freq && { backgroundColor: colors.brand, borderColor: colors.brand }]}
                         onPress={() => setFrequency(freq)}
@@ -76,7 +77,7 @@ useEffect(() => {
                         <Text style={[styles.freqText, { color: colors.textSecondary }, frequency === freq && styles.textActive]}>
                             {freq.charAt(0).toUpperCase() + freq.slice(1)}
                         </Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 ))}
             </View>
 
@@ -84,7 +85,7 @@ useEffect(() => {
             {(frequency === 'weekly' || frequency === 'biweekly') && (
                 <View style={styles.daysContainer}>
                     {daysOfWeek.map((day) => (
-                        <TouchableOpacity
+                        <PressableOpacity
                             key={day.value}
                             style={[styles.dayButton, { backgroundColor: colors.surface, borderColor: colors.border }, selectedDays.includes(day.value) && { backgroundColor: colors.brand, borderColor: colors.brand }]}
                             onPress={() => toggleDay(day.value)}
@@ -92,7 +93,7 @@ useEffect(() => {
                             <Text style={[styles.dayText, { color: colors.textSecondary }, selectedDays.includes(day.value) && styles.textActive]}>
                                 {day.label.slice(0, 3)}
                             </Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     ))}
                 </View>
             )}
@@ -101,13 +102,13 @@ useEffect(() => {
             {frequency === 'monthly' && (
                 <View style={styles.calendarGrid}>
                     {Array.from({ length: 31 }, (_, i) => i + 1).map((date) => (
-                        <TouchableOpacity
+                        <PressableOpacity
                             key={date}
                             style={[styles.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }, selectedDates.includes(date) && { backgroundColor: colors.brand, borderColor: colors.brand }]}
                             onPress={() => toggleDate(date)}
                         >
                             <Text style={[styles.dateText, { color: colors.textSecondary }, selectedDates.includes(date) && styles.textActive]}>{date}</Text>
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     ))}
                 </View>
             )}

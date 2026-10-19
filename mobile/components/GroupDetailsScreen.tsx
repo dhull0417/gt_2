@@ -6,11 +6,11 @@ import {
   Keyboard,
   Alert,
   StyleSheet,
-  TouchableOpacity,
   Modal,
   Pressable,
   Image,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState, useMemo } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -157,9 +157,9 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
       <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
         <View className="flex-row items-center flex-1">
           {/* Always back to chat — its only meaningful parent, regardless of nav stack */}
-          <TouchableOpacity onPress={handleOpenChat} className="mr-2 p-1">
+          <PressableOpacity accessibilityLabel="Go back" onPress={handleOpenChat} className="mr-2 p-1">
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
-          </TouchableOpacity>
+          </PressableOpacity>
           <View style={{ marginRight: 10 }}>
             <GroupAvatar name={headerName} imageUrl={groupDetails?.image || fallbackGroup?.image} size={36} borderRadius={9} />
           </View>
@@ -174,13 +174,13 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
           )}
 
           {canManageGroup && (
-            <TouchableOpacity
+            <PressableOpacity accessibilityLabel="Settings"
               onPress={handleSettingsPress}
               style={[styles.settingsButton, { backgroundColor: colors.backgroundAlt, borderColor: colors.border }]}
               activeOpacity={0.7}
             >
               <Feather name="settings" size={22} color={colors.textSecondary} />
-            </TouchableOpacity>
+            </PressableOpacity>
           )}
         </View>
       </View>
@@ -232,7 +232,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
                 <Text style={[dmStyles.name, { color: colors.textPrimary }]}>
                   {getUserDisplayName(dmTargetMember)}
                 </Text>
-                <TouchableOpacity
+                <PressableOpacity
                   style={[dmStyles.dmBtn, { backgroundColor: colors.brand }]}
                   onPress={handleSendDM}
                   disabled={isCreatingDM}
@@ -242,7 +242,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
                     ? <ActivityIndicator color="#fff" size="small" />
                     : <Text style={dmStyles.dmBtnText}>Send DM</Text>
                   }
-                </TouchableOpacity>
+                </PressableOpacity>
               </>
             )}
           </Pressable>

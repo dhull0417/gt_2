@@ -7,11 +7,11 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  TouchableOpacity,
   SectionList,
   Modal,
   Pressable,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useContentTopInset } from '@/hooks/useContentTopInset';
@@ -33,6 +33,11 @@ import { useMessages } from '@/hooks/useMessages';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { ChatMessageBubble, type BubbleLayout } from '@/components/ChatMessageBubble';
 import { ChatMessageInput } from '@/components/ChatMessageInput';
+import { ChatSystemMessage } from '@/components/ChatSystemMessage';
+import { ChatPinnedBanner, ChatPinnedModal } from '@/components/ChatPinnedMessages';
+import { usePinnedMessages } from '@/hooks/usePinnedMessages';
+import { computeGrouping, type BubbleGrouping } from '@/utils/chatGrouping';
+import type { MentionMember } from '@/utils/chatMentions';
 import { ChatDayBubble } from '@/components/ChatDayBubble';
 import { ChatTypingBubble } from '@/components/ChatTypingBubble';
 import { ChatScrollToBottomButton } from '@/components/ChatScrollToBottomButton';
@@ -47,7 +52,7 @@ import {
 } from '@/hooks/usePushNotifications';
 import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
 import type { ChatMessage, PendingImage } from '@/types/chat';
-import EmojiPicker from 'rn-emoji-keyboard';
+import { EmojiPickerSheet } from '@/components/EmojiPickerSheet';
 import * as Clipboard from 'expo-clipboard';
 import { isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor } from '@/utils/meetupStatus';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
@@ -188,9 +193,13 @@ const GroupChatScreen = () => {
   const senderId = currentUser?.clerkId ?? '';
   const senderName = currentUser ? getUserDisplayName(currentUser) : '';
 
-  const { messages, loading, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage } =
-    useMessages(id ?? '');
-  const { typingNames, handleTyping } = useTypingIndicator(id ?? '', senderId, senderName);
+  const {
+    messages, loading, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage,
+    fetchOlder, loadingOlder, reachedStart,
+  } = useMessages(id ?? '');
+  const { typingNames, handleTyping, clearTypingFor } = useTypingIndicator(id ?? '', senderId, senderName);
+  const { pins, pinMessage, unpinMessage } = usePinnedMessages(id ?? '');
+  const [pinnedModalVisible, setPinnedModalVisible] = useState(false);
 
   const { data: allMeetups } = useGetMeetups();
   const nextMeetup = useMemo<Meetup | null>(() => {
@@ -276,6 +285,25 @@ const GroupChatScreen = () => {
     return map;
   }, [messages, senderId, senderName]);
 
+  // Group members who can be @mentioned (everyone but me). Not offered in a one-on-one DM.
+  const mentionMembers = useMemo<MentionMember[] | undefined>(() => {
+    if (isDM) return undefined;
+    const members = (groupDetails as any)?.members as User[] | undefined;
+    if (!members) return undefined;
+    return members
+      .filter((m) => !!m.clerkId && m.clerkId !== senderId)
+      .map((m) => ({ clerkId: m.clerkId, name: getUserDisplayName(m) }));
+  }, [groupDetails, isDM, senderId]);
+
+  // Clerk id -> name for rendering "@Name" mentions; members first, then anyone seen in the thread.
+  const mentionNames = useMemo(() => {
+    const out: Record<string, string> = {};
+    userNameMap.forEach((name, uid) => { out[uid] = name; });
+    const members = (groupDetails as any)?.members as User[] | undefined;
+    for (const m of members ?? []) if (m.clerkId) out[m.clerkId] = getUserDisplayName(m);
+    return out;
+  }, [userNameMap, groupDetails]);
+
   const sections = useMemo<ChatDaySection[]>(() => {
     const byDay = new Map<string, ChatDaySection>();
     for (const msg of messages) {
@@ -290,9 +318,18 @@ const GroupChatScreen = () => {
     return Array.from(byDay.values());
   }, [messages]);
 
+  // Cluster info (who gets a name label / timestamp / tail) computed per day section.
+  const groupingById = useMemo(() => {
+    const all = new Map<string, BubbleGrouping>();
+    for (const s of sections) computeGrouping(s.data).forEach((v, k) => all.set(k, v));
+    return all;
+  }, [sections]);
+
   const [listHeight, setListHeight] = useState(0);
   // Gates first paint so a freshly opened chat never visibly animates down from the oldest message
   const [contentReady, setContentReady] = useState(false);
+  const contentReadyRef = useRef(false);
+  contentReadyRef.current = contentReady;
   // Snapshot of message ids visible at first reveal, so their bubbles skip the entrance
   // animation — animating a whole history's worth of bubbles in at once stalls the JS
   // thread just long enough to make the header back button feel unresponsive.
@@ -305,8 +342,13 @@ const GroupChatScreen = () => {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  // Scrolling near the top pulls in the previous page of history.
+  const fetchOlderRef = useRef(fetchOlder);
+  fetchOlderRef.current = fetchOlder;
+
   const handleListScroll = useCallback((e: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    if (contentOffset.y < 400 && contentReadyRef.current) fetchOlderRef.current();
     const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
     const nearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
     isNearBottomRef.current = nearBottom;
@@ -348,14 +390,28 @@ const GroupChatScreen = () => {
 
   // Once visibly open, new messages get the usual animated scroll-into-view —
   // but only when the user is already near the bottom; otherwise surface the FAB instead.
+  // Keyed on the *last* message (client_id stays the same when a "sending" placeholder becomes the saved
+  // row), so loading older history at the top never counts as a new message or yanks the view.
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageKey = lastMessage ? (lastMessage.client_id ?? lastMessage.id) : null;
+  const seenLastKeyRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (!contentReady) return;
+    if (lastMessageKey === seenLastKeyRef.current) return;
+    const firstReveal = seenLastKeyRef.current === undefined;
+    seenLastKeyRef.current = lastMessageKey;
+    if (firstReveal) return;
     if (isNearBottomRef.current) {
       scrollToBottom(true);
     } else {
       setUnreadCount((c) => c + 1);
     }
-  }, [messages.length, contentReady, scrollToBottom]);
+  }, [lastMessageKey, contentReady, scrollToBottom]);
+
+  // Someone's message arriving means they've stopped typing.
+  useEffect(() => {
+    if (lastMessage && lastMessage.sender_id !== senderId) clearTypingFor(lastMessage.sender_id);
+  }, [lastMessageKey]);
 
   // Re-anchor on list height change — the real signal a keyboard-driven resize has landed,
   // unlike guessing a delay off the keyboard event (which fires before resize finishes).
@@ -366,7 +422,7 @@ const GroupChatScreen = () => {
   const isOwnSelected = selectedMessage?.sender_id === senderId;
   const isDeletedSelected = !!selectedMessage?.deleted_at;
 
-  const handleSend = async (text: string, image?: PendingImage) => {
+  const handleSend = async (text: string, image?: PendingImage, mentions?: string[]) => {
     if (!id) return;
     const currentReply = replyingTo;
     setReplyingTo(null);
@@ -382,7 +438,8 @@ const GroupChatScreen = () => {
         currentReply
           ? { id: currentReply.id, content: currentReply.content, senderName: currentReply.sender_name }
           : undefined,
-        image
+        image,
+        mentions
       );
       const notifyText = text || '📷 Photo';
       api.patch(`/api/groups/${id}/last-message`, { text: notifyText, senderName }).catch(() => {});
@@ -432,10 +489,26 @@ const GroupChatScreen = () => {
         api.post(`/api/groups/${id}/chat-reaction`, {
           emoji: result.emoji,
           senderName,
+          // Lets the server notify just the message's author instead of the whole group.
+          authorId: result.senderId || undefined,
         }).catch(() => {});
       }
     } catch (err: any) {
       Alert.alert('Reaction failed', err?.message ?? JSON.stringify(err));
+    }
+  };
+
+  // Anyone can pin in a DM; in a group only owners and moderators (enforced in the app, not the database).
+  const canPin = isDM || canManageGroup;
+  const handlePinToggle = async () => {
+    if (!selectedMessage) return;
+    const target = selectedMessage;
+    closeActionPanel();
+    try {
+      if (target.pinned_at) await unpinMessage(target, senderId);
+      else await pinMessage(target, senderId);
+    } catch (err: any) {
+      Alert.alert('Pin failed', err?.message ?? 'Could not update the pinned message.');
     }
   };
 
@@ -510,9 +583,9 @@ const GroupChatScreen = () => {
         onLayout={(e) => setChatHeaderHeight(e.nativeEvent.layout.height)}
       >
         <View className="flex-row items-center flex-1">
-          <TouchableOpacity onPress={handleBack} className="mr-2 p-1">
+          <PressableOpacity accessibilityLabel="Go back" onPress={handleBack} className="mr-2 p-1">
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
-          </TouchableOpacity>
+          </PressableOpacity>
           <View style={{ marginRight: 10 }}>
             <GroupAvatar name={headerName} imageUrl={effectiveGroup?.image} size={36} borderRadius={9} />
           </View>
@@ -522,11 +595,19 @@ const GroupChatScreen = () => {
         </View>
 
         <View className="flex-row items-center" style={{ gap: 8 }}>
+          <PressableOpacity
+            accessibilityLabel="Search chat"
+            onPress={() => id && router.push({ pathname: '/group-chat/search/[id]', params: { id } } as any)}
+            style={[styles.iconButton, detailsChip]}
+          >
+            <Feather name="search" size={18} color={colors.brand} />
+          </PressableOpacity>
+
           {id && currentUser && (
             <GroupCalendarButton groupId={id} isDM={isDM} />
           )}
 
-          <TouchableOpacity
+          <PressableOpacity
             onPress={handleMutePress}
             style={[
               styles.iconButton,
@@ -545,16 +626,18 @@ const GroupChatScreen = () => {
                 color={isCurrentlyMuted ? "#EF4444" : "#10B981"}
               />
             )}
-          </TouchableOpacity>
+          </PressableOpacity>
 
-          <TouchableOpacity
+          <PressableOpacity
             onPress={handleOpenDetails}
             style={[styles.iconButton, detailsChip]}
           >
             <Feather name="menu" size={18} color={colors.brand} />
-          </TouchableOpacity>
+          </PressableOpacity>
         </View>
       </View>
+
+      <ChatPinnedBanner pins={pins} onPress={() => setPinnedModalVisible(true)} />
 
       <View style={{ flex: 1 }}>
         <KeyboardAvoidingView
@@ -568,10 +651,15 @@ const GroupChatScreen = () => {
               ref={sectionListRef}
               style={{ flex: 1 }}
               sections={sections}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
+              keyExtractor={(item) => item.client_id ?? item.id}
+              renderItem={({ item }) => item.kind === 'system' ? (
+                <ChatSystemMessage text={item.content} />
+              ) : (
                 <ChatMessageBubble
                   message={item}
+                  isFirst={groupingById.get(item.id)?.isFirst ?? true}
+                  isLast={groupingById.get(item.id)?.isLast ?? true}
+                  mentionNames={mentionNames}
                   isOwn={item.sender_id === senderId}
                   currentUserId={senderId}
                   isHighlighted={selectedMessage?.id === item.id}
@@ -584,6 +672,19 @@ const GroupChatScreen = () => {
                 />
               )}
               renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}
+              ListHeaderComponent={
+                loadingOlder ? (
+                  <View style={{ paddingVertical: 12 }}>
+                    <LoadingAnimation />
+                  </View>
+                ) : reachedStart && messages.length > 0 ? (
+                  <Text style={{ textAlign: 'center', color: colors.textFaint, fontSize: 12, paddingVertical: 10 }}>
+                    Start of the conversation
+                  </Text>
+                ) : null
+              }
+              // Keeps the message you were reading in place when an older page is added above it.
+              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
               stickySectionHeadersEnabled
               contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}
               ListEmptyComponent={
@@ -591,7 +692,12 @@ const GroupChatScreen = () => {
                   <Text style={{ color: colors.textFaint, fontSize: 15 }}>No messages yet. Say hello!</Text>
                 </View>
               }
-              onContentSizeChange={() => scrollToBottom(false)}
+              onContentSizeChange={() => {
+                // Follow content growth only during the initial reveal or while the user is at the
+                // bottom. Jumping down unconditionally yanked people out of history they were
+                // reading whenever an image loaded, a reaction landed, or a message arrived.
+                if (!contentReadyRef.current || isNearBottomRef.current) scrollToBottom(false);
+              }}
               onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
               onScroll={handleListScroll}
               scrollEventThrottle={16}
@@ -613,16 +719,16 @@ const GroupChatScreen = () => {
                 <Text style={[chatStyles.replyPreviewLabel, { color: colors.brand }]}>↩ {replyingTo.sender_name}</Text>
                 <Text style={[chatStyles.replyPreviewText, { color: colors.textMuted }]} numberOfLines={1}>{replyingTo.content}</Text>
               </View>
-              <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ padding: 4 }}>
+              <PressableOpacity onPress={() => setReplyingTo(null)} style={{ padding: 4 }}>
                 <Text style={{ fontSize: 16, color: colors.textFaint }}>✕</Text>
-              </TouchableOpacity>
+              </PressableOpacity>
             </View>
           )}
 
           {((nextMeetup && nextMeetupLabel) || activePolls.length > 0) && (
             <View style={[chatStyles.nextEventBarRow, { borderTopColor: colors.border }]}>
               {nextMeetup && nextMeetupLabel && (
-                <TouchableOpacity
+                <PressableOpacity
                   onPress={() => setNextMeetupModalVisible(true)}
                   style={[
                     chatStyles.nextEventBarHalf,
@@ -656,11 +762,11 @@ const GroupChatScreen = () => {
                     )
                   )}
                   {activePolls.length === 0 && <Feather name="chevron-right" size={13} color={colors.textFaint} />}
-                </TouchableOpacity>
+                </PressableOpacity>
               )}
 
               {activePolls.length > 0 && (
-                <TouchableOpacity
+                <PressableOpacity
                   onPress={handlePollBarPress}
                   style={[chatStyles.nextEventBarHalf, { backgroundColor: pollBarColor }]}
                   activeOpacity={0.7}
@@ -675,12 +781,13 @@ const GroupChatScreen = () => {
                     <Feather name="check-circle" size={15} color="#4FD1C5" />
                   )}
                   <Feather name="chevron-right" size={13} color={colors.textFaint} />
-                </TouchableOpacity>
+                </PressableOpacity>
               )}
             </View>
           )}
 
           <ChatMessageInput
+            mentionMembers={mentionMembers}
             onSend={handleSend}
             onTyping={handleTyping}
             onCreateEvent={canCreateEvent ? () => setMeetupWizardVisible(true) : undefined}
@@ -712,6 +819,9 @@ const GroupChatScreen = () => {
           onReply={handleReplyOpen}
           showCopy={!isDeletedSelected && !!selectedMessage?.content?.trim()}
           onCopy={handleCopy}
+          showPin={canPin && !isDeletedSelected && selectedMessage?.kind !== 'system'}
+          isPinned={!!selectedMessage?.pinned_at}
+          onPin={handlePinToggle}
           showEdit={isOwnSelected && !isDeletedSelected}
           onEdit={handleEditOpen}
           showDelete={isOwnSelected}
@@ -720,14 +830,20 @@ const GroupChatScreen = () => {
         />
       </Modal>
 
-      <EmojiPicker
+      <ChatPinnedModal
+        visible={pinnedModalVisible}
+        pins={pins}
+        onClose={() => setPinnedModalVisible(false)}
+        canUnpin={canPin}
+        onUnpin={(m) => {
+          unpinMessage(m, senderId).catch((err: any) => Alert.alert('Unpin failed', err?.message ?? 'Could not unpin.'));
+        }}
+      />
+
+      <EmojiPickerSheet
         open={emojiPickerVisible}
         onClose={() => setEmojiPickerVisible(false)}
         onEmojiSelected={(item) => handleReact(item.emoji)}
-        enableSearchBar
-        enableRecentlyUsed
-        defaultHeight="75%"
-        expandedHeight="90%"
       />
 
       {/* Reaction detail */}
@@ -772,12 +888,12 @@ const GroupChatScreen = () => {
               placeholderTextColor={colors.placeholder}
             />
             <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
-              <TouchableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setEditingMessage(null)}>
+              <PressableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setEditingMessage(null)}>
                 <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600' }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[chatStyles.saveBtn, { backgroundColor: colors.brand }]} onPress={handleEditSave}>
+              </PressableOpacity>
+              <PressableOpacity style={[chatStyles.saveBtn, { backgroundColor: colors.brand }]} onPress={handleEditSave}>
                 <Text style={{ fontSize: 15, color: '#fff', fontWeight: '600' }}>Save</Text>
-              </TouchableOpacity>
+              </PressableOpacity>
             </View>
           </Pressable>
         </Pressable>
@@ -811,11 +927,11 @@ const GroupChatScreen = () => {
                   opt.voters.some(v => (typeof v === 'string' ? v : v._id) === currentUser._id)
                 );
                 return (
-                  <TouchableOpacity key={poll._id} style={[chatStyles.pollSelectorRow, { borderBottomColor: colors.border }]} onPress={() => handleSelectActivePoll(poll._id)}>
+                  <PressableOpacity key={poll._id} style={[chatStyles.pollSelectorRow, { borderBottomColor: colors.border }]} onPress={() => handleSelectActivePoll(poll._id)}>
                     <Text style={[chatStyles.pollSelectorPrompt, { color: colors.textPrimary }]} numberOfLines={2}>{poll.prompt}</Text>
                     {!hasVoted && <View style={chatStyles.pollSelectorDot} />}
                     <Feather name="chevron-right" size={16} color={colors.textFaint} />
-                  </TouchableOpacity>
+                  </PressableOpacity>
                 );
               })}
             </ScrollView>
@@ -858,7 +974,7 @@ const GroupChatScreen = () => {
         <Pressable style={chatStyles.overlay} onPress={() => setMuteOptionsVisible(false)}>
           <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
             <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 16 }}>Mute Notifications</Text>
-            <TouchableOpacity
+            <PressableOpacity
               style={[muteStyles.option, mutedUntilNextChip]}
               onPress={() => handleMuteOptionPress('untilNext')}
               activeOpacity={0.7}
@@ -871,8 +987,8 @@ const GroupChatScreen = () => {
                 <Text style={[muteStyles.optionSubtitle, { color: colors.textFaint }]}>We'll turn notifications back on for you</Text>
               </View>
               <Feather name="chevron-right" size={18} color={colors.textFaint} />
-            </TouchableOpacity>
-            <TouchableOpacity
+            </PressableOpacity>
+            <PressableOpacity
               style={[muteStyles.option, mutedChip]}
               onPress={() => handleMuteOptionPress('indefinite')}
               activeOpacity={0.7}
@@ -885,10 +1001,10 @@ const GroupChatScreen = () => {
                 <Text style={[muteStyles.optionSubtitle, { color: colors.textFaint }]}>Stay silent until you turn it back on</Text>
               </View>
               <Feather name="chevron-right" size={18} color={colors.textFaint} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setMuteOptionsVisible(false)}>
+            </PressableOpacity>
+            <PressableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setMuteOptionsVisible(false)}>
               <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600', textAlign: 'center' }}>Cancel</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
           </Pressable>
         </Pressable>
       </Modal>

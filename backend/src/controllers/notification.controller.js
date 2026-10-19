@@ -5,6 +5,7 @@ import Group from "../models/group.model.js";
 import Meetup from "../models/meetup.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
+import { postSystemMessage } from "../utils/systemMessage.js";
 
 // Get all notifications for the logged-in user
 export const getNotifications = asyncHandler(async (req, res) => {
@@ -82,6 +83,8 @@ export const acceptInvite = asyncHandler(async (req, res) => {
         group: group._id,
         status: 'read', // Mark as read since it's just an info notification
     });
+
+    await postSystemMessage(group._id, `${user.firstName} joined the group`);
 
     res.status(200).json({ message: "Invitation accepted. You have been added to the group." });
 });

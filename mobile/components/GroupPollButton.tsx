@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import PollListModal from '@/components/PollListModal';
 import { useGetPolls } from '@/hooks/useGetPolls';
@@ -54,7 +55,7 @@ export const GroupPollButton = ({ groupId, currentUserId, canManage, isDM }: Gro
 
   return (
     <>
-      <TouchableOpacity
+      <PressableOpacity
         ref={pollButtonRef}
         onLayout={handlePollButtonLayout}
         onPress={handlePollButtonPress}
@@ -62,7 +63,7 @@ export const GroupPollButton = ({ groupId, currentUserId, canManage, isDM }: Gro
       >
         <Feather name="bar-chart-2" size={18} color={colors.brand} />
         {hasUnansweredPoll && <View style={[styles.pollUnansweredDot, { borderColor: colors.surface }]} />}
-      </TouchableOpacity>
+      </PressableOpacity>
 
       {tooltipVisible && pollTooltipAnchor && (
         <View

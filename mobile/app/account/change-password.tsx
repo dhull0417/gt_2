@@ -1,4 +1,5 @@
-import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -67,9 +68,9 @@ const ChangePasswordScreen = () => {
                                 textContentType="oneTimeCode"
                                 style={[styles.textInput, { color: colors.textSecondary }]}
                             />
-                            <TouchableOpacity onPress={() => setCurrentVisible(!isCurrentVisible)}>
+                            <PressableOpacity accessibilityLabel={isCurrentVisible ? 'Hide password' : 'Show password'} onPress={() => setCurrentVisible(!isCurrentVisible)}>
                                 <Feather name={isCurrentVisible ? 'eye-off' : 'eye'} size={20} color={colors.textFaint} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
                     </View>
                     <View style={{ marginBottom: 20 }}>
@@ -84,9 +85,9 @@ const ChangePasswordScreen = () => {
                                 textContentType="oneTimeCode"
                                 style={[styles.textInput, { color: colors.textSecondary }]}
                             />
-                            <TouchableOpacity onPress={() => setNewVisible(!isNewVisible)}>
+                            <PressableOpacity accessibilityLabel={isNewVisible ? 'Hide password' : 'Show password'} onPress={() => setNewVisible(!isNewVisible)}>
                                 <Feather name={isNewVisible ? 'eye-off' : 'eye'} size={20} color={colors.textFaint} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
                     </View>
                     <View style={{ marginBottom: 28 }}>
@@ -101,12 +102,12 @@ const ChangePasswordScreen = () => {
                                 textContentType="oneTimeCode"
                                 style={[styles.textInput, { color: colors.textSecondary }]}
                             />
-                            <TouchableOpacity onPress={() => setConfirmVisible(!isConfirmVisible)}>
+                            <PressableOpacity accessibilityLabel={isConfirmVisible ? 'Hide password' : 'Show password'} onPress={() => setConfirmVisible(!isConfirmVisible)}>
                                 <Feather name={isConfirmVisible ? 'eye-off' : 'eye'} size={20} color={colors.textFaint} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
                     </View>
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={handleSave}
                         disabled={isPending}
                         style={[styles.saveBtn, { backgroundColor: colors.brand }]}
@@ -115,7 +116,7 @@ const ChangePasswordScreen = () => {
                         {isPending
                             ? <ActivityIndicator color="white" />
                             : <Text style={styles.saveBtnText}>Save New Password</Text>}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>

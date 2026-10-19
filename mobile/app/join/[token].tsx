@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -64,9 +65,9 @@ const JoinGroupScreen = () => {
                     <Feather name="users" size={48} color={colors.brand} style={styles.icon} />
                     <Text style={[styles.title, { color: colors.textPrimary }]}>You're invited!</Text>
                     <Text style={[styles.subtitle, { color: colors.textMuted }]}>Sign in to GroupThat to join this group.</Text>
-                    <TouchableOpacity style={[styles.button, { backgroundColor: colors.brand }]} onPress={handleSignIn}>
+                    <PressableOpacity style={[styles.button, { backgroundColor: colors.brand }]} onPress={handleSignIn}>
                         <Text style={styles.buttonText}>Sign In / Sign Up</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
             </SafeAreaView>
         );
@@ -92,9 +93,9 @@ const JoinGroupScreen = () => {
                     <Feather name="alert-circle" size={48} color={colors.danger} style={styles.icon} />
                     <Text style={[styles.title, { color: colors.textPrimary }]}>Invite Invalid</Text>
                     <Text style={[styles.subtitle, { color: colors.textMuted }]}>{errorMessage}</Text>
-                    <TouchableOpacity style={[styles.button, { backgroundColor: colors.brand }]} onPress={() => router.replace('/(tabs)')}>
+                    <PressableOpacity style={[styles.button, { backgroundColor: colors.brand }]} onPress={() => router.replace('/(tabs)')}>
                         <Text style={styles.buttonText}>Go to Groups</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
             </SafeAreaView>
         );
@@ -113,9 +114,9 @@ const JoinGroupScreen = () => {
                         ? `You're already in "${groupName}".`
                         : `Welcome to "${groupName}"!`}
                 </Text>
-                <TouchableOpacity style={[styles.button, { backgroundColor: colors.brand }]} onPress={goToMeetups}>
+                <PressableOpacity style={[styles.button, { backgroundColor: colors.brand }]} onPress={goToMeetups}>
                     <Text style={styles.buttonText}>See Upcoming Meetups</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
         </SafeAreaView>
     );

@@ -1,4 +1,5 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Platform } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, StyleSheet, Modal, Platform } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
@@ -64,16 +65,16 @@ const ScheduleMeetupScreen = () => {
             <ScrollView style={{ padding: 24 }} keyboardShouldPersistTaps="handled">
                  <View style={{ marginBottom: 24 }}>
                     <Text style={[styles.title, { color: colors.textSecondary }]}>Select Date</Text>
-                    <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.dateButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
+                    <PressableOpacity onPress={() => setShowDatePicker(true)} style={[styles.dateButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
                         <Text style={[styles.dateButtonText, { color: colors.brand }]}>{date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
 
                 <View style={{ marginBottom: 24 }}>
                     <Text style={[styles.title, { color: colors.textSecondary }]}>Select Time</Text>
-                    <TouchableOpacity onPress={() => setShowTimePicker(true)} style={[styles.dateButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
+                    <PressableOpacity onPress={() => setShowTimePicker(true)} style={[styles.dateButton, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
                         <Text style={[styles.dateButtonText, { color: colors.brand }]}>{meetTime}</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
 
                 <View style={styles.timezoneContainer}>
@@ -91,13 +92,13 @@ const ScheduleMeetupScreen = () => {
                     </View>
                 </View>
 
-                <TouchableOpacity
+                <PressableOpacity
                     onPress={handleScheduleMeetup}
                     disabled={isPending}
                     style={[styles.saveButton, { backgroundColor: colors.accentTeal }, isPending && { backgroundColor: colors.accentTeal, opacity: 0.7 }]}
                 >
                     <Text style={styles.saveButtonText}>{isPending ? "Scheduling..." : "Schedule Meetup"}</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
             </ScrollView>
 
             {showDatePicker && (
@@ -117,9 +118,9 @@ const ScheduleMeetupScreen = () => {
                                     onChange={onDateChange}
                                     textColor={colors.textPrimary}
                                 />
-                                <TouchableOpacity onPress={confirmDate} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
+                                <PressableOpacity onPress={confirmDate} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
                                     <Text style={styles.doneButtonText}>Done</Text>
-                                </TouchableOpacity>
+                                </PressableOpacity>
                             </View>
                         </View>
                     </Modal>

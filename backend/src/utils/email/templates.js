@@ -4,7 +4,8 @@
 //
 // ctx: { firstName, organizerName?, groupName?, price, urls: { meetups, open, createGroup, shareInvite, premium } }
 
-export const PRICE_TEXT = "$4.99 per month or $39.99 per year";
+// Shown in upgrade emails. Override with EMAIL_PRICE_TEXT when store prices change (no deploy of copy needed).
+export const PRICE_TEXT = process.env.EMAIL_PRICE_TEXT?.trim() || "$4.99 per month or $39.99 per year";
 
 const T = {
   U1: (c) => ({

@@ -103,10 +103,15 @@ export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fr
 
   // MONTHLY
   if (typeof dayOrRule === 'number' && frequency === 'monthly') {
-    const targetDate = dayOrRule; 
-    meetupDate = meetupDate.set({ day: targetDate });
-    if (meetupDate <= now || meetupDate.invalid) {
-      meetupDate = meetupDate.plus({ months: 1 }).set({ day: targetDate });
+    const targetDate = dayOrRule;
+    // A date a month doesn't have (the 29th-31st) lands on that month's last day instead of
+    // overflowing into the next month.
+    const clampToMonth = (dt) => dt.set({ day: Math.min(targetDate, dt.daysInMonth) });
+    meetupDate = clampToMonth(meetupDate);
+    if (meetupDate <= now) {
+      // Step from the 1st so the month is never ambiguous, then re-apply the time of day.
+      const nextMonth = meetupDate.startOf('month').plus({ months: 1 }).set({ hour: hours, minute: minutes });
+      meetupDate = clampToMonth(nextMonth);
     }
     return meetupDate.toJSDate();
   }

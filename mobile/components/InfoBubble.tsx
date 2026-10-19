@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Modal, Pressable, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Modal, Pressable, View, Text, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 
@@ -19,22 +20,22 @@ export default function InfoBubble({ title, description, iconSize = 14, iconColo
 
     return (
         <>
-            <TouchableOpacity
+            <PressableOpacity
                 onPress={() => setVisible(true)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 style={[styles.trigger, { backgroundColor: colors.backgroundAlt }, style]}
             >
                 <Feather name="info" size={iconSize} color={resolvedIconColor} />
-            </TouchableOpacity>
+            </PressableOpacity>
 
             <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
                 <Pressable style={styles.backdrop} onPress={() => setVisible(false)}>
                     <Pressable style={[styles.card, { backgroundColor: colors.surface }]} onPress={() => {}}>
                         <View style={styles.header}>
                             <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
-                            <TouchableOpacity onPress={() => setVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                            <PressableOpacity accessibilityLabel="Close" onPress={() => setVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                                 <Feather name="x" size={18} color={colors.textFaint} />
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
                         <Text style={[styles.description, { color: colors.textMuted }]}>{description}</Text>
                     </Pressable>

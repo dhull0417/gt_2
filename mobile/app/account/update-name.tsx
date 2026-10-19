@@ -1,4 +1,5 @@
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -65,7 +66,7 @@ const UpdateNameScreen = () => {
                             style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textSecondary }]}
                         />
                     </View>
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={handleSave}
                         disabled={isPending}
                         style={[styles.saveBtn, { backgroundColor: colors.brand }]}
@@ -74,7 +75,7 @@ const UpdateNameScreen = () => {
                         {isPending
                             ? <ActivityIndicator color="white" />
                             : <Text style={styles.saveBtnText}>Save Changes</Text>}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>

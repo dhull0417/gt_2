@@ -1,4 +1,5 @@
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
+import { View, Text, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
@@ -160,7 +161,7 @@ const ProfileSetupScreen = () => {
 
                     {!isAppleUser && <View className="mb-6" />}
 
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={handleSaveProfile}
                         disabled={isSaving}
                         className="w-full py-4 rounded-lg items-center shadow"
@@ -171,7 +172,7 @@ const ProfileSetupScreen = () => {
                         ) : (
                             <Text className="text-white text-lg font-bold">Save & Continue</Text>
                         )}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
                 </ScrollView>
             </KeyboardAvoidingView>

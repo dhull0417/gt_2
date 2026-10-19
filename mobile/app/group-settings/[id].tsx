@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   ScrollView,
   StyleSheet,
   Alert,
@@ -17,6 +16,7 @@ import {
   Animated,
   Easing
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { Feather } from '@expo/vector-icons';
@@ -520,13 +520,13 @@ const GroupSettings = () => {
     >
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         {view === 'main' ? (
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+          <PressableOpacity accessibilityLabel="Close" onPress={() => router.back()} style={styles.closeButton}>
             <Feather name="x" size={28} color={colors.textSecondary} />
-          </TouchableOpacity>
+          </PressableOpacity>
         ) : (
-          <TouchableOpacity onPress={() => setView('main')} style={styles.closeButton}>
+          <PressableOpacity accessibilityLabel="Go back" onPress={() => setView('main')} style={styles.closeButton}>
             <Feather name="arrow-left" size={26} color={colors.textSecondary} />
-          </TouchableOpacity>
+          </PressableOpacity>
         )}
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
           {view === 'main' ? 'Group Settings' : view === 'group' ? 'Edit Group Info' : 'Edit Meetup Schedules'}
@@ -538,7 +538,7 @@ const GroupSettings = () => {
         {view === 'main' && (
           <View style={styles.optionsContainer}>
             {mainOptions.map((option) => (
-              <TouchableOpacity
+              <PressableOpacity
                 key={option.id}
                 style={[styles.optionButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 activeOpacity={0.7}
@@ -553,7 +553,7 @@ const GroupSettings = () => {
                   </Text>
                 </View>
                 {!option.destructive && <Feather name="chevron-right" size={18} color={colors.textFaint} />}
-              </TouchableOpacity>
+              </PressableOpacity>
             ))}
           </View>
         )}
@@ -561,7 +561,7 @@ const GroupSettings = () => {
         {view === 'group' && (
           <View style={styles.optionsContainer}>
             {settingsOptions.map((option) => (
-              <TouchableOpacity
+              <PressableOpacity
                 key={option.id}
                 style={[styles.optionButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 activeOpacity={0.7}
@@ -604,7 +604,7 @@ const GroupSettings = () => {
                   </View>
                 </View>
                 <Feather name="chevron-right" size={18} color={colors.textFaint} />
-              </TouchableOpacity>
+              </PressableOpacity>
             ))}
           </View>
         )}
@@ -613,7 +613,7 @@ const GroupSettings = () => {
           <View style={styles.optionsContainer}>
             {activeSchedules.map((sch) => (
               <View key={sch._id} style={[styles.optionButton, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <TouchableOpacity
+                <PressableOpacity
                   style={styles.optionLeft}
                   activeOpacity={0.7}
                   onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: sch._id } })}
@@ -625,17 +625,17 @@ const GroupSettings = () => {
                     <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>{sch.name}</Text>
                     <Text style={[styles.optionSubLabel, { color: colors.textFaint }]} numberOfLines={1}>{formatSchedule(sch)}</Text>
                   </View>
-                </TouchableOpacity>
-                <TouchableOpacity
+                </PressableOpacity>
+                <PressableOpacity accessibilityLabel="Notifications"
                   style={{ padding: 6 }}
                   onPress={() => router.push({ pathname: '/group-edit-jit/[id]', params: { id: id!, scheduleId: sch._id } })}
                 >
                   <Feather name="bell" size={18} color="#F59E0B" />
-                </TouchableOpacity>
+                </PressableOpacity>
               </View>
             ))}
             {canAddSchedule && (
-              <TouchableOpacity
+              <PressableOpacity
                 style={[styles.optionButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 activeOpacity={0.7}
                 onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: 'new' } })}
@@ -646,7 +646,7 @@ const GroupSettings = () => {
                   </View>
                   <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Add Schedule</Text>
                 </View>
-              </TouchableOpacity>
+              </PressableOpacity>
             )}
           </View>
         )}
@@ -670,7 +670,7 @@ const GroupSettings = () => {
             <Pressable onPress={() => {}} style={[styles.modalContent, styles.imageModalContent, { backgroundColor: colors.surface }]}>
               <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Group Photo</Text>
 
-              <TouchableOpacity onPress={handlePickNewImage} disabled={isConfirmingImage} style={styles.imageModalAvatarWrap}>
+              <PressableOpacity accessibilityLabel="Take a photo" onPress={handlePickNewImage} disabled={isConfirmingImage} style={styles.imageModalAvatarWrap}>
                 <Animated.View style={{ transform: [{ scale: avatarPopScale }] }}>
                   <GroupAvatar
                     name={group?.name ?? ''}
@@ -682,10 +682,10 @@ const GroupSettings = () => {
                     <Feather name="camera" size={16} color="#fff" />
                   </View>
                 </Animated.View>
-              </TouchableOpacity>
+              </PressableOpacity>
 
               {previewUri ? (
-                <TouchableOpacity
+                <PressableOpacity
                   style={[styles.confirmBtn, { backgroundColor: colors.brand }]}
                   onPress={handleConfirmImage}
                   disabled={isConfirmingImage}
@@ -693,14 +693,14 @@ const GroupSettings = () => {
                   {isConfirmingImage
                     ? <ActivityIndicator color="#fff" size="small" />
                     : <Text style={styles.confirmBtnText}>Confirm</Text>}
-                </TouchableOpacity>
+                </PressableOpacity>
               ) : (
-                <TouchableOpacity
+                <PressableOpacity
                   style={[styles.confirmBtn, { backgroundColor: colors.backgroundAlt }]}
                   onPress={() => setIsImageModalVisible(false)}
                 >
                   <Text style={[styles.modalBtnTextCancel, { color: colors.textSecondary }]}>Cancel</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
               )}
             </Pressable>
           </Animated.View>
@@ -759,10 +759,10 @@ const GroupSettings = () => {
                           selectTextOnFocus
                         />
                         <View style={styles.modalButtons}>
-                            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setIsEditingName(false)}><Text style={[styles.modalBtnTextCancel, { color: colors.textSecondary }]}>Cancel</Text></TouchableOpacity>
-                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveName} disabled={isSavingName || !tempName.trim()}>
+                            <PressableOpacity style={[styles.modalBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setIsEditingName(false)}><Text style={[styles.modalBtnTextCancel, { color: colors.textSecondary }]}>Cancel</Text></PressableOpacity>
+                            <PressableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveName} disabled={isSavingName || !tempName.trim()}>
                                 {isSavingName ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
                     </>
                 )}
@@ -779,13 +779,13 @@ const GroupSettings = () => {
       >
         <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setIsEditingMods(false)} style={styles.headerIconButton}>
+            <PressableOpacity onPress={() => setIsEditingMods(false)} style={styles.headerIconButton}>
               <Feather name="x" size={24} color={colors.textSecondary} />
-            </TouchableOpacity>
+            </PressableOpacity>
             <Text style={[styles.modalTitleLarge, { color: colors.textPrimary }]}>Manage Moderators</Text>
-            <TouchableOpacity onPress={handleSaveModerators} disabled={isSavingMods} style={styles.headerIconButton}>
+            <PressableOpacity onPress={handleSaveModerators} disabled={isSavingMods} style={styles.headerIconButton}>
                 {isSavingMods ? <ActivityIndicator size="small" color={colors.brand} /> : <Text style={[styles.saveBtnText, { color: colors.brand }]}>Save</Text>}
-            </TouchableOpacity>
+            </PressableOpacity>
           </View>
 
           <FlatList
@@ -804,7 +804,7 @@ const GroupSettings = () => {
               const isSelected = selectedModIds.includes(mId);
 
               return (
-                <TouchableOpacity
+                <PressableOpacity
                   style={[styles.selectMemberRow, { backgroundColor: colors.backgroundAlt }, isSelected && !isOwner && { backgroundColor: colors.brand }]}
                   onPress={() => !isOwner && setSelectedModIds(p => p.includes(mId) ? p.filter(id => id !== mId) : [...p, mId])}
                   disabled={isOwner || !isUserOwner}
@@ -827,7 +827,7 @@ const GroupSettings = () => {
                       {isSelected && <Feather name="check" size={14} color="white" />}
                     </View>
                   )}
-                </TouchableOpacity>
+                </PressableOpacity>
               );
             }}
           />
@@ -843,9 +843,9 @@ const GroupSettings = () => {
       >
         <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setIsEditingMembers(false)} style={styles.headerIconButton}>
+            <PressableOpacity onPress={() => setIsEditingMembers(false)} style={styles.headerIconButton}>
               <Feather name="chevron-down" size={28} color={colors.textSecondary} />
-            </TouchableOpacity>
+            </PressableOpacity>
             <Text style={[styles.modalTitleLarge, { color: colors.textPrimary }]}>Remove Members</Text>
             <View style={{ width: 44 }} />
           </View>
@@ -870,9 +870,9 @@ const GroupSettings = () => {
                   </View>
 
                   {canRemove ? (
-                    <TouchableOpacity onPress={() => Alert.alert("Remove Member", `Remove ${item.firstName} from the group?`, [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: () => performMemberRemoval(mId) }])} disabled={isRemovingMemberId === mId}>
+                    <PressableOpacity onPress={() => Alert.alert("Remove Member", `Remove ${item.firstName} from the group?`, [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: () => performMemberRemoval(mId) }])} disabled={isRemovingMemberId === mId}>
                         {isRemovingMemberId === mId ? <ActivityIndicator size="small" color={colors.danger} /> : <Feather name="x-circle" size={24} color={colors.danger} />}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                   ) : isMbrOwner ? <View style={[styles.ownerBadgeShield, { backgroundColor: chipIndigo }]}><Feather name="shield" size={16} color={colors.brand} /></View> : null}
                 </View>
               );
@@ -890,9 +890,9 @@ const GroupSettings = () => {
       >
         <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setIsTransferModalVisible(false)} style={styles.headerIconButton}>
+            <PressableOpacity onPress={() => setIsTransferModalVisible(false)} style={styles.headerIconButton}>
               <Feather name="chevron-down" size={28} color={colors.textSecondary} />
-            </TouchableOpacity>
+            </PressableOpacity>
             <Text style={[styles.modalTitleLarge, { color: colors.textPrimary }]}>Transfer Ownership</Text>
             <View style={{ width: 44 }} />
           </View>
@@ -913,7 +913,7 @@ const GroupSettings = () => {
               const isMbrMod = group?.moderators?.some((m: any) => (m?._id || m).toString() === mId);
 
               return (
-                <TouchableOpacity
+                <PressableOpacity
                   style={[styles.selectMemberRow, { backgroundColor: colors.backgroundAlt }]}
                   onPress={() => handleTransferPress(item)}
                   disabled={!!isTransferringId}
@@ -932,7 +932,7 @@ const GroupSettings = () => {
                   ) : (
                     <Feather name="chevron-right" size={20} color={colors.textFaint} />
                   )}
-                </TouchableOpacity>
+                </PressableOpacity>
               );
             }}
           />

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Modal, ActivityIndicator, ScrollView } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
@@ -57,9 +58,9 @@ const GroupMeetupsModal = ({ visible, onClose, groupId }: GroupMeetupsModalProps
                     <View style={styles.modalHeader}>
                         <View style={{ width: 24 }} />
                         <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>Upcoming Meetups</Text>
-                        <TouchableOpacity onPress={onClose}>
+                        <PressableOpacity accessibilityLabel="Close" onPress={onClose}>
                             <Feather name="x" size={24} color={colors.textSecondary} />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     </View>
 
                     {isLoading ? (

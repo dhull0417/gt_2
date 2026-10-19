@@ -1,6 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import React from 'react';
-import { TouchableOpacity } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 
@@ -17,9 +17,9 @@ const GroupEditLayout = () => {
                     headerShown: false,
                     presentation: 'modal',
                     headerLeft: () => (
-                        <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
+                        <PressableOpacity accessibilityLabel="Close" onPress={() => router.back()} style={{ marginLeft: 10 }}>
                             <Feather name="x" size={24} color={colors.brand} />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     ),
                 }}
             />

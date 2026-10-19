@@ -15,6 +15,7 @@ import { parseQuestions, refreshSeriesQuestions } from "../utils/rsvpQuestions.j
 import { refreshPriorityTiers, MAX_PRIORITY_TIERS, MAX_WINDOW_MINUTES } from "../utils/priorityRsvp.js";
 import { hasPremium, groupHasPremium } from "../utils/premium.js";
 import { onGroupCreated, onInviteRedeemed } from "../utils/email/lifecycle.js";
+import { postSystemMessage } from "../utils/systemMessage.js";
 
 // --- Helpers ---
 
@@ -862,6 +863,8 @@ export const transferOwnership = asyncHandler(async (req, res) => {
         await Promise.race([notified, new Promise(resolve => setTimeout(resolve, 3000))]);
     } catch (err) { console.error(err); }
 
+    await postSystemMessage(group._id, `${requester.firstName} made ${newOwner.firstName} the group owner`);
+
     res.status(200).json({ message: "Ownership transferred." });
 });
 
@@ -948,7 +951,9 @@ export const addMember = asyncHandler(async (req, res) => {
         group: group._id,
     });
   } catch (err) { console.error(err); }
-  
+
+  await postSystemMessage(group._id, `${requester.firstName} added ${userToAdd.firstName}`);
+
   res.status(200).json({ message: "User added." });
 });
 
@@ -1010,6 +1015,8 @@ export const removeMember = asyncHandler(async (req, res) => {
             group: group._id,
         });
     } catch (err) { console.error(err); }
+
+    await postSystemMessage(group._id, `${requester.firstName} removed ${memberToRemove.firstName}`);
 
     res.status(200).json({ message: "Member removed." });
 });
@@ -1090,6 +1097,7 @@ export const leaveGroup = asyncHandler(async (req, res) => {
     await group.updateOne({ $pull: { members: user._id, moderators: user._id } });
     await User.updateOne({ _id: user._id }, { $pull: { groups: group._id } });
     await Meetup.updateMany({ group: group._id, date: { $gte: new Date() } }, { $pull: { members: user._id, in: user._id, out: user._id, undecided: user._id, waitlist: user._id } });
+    await postSystemMessage(group._id, `${user.firstName} left the group`);
     res.status(200).json({ message: "You have left." });
 });
 
@@ -1173,6 +1181,8 @@ export const redeemInviteToken = asyncHandler(async (req, res) => {
             });
         } catch (err) { console.error(err); }
     }
+
+    await postSystemMessage(group._id, `${user.firstName} joined the group`);
 
     res.status(200).json({ groupId: group._id, groupName: group.name, alreadyMember: false });
 });

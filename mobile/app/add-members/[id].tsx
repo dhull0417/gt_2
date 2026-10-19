@@ -2,13 +2,13 @@ import React from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
     StyleSheet,
     Alert,
     FlatList,
     ActivityIndicator,
     Share
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -86,21 +86,21 @@ const AddMembersScreen = () => {
                     </Text>
                 </View>
                 {isOnApp ? (
-                    <TouchableOpacity
+                    <PressableOpacity
                         style={[styles.inviteButton, { backgroundColor: isDark ? '#1A2A42' : '#EEF2FF' }]}
                         onPress={() => handleInvite(item.appUser!)}
                         disabled={isInviting}
                     >
                         <Text style={[styles.inviteButtonText, { color: colors.brand }]}>Invite</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 ) : (
-                    <TouchableOpacity
+                    <PressableOpacity
                         style={[styles.smsButton, { backgroundColor: colors.backgroundAlt }]}
                         onPress={() => handleSmsInvite(item)}
                     >
                         <Feather name="send" size={14} color={colors.textMuted} />
                         <Text style={[styles.smsButtonText, { color: colors.textMuted }]}>SMS</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 )}
             </View>
         );
@@ -108,7 +108,7 @@ const AddMembersScreen = () => {
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom', 'left', 'right']}>
-            <TouchableOpacity
+            <PressableOpacity
                 style={[
                     styles.shareLinkBtn,
                     { backgroundColor: isDark ? '#1A2A42' : '#F5F7FF', borderColor: colors.brand },
@@ -119,7 +119,7 @@ const AddMembersScreen = () => {
             >
                 <Feather name="share-2" size={20} color={inviteLink ? colors.brand : colors.textFaint} />
                 <Text style={[styles.shareLinkText, { color: inviteLink ? colors.brand : colors.textFaint }]}>Share Invite Link</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
 
             <View style={{ flex: 1, marginTop: 16 }}>
                 {isLoadingContacts ? (

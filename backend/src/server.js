@@ -29,6 +29,8 @@ import pollRoutes from "./routes/poll.route.js";
 import jobRoutes from "./routes/job.route.js";
 import notificationRoutes from "./routes/notification.route.js";
 import placesRoutes from "./routes/places.route.js";
+import chatRoutes from "./routes/chat.route.js";
+import linkPreviewRoutes from "./routes/linkPreview.route.js";
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
@@ -70,6 +72,8 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/places", placesRoutes);
 app.use("/api/revenuecat", revenuecatRoutes);
 app.use("/api/email", emailRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/link-preview", linkPreviewRoutes);
 app.get("/go/:dest", goPage);
 app.get("/go/:dest/:id", goPage);
 

@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity, Modal, StyleSheet, Platform } from 'react-native';
+import { View, Text, Modal, StyleSheet, Platform } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -59,12 +60,12 @@ export function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
         </View>
 
         <View className="px-8 pb-4">
-          <TouchableOpacity
+          <PressableOpacity
             onPress={onClose}
             className="w-full py-4 rounded-lg items-center shadow bg-[#4A90E2]"
           >
             <Text className="text-white text-lg font-bold">Let&apos;s go</Text>
-          </TouchableOpacity>
+          </PressableOpacity>
         </View>
       </SafeAreaView>
     </Modal>

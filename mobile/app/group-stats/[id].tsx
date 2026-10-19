@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image, Alert, ActivityIndicator, Share } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, Alert, ActivityIndicator, Share } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -55,14 +56,14 @@ export default function GroupStatsScreen() {
 
   const header = (
     <View style={styles.headerBar}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+      <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()} style={styles.iconBtn}>
         <Feather name="arrow-left" size={24} color={colors.textMuted} />
-      </TouchableOpacity>
+      </PressableOpacity>
       <Text style={styles.headerTitle}>Stats & Attendance</Text>
       {canExport && isPremium && stats ? (
-        <TouchableOpacity onPress={exportCsv} disabled={exporting} style={{ minWidth: 40, alignItems: 'flex-end' }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <PressableOpacity onPress={exportCsv} disabled={exporting} style={{ minWidth: 40, alignItems: 'flex-end' }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           {exporting ? <ActivityIndicator size="small" color={colors.brand} /> : <Feather name="download" size={22} color={colors.brand} />}
-        </TouchableOpacity>
+        </PressableOpacity>
       ) : <View style={{ width: 40 }} />}
     </View>
   );
@@ -97,7 +98,7 @@ export default function GroupStatsScreen() {
         {header}
         <View style={styles.center}>
           <Text style={{ color: colors.textMuted, marginBottom: 12 }}>Could not load stats.</Text>
-          <TouchableOpacity onPress={() => refetch()}><Text style={{ color: colors.brand, fontWeight: '700' }}>Try again</Text></TouchableOpacity>
+          <PressableOpacity onPress={() => refetch()}><Text style={{ color: colors.brand, fontWeight: '700' }}>Try again</Text></PressableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -166,16 +167,16 @@ export default function GroupStatsScreen() {
                 </View>
               ))}
               {meetups.length > 8 && (
-                <TouchableOpacity onPress={() => setShowAll((v) => !v)} style={{ paddingTop: 12 }}>
+                <PressableOpacity onPress={() => setShowAll((v) => !v)} style={{ paddingTop: 12 }}>
                   <Text style={{ color: colors.brand, fontWeight: '700', textAlign: 'center' }}>{showAll ? 'Show less' : `Show all ${meetups.length}`}</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
               )}
             </View>
 
             {canExport && (
-              <TouchableOpacity onPress={exportCsv} disabled={exporting} style={styles.exportBtn}>
+              <PressableOpacity onPress={exportCsv} disabled={exporting} style={styles.exportBtn}>
                 {exporting ? <ActivityIndicator color={colors.brand} /> : (<><Feather name="download" size={18} color={colors.brand} /><Text style={styles.exportText}>Export attendance (CSV)</Text></>)}
-              </TouchableOpacity>
+              </PressableOpacity>
             )}
           </>
         )}

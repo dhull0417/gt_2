@@ -1,4 +1,5 @@
-import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
@@ -63,7 +64,7 @@ const UpdateEmailScreen = () => {
                             style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textSecondary }]}
                         />
                     </View>
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={onUpdateEmailPress}
                         disabled={isLoading}
                         style={[styles.saveBtn, { backgroundColor: colors.brand }]}
@@ -72,7 +73,7 @@ const UpdateEmailScreen = () => {
                         {isLoading
                             ? <ActivityIndicator color="white" />
                             : <Text style={styles.saveBtnText}>Continue</Text>}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>

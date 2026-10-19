@@ -1,6 +1,7 @@
 import { Stack, useRouter } from 'expo-router';
 import React from 'react';
-import { Platform, TouchableOpacity } from 'react-native';
+import { Platform } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 
@@ -23,13 +24,13 @@ const AccountLayout = () => {
                 options={{
                     headerTitle: 'Update Account',
                     headerLeft: () => (
-                        <TouchableOpacity
+                        <PressableOpacity accessibilityLabel="Close"
                             onPress={() => router.back()}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
                         >
                             <Feather name="x" size={24} color={colors.textSecondary} style={{ transform: [{ translateX: 2 }] }} />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     ),
                 }}
             />

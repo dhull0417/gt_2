@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator,
+  View, Text, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator,
   TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useApiClient, meetupApi, Meetup } from '@/utils/api';
@@ -41,7 +42,7 @@ export default function MeetupTeams({ meetup, currentUserId, canManage, onUpdate
   return (
     <Animated.View layout={LinearTransition.duration(260)} style={[styles.card, { overflow: 'hidden' }]}>
       <View style={styles.headerRow}>
-        <TouchableOpacity
+        <PressableOpacity
           onPress={() => setCollapsed((c) => !c)}
           activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 0, right: 8 }}
@@ -49,11 +50,11 @@ export default function MeetupTeams({ meetup, currentUserId, canManage, onUpdate
         >
           <Feather name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
           <Text style={styles.title}>Teams</Text>
-        </TouchableOpacity>
+        </PressableOpacity>
         {showForManager && (
-          <TouchableOpacity onPress={() => setSheetOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <PressableOpacity onPress={() => setSheetOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.action}>{hasTeams ? 'Edit teams' : 'Split into teams'}</Text>
-          </TouchableOpacity>
+          </PressableOpacity>
         )}
       </View>
 
@@ -171,25 +172,25 @@ function TeamsSheet({ visible, meetup, onClose, onUpdated }: {
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Teams</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <PressableOpacity accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Feather name="x" size={22} color={colors.textMuted} />
-            </TouchableOpacity>
+            </PressableOpacity>
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <TouchableOpacity onPress={() => setCount(names.length - 1)} disabled={names.length <= 2} style={[styles.stepBtn, names.length <= 2 && styles.stepBtnOff]}>
+              <PressableOpacity accessibilityLabel="Decrease" onPress={() => setCount(names.length - 1)} disabled={names.length <= 2} style={[styles.stepBtn, names.length <= 2 && styles.stepBtnOff]}>
                 <Feather name="minus" size={16} color={names.length <= 2 ? colors.borderStrong : colors.brand} />
-              </TouchableOpacity>
+              </PressableOpacity>
               <Text style={styles.stepCount}>{names.length} teams</Text>
-              <TouchableOpacity onPress={() => setCount(names.length + 1)} disabled={names.length >= MAX_TEAMS} style={[styles.stepBtn, names.length >= MAX_TEAMS && styles.stepBtnOff]}>
+              <PressableOpacity accessibilityLabel="Increase" onPress={() => setCount(names.length + 1)} disabled={names.length >= MAX_TEAMS} style={[styles.stepBtn, names.length >= MAX_TEAMS && styles.stepBtnOff]}>
                 <Feather name="plus" size={16} color={names.length >= MAX_TEAMS ? colors.borderStrong : colors.brand} />
-              </TouchableOpacity>
+              </PressableOpacity>
             </View>
-            <TouchableOpacity onPress={shuffle} style={styles.shuffleBtn}>
+            <PressableOpacity onPress={shuffle} style={styles.shuffleBtn}>
               <Feather name="shuffle" size={15} color="#fff" />
               <Text style={styles.shuffleText}>Shuffle</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
           </View>
 
           <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
@@ -216,7 +217,7 @@ function TeamsSheet({ visible, meetup, onClose, onUpdated }: {
                     const on = assign[id] === i;
                     const color = TEAM_COLORS[i % TEAM_COLORS.length];
                     return (
-                      <TouchableOpacity
+                      <PressableOpacity
                         key={i}
                         onPress={() => setAssign((cur) => {
                           const next = { ...cur };
@@ -226,7 +227,7 @@ function TeamsSheet({ visible, meetup, onClose, onUpdated }: {
                         style={[styles.chip, { borderColor: color }, on && { backgroundColor: color }]}
                       >
                         <Text style={[styles.chipText, { color: on ? '#fff' : color }]}>{i + 1}</Text>
-                      </TouchableOpacity>
+                      </PressableOpacity>
                     );
                   })}
                 </View>
@@ -234,13 +235,13 @@ function TeamsSheet({ visible, meetup, onClose, onUpdated }: {
             ))}
           </ScrollView>
 
-          <TouchableOpacity onPress={save} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.5 }]}>
+          <PressableOpacity onPress={save} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.5 }]}>
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save teams</Text>}
-          </TouchableOpacity>
+          </PressableOpacity>
           {(meetup.teams?.length ?? 0) > 0 && (
-            <TouchableOpacity onPress={clear} disabled={saving} style={{ alignItems: 'center', paddingTop: 12 }}>
+            <PressableOpacity onPress={clear} disabled={saving} style={{ alignItems: 'center', paddingTop: 12 }}>
               <Text style={{ color: colors.danger, fontWeight: '600' }}>Remove teams</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
           )}
         </View>
       </KeyboardAvoidingView>

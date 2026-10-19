@@ -148,6 +148,11 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
     const { text, senderName: clientName } = req.body;
     if (typeof text !== 'string' || !text.trim()) return res.status(400).json({ message: 'text required' });
 
+    // Once the database trigger is delivering chat pushes (and updating lastMessage)
+    // through /api/chat/webhook/message, older app versions that still call this
+    // endpoint must not notify a second time.
+    if (process.env.CHAT_PUSH_MODE === 'webhook') return res.json({ ok: true });
+
     const ctx = await requireGroupMember(req, res, 'name _id members');
     if (!ctx) return;
     const { user, group: found } = ctx;
@@ -160,22 +165,25 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
       { new: true }
     );
 
-    // Fire-and-forget — don't hold up the response for notification delivery
-    User.find({
-      _id: { $in: group.members },
-      clerkId: { $ne: user.clerkId },
-      expoPushToken: { $exists: true, $ne: null },
-      mutedGroups: { $ne: group._id },
-      mutedUntilNextMeetup: { $ne: group._id },
-    }).then(recipients => {
+    // Awaited: on Vercel, work still running after the response is sent can be dropped.
+    try {
+      const recipients = await User.find({
+        _id: { $in: group.members },
+        clerkId: { $ne: user.clerkId },
+        expoPushToken: { $exists: true, $ne: null },
+        mutedGroups: { $ne: group._id },
+        mutedUntilNextMeetup: { $ne: group._id },
+      });
       if (recipients.length > 0) {
-        notifyUsers(recipients, {
+        await notifyUsers(recipients, {
           title: group.name,
           body: `${senderName}: ${preview}`,
           data: { type: 'chat', groupId: group._id.toString() },
         });
       }
-    }).catch(err => console.error('Chat notification error:', err));
+    } catch (err) {
+      console.error('Chat notification error:', err);
+    }
 
     res.json({ ok: true });
   } catch (err) {
@@ -186,7 +194,7 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
 // notifies group members of a reaction
 router.post("/:id/chat-reaction", protectRoute, async (req, res) => {
   try {
-    const { emoji, senderName: clientName } = req.body;
+    const { emoji, senderName: clientName, authorId } = req.body;
     if (typeof emoji !== 'string' || !emoji || emoji.length > 16) {
       return res.status(400).json({ message: 'valid emoji required' });
     }
@@ -196,20 +204,29 @@ router.post("/:id/chat-reaction", protectRoute, async (req, res) => {
     const { user, group } = ctx;
     const senderName = displayName(user, clientName);
 
+    // Newer apps send the message author's id so only that person is notified.
+    // Older apps omit it and keep the previous notify-everyone behavior.
+    const onlyAuthor = typeof authorId === 'string' && authorId ? { clerkId: authorId } : {};
+    if (onlyAuthor.clerkId === user.clerkId) return res.json({ ok: true });
+
     const recipients = await User.find({
       _id: { $in: group.members },
-      clerkId: { $ne: user.clerkId },
+      ...(onlyAuthor.clerkId ? { clerkId: onlyAuthor.clerkId } : { clerkId: { $ne: user.clerkId } }),
       expoPushToken: { $exists: true, $ne: null },
       mutedGroups: { $ne: group._id },
       mutedUntilNextMeetup: { $ne: group._id },
     });
 
     if (recipients.length > 0) {
-      notifyUsers(recipients, {
-        title: group.name,
-        body: `${senderName} reacted ${emoji} to a message`,
-        data: { type: 'chat', groupId: group._id.toString() },
-      }).catch(err => console.error('Reaction notification error:', err));
+      try {
+        await notifyUsers(recipients, {
+          title: group.name,
+          body: `${senderName} reacted ${emoji} to ${onlyAuthor.clerkId ? 'your message' : 'a message'}`,
+          data: { type: 'chat', groupId: group._id.toString() },
+        });
+      } catch (err) {
+        console.error('Reaction notification error:', err);
+      }
     }
 
     res.json({ ok: true });
