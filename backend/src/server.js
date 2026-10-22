@@ -73,7 +73,6 @@ app.post("/api/debug/log", (req, res) => {
 
 const APP_STORE_URL = 'https://apps.apple.com/app/groupthat/id6756112941';
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.dallinhull.groupthat';
-const APP_STORE_ID = '6756112941';
 
 // In-app browsers (Messenger, Facebook, Instagram, Snapchat, TikTok, Line) block automatic
 // redirects into the App Store / Play Store / app schemes. Only a real user tap gets through,
@@ -88,11 +87,10 @@ const deviceInfo = (ua = '') => {
     isIOS,
     isAndroid,
     inApp,
-    // itms-apps:// / market intents open the store app directly from a tap inside a webview.
-    iosStoreHref: isIOS && inApp ? `itms-apps://apps.apple.com/app/id${APP_STORE_ID}` : APP_STORE_URL,
-    androidStoreHref: isAndroid && inApp
-      ? `intent://details?id=com.dallinhull.groupthat#Intent;scheme=market;package=com.android.vending;S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`
-      : PLAY_STORE_URL,
+    // Plain https store links: in-app browsers (Messenger, Instagram) hand these off to the
+    // App Store / Play Store on a user tap, but silently block itms-apps:// and intent:// links.
+    iosStoreHref: APP_STORE_URL,
+    androidStoreHref: PLAY_STORE_URL,
   };
 };
 
