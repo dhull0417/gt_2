@@ -36,6 +36,7 @@ import { getUserDisplayName } from '@/utils/groupDisplay';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
+import { toast } from '@/contexts/ToastContext';
 
 // Access restricted to the group owner and designated moderators
 const GroupSettings = () => {
@@ -196,7 +197,6 @@ const GroupSettings = () => {
         else handleConfirmLeave();
         break;
       default:
-        console.log(`Option ${optionId} logic requested.`);
         break;
     }
   };
@@ -368,7 +368,7 @@ const GroupSettings = () => {
         queryClient.invalidateQueries({ queryKey: ['meetups'] });
         broadcastGroupUpdate(getToken, id);
         setIsEditingMods(false);
-        Alert.alert("Success", "Moderator list updated.");
+        toast.success("Moderator list updated.");
     } catch (error: any) {
         Alert.alert("Error", getErrorMessage(error, "Failed to update moderators."));
     } finally {
@@ -440,7 +440,7 @@ const GroupSettings = () => {
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
       broadcastGroupUpdate(getToken, id);
       setIsTransferModalVisible(false);
-      Alert.alert("Success", "Ownership transferred.");
+      toast.success("Ownership transferred.");
     } catch (error: any) {
       Alert.alert("Error", getErrorMessage(error, "Failed to transfer ownership."));
     } finally {
@@ -811,7 +811,7 @@ const GroupSettings = () => {
                   activeOpacity={0.8}
                 >
                   <View style={styles.memberInfo}>
-                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
+                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C/png?text=?' }} style={styles.memberAvatar} />
                     <View>
                       <Text style={[styles.memberName, { color: colors.textPrimary }, isSelected && !isOwner && styles.textWhite]}>{getUserDisplayName(item)}</Text>
                       <Text style={[styles.memberRole, { color: colors.textFaint }, isSelected && !isOwner && styles.textWhite70]}>{isOwner ? 'Owner' : isSelected ? 'Moderator' : 'Member'}</Text>
@@ -862,7 +862,7 @@ const GroupSettings = () => {
               return (
                 <View style={[styles.selectMemberRow, { backgroundColor: colors.backgroundAlt }]}>
                   <View style={styles.memberInfo}>
-                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
+                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C/png?text=?' }} style={styles.memberAvatar} />
                     <View>
                       <Text style={[styles.memberName, { color: colors.textPrimary }]}>{getUserDisplayName(item)}</Text>
                       <Text style={[styles.memberRole, { color: colors.textFaint }]}>{isMbrOwner ? 'Owner' : isMbrMod ? 'Moderator' : 'Member'}</Text>
@@ -920,7 +920,7 @@ const GroupSettings = () => {
                   activeOpacity={0.8}
                 >
                   <View style={styles.memberInfo}>
-                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
+                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C/png?text=?' }} style={styles.memberAvatar} />
                     <View>
                       <Text style={[styles.memberName, { color: colors.textPrimary }]}>{getUserDisplayName(item)}</Text>
                       <Text style={[styles.memberRole, { color: colors.textFaint }]}>{isMbrMod ? 'Moderator' : 'Member'}</Text>

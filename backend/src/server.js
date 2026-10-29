@@ -34,7 +34,7 @@ import linkPreviewRoutes from "./routes/linkPreview.route.js";
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
-import { arcjetMiddleware } from "./middleware/arcjet.middleware.js";
+import { clientInfo } from "./middleware/clientInfo.middleware.js";
 import revenuecatRoutes from "./routes/revenuecat.route.js";
 import emailRoutes from "./routes/email.route.js";
 import { resendWebhook, goPage } from "./controllers/email.controller.js";
@@ -47,6 +47,8 @@ app.use(cors());
 app.post("/api/email/webhook/resend", express.raw({ type: "*/*" }), resendWebhook);
 app.use(express.json());
 app.use(clerkMiddleware());
+// Tags each request with the calling app version (older store builds send none; see the middleware).
+app.use(clientInfo);
 app.get('/logo.png', (req, res) => {
   res.setHeader('Content-Type', 'image/png');
   res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -59,7 +61,6 @@ app.get('/og-image.png', async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.send(buf);
 });
-// app.use(arcjetMiddleware);
 
 app.get("/", (req, res) => res.send("Hello from server"));
 
@@ -77,18 +78,32 @@ app.use("/api/link-preview", linkPreviewRoutes);
 app.get("/go/:dest", goPage);
 app.get("/go/:dest/:id", goPage);
 
-// Dev-only: unauthenticated request logger. Never exposed in production.
-if (ENV.NODE_ENV !== "production") {
-  app.post("/api/debug/log", (req, res) => {
-    console.log("[DEBUG]", JSON.stringify(req.body, null, 2));
-    res.status(200).json({ received: true });
-  });
-}
-
 // --- Public web routes ---
 
 const APP_STORE_URL = 'https://apps.apple.com/app/groupthat/id6756112941';
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.dallinhull.groupthat';
+
+// In-app browsers (Messenger, Facebook, Instagram, Snapchat, TikTok, Line) block automatic
+// redirects into the App Store / Play Store / app schemes. Only a real user tap gets through,
+// so in those webviews we serve a page with buttons instead of redirecting.
+const IN_APP_BROWSER_RE = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|Snapchat|musical_ly|Bytedance|Line\//i;
+
+const deviceInfo = (ua = '') => {
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isAndroid = /Android/i.test(ua);
+  const inApp = IN_APP_BROWSER_RE.test(ua);
+  return {
+    isIOS,
+    isAndroid,
+    inApp,
+    // Plain https store links: in-app browsers (Messenger, Instagram) hand these off to the
+    // App Store / Play Store on a user tap, but silently block itms-apps:// and intent:// links.
+    iosStoreHref: APP_STORE_URL,
+    androidStoreHref: PLAY_STORE_URL,
+  };
+};
+
+const IN_APP_HINT = 'Not opening? Tap the \u2022\u2022\u2022 menu and choose \u201cOpen in Safari\u201d or \u201cOpen in Chrome\u201d.';
 
 // iOS Universal Links verification file
 app.get('/.well-known/apple-app-site-association', (req, res) => {
@@ -124,9 +139,16 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
 // Invite landing page; shown only when the app isn't installed (OS intercepts otherwise).
 app.get('/join/:token', (req, res) => {
   const { token } = req.params;
+  // Tokens are url-safe random strings; reject anything else so it can never be reflected into the HTML/JS below.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(token)) {
+    return res.status(404).send('Invite link not found.');
+  }
   const deepLink = `groupthat://join/${token}`;
+  const { isAndroid, inApp, iosStoreHref, androidStoreHref } = deviceInfo(req.headers['user-agent']);
   // intent:// opens the app if installed, else falls through to the Play Store immediately.
   const intentUri = `intent://join/${token}#Intent;scheme=groupthat;package=com.dallinhull.groupthat;S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`;
+  // Tap target for people who already have the app (a tap works where an auto-redirect is blocked).
+  const openAppHref = isAndroid ? intentUri : deepLink;
 
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
@@ -162,6 +184,8 @@ app.get('/join/:token', (req, res) => {
     .btn { display: block; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 600; text-decoration: none; margin-bottom: 12px; }
     .btn-ios { background: #000; color: white; }
     .btn-android { background: #01875F; color: white; }
+    .btn-open { background: #F3F4F6; color: #111827; }
+    .hint { font-size: 13px; color: #9CA3AF; line-height: 1.4; margin: 8px 0 0; }
     .btn-both { background: #4A90E2; color: white; }
     #download { display: none; }
   </style>
@@ -181,8 +205,10 @@ app.get('/join/:token', (req, res) => {
     <div id="download">
       <h1>Get GroupThat</h1>
       <p>Download the app to join this group. After installing, tap your original link again to be added automatically.</p>
-      <a class="btn btn-ios" id="ios-btn" href="${APP_STORE_URL}">Download on the App Store</a>
-      <a class="btn btn-android" id="android-btn" href="${PLAY_STORE_URL}">Get it on Google Play</a>
+      <a class="btn btn-ios" id="ios-btn" href="${iosStoreHref}">Download on the App Store</a>
+      <a class="btn btn-android" id="android-btn" href="${androidStoreHref}">Get it on Google Play</a>
+      <a class="btn btn-open" id="open-btn" href="${openAppHref}">I already have the app &mdash; open it</a>
+      ${inApp ? `<p class="hint">${IN_APP_HINT}</p>` : ''}
     </div>
   </div>
 
@@ -192,11 +218,19 @@ app.get('/join/:token', (req, res) => {
     const isAndroid = /Android/.test(ua);
     const deepLink = ${JSON.stringify(deepLink)};
     const intentUri = ${JSON.stringify(intentUri)};
+    const inApp = ${JSON.stringify(inApp)};
 
     // clipboard fallback: app can pick up the deep link on first launch after install
     try { navigator.clipboard.writeText(deepLink).catch(() => {}); } catch(e) {}
 
-    if (isAndroid) {
+    if (inApp) {
+      // Messenger/Instagram/etc. block automatic jumps to the app or store, so show the
+      // buttons immediately; a tap on them is allowed through.
+      document.getElementById('opening').style.display = 'none';
+      document.getElementById('download').style.display = 'block';
+      if (isIOS) document.getElementById('android-btn').style.display = 'none';
+      if (isAndroid) document.getElementById('ios-btn').style.display = 'none';
+    } else if (isAndroid) {
       // intent:// opens the app if installed, else falls through to browser_fallback_url;
       // avoids stranding the user on an ERR_UNKNOWN_URL_SCHEME page.
       setTimeout(() => { window.location.href = intentUri; }, 25);
@@ -239,11 +273,13 @@ app.get('/og-image.svg', (req, res) => {
 
 // General app download page — auto-redirects based on device OS
 app.get('/download', (req, res) => {
-  const ua = req.headers['user-agent'] || '';
-  if (/iPhone|iPad|iPod/i.test(ua)) return res.redirect(302, APP_STORE_URL);
-  if (/Android/i.test(ua)) return res.redirect(302, PLAY_STORE_URL);
+  const { isIOS, isAndroid, inApp, iosStoreHref, androidStoreHref } = deviceInfo(req.headers['user-agent']);
+  // Real browsers: send straight to the store. In-app browsers block this redirect (white screen),
+  // so they fall through to the page below, where a tap on a button gets through.
+  if (!inApp && isIOS) return res.redirect(302, APP_STORE_URL);
+  if (!inApp && isAndroid) return res.redirect(302, PLAY_STORE_URL);
 
-  // Desktop / unknown — show the branded landing page
+  // Desktop / unknown / in-app browser — show the branded landing page
   const OG_IMAGE = 'https://invite.groupthatapp.com/og-image.png';
   res.setHeader('Content-Type', 'text/html');
   res.send(`<!DOCTYPE html>
@@ -256,7 +292,7 @@ app.get('/download', (req, res) => {
   <meta property="og:url" content="https://invite.groupthatapp.com/download">
   <meta property="og:site_name" content="GroupThat">
   <meta property="og:title" content="GroupThat — Organize your group, not your calendar">
-  <meta property="og:description" content="The easiest way to coordinate meetups with your group. No group chats, no endless polls.">
+  <meta property="og:description" content="The easiest way to coordinate meetups with your group. Plan meetups, chat and RSVP in one place.">
   <meta property="og:image" content="${OG_IMAGE}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -277,6 +313,8 @@ app.get('/download', (req, res) => {
     .btn { display: block; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 600; text-decoration: none; margin-bottom: 12px; }
     .btn-ios { background: #000; color: white; }
     .btn-android { background: #01875F; color: white; }
+    .btn-open { background: #F3F4F6; color: #111827; }
+    .hint { font-size: 13px; color: #9CA3AF; line-height: 1.4; margin: 8px 0 0; }
   </style>
 </head>
 <body>
@@ -285,9 +323,10 @@ app.get('/download', (req, res) => {
       <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
     </div>
     <h1>GroupThat</h1>
-    <p class="tagline">The easiest way to coordinate meetups with your group — no group chats, no endless polls.</p>
-    <a class="btn btn-ios" href="${APP_STORE_URL}">Download on the App Store</a>
-    <a class="btn btn-android" href="${PLAY_STORE_URL}">Get it on Google Play</a>
+    <p class="tagline">The easiest way to coordinate meetups with your group — plan meetups, chat and RSVP in one place.</p>
+    ${isAndroid ? '' : `<a class="btn btn-ios" href="${iosStoreHref}">Download on the App Store</a>`}
+    ${isIOS ? '' : `<a class="btn btn-android" href="${androidStoreHref}">Get it on Google Play</a>`}
+    ${inApp ? `<p class="hint">${IN_APP_HINT}</p>` : ''}
   </div>
 </body>
 </html>`);
@@ -295,7 +334,10 @@ app.get('/download', (req, res) => {
 
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
-  res.status(500).json({ error: err.message || "Internal server error" });
+  // Don't leak internal error text (DB / library messages) in production.
+  const message = ENV.NODE_ENV === "production" ? "Internal server error" : (err.message || "Internal server error");
+  const clientError = err.status && err.status >= 400 && err.status < 500;
+  res.status(clientError ? err.status : 500).json({ error: clientError ? (err.message || "Bad request") : message });
 });
 
 const startServer = async () => {

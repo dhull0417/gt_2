@@ -16,6 +16,8 @@ import { getAuth } from "@clerk/express";
 import Meetup from "../models/meetup.model.js";
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
+import mongoose from "mongoose";
+import { headcountOf, loadClerkIds, promoteWaitlist } from "../utils/waitlist.js";
 
 const router = express.Router();
 
@@ -39,8 +41,10 @@ router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
         if (!Number.isInteger(count) || count > 50) {
             return res.status(400).json({ message: 'count must be a whole number up to 50' });
         }
+        if (!mongoose.Types.ObjectId.isValid(req.params.meetupId)) return res.status(400).json({ message: 'Invalid meetup id' });
         const meetup = await Meetup.findById(req.params.meetupId);
         if (!meetup) return res.status(404).json({ message: 'Meetup not found' });
+        if (meetup.status !== 'scheduled') return res.status(400).json({ message: 'This meetup is closed for changes' });
 
         // Only members of the meetup's group may add guests to it.
         const [guestUser, guestGroup] = await Promise.all([
@@ -55,6 +59,20 @@ router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
         if (!meetup.guests) meetup.guests = [];
 
         const existingIdx = meetup.guests.findIndex(g => g.userId === clerkId);
+        const previousCount = existingIdx >= 0 ? (meetup.guests[existingIdx].count || 0) : 0;
+
+        // Guests take spots like everyone else: refuse more than there is room for.
+        if (count > previousCount && meetup.capacity > 0 && meetup.in.some(id => id.equals(guestUser._id))) {
+            const clerkIds = await loadClerkIds(meetup.in);
+            const used = headcountOf(meetup, clerkIds);
+            if (used + (count - previousCount) > meetup.capacity) {
+                const room = Math.max(0, meetup.capacity - used);
+                return res.status(409).json({
+                    error: 'meetup_full',
+                    message: room === 0 ? 'There are no spots left for guests.' : `Only ${room} more spot${room === 1 ? '' : 's'} left for guests.`,
+                });
+            }
+        }
         if (count === 0) {
             // Remove the entry entirely
             meetup.guests = meetup.guests.filter(g => g.userId !== clerkId);
@@ -66,6 +84,11 @@ router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
         }
         meetup.markModified('guests');
         await meetup.save();
+
+        // Fewer guests frees spots for people waiting.
+        if (count < previousCount) {
+            try { await promoteWaitlist(meetup._id); } catch (e) { console.error('Waitlist promotion failed:', e); }
+        }
 
         const updated = await Meetup.findById(meetup._id)
             .populate('group', 'name owner moderators timezone defaultLocation')

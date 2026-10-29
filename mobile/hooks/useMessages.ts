@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import { useAuth } from '@clerk/expo';
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { getSupabaseClient } from '@/utils/supabase';
+import { getSupabaseClient, refreshRealtimeAuth } from '@/utils/supabase';
 import { SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
 import type { ChatMessage, PendingImage, ReactionResult } from '@/types/chat';
 import { useIsOnline } from '@/hooks/useIsOnline';
@@ -394,8 +394,19 @@ export function useMessages(groupId: string) {
       channelRef.current = channel;
     };
     setupRealtime();
+
+    // Keep the socket's credentials fresh: the token it joined with expires within about a minute.
+    const authTimer = setInterval(async () => {
+      const client = realtimeClientRef.current;
+      if (!client || !active) return;
+      try {
+        const fresh = await getTokenRef.current({ template: 'supabase' });
+        if (fresh && active) refreshRealtimeAuth(client, fresh);
+      } catch { /* try again next tick */ }
+    }, 45_000);
     return () => {
       active = false;
+      clearInterval(authTimer);
       if (channelRef.current) realtimeClientRef.current?.removeChannel(channelRef.current);
       channelRef.current = null;
       realtimeClientRef.current = null;

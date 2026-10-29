@@ -1,3 +1,4 @@
+import { toast } from '@/contexts/ToastContext';
 import React, { useState, useEffect, useRef } from "react";
 import {
     View,
@@ -134,9 +135,8 @@ const EditJitScreen = () => {
             broadcastGroupUpdate(getToken, id);
             broadcastMeetupUpdate(getToken, id);
 
-            Alert.alert("Saved", "RSVP settings updated.", [
-                { text: "OK", onPress: () => router.back() },
-            ]);
+            toast.success("RSVP settings saved.");
+            router.back();
         } catch (error: any) {
             Alert.alert("Error", getErrorMessage(error, "Failed to update RSVP settings."));
         } finally {

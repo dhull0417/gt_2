@@ -31,8 +31,9 @@ async function processAndUpload(
 ): Promise<UploadedImage> {
   const manipulated = await ImageManipulator.manipulateAsync(
     localUri,
-    [{ resize: { width: 800 } }],
-    { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    // Chat photos are looked at full-screen, so they keep more detail than avatars and covers.
+    [{ resize: { width: bucket === "chat-images" ? 1280 : 800 } }],
+    { compress: bucket === "chat-images" ? 0.85 : 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
   );
 
   if (!manipulated.base64) throw new Error("Failed to process image.");
@@ -54,8 +55,25 @@ async function processAndUpload(
   };
 }
 
+/** Ensure camera access, with the same Settings deep-link fallback as the photo library. */
+export async function ensureCameraPermission(): Promise<boolean> {
+  const current = await ImagePicker.getCameraPermissionsAsync();
+  if (current.status === "granted") return true;
+  if (current.canAskAgain) {
+    const requested = await ImagePicker.requestCameraPermissionsAsync();
+    if (requested.status === "granted") return true;
+    if (!requested.canAskAgain) offerSettings();
+    return false;
+  }
+  offerSettings();
+  return false;
+}
+
 /** Ensure photo library access. If canAskAgain is false (permanently denied), offer a Settings deep-link instead of a dead-end prompt. */
 export async function ensurePhotoLibraryPermission(api?: AxiosInstance): Promise<boolean> {
+  // Android's system photo picker needs no permission. Asking anyway showed a needless storage prompt
+  // on Android 12 and below, and saying no there blocked picking a photo at all.
+  if (Platform.OS === "android") return true;
   const current = await ImagePicker.getMediaLibraryPermissionsAsync();
   if (current.status === "granted") {
     if (api) reportPermissionStatus(api, { photoLibrary: "granted" });

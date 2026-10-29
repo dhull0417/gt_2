@@ -6,6 +6,7 @@ import { useUser } from '@clerk/expo';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useApiClient, userApi } from '@/utils/api';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { toast } from '@/contexts/ToastContext';
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
@@ -65,7 +66,7 @@ const VerifyNewEmailScreen = () => {
 
             await user.update({ primaryEmailAddressId: emailAddressToVerify.id });
 
-            Alert.alert("Success", "Your email address has been updated.");
+            toast.success("Your email address has been updated.");
 
             router.back();
             router.back(); // twice, back to main menu

@@ -55,6 +55,9 @@ export function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
               player={player}
               nativeControls={false}
               contentFit="contain"
+              // Android's default SurfaceView ignores the rounded, clipped frame and can draw black
+              // inside a Modal; a TextureView behaves like a normal view.
+              surfaceType="textureView"
             />
           </View>
         </View>

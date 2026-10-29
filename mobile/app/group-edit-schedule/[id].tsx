@@ -15,7 +15,10 @@ import {
 } from "react-native";
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
-import { DAYS_OF_WEEK, DAY_COLORS_LIGHT, ORDINAL_OCCURRENCES, USA_TIMEZONES, TZ_ABBR, FREQ_LABELS, uid, ordSfx, timeToMinutes, getMaxAttendeesError } from '@/utils/scheduleConstants';
+import { DAYS_OF_WEEK, DAY_COLORS_LIGHT, ORDINAL_OCCURRENCES, FREQ_LABELS, uid, ordSfx, timeToMinutes, getMaxAttendeesError } from '@/utils/scheduleConstants';
+import { timezoneOptions, tzAbbr } from '@/utils/timezones';
+import { toast } from '@/contexts/ToastContext';
+import { haptic } from '@/utils/haptics';
 import { getMinAttendeesError, WeekdayRow, MonthlyDateEntry, OrdinalEntry, BuiltRoutine, newBringItemKey, getBringItemsError, ScheduleData, defaultSchedule, buildLabel, buildSchedulePayload, scheduleFromNamedSchedule } from '@/utils/editScheduleDraft';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -414,11 +417,10 @@ const EditScheduleScreen = () => {
             ]);
             broadcastGroupUpdate(getToken, id);
             broadcastMeetupUpdate(getToken, id);
-            Alert.alert(
-                isNew ? "Schedule created" : "Schedule updated",
-                isNew ? "Meetups will start generating shortly." : "Future meetups have been regenerated.",
-                [{ text: "OK", onPress: () => router.navigate("/(tabs)/groups") }]
-            );
+            // Back to Group Settings (where the schedule list lives) instead of dumping the user on the Groups tab.
+            toast.success(isNew ? "Schedule created. Meetups will appear shortly." : "Schedule updated. Upcoming meetups were regenerated.");
+            haptic.success();
+            router.back();
         } catch (err: any) {
             Alert.alert("Error", err?.response?.data?.error || "Failed to save schedule.");
         } finally {
@@ -431,7 +433,7 @@ const EditScheduleScreen = () => {
         if (!id || !scheduleId) return;
         Alert.alert(
             "Remove Schedule",
-            `Remove "${d.name || "this schedule"}"? Its upcoming meetups will be cancelled — this can't be undone.`,
+            `Remove "${d.name || "this schedule"}"? Its upcoming meetups will be deleted along with their RSVPs, and members will be notified. This can't be undone.`,
             [
                 { text: "Cancel", style: "cancel" },
                 {
@@ -450,7 +452,8 @@ const EditScheduleScreen = () => {
                             ]);
                             broadcastGroupUpdate(getToken, id);
                             broadcastMeetupUpdate(getToken, id);
-                            router.navigate("/(tabs)/groups");
+                            toast.success("Schedule removed.");
+                            router.back();
                         } catch (err: any) {
                             Alert.alert("Error", err?.response?.data?.error || "Failed to remove schedule.");
                         } finally {
@@ -894,7 +897,7 @@ const EditScheduleScreen = () => {
                                 showFreqPicker: false, showStartDatePicker: false, showLeadTimePicker: false, showDeadlineTimePicker: false,
                             })}>
                                 <Feather name="globe" size={13} color={colors.brand} />
-                                <Text style={[s.tzPillText, { color: colors.brand }]}>{TZ_ABBR[d.timezone] ?? d.timezone}</Text>
+                                <Text style={[s.tzPillText, { color: colors.brand }]}>{tzAbbr(d.timezone)}</Text>
                                 <Feather name={d.showTZPicker ? "chevron-up" : "chevron-down"} size={13} color={colors.brand} />
                             </PressableOpacity>
                         </View>
@@ -1385,7 +1388,8 @@ const EditScheduleScreen = () => {
                 {d.showTZPicker && (
                     <OptionPickerModal
                         title="Timezone"
-                        options={USA_TIMEZONES.map(tz => ({ key: tz.value, label: tz.label }))}
+                        options={timezoneOptions(d.timezone)}
+                        searchable
                         selectedKey={d.timezone}
                         onSelect={key => upd({ timezone: key, showTZPicker: false })}
                         onClose={() => upd({ showTZPicker: false })}

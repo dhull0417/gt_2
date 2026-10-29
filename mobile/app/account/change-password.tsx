@@ -65,6 +65,9 @@ const ChangePasswordScreen = () => {
                                 placeholder="Enter your current password"
                                 placeholderTextColor={colors.placeholder}
                                 secureTextEntry={!isCurrentVisible}
+                                autoComplete="current-password"
+                                autoCapitalize="none"
+                                returnKeyType="next"
                                 textContentType="oneTimeCode"
                                 style={[styles.textInput, { color: colors.textSecondary }]}
                             />
@@ -82,6 +85,9 @@ const ChangePasswordScreen = () => {
                                 placeholder="Enter your new password"
                                 placeholderTextColor={colors.placeholder}
                                 secureTextEntry={!isNewVisible}
+                                autoComplete="new-password"
+                                autoCapitalize="none"
+                                returnKeyType="next"
                                 textContentType="oneTimeCode"
                                 style={[styles.textInput, { color: colors.textSecondary }]}
                             />
@@ -99,6 +105,9 @@ const ChangePasswordScreen = () => {
                                 placeholder="Confirm your new password"
                                 placeholderTextColor={colors.placeholder}
                                 secureTextEntry={!isConfirmVisible}
+                                autoComplete="new-password"
+                                autoCapitalize="none"
+                                returnKeyType="done"
                                 textContentType="oneTimeCode"
                                 style={[styles.textInput, { color: colors.textSecondary }]}
                             />

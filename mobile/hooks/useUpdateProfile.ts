@@ -5,6 +5,7 @@ import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import * as SecureStore from 'expo-secure-store';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
+import { toast } from '@/contexts/ToastContext';
 
 interface UpdateProfileVariables {
   firstName?: string;
@@ -29,7 +30,7 @@ export const useUpdateProfile = () => {
         await SecureStore.deleteItemAsync(PENDING_INVITE_KEY);
         router.replace({ pathname: '/join/[token]', params: { token: pendingToken } });
       } else {
-        Alert.alert("Success", "Your profile has been updated.");
+        toast.success("Profile updated.");
         router.replace('/(tabs)');
       }
     },

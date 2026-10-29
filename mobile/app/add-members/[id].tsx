@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useLocalSearchParams } from 'expo-router';
+import { Linking } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -18,6 +19,8 @@ import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useContactMatching, ContactEntry } from '@/hooks/useContactMatching';
 import { User, useApiClient, groupApi } from '@/utils/api';
 import { useThemeColors, useAppearance } from '@/contexts/AppearanceContext';
+import { buildInviteMessage } from '@/utils/inviteMessage';
+import { toast } from '@/contexts/ToastContext';
 
 const AddMembersScreen = () => {
     const { id: groupId } = useLocalSearchParams<{ id: string }>();
@@ -36,6 +39,9 @@ const AddMembersScreen = () => {
         staleTime: 1000 * 60 * 5,
     });
 
+    // People invited during this visit, so the button flips to "Invited" instead of inviting twice.
+    const [invitedIds, setInvitedIds] = useState<string[]>([]);
+
     const handleInvite = (userToInvite: User) => {
         if (!groupId) return;
 
@@ -46,7 +52,8 @@ const AddMembersScreen = () => {
 
         inviteUser({ groupId, userIdToInvite: userToInvite._id }, {
             onSuccess: (data) => {
-                Alert.alert("Success", data.message);
+                setInvitedIds((ids) => [...ids, userToInvite._id]);
+                toast.success(data.message);
             },
         });
     };
@@ -57,7 +64,7 @@ const AddMembersScreen = () => {
         if (!groupDetails || !inviteLink) return;
         try {
             await Share.share({
-                message: `Hey ${contact.name.split(' ')[0]}! Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join: ${inviteLink}`,
+                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, recipientFirstName: contact.name.split(' ')[0] }),
             });
         } catch (error) {
             console.error("Share error:", error);
@@ -68,7 +75,7 @@ const AddMembersScreen = () => {
         if (!groupDetails || !inviteLink) return;
         try {
             await Share.share({
-                message: `Join my group "${groupDetails.name}" on GroupThat!\n\nOpen this link to join: ${inviteLink}`,
+                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink }),
             });
         } catch (error) {
             console.error("Share error:", error);
@@ -77,21 +84,25 @@ const AddMembersScreen = () => {
 
     const renderContact = ({ item }: { item: ContactEntry }) => {
         const isOnApp = !!item.appUser;
+        const isMember = !!item.appUser && !!groupDetails?.members.some((m) => m._id === item.appUser!._id);
+        const isInvited = !!item.appUser && invitedIds.includes(item.appUser._id);
         return (
             <View style={[styles.resultRow, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                 <View style={styles.resultInfo}>
                     <Text style={[styles.resultName, { color: colors.textSecondary }]}>{item.name}</Text>
                     <Text style={[styles.contactStatus, { color: isOnApp ? colors.success : colors.textFaint }]}>
-                        {isOnApp ? 'On GroupThat' : 'Invite to GroupThat'}
+                        {isMember ? 'Already in this group' : isOnApp ? 'On GroupThat' : 'Invite to GroupThat'}
                     </Text>
                 </View>
-                {isOnApp ? (
+                {isMember ? (
+                    <Feather name="check" size={18} color={colors.success} />
+                ) : isOnApp ? (
                     <PressableOpacity
-                        style={[styles.inviteButton, { backgroundColor: isDark ? '#1A2A42' : '#EEF2FF' }]}
+                        style={[styles.inviteButton, { backgroundColor: isDark ? '#1A2A42' : '#EEF2FF' }, isInvited && { opacity: 0.6 }]}
                         onPress={() => handleInvite(item.appUser!)}
-                        disabled={isInviting}
+                        disabled={isInviting || isInvited}
                     >
-                        <Text style={[styles.inviteButtonText, { color: colors.brand }]}>Invite</Text>
+                        <Text style={[styles.inviteButtonText, { color: colors.brand }]}>{isInvited ? 'Invited' : 'Invite'}</Text>
                     </PressableOpacity>
                 ) : (
                     <PressableOpacity
@@ -125,7 +136,12 @@ const AddMembersScreen = () => {
                 {isLoadingContacts ? (
                     <ActivityIndicator size="small" color={colors.brand} style={{ marginTop: 20 }} />
                 ) : permissionDenied ? (
-                    <Text style={[styles.emptyText, { color: colors.textMuted }]}>Enable contacts permission to see friends on GroupThat.</Text>
+                    <View style={{ alignItems: 'center' }}>
+                        <Text style={[styles.emptyText, { color: colors.textMuted }]}>Allow contacts access to see which of your friends are already on GroupThat. You can still share the invite link above.</Text>
+                        <PressableOpacity onPress={() => Linking.openSettings()} style={[styles.inviteButton, { marginTop: 16, backgroundColor: isDark ? '#1A2A42' : '#EEF2FF' }]}>
+                            <Text style={[styles.inviteButtonText, { color: colors.brand }]}>Open Settings</Text>
+                        </PressableOpacity>
+                    </View>
                 ) : (
                     <FlatList
                         data={contacts}

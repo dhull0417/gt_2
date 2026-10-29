@@ -3,6 +3,7 @@ import { useAuth } from "@clerk/expo";
 import { useApiClient, groupApi } from "../utils/api";
 import { broadcastGroupUpdate } from "../utils/groupRealtime";
 import { Alert } from "react-native";
+import { toast } from '@/contexts/ToastContext';
 
 interface LeaveGroupVariables {
   groupId: string;
@@ -18,7 +19,7 @@ export const useLeaveGroup = () => {
       groupApi.leaveGroup(api, variables.groupId),
 
     onSuccess: (data, variables) => {
-      Alert.alert("Success", data.message);
+      toast.success(data.message);
       // Refresh the main groups list, so the group disappears
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['meetups'] });

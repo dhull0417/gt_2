@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, Platform } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useEffect, useRef } from 'react';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
@@ -78,7 +78,7 @@ function getImageDisplaySize(width?: number | null, height?: number | null) {
   return { width: Math.round(w), height: Math.round(h) };
 }
 
-export function ChatMessageBubble({
+function ChatMessageBubbleBase({
   message,
   isOwn,
   onLongPress,
@@ -140,12 +140,19 @@ export function ChatMessageBubble({
     if (!canInteract) return;
     if (seg.kind === 'text') return handleLongPress();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(seg.text, undefined, [
+    const options = [
       { text: 'Open', onPress: () => seg.value && openLink(seg.kind as any, seg.value) },
       { text: 'Copy', onPress: () => copyLink(seg.text) },
       { text: 'Message options', onPress: handleLongPress },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    ];
+    // Android dialogs hold at most three buttons and silently drop the rest (it was dropping "Open");
+    // there, tapping outside the dialog cancels instead.
+    Alert.alert(
+      seg.text,
+      undefined,
+      Platform.OS === 'android' ? options : [...options, { text: 'Cancel', style: 'cancel' as const }],
+      { cancelable: true }
+    );
   };
 
   // --- Entrance: slides + fades + scales in from the sender's side, once, on mount ---
@@ -386,3 +393,17 @@ const styles = StyleSheet.create({
   badgeEmoji: { fontSize: 14 },
   badgeCount: { fontSize: 12, marginLeft: 3, fontWeight: '700' },
 });
+
+// Long chats re-render every row whenever anything in the screen changes (typing, scrolling state, a new message).
+// The row's callbacks only ever act on `message` and on stable setters, so a row only needs to redraw when its own data
+// or look changes.
+export const ChatMessageBubble = React.memo(ChatMessageBubbleBase, (a, b) =>
+  a.message === b.message &&
+  a.isOwn === b.isOwn &&
+  a.currentUserId === b.currentUserId &&
+  a.isHighlighted === b.isHighlighted &&
+  a.isFirst === b.isFirst &&
+  a.isLast === b.isLast &&
+  a.skipEntrance === b.skipEntrance &&
+  a.mentionNames === b.mentionNames
+);

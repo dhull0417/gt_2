@@ -48,7 +48,7 @@ const RsvpCounts = ({ meetup, colors }: { meetup: Meetup; colors: ThemeColors })
 
             {spotsLeft !== null && (
                 <Text className="text-gray-400 dark:text-gray-500" style={{ fontSize: 13, fontStyle: 'italic' }}>
-                    {spotsLeft} spots left
+                    {spotsLeft} {spotsLeft === 1 ? 'spot' : 'spots'} left
                 </Text>
             )}
         </View>
@@ -104,7 +104,7 @@ export const MeetupCard = ({
   // Waitlists are a Premium feature of the group owner: on a full meetup in a
   // non-Premium group there is nothing to join, so the button reads "Full".
   // (Only `=== false` counts, so a missing flag never blocks; the server enforces.)
-  const waitlistLocked = isFull && !isIn && !isWaitlisted && meetup.group?.isPremium === false;
+  const waitlistLocked = isFull && !isIn && !isWaitlisted && (meetup.group?.waitlistEnabled ?? meetup.group?.isPremium) === false;
   const canBump = canPriorityBump(meetup, currentUser?._id);
   const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
   const outUnselected = !isOut;

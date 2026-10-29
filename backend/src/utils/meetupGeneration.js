@@ -7,16 +7,13 @@ import { calculateNextMeetupDate, computeNextGenerationAt, getGenerationWindowDa
 const existenceKey = (date, time) => `${new Date(date).toISOString()}|${time}`;
 
 /**
- * Fills one named schedule's meetup pipeline out to each routine's generation
- * window, creating missing Meetup docs and advancing nextGenerationAt to the
- * earliest still-due trigger.
- *
- * Existence is scoped to (group, schedule) so sibling schedules never collide,
- * even on the same date+time. Runs in two DB round-trips total regardless of
- * window size: candidates are computed in memory, diffed once, then bulk-inserted.
+ * Pass 1 (in memory, no DB): walks each routine/dayTime out to its generation
+ * window and returns the slots the series SHOULD have, the next trigger beyond
+ * the window, and the bounds used.
  */
-const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } = {}) => {
-  if (!schedule.routines?.length) return { generatedCount: 0 };
+export const computeScheduleCandidates = (group, schedule) => {
+  const empty = { candidates: [], earliestNextTrigger: null, overallWindowEnd: null, kickoffDate: null };
+  if (!schedule.routines?.length) return empty;
 
   const timezone = group.timezone;
   const now = DateTime.now().setZone(timezone);
@@ -97,6 +94,24 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
     }
   }
 
+  return { candidates, earliestNextTrigger, overallWindowEnd, kickoffDate };
+};
+
+/**
+ * Fills one named schedule's meetup pipeline out to each routine's generation
+ * window, creating missing Meetup docs and advancing nextGenerationAt to the
+ * earliest still-due trigger.
+ *
+ * Existence is scoped to (group, schedule) so sibling schedules never collide,
+ * even on the same date+time. Runs in two DB round-trips total regardless of
+ * window size: candidates are computed in memory, diffed once, then bulk-inserted.
+ */
+const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } = {}) => {
+  if (!schedule.routines?.length) return { generatedCount: 0 };
+
+  const timezone = group.timezone;
+  const { candidates, earliestNextTrigger, overallWindowEnd, kickoffDate } = computeScheduleCandidates(group, schedule);
+
   let generatedCount = 0;
 
   if (candidates.length > 0) {
@@ -108,6 +123,8 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
       'date time'
     ).lean();
     const seenKeys = new Set(existing.map(m => existenceKey(m.date, m.time)));
+    // Slots the organizer deleted or skipped are never recreated.
+    for (const skipped of schedule.skippedSlots || []) seenKeys.add(existenceKey(skipped.date, skipped.time));
 
     const { hours: leadH, minutes: leadM } = parseTimeString(schedule.generationLeadTime || "09:00 AM");
     const { hours: closeH, minutes: closeM } = parseTimeString(schedule.generationDeadlineTime || "09:00 AM");
@@ -215,6 +232,15 @@ export const generateMeetupsForGroup = async (group, { onMeetupCreated } = {}) =
     const { generatedCount: count } = await generateMeetupsForSchedule(group, schedule, { onMeetupCreated });
     generatedCount += count;
     if (schedule.nextGenerationAt !== before) touched = true;
+    // Forget skipped dates once they are safely in the past.
+    if (schedule.skippedSlots?.length) {
+      const cutoff = Date.now() - 2 * 24 * 60 * 60 * 1000;
+      const keep = schedule.skippedSlots.filter((slot) => new Date(slot.date).getTime() > cutoff);
+      if (keep.length !== schedule.skippedSlots.length) {
+        schedule.skippedSlots = keep;
+        touched = true;
+      }
+    }
   }
 
   if (touched) {
@@ -244,12 +270,12 @@ export { generateMeetupsForSchedule };
  *
  * @returns {Promise<number>} how many meetups were updated
  */
-export const refreshOverrideMeetupWindows = async (group, schedule) => {
+export const refreshOverrideMeetupWindows = async (group, schedule, { includeSeries = false } = {}) => {
   const now = new Date();
   const meetups = await Meetup.find({
     group: group._id,
     schedule: schedule._id,
-    isOverride: true,
+    ...(includeSeries ? {} : { isOverride: true }),
     status: 'scheduled',
     date: { $gte: now },
   })
@@ -289,7 +315,7 @@ export const refreshOverrideMeetupWindows = async (group, schedule) => {
 
     ops.push({
       updateOne: {
-        filter: { _id: m._id, isOverride: true, status: 'scheduled' },
+        filter: { _id: m._id, status: 'scheduled' },
         update: { $set: { rsvpOpenDate, rsvpCloseDate, minAttendees, minimumChecked, rsvpNotified } },
       },
     });
@@ -306,11 +332,11 @@ export const refreshOverrideMeetupWindows = async (group, schedule) => {
  *
  * @returns {Promise<number>} how many meetups were updated
  */
-export const refreshOverrideAssignments = async (group, schedule) => {
+export const refreshOverrideAssignments = async (group, schedule, { includeSeries = false } = {}) => {
   const meetups = await Meetup.find({
     group: group._id,
     schedule: schedule._id,
-    isOverride: true,
+    ...(includeSeries ? {} : { isOverride: true }),
     status: 'scheduled',
     date: { $gte: new Date() },
   })
@@ -334,7 +360,7 @@ export const refreshOverrideAssignments = async (group, schedule) => {
     if (unchanged) continue;
     ops.push({
       updateOne: {
-        filter: { _id: m._id, isOverride: true, status: 'scheduled' },
+        filter: { _id: m._id, status: 'scheduled' },
         update: { $set: { bringItems: items, ridesEnabled, bringClaims: claims, rides } },
       },
     });
@@ -342,4 +368,84 @@ export const refreshOverrideAssignments = async (group, schedule) => {
 
   if (ops.length > 0) await Meetup.bulkWrite(ops);
   return ops.length;
+};
+
+
+/**
+ * Brings a series' upcoming meetups in line with an edited schedule WITHOUT
+ * wiping anyone's RSVPs:
+ *   - meetups whose slot (date + time) is still part of the series are kept and
+ *     updated in place (location, description, capacity, name, RSVP window,
+ *     minimum, things to bring, rides, questions, priority groups);
+ *   - meetups whose slot is no longer part of the series (the days/times or
+ *     start date changed) are removed;
+ *   - missing slots are created afterwards by generateMeetupsForSchedule.
+ * Manually edited (override) and cancelled meetups are never deleted.
+ *
+ * @param {object} opts.resetAll  delete every upcoming series meetup instead (used when
+ *                                the group's timezone changed, which moves every slot)
+ * @returns {Promise<{removed: number, kept: number}>}
+ */
+export const reconcileScheduleMeetups = async (group, schedule, { resetAll = false } = {}) => {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  const upcoming = await Meetup.find({
+    group: group._id,
+    schedule: schedule._id,
+    isOverride: false,
+    date: { $gte: today },
+  }).select('date time').lean();
+
+  const { candidates } = schedule.routines?.length ? computeScheduleCandidates(group, schedule) : { candidates: [] };
+  const wanted = new Set(candidates.map(({ nextDate, dtEntry }) => existenceKey(nextDate, dtEntry.time)));
+
+  const staleIds = upcoming
+    .filter((m) => resetAll || !wanted.has(existenceKey(m.date, m.time)))
+    .map((m) => m._id);
+  if (staleIds.length > 0) await Meetup.deleteMany({ _id: { $in: staleIds } });
+
+  const kept = upcoming.length - staleIds.length;
+  if (kept > 0) {
+    // Plain fields are copied straight from the series to the meetups that stay.
+    await Meetup.updateMany(
+      { group: group._id, schedule: schedule._id, isOverride: false, status: 'scheduled', date: { $gte: today } },
+      {
+        $set: {
+          name: schedule.name,
+          location: schedule.defaultLocation || '',
+          description: schedule.defaultDescription || '',
+          capacity: schedule.defaultCapacity || 0,
+        },
+      }
+    );
+    // Overrides that never got a location/description of their own follow the series too.
+    if (schedule.defaultLocation) {
+      await Meetup.updateMany(
+        { group: group._id, schedule: schedule._id, isOverride: true, status: 'scheduled', date: { $gte: today }, location: { $in: ['', null] } },
+        { $set: { location: schedule.defaultLocation } }
+      );
+    }
+    if (schedule.defaultDescription) {
+      await Meetup.updateMany(
+        { group: group._id, schedule: schedule._id, isOverride: true, status: 'scheduled', date: { $gte: today }, description: { $in: ['', null] } },
+        { $set: { description: schedule.defaultDescription } }
+      );
+    }
+    await refreshOverrideMeetupWindows(group, schedule, { includeSeries: true });
+    await refreshOverrideAssignments(group, schedule, { includeSeries: true });
+  }
+
+  return { removed: staleIds.length, kept };
+};
+
+/** Remembers a deleted/skipped slot so the series never recreates it. */
+export const rememberSkippedSlot = async (group, scheduleId, meetup) => {
+  const schedule = group.schedules?.id(scheduleId);
+  if (!schedule) return false;
+  const key = existenceKey(meetup.date, meetup.time);
+  if ((schedule.skippedSlots || []).some((slot) => existenceKey(slot.date, slot.time) === key)) return true;
+  schedule.skippedSlots.push({ date: meetup.date, time: meetup.time });
+  await group.save();
+  return true;
 };

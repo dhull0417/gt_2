@@ -23,8 +23,10 @@ import NativeTimePicker from './NativeTimePicker';
 import LocationField from './LocationField';
 import LocationSearchModal from './LocationSearchModal';
 import OptionPickerModal from './OptionPickerModal';
+import { deviceTimeZone, timezoneLabel, timezoneOptions } from '@/utils/timezones';
 import { useQueryClient } from '@tanstack/react-query';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { toast } from '@/contexts/ToastContext';
 
 interface GroupPickerMode {
     /** Non-DM groups the current user belongs to. */
@@ -38,16 +40,6 @@ interface GroupPickerMode {
 type AddMeetupWizardProps =
     | { visible: boolean; onClose: () => void; groupDetails: Group; groupPickerMode?: undefined; onMeetupCreated?: (groupId: string) => void }
     | { visible: boolean; onClose: () => void; groupDetails?: undefined; groupPickerMode: GroupPickerMode; onMeetupCreated?: undefined };
-
-const usaTimezones = [
-    { label: "Eastern (ET)", value: "America/New_York" },
-    { label: "Central (CST)", value: "America/Chicago" },
-    { label: "Mountain (MT)", value: "America/Denver" },
-    { label: "Mountain (no DST)", value: "America/Phoenix" },
-    { label: "Pacific (PST)", value: "America/Los_Angeles" },
-    { label: "Alaska (AKST)", value: "America/Anchorage" },
-    { label: "Hawaii (HST)", value: "Pacific/Honolulu" },
-];
 
 // Single-screen form for one-off meetups; styled to match create-group/index.tsx
 const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMeetupCreated }: AddMeetupWizardProps) => {
@@ -72,7 +64,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
     // --- Data States ---
     const [meetupDate, setMeetupDate] = useState<string>(DateTime.now().toISODate()!);
     const [meetupTime, setMeetupTime] = useState("05:00 PM");
-    const [meetupTZ, setMeetupTZ] = useState(initialGroup?.timezone || "America/Denver");
+    const [meetupTZ, setMeetupTZ] = useState(initialGroup?.timezone || deviceTimeZone());
     const [maxAttendeesMode, setMaxAttendeesMode] = useState<"unlimited" | "limited">(
         initialGroup?.defaultCapacity ? "limited" : "unlimited"
     );
@@ -123,7 +115,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
     useEffect(() => {
         if (!visible) return;
         setPickerChoice(initialPickerChoice);
-        setMeetupTZ(initialGroup?.timezone || "America/Denver");
+        setMeetupTZ(initialGroup?.timezone || deviceTimeZone());
         setMaxAttendeesMode(initialGroup?.defaultCapacity ? "limited" : "unlimited");
         setMaxAttendeesInput(initialGroup?.defaultCapacity ? String(initialGroup.defaultCapacity) : "");
         setMeetupLocation(initialGroup?.defaultLocation || "");
@@ -144,7 +136,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
         setPickerChoice(key);
         setShowGroupPicker(false);
         const selectedGroup = key === 'new' ? undefined : groupPickerMode?.groups.find(g => g._id === key);
-        setMeetupTZ(selectedGroup?.timezone || "America/Denver");
+        setMeetupTZ(selectedGroup?.timezone || deviceTimeZone());
         setMaxAttendeesMode(selectedGroup?.defaultCapacity ? "limited" : "unlimited");
         setMaxAttendeesInput(selectedGroup?.defaultCapacity ? String(selectedGroup.defaultCapacity) : "");
         setMeetupLocation(selectedGroup?.defaultLocation || "");
@@ -222,7 +214,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                 description: meetupDescription,
                 name: targetGroupName
             });
-            Alert.alert("Success", "Meetup added!");
+            toast.success("Meetup added!");
             queryClient.invalidateQueries({ queryKey: ['meetups'] });
             (groupPickerMode ? groupPickerMode.onMeetupCreated : onMeetupCreated)?.(targetGroupId);
             resetAndClose();
@@ -255,7 +247,12 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
             visible={visible}
             animationType="slide"
             presentationStyle="pageSheet"
-            onRequestClose={resetAndClose}
+            // Android back closes an open search/time overlay first instead of discarding the whole form.
+            onRequestClose={() => {
+                if (isLocationSearchActive) setIsLocationSearchActive(false);
+                else if (showTimePicker) setShowTimePicker(false);
+                else resetAndClose();
+            }}
         >
             {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
             <SafeAreaView style={[s.screen, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
@@ -385,22 +382,9 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                         onPress={() => { setShowTZPicker(v => !v); setShowTimePicker(false); }}
                     >
                         <Feather name="globe" size={16} color={colors.brand} style={{ marginRight: 8 }} />
-                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{usaTimezones.find(tz => tz.value === meetupTZ)?.label || meetupTZ}</Text>
+                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{timezoneLabel(meetupTZ)}</Text>
                         <Feather name={showTZPicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </PressableOpacity>
-                    {showTZPicker && (
-                        <View style={[s.inlineDayPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                            {usaTimezones.map(tz => (
-                                <PressableOpacity
-                                    key={tz.value}
-                                    style={[s.dayOption, { borderBottomColor: colors.border }, meetupTZ === tz.value && { backgroundColor: colors.brandSoft }]}
-                                    onPress={() => { setMeetupTZ(tz.value); setShowTZPicker(false); }}
-                                >
-                                    <Text style={[s.dayOptionText, { color: colors.textSecondary }, meetupTZ === tz.value && { color: colors.brand, fontWeight: '700' }]}>{tz.label}</Text>
-                                </PressableOpacity>
-                            ))}
-                        </View>
-                    )}
 
                     {/* Max Attendees */}
                     <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Max Attendees</Text>
@@ -487,6 +471,17 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                 {/* Sibling of ScrollView, not descendant — an overlay inside it only fills the scrollable content */}
                 {showTimePicker && (
                     <NativeTimePicker value={meetupTime} onChange={setMeetupTime} onClose={() => setShowTimePicker(false)} asOverlay />
+                )}
+
+                {showTZPicker && (
+                    <OptionPickerModal
+                        title="Timezone"
+                        options={timezoneOptions(meetupTZ)}
+                        searchable
+                        selectedKey={meetupTZ}
+                        onSelect={key => { setMeetupTZ(key); setShowTZPicker(false); }}
+                        onClose={() => setShowTZPicker(false)}
+                    />
                 )}
 
                 {showGroupPicker && groupPickerMode && (

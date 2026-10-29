@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+    Modal,
     View,
     Text,
     Image,
@@ -21,6 +22,14 @@ import { getDMDisplayName, getUserDisplayName } from '@/utils/groupDisplay';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
+import { buildInviteMessage } from '@/utils/inviteMessage';
+import { tzAbbr } from '@/utils/timezones';
+import { useGetMeetups } from '@/hooks/useGetMeetups';
+import MeetupDetailModal from '@/components/MeetupDetailModal';
+import { meetupStartInstant } from '@/utils/meetupTime';
+import type { Meetup } from '@/utils/api';
+import { addGroupToCalendar } from '@/utils/calendarFeed';
+import { getGroupImage } from '@/utils/groupDisplay';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -33,29 +42,13 @@ interface GroupDetailsViewProps {
     currentUser: User;
     isRemovingMember: boolean;
     onRemoveMember: (memberIdToRemove: string) => void;
-    searchQuery: string;
-    onSearchChange: (text: string) => void;
     onLeaveSuccess: () => void;
-    searchResults: User[] | undefined;
-    onInvite: (id: string) => void;
     onMemberPress?: (member: User) => void;
 }
 
 const daysOfWeekFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-const getTZAbbreviation = (timezone: string) => {
-    switch (timezone) {
-        case "America/New_York": return "ET";
-        case "America/Chicago": return "CT";
-        case "America/Denver": return "MT";
-        case "America/Phoenix": return "MST"; // Mountain Standard Time (no DST)
-        case "America/Los_Angeles": return "PT";
-        case "America/Anchorage": return "AKST";
-        case "Pacific/Honolulu": return "HST";
-        default:
-            return "";
-    }
-};
+const getTZAbbreviation = (timezone: string) => tzAbbr(timezone);
 
 // Displays schedule, member list, and invite tools for a group
 export const GroupDetailsView = ({
@@ -63,10 +56,6 @@ export const GroupDetailsView = ({
     currentUser,
     isRemovingMember,
     onRemoveMember,
-    searchQuery,
-    onSearchChange,
-    searchResults,
-    onInvite,
     onLeaveSuccess,
     onMemberPress,
 }: GroupDetailsViewProps) => {
@@ -85,6 +74,17 @@ export const GroupDetailsView = ({
         enabled: !groupDetails.isDM,
         staleTime: 1000 * 60 * 5,
     });
+
+    // The group's next scheduled meetup, from the same cached list the Home tab uses.
+    const { data: allMeetups } = useGetMeetups();
+    const [openMeetup, setOpenMeetup] = useState<Meetup | null>(null);
+    const nextMeetup = useMemo(() => {
+        if (groupDetails.isDM) return null;
+        const now = Date.now();
+        return (allMeetups ?? [])
+            .filter(m => m.group._id === groupDetails._id && m.status === 'scheduled' && meetupStartInstant(m).getTime() >= now)
+            .sort((a, b) => meetupStartInstant(a).getTime() - meetupStartInstant(b).getTime())[0] ?? null;
+    }, [allMeetups, groupDetails._id, groupDetails.isDM]);
 
     // Pastel icon-chip backgrounds adapt by scheme while keeping the same hue family
     const chipBlue = { backgroundColor: isDark ? '#1A2A42' : '#EEF6FF', borderColor: isDark ? '#2C4870' : '#BFDBFE' };
@@ -108,7 +108,7 @@ export const GroupDetailsView = ({
         }
         try {
             await Share.share({
-                message: `Join my group "${groupDetails.name}" on GroupThat!\n\nSTEP 1 — Download the app:\n→ https://invite.groupthatapp.com/download\n\nSTEP 2 — Join the group:\n→ ${inviteLink}`,
+                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink }),
             });
         } catch (error: any) {
             Alert.alert('Error', 'Could not share invite link.');
@@ -194,15 +194,45 @@ export const GroupDetailsView = ({
         <View style={styles.container}>
             {/* 0. Group Photo Header */}
             <View style={styles.groupHeader}>
-                <GroupAvatar name={headerName} imageUrl={groupDetails.image} size={140} borderRadius={32} />
+                <GroupAvatar name={headerName} imageUrl={getGroupImage(groupDetails as any, currentUser.clerkId)} size={140} borderRadius={32} />
                 <Text style={[styles.groupHeaderName, { color: colors.textPrimary }]}>{headerName}</Text>
             </View>
+
+            {/* Next meetup — tap to open it */}
+            {nextMeetup && (
+                <PressableOpacity onPress={() => setOpenMeetup(nextMeetup)} style={[styles.card, { backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center' }]} activeOpacity={0.8}>
+                    <View style={[styles.iconWrap, chipBlue]}>
+                        <Feather name="calendar" size={16} color={colors.brand} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={{ color: colors.textFaint, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 }}>Next meetup</Text>
+                        <Text style={{ color: colors.textPrimary, fontSize: 15, fontWeight: '800', marginTop: 2 }} numberOfLines={1}>{nextMeetup.name}</Text>
+                        <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 1 }} numberOfLines={1}>
+                            {meetupStartInstant(nextMeetup).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: nextMeetup.timezone })} at {nextMeetup.time} {tzAbbr(nextMeetup.timezone)}
+                        </Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={colors.textFaint} />
+                </PressableOpacity>
+            )}
+            {openMeetup && (
+                <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpenMeetup(null)}>
+                    <MeetupDetailModal meetup={openMeetup} onClose={() => setOpenMeetup(null)} />
+                </Modal>
+            )}
 
             {/* Invite Friends — hidden for DMs */}
             {!isDM && (
                 <PressableOpacity onPress={handleInvitePress} style={[styles.inviteButton, chipTeal]} activeOpacity={0.7}>
                     <Feather name="user-plus" size={16} color={colors.accentTeal} />
                     <Text style={[styles.inviteButtonText, { color: colors.accentTeal }]}>Invite Friends</Text>
+                </PressableOpacity>
+            )}
+
+            {/* Subscribe a calendar app to just this group's meetups */}
+            {!isDM && (
+                <PressableOpacity onPress={() => addGroupToCalendar(api, groupDetails._id, groupDetails.name)} style={[styles.inviteButton, chipBlue]} activeOpacity={0.7}>
+                    <Feather name="calendar" size={16} color={colors.brand} />
+                    <Text style={[styles.inviteButtonText, { color: colors.brand }]}>Add to My Calendar</Text>
                 </PressableOpacity>
             )}
 

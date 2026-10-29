@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { Text, StyleSheet } from 'react-native';
+import Animated, { SlideInUp, SlideOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsOnline } from '@/hooks/useIsOnline';
 import { useSetOfflineBannerHeight } from '@/contexts/OfflineBannerContext';
@@ -16,13 +17,15 @@ export function OfflineBanner() {
   if (isOnline) return null;
 
   return (
-    <View
+    <Animated.View
+      entering={SlideInUp.duration(220)}
+      exiting={SlideOutUp.duration(180)}
       pointerEvents="none"
       style={[styles.banner, { paddingTop: insets.top + 4 }]}
       onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
     >
       <Text style={styles.text}>You're offline — showing saved data</Text>
-    </View>
+    </Animated.View>
   );
 }
 

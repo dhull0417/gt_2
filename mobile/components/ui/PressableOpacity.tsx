@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, type View, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
+import { haptic } from '@/utils/haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -10,6 +11,8 @@ export type PressableOpacityProps = Omit<PressableProps, 'style'> & {
   ref?: React.Ref<View>;
   /** Opacity while pressed. Same meaning and default as TouchableOpacity's `activeOpacity`. */
   activeOpacity?: number;
+  /** Feedback on press: 'tap' (default, light), 'press' (medium), 'select' (tick) or false for none. */
+  haptic?: 'tap' | 'press' | 'select' | false;
 };
 
 /**
@@ -27,6 +30,8 @@ export function PressableOpacity({
   onPressOut,
   accessibilityRole = 'button',
   accessibilityState,
+  haptic: hapticKind = 'tap',
+  onPress,
   ref,
   ...rest
 }: PressableOpacityProps) {
@@ -52,6 +57,10 @@ export function PressableOpacity({
         pressed.value = withTiming(0, { duration: 160 });
         onPressOut?.(e);
       }}
+      onPress={onPress ? (e) => {
+        if (hapticKind) haptic[hapticKind]();
+        onPress(e);
+      } : undefined}
       style={[style, animatedStyle]}
       {...rest}
     />

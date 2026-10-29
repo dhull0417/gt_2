@@ -18,14 +18,14 @@
       "appleTeamId": "9P29PK6A6D",
       "usesAppleSignIn": true,
       "associatedDomains": [
-        "applinks:accounts.groupthatapp.comv",
+        "applinks:accounts.groupthatapp.com",
         "webcredentials:accounts.groupthatapp.com",
         "applinks:gt-2-peach.vercel.app",
         "applinks:invite.groupthatapp.com"
       ],
       "infoPlist": {
-        "NSCameraUsageDescription": "GroupThat needs camera access to let you take a profile picture.",
-        "NSPhotoLibraryUsageDescription": "GroupThat needs access to your photos to let you choose a profile picture.",
+        "NSCameraUsageDescription": "GroupThat needs camera access to let you take a profile picture or a photo to share in chat.",
+        "NSPhotoLibraryUsageDescription": "GroupThat needs access to your photos to let you choose a profile picture or photos to share in chat.",
         "NSContactsUsageDescription": "GroupThat needs access to your contacts to let you invite friends to your groups.",
         "NSCalendarsUsageDescription": "GroupThat needs access to your calendar to add meetup events.",
         "NSCalendarsFullAccessUsageDescription": "GroupThat needs access to your calendar to add meetup events.",
@@ -45,8 +45,6 @@
       "package": "com.dallinhull.groupthat",
       "permissions": [
         "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
         "POST_NOTIFICATIONS",
         "INTERNET",
         "VIBRATE",

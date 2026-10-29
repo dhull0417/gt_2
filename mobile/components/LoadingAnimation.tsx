@@ -7,8 +7,19 @@ interface Props {
   size?: number;
 }
 
-// Renders via lottie-web in a WebView (not native lottie-react-native) so it works in
-// Expo Go without a rebuild. Swap to native once building a dev client.
+// Native Lottie (lottie-react-native) when it is installed in the build; otherwise the old
+// lottie-web-in-a-WebView renderer so the app keeps working until the dependency is added
+// (Metro treats a require inside try/catch as optional).
+let NativeLottie: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('lottie-react-native');
+  NativeLottie = mod?.default ?? mod;
+} catch {
+  NativeLottie = null;
+}
+
+// WebView fallback HTML.
 const HTML = `
 <!DOCTYPE html>
 <html>
@@ -36,6 +47,13 @@ const HTML = `
 `;
 
 export function LoadingAnimation({ size = 119 }: Props) {
+  if (NativeLottie) {
+    return (
+      <View style={[styles.wrap, { width: size, height: size }]} pointerEvents="none">
+        <NativeLottie source={animationData} autoPlay loop style={{ width: size, height: size }} />
+      </View>
+    );
+  }
   return (
     <View style={[styles.wrap, { width: size, height: size }]} pointerEvents="none">
       <WebView

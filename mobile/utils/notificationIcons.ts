@@ -36,6 +36,8 @@ const NOTIFICATION_ICONS: Record<NotificationType, NotificationIconSpec> = {
   'meetup-starting-soon': { name: 'watch', color: '#F97316' },
   'poll-created': { name: 'bar-chart-2', color: '#8B5CF6' },
   'poll-closed': { name: 'flag', color: '#6B7280' },
+  'group-deleted': { name: 'trash-2', color: '#EF4444' },
+  'schedule-removed': { name: 'calendar', color: '#F59E0B' },
 };
 
 export const getNotificationIcon = (type: string): NotificationIconSpec =>

@@ -27,14 +27,19 @@ export function LinkPreviewCard({ url, isOwn, onLongPress }: Props) {
   const colors = useThemeColors();
   const api = useApiClient();
   const { data: preview } = useQuery<LinkPreview | null, Error>({
-    queryKey: ['linkPreview', url],
+    // "v2": earlier builds cached "no preview" answers for a day; a new key drops those.
+    queryKey: ['linkPreview', 'v2', url],
     queryFn: async () => {
-      const res = await api.get('/api/link-preview', { params: { url } });
+      // The server may follow redirects to reach the page, so allow longer than the app's
+      // default 5 s request timeout.
+      const res = await api.get('/api/link-preview', { params: { url }, timeout: 12000 });
+      if (__DEV__ && !res.data?.preview) console.log('[link-preview] none for', url, res.data?.reason ?? '');
       return (res.data?.preview ?? null) as LinkPreview | null;
     },
-    staleTime: Infinity,
+    // A found preview is kept for the day; "no preview" is retried after a few minutes.
+    staleTime: (query) => (query.state.data ? Infinity : 5 * 60 * 1000),
     gcTime: 24 * 60 * 60 * 1000,
-    retry: false,
+    retry: 1,
   });
 
   if (!preview) return null;

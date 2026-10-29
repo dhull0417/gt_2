@@ -3,11 +3,14 @@ import {
   getCurrentUser,
   syncUser,
   updateProfile,
-  searchUsers,
   matchContacts,
+  searchUsers,
   updatePushToken,
+  removePushToken,
+  updateNotificationPrefs,
   updatePermissionStatus,
   toggleGroupMute,
+  togglePinGroup,
   markGroupRead,
   deleteAccount,
   syncPremium,
@@ -17,6 +20,7 @@ import { protectRoute } from "../middleware/auth.middleware.js";
 
 const router = express.Router();  
 
+// LEGACY: only app 1.3.x and older call this (Group Details member search). Remove once nobody runs those builds.
 router.get("/search", protectRoute, searchUsers);
 router.post("/match-contacts", protectRoute, matchContacts);
 
@@ -24,8 +28,11 @@ router.post("/sync", protectRoute, syncUser);
 router.get("/me", protectRoute, getCurrentUser);
 router.put("/profile", protectRoute, updateProfile);
 router.post("/push-token", protectRoute, updatePushToken);
+router.delete("/push-token", protectRoute, removePushToken);
+router.patch("/notification-prefs", protectRoute, updateNotificationPrefs);
 router.patch("/permissions", protectRoute, updatePermissionStatus);
 router.patch("/mute-group", protectRoute, toggleGroupMute);
+router.patch("/pin-group", protectRoute, togglePinGroup);
 router.patch("/groups/:groupId/read", protectRoute, markGroupRead);
 router.delete("/account", protectRoute, deleteAccount);
 // Called by the app right after a purchase / restore so Premium shows up without waiting for the webhook.

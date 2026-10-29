@@ -115,11 +115,9 @@ cron jobs at the same work: each job should have exactly one caller.
 ## Known gaps (flagged, not fixed)
 
 - Backend CI only runs unit tests (`.github/workflows/backend-tests.yml`, same
-  command as `npm test` in `backend/`). There is no lint step, and no mobile
-  type-check/jest workflow yet. The backend tests stub the database, so none
-  of them exercise real Mongo queries.
-- Stream Chat webhook handler (`backend/src/controllers/webhook.controller.js`)
-  does not verify the signature it receives.
+  command as `npm test` in `backend/`); mobile CI (`.github/workflows/mobile-checks.yml`)
+  runs `tsc --noEmit` and jest. There is no lint step. The backend tests stub the
+  database, so none of them exercise real Mongo queries.
 - The `/join/:token` group-invite landing page
   (`backend/src/server.js`) is hardcoded to the production domain and
   Android bundle ID/package name — deep-link testing against staging will

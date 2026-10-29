@@ -64,6 +64,12 @@ const AccountLayout = () => {
                     presentation: 'modal',
                 }}
             />
+            <Stack.Screen name="update-zip" options={{ headerTitle: 'Zip Code', presentation: 'modal' }} />
+            <Stack.Screen name="update-phone" options={{ headerTitle: 'Phone Number', presentation: 'modal' }} />
+            <Stack.Screen
+                name="notifications"
+                options={{ headerTitle: 'Notifications' }}
+            />
             <Stack.Screen
                 name="delete-account"
                 options={{

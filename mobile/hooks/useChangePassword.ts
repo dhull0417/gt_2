@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useUser } from "@clerk/expo";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
+import { toast } from '@/contexts/ToastContext';
 
 interface ChangePasswordVariables {
   currentPassword: string;
@@ -18,7 +19,7 @@ export const useChangePassword = () => {
         return user.updatePassword(variables);
     },
     onSuccess: () => {
-      Alert.alert("Success", "Your password has been updated successfully.");
+      toast.success("Password updated.");
       router.back();
     },
     onError: (error: any) => {

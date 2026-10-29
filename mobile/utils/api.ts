@@ -1,8 +1,14 @@
 import axios, { AxiosInstance } from "axios";
 import { useAuth } from "@clerk/expo";
 import { useMemo } from "react";
+import Constants from "expo-constants";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+
+// Sent with every request so the server knows this build understands the new behaviour.
+// Store builds from before this header (1.3.x) keep the behaviour they were built for; see
+// backend/src/middleware/clientInfo.middleware.js. Comes from app.json "version".
+export const APP_VERSION: string = Constants.expoConfig?.version ?? "0.0.0";
 
 // Central Frequency type to resolve mismatches across the app
 export type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'ordinal' | 'custom' | 'once';
@@ -92,6 +98,7 @@ export interface User {
   profilePicture?: string;
   groups?: string[];
   mutedGroups: string[];
+  pinnedGroups?: string[];
   mutedUntilNextMeetup: string[];
   lastReadAt?: Record<string, string>;
   zipCode?: string;
@@ -101,6 +108,8 @@ export interface User {
     location: 'granted' | 'denied' | 'undetermined';
     photoLibrary: 'granted' | 'denied' | 'undetermined';
   };
+  timezone?: string | null;
+  notificationPrefs?: NotificationPrefs;
   createdAt?: string;
   /** Computed by the server; true while the user has active Premium. */
   isPremium?: boolean;
@@ -145,7 +154,8 @@ export interface Group {
   lastMessage?: LastMessage | null;
   moderators?: (User | string)[];
   isDM?: boolean;
-  dmParticipants?: { userId: string; name: string }[];
+  dmParticipants?: { userId: string; name: string; profilePicture?: string }[];
+  createdAt?: string;
   updatedAt: string;
 }
 
@@ -191,6 +201,8 @@ export interface Meetup {
     image?: string;
     /** Computed by the server: true while the group's owner has Premium. Absent = unknown (treat as enabled; the server enforces). */
     isPremium?: boolean;
+    /** Computed by the server: can people join this meetup's waitlist? Absent (older server) = follow isPremium. */
+    waitlistEnabled?: boolean;
     /** Premium custom RSVP reactions (only present while the owner has Premium). */
     rsvpResponses?: GroupRsvpResponse[];
   };
@@ -211,6 +223,10 @@ export interface Meetup {
   minimumChecked?: boolean;
   /** Set when the app (not a person) cancelled it, e.g. 'minimum-headcount'. */
   cancelReason?: string | null;
+  /** Optional note the organizer gave when cancelling (shown to everyone). */
+  cancelNote?: string | null;
+  /** When the organizer last pinged the undecided members. */
+  lastRemindedAt?: string | null;
   isOverride: boolean;
   members: User[];
   undecided: string[];
@@ -260,7 +276,7 @@ export interface Poll {
   allowMultiple: boolean;
   options: PollOption[];
   status: 'active' | 'expired' | 'cancelled';
-  expiresAt: string;
+  expiresAt: string | null;
   createdAt: string;
 }
 
@@ -270,7 +286,8 @@ export type NotificationType =
   | 'meetup-rsvp-admin-in' | 'meetup-rsvp-admin-out'
   | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled' | 'meetup-restored'
   | 'meetup-rsvp-reminder' | 'meetup-rsvp-open' | 'meetup-starting-soon'
-  | 'poll-created' | 'poll-closed';
+  | 'poll-created' | 'poll-closed'
+  | 'group-deleted' | 'schedule-removed';
 
 export interface Notification {
   _id: string;
@@ -286,7 +303,9 @@ export interface Notification {
     changedFields?: ('schedule' | 'location' | 'capacity')[];
     /** ownership-transferred: the group's Premium features paused with the change of owner. */
     premiumPaused?: boolean;
-    reason?: 'owner-deleted-account' | 'minimum-headcount';
+    reason?: string;
+    groupName?: string;
+    scheduleName?: string;
     /** meetup-cancelled by minimum headcount: how many were needed / how many signed up. */
     needed?: number;
     count?: number;
@@ -402,7 +421,7 @@ interface CreatePollPayload {
   prompt: string;
   options: string[];
   allowMultiple: boolean;
-  expiresAt: string;
+  expiresAt: string | null;
 }
 
 interface VotePollPayload {
@@ -422,7 +441,8 @@ export const createApiClient = (getToken: () => Promise<string | null>): AxiosIn
     timeout: 5000,
     headers: {
       "User-Agent": "GT2MobileApp/1.0",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "X-App-Version": APP_VERSION,
     }
   });
   
@@ -448,6 +468,14 @@ const deviceTimezone = (): string | undefined => {
   }
 };
 
+export interface NotificationPrefs {
+  chat: boolean;
+  rsvps: boolean;
+  reminders: boolean;
+  polls: boolean;
+  quietHours: { enabled: boolean; start: string; end: string };
+}
+
 export const userApi = {
   syncUser: (api: AxiosInstance, data?: { firstName?: string; lastName?: string }) =>
     api.post("/api/users/sync", { timezone: deviceTimezone(), ...(data ?? {}) }),
@@ -456,9 +484,12 @@ export const userApi = {
     return response.data.user;
   },
   updateProfile: (api: AxiosInstance, data: any) => api.put("/api/users/profile", data),
-  searchUsers: async (api: AxiosInstance, query: string): Promise<User[]> => {
-    const response = await api.get<User[]>(`/api/users/search?query=${encodeURIComponent(query)}`);
-    return response.data;
+  /** Stops pushes to this device (called on sign-out). */
+  removePushToken: (api: AxiosInstance, token: string) =>
+    api.delete("/api/users/push-token", { data: { token } }),
+  updateNotificationPrefs: async (api: AxiosInstance, prefs: Partial<NotificationPrefs>): Promise<NotificationPrefs> => {
+    const response = await api.patch<{ notificationPrefs: NotificationPrefs }>("/api/users/notification-prefs", prefs);
+    return response.data.notificationPrefs;
   },
   matchContacts: async (api: AxiosInstance, emails: string[], phoneNumbers: string[]): Promise<User[]> => {
     const response = await api.post<User[]>('/api/users/match-contacts', { emails, phoneNumbers });
@@ -468,12 +499,17 @@ export const userApi = {
     const response = await api.patch<{ muted: boolean }>("/api/users/mute-group", { groupId, muteType });
     return response.data;
   },
+  togglePinGroup: async (api: AxiosInstance, groupId: string, pinned: boolean): Promise<{ pinnedGroups: string[] }> => {
+    const response = await api.patch<{ pinnedGroups: string[] }>("/api/users/pin-group", { groupId, pinned });
+    return response.data;
+  },
   markGroupRead: async (api: AxiosInstance, groupId: string): Promise<{ ok: boolean }> => {
     const response = await api.patch<{ ok: boolean }>(`/api/users/groups/${groupId}/read`);
     return response.data;
   },
-  getCalendarSyncUrl: async (api: AxiosInstance): Promise<{ url: string }> => {
-    const response = await api.get<{ url: string }>("/api/users/calendar-url");
+  /** Pass a groupId for a feed with just that group's meetups. */
+  getCalendarSyncUrl: async (api: AxiosInstance, groupId?: string): Promise<{ url: string }> => {
+    const response = await api.get<{ url: string }>("/api/users/calendar-url", { params: groupId ? { groupId } : undefined });
     return response.data;
   },
   /** Asks the server to re-check RevenueCat for this user (after a purchase or restore) and returns the fresh user. */
@@ -514,6 +550,11 @@ export const placesApi = {
 };
 
 export const groupApi = {
+  /** A sample group (with a sample meetup) so a new person can look around before making their own. */
+  createDemoGroup: async (api: AxiosInstance): Promise<{ group: Group; meetupId?: string; alreadyExisted?: boolean }> => {
+    const response = await api.post<{ group: Group; meetupId?: string; alreadyExisted?: boolean }>("/api/groups/demo");
+    return response.data;
+  },
   createGroup: async (api: AxiosInstance, payload: CreateGroupPayload): Promise<CreateGroupResponse> => {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);
     return response.data;
@@ -660,8 +701,8 @@ export const meetupApi = {
     const response = await api.delete(`/api/meetups/${meetupId}`);
     return response.data;
   },
-  cancelMeetup: async (api: AxiosInstance, meetupId: string): Promise<{ message: string }> => {
-    const response = await api.patch(`/api/meetups/${meetupId}/cancel`);
+  cancelMeetup: async (api: AxiosInstance, meetupId: string, reason?: string): Promise<{ message: string }> => {
+    const response = await api.patch(`/api/meetups/${meetupId}/cancel`, reason ? { reason } : {});
     return response.data;
   },
   restoreMeetup: async (api: AxiosInstance, meetupId: string): Promise<{ message: string; meetup: Meetup }> => {
@@ -732,6 +773,10 @@ export const notificationApi = {
   },
   declineInvite: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
     const response = await api.post(`/api/notifications/${notificationId}/decline`);
+    return response.data;
+  },
+  deleteNotification: async (api: AxiosInstance, notificationId: string): Promise<{ message: string }> => {
+    const response = await api.delete(`/api/notifications/${notificationId}`);
     return response.data;
   },
   markNotificationsAsRead: async (api: AxiosInstance): Promise<{ message: string }> => {

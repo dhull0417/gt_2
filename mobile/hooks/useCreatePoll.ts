@@ -9,7 +9,8 @@ interface CreatePollVariables {
   prompt: string;
   options: string[];
   allowMultiple: boolean;
-  expiresAt: string;
+  /** null = no end; the poll stays open until closed. */
+  expiresAt: string | null;
 }
 
 export const useCreatePoll = () => {

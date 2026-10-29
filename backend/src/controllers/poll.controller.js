@@ -6,6 +6,18 @@ import User from "../models/user.model.js";
 import { getAuth } from "@clerk/express";
 import { canManageGroup } from "./group.controller.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
+import { postSystemMessage } from "../utils/systemMessage.js";
+import { isLegacyClient } from "../middleware/clientInfo.middleware.js";
+
+// App 1.3.x can't show a poll without an end date (it prints "Invalid DateTime"). Those apps are
+// told a no-end poll ends far in the future; the poll itself still never expires.
+export const LEGACY_NO_END = '2099-12-31T23:59:00.000Z';
+export const pollForClient = (poll, legacy) => {
+    if (!poll) return poll;
+    const plain = typeof poll.toJSON === 'function' ? poll.toJSON() : poll;
+    if (!legacy || plain.expiresAt) return plain;
+    return { ...plain, expiresAt: LEGACY_NO_END };
+};
 
 const POLL_POPULATE = [
     { path: 'group', select: 'name owner moderators' },
@@ -46,7 +58,8 @@ export const createPoll = asyncHandler(async (req, res) => {
         return res.status(400).json({ error: "A poll must have between 2 and 10 response options." });
     }
 
-    if (!expiresAt || new Date(expiresAt) <= new Date()) {
+    const hasEnd = expiresAt !== null && expiresAt !== undefined && expiresAt !== '';
+    if (hasEnd && (isNaN(new Date(expiresAt).getTime()) || new Date(expiresAt) <= new Date())) {
         return res.status(400).json({ error: "Poll expiration must be set to a future date and time." });
     }
 
@@ -56,7 +69,7 @@ export const createPoll = asyncHandler(async (req, res) => {
         prompt: prompt.trim(),
         allowMultiple: !!allowMultiple,
         options: cleanedOptions.map(text => ({ text, voters: [] })),
-        expiresAt: new Date(expiresAt),
+        expiresAt: hasEnd ? new Date(expiresAt) : null,
     });
 
     const membersToNotify = await User.find({ _id: { $in: group.members, $ne: requester._id } });
@@ -72,8 +85,10 @@ export const createPoll = asyncHandler(async (req, res) => {
         });
     }
 
+    await postSystemMessage(group._id, `${requester.firstName || 'Someone'} started a poll: "${poll.prompt}"`);
+
     const populatedPoll = await Poll.findById(poll._id).populate(POLL_POPULATE);
-    res.status(201).json({ message: "Poll created successfully.", poll: populatedPoll });
+    res.status(201).json({ message: "Poll created successfully.", poll: pollForClient(populatedPoll, isLegacyClient(req)) });
 });
 
 /**
@@ -99,7 +114,8 @@ export const getPolls = asyncHandler(async (req, res) => {
         .populate(POLL_POPULATE)
         .sort({ createdAt: -1 });
 
-    res.status(200).json(polls);
+    const legacy = isLegacyClient(req);
+    res.status(200).json(polls.map((p) => pollForClient(p, legacy)));
 });
 
 /**
@@ -122,7 +138,7 @@ export const votePoll = asyncHandler(async (req, res) => {
     const isMember = poll.group.members?.some(m => m.toString() === requester._id.toString());
     if (!isMember) return res.status(403).json({ error: "Permission denied." });
 
-    if (poll.status !== 'active' || new Date(poll.expiresAt) <= new Date()) {
+    if (poll.status !== 'active' || (poll.expiresAt && new Date(poll.expiresAt) <= new Date())) {
         return res.status(400).json({ error: "This poll is no longer accepting responses." });
     }
 
@@ -147,7 +163,7 @@ export const votePoll = asyncHandler(async (req, res) => {
     await poll.save();
 
     const updatedPoll = await Poll.findById(pollId).populate(POLL_POPULATE);
-    res.status(200).json({ message: "Vote submitted successfully.", poll: updatedPoll });
+    res.status(200).json({ message: "Vote submitted successfully.", poll: pollForClient(updatedPoll, isLegacyClient(req)) });
 });
 
 /**
@@ -177,6 +193,7 @@ export const cancelPoll = asyncHandler(async (req, res) => {
 
     poll.status = 'cancelled';
     await poll.save();
+    await postSystemMessage(poll.group._id, `The poll "${poll.prompt}" was cancelled`);
 
     res.status(200).json({ message: "Poll cancelled successfully." });
 });

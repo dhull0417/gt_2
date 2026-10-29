@@ -150,10 +150,11 @@ export function EmojiPickerSheet({ open, onClose, onEmojiSelected, heightRatio =
       navigationBarTranslucent
       onRequestClose={onClose}
     >
-      {/* iOS: pads the bottom by the keyboard's height so the sheet rides on top of it.
-          Android: the window itself resizes, as in the app's other keyboard screens. */}
+      {/* Pads the bottom by the keyboard's height so the sheet rides on top of it. Needed on Android
+          too: an edge-to-edge Modal window is not resized for the keyboard, so the search results
+          were hidden under it. */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         style={[styles.root, { paddingTop: insets.top + TOP_GAP }]}
       >
         <Pressable

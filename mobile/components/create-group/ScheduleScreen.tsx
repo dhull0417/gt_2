@@ -14,7 +14,8 @@ import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
 import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
 import { DayTime, Frequency } from "@/utils/api";
 import { BuiltRoutine, defaultSchedule, isScheduleTabValid, MonthlyDateEntry, OrdinalEntry, ScheduleData, WeekdayRow } from "@/utils/createGroupDraft";
-import { DAYS_OF_WEEK, FREQ_LABELS, getMaxAttendeesError, ORDINAL_OCCURRENCES, ordSfx, timeToMinutes, TZ_ABBR, uid, USA_TIMEZONES } from "@/utils/scheduleConstants";
+import { DAYS_OF_WEEK, FREQ_LABELS, getMaxAttendeesError, ORDINAL_OCCURRENCES, ordSfx, timeToMinutes, uid } from "@/utils/scheduleConstants";
+import { deviceTimeZone, timezoneOptions, tzAbbr } from "@/utils/timezones";
 import { Feather } from "@expo/vector-icons";
 import { DateTime } from "luxon";
 
@@ -33,7 +34,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
     const dayColors = useMemo(() => getDayColors(isDark), [isDark]);
     // One shared timezone for the whole group — not per-schedule (the backend
     // only stores one Group.timezone), so it lives outside the tabbed array.
-    const [timezone, setTimezone] = useState(initialTimezone ?? "America/Denver");
+    const [timezone, setTimezone] = useState(initialTimezone ?? deviceTimeZone());
     const [showTZPicker, setShowTZPicker] = useState(false);
     const scrollViewRef = useRef<ScrollView>(null);
 
@@ -781,7 +782,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                             upd({ showFreqPicker: false, showStartDatePicker: false, showLeadTimePicker: false, showDeadlineTimePicker: false });
                         }}>
                         <Feather name="globe" size={16} color={colors.brand} style={{ marginRight: 8 }} />
-                        <Text style={s.dateFieldText}>{TZ_ABBR[timezone] ?? timezone}</Text>
+                        <Text style={s.dateFieldText}>{tzAbbr(timezone)}</Text>
                         <Feather name={showTZPicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </PressableOpacity>
                 </View>
@@ -1005,7 +1006,8 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
             {showTZPicker && (
                 <OptionPickerModal
                     title="Timezone"
-                    options={USA_TIMEZONES.map(tz => ({ key: tz.value, label: tz.label }))}
+                    options={timezoneOptions(timezone)}
+                    searchable
                     selectedKey={timezone}
                     onSelect={key => { setTimezone(key); setShowTZPicker(false); }}
                     onClose={() => setShowTZPicker(false)}

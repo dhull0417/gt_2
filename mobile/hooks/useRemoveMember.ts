@@ -3,6 +3,7 @@ import { useAuth } from "@clerk/expo";
 import { useApiClient, groupApi } from "../utils/api";
 import { broadcastGroupUpdate } from "../utils/groupRealtime";
 import { Alert } from "react-native";
+import { toast } from '@/contexts/ToastContext';
 
 interface RemoveMemberVariables {
   groupId: string;
@@ -19,7 +20,7 @@ export const useRemoveMember = () => {
       groupApi.removeMember(api, variables),
 
     onSuccess: (data, variables) => {
-      Alert.alert("Success", data.message);
+      toast.success(data.message);
       queryClient.invalidateQueries({ queryKey: ['groupDetails', variables.groupId] });
       broadcastGroupUpdate(getToken, variables.groupId);
     },

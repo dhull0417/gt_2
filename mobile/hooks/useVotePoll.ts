@@ -3,6 +3,7 @@ import { useAuth } from "@clerk/expo";
 import { useApiClient, pollApi } from "../utils/api";
 import { Alert } from "react-native";
 import { broadcastPollUpdate } from "../utils/groupRealtime";
+import { toast } from '@/contexts/ToastContext';
 
 interface VotePollVariables {
   pollId: string;
@@ -22,7 +23,7 @@ export const useVotePoll = () => {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['polls', variables.groupId] });
       broadcastPollUpdate(getToken, variables.groupId);
-      Alert.alert("Success", "Your vote has been recorded.");
+      toast.success("Vote recorded.");
     },
     onError: (error: any) => {
       const errorMessage = error.response?.data?.error || "Failed to submit vote.";

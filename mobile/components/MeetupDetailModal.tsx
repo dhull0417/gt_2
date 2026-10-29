@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { DateTime } from 'luxon';
+import { meetupDayKey, meetupStartInstant, dayKeyToLocalDate, localDateToDayKey } from '@/utils/meetupTime';
+import { haptic } from '@/utils/haptics';
+import { CancelReasonSheet } from '@/components/CancelReasonSheet';
 import {
     View,
     Text,
@@ -34,7 +38,7 @@ import Animated, {
     withSpring,
     Easing,
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
 import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/utils/api';
 import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor, canPriorityBump } from '@/utils/meetupStatus';
@@ -55,10 +59,13 @@ import NativeTimePicker from './NativeTimePicker';
 import LocationField from './LocationField';
 import LocationSearchModal from './LocationSearchModal';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { toast } from '@/contexts/ToastContext';
+import { formatAgo } from '@/utils/listTime';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import { PulsingWatermark } from '@/components/meetup-detail/PulsingWatermark';
 import { InOutSwapIcon } from '@/components/meetup-detail/InOutSwapIcon';
 import { styles, dmStyles } from '@/components/meetup-detail/styles';
+import { buildInviteMessage } from '@/utils/inviteMessage';
 
 interface MeetupDetailModalProps {
   meetup: Meetup | null;
@@ -74,6 +81,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const queryClient = useQueryClient();
     const { getToken } = useAuth();
     const colors = useThemeColors();
+    const insets = useSafeAreaInsets();
     const { scheme } = useAppearance();
     const isDark = scheme === 'dark';
 
@@ -83,6 +91,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [newDate, setNewDate] = useState(new Date());
+    const [cancelSheetVisible, setCancelSheetVisible] = useState(false);
+    const [isCancelling, setIsCancelling] = useState(false);
     const [tempDate, setTempDate] = useState(new Date());
     const [newTime, setNewTime] = useState('');
     const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
@@ -232,7 +242,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     // Waitlists are a Premium feature of the group owner: on a full meetup in a
     // non-Premium group there is nothing to join, so the button reads "Full".
     // (Only `=== false` counts, so a missing flag never blocks; the server enforces.)
-    const waitlistLocked = isFull && !isIn && !isWaitlisted && meetup.group?.isPremium === false;
+    const waitlistLocked = isFull && !isIn && !isWaitlisted && (meetup.group?.waitlistEnabled ?? meetup.group?.isPremium) === false;
     const canBump = canPriorityBump(meetup, currentUser?._id);
     const inUnselected = !isIn && !isWaitlisted && !(isFull && !isIn);
     const outUnselected = !isOut;
@@ -342,7 +352,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         handleRsvpAction('out', { skipResponsePopup: true });
         userApi.toggleGroupMute(api, meetup.group._id, 'untilNext')
             .then(() => {
-                Alert.alert('RSVP recorded: Out', `The ${meetup.group.name} chat has been muted until the next meetup.`);
+                toast.show({
+                    message: `Out. ${meetup.group.name} muted until the next meetup.`,
+                    kind: 'success',
+                    actionLabel: 'Undo',
+                    onAction: () => { userApi.toggleGroupMute(api, meetup.group._id, 'none').then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] })).catch(() => {}); },
+                });
             })
             .catch(() => {});
     };
@@ -354,13 +369,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             return;
         }
 
-        const [time, modifier] = meetup.time.split(' ');
-        let [hours, minutes] = time.split(':').map(Number);
-        if (modifier === 'PM' && hours < 12) hours += 12;
-        if (modifier === 'AM' && hours === 12) hours = 0;
-
-        const startDate = new Date(meetup.date);
-        startDate.setHours(hours, minutes, 0, 0);
+        // The real start moment in the GROUP's timezone, whatever timezone this phone is in.
+        const startDate = meetupStartInstant(meetup);
         const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
         const groupName = (meetup.group as any)?.name || '';
 
@@ -408,7 +418,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 notes: `GroupThat meetup with ${groupName}\ngroupthat-id:${meetup._id}`,
                 timeZone: meetup.timezone,
             });
-            Alert.alert('Added!', `"${meetup.name}" has been added to your calendar.`);
+            toast.success(`"${meetup.name}" added to your calendar.`);
         } catch {
             Alert.alert('Error', 'Could not add this event to your calendar. Please try again.');
         }
@@ -428,7 +438,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         try {
             const { link } = await groupApi.generateInviteLink(api, meetup.group._id);
             await Share.share({
-                message: `Join me for "${meetup.name}" on GroupThat!\n\nSTEP 1 — Download the app:\n→ https://invite.groupthatapp.com/download\n\nSTEP 2 — Join the group:\n→ ${link}`,
+                message: buildInviteMessage({ meetupName: meetup.name, link }),
             });
         } catch {
             Alert.alert('Error', 'Could not create invite link. Please try again.');
@@ -459,10 +469,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         try {
             await meetupApi.sendReminder(api, meetup._id, userId);
             setDmTargetUser(null);
-            Alert.alert(
-                'Reminder Sent',
-                userId ? "They'll get a push notification to RSVP." : "All undecided members will get a push notification to RSVP."
-            );
+            if (!userId) setMeetup((m) => (m ? { ...m, lastRemindedAt: new Date().toISOString() } : m));
+            haptic.success();
+            toast.success(userId ? "Reminder sent. They'll get a push to RSVP." : 'Reminder sent to everyone who is still undecided.');
         } catch (e: any) {
             Alert.alert('Error', e.response?.data?.error || 'Could not send the reminder. Please try again.');
         } finally {
@@ -501,7 +510,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         const payload: any = { meetupId: meetup._id };
         const capInt = capacityMode === "limited" ? parseInt(newCapacity, 10) : 0;
 
-        if (newDate.toISOString().split('T')[0] !== new Date(meetup.date).toISOString().split('T')[0]) payload.date = newDate;
+        // Plain calendar days in the GROUP's timezone, so the date can't shift for someone far from the group.
+        if (localDateToDayKey(newDate) !== meetupDayKey(meetup)) payload.date = localDateToDayKey(newDate);
         if (newTime !== meetup.time) payload.time = newTime;
         if (newLocation !== (meetup.location || '')) payload.location = newLocation;
         if (newDescription !== (meetup.description || '')) payload.description = newDescription;
@@ -518,13 +528,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             await queryClient.invalidateQueries({ queryKey: ['meetups'] });
             if (response?.meetup) setMeetup(response.meetup);
             setIsEditModalVisible(false);
-            Alert.alert("Success", "Meetup details updated.");
+            toast.success("Meetup details updated.");
         } catch (error: any) {
             Alert.alert("Update Failed", error.response?.data?.error || error.message);
         } finally {
             setIsUpdating(false);
         }
     };
+
+    // Today in the group's timezone: earlier days can't be picked (the server rejects them anyway).
+    const minPickableDate = dayKeyToLocalDate(DateTime.now().setZone(meetup.timezone || undefined).toFormat('yyyy-LL-dd'));
 
     const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
         if (Platform.OS === 'android') {
@@ -548,8 +561,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     };
 
     const openEditModal = () => {
-        setNewDate(new Date(meetup.date));
-        setTempDate(new Date(meetup.date));
+        setNewDate(dayKeyToLocalDate(meetupDayKey(meetup)));
+        setTempDate(dayKeyToLocalDate(meetupDayKey(meetup)));
         setNewTime(meetup.time);
         setCapacityMode(meetup.capacity > 0 ? "limited" : "unlimited");
         setNewCapacity(meetup.capacity > 0 ? meetup.capacity.toString() : "");
@@ -636,39 +649,67 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         </View>
     );
 
+    const applyStatus = (newStatus: 'scheduled' | 'cancelled', cancelNote?: string | null) => {
+        // Apply the new status immediately - invalidateQueries alone leaves the card/modal
+        // showing the old status until the background refetch lands.
+        setMeetup(prev => prev ? { ...prev, status: newStatus, cancelNote: newStatus === 'cancelled' ? (cancelNote ?? null) : null } : prev);
+        queryClient.setQueryData<Meetup[]>(['meetups'], (old) =>
+            old?.map(m => m._id === meetup._id ? { ...m, status: newStatus, cancelNote: newStatus === 'cancelled' ? (cancelNote ?? null) : null } : m)
+        );
+        queryClient.invalidateQueries({ queryKey: ['meetups'] });
+        broadcastMeetupUpdate(getToken, meetupGroupId);
+    };
+
+    const restoreThisMeetup = async () => {
+        try {
+            await meetupApi.restoreMeetup(api, meetup._id);
+            applyStatus('scheduled');
+            haptic.success();
+            return true;
+        } catch (e: any) {
+            Alert.alert("Error", e.response?.data?.error || e.message);
+            return false;
+        }
+    };
+
+    const confirmCancelWithReason = async (reason: string) => {
+        setIsCancelling(true);
+        try {
+            await meetupApi.cancelMeetup(api, meetup._id, reason || undefined);
+            applyStatus('cancelled', reason || null);
+            setCancelSheetVisible(false);
+            onClose();
+            toast.show({
+                message: 'Meetup cancelled',
+                kind: 'success',
+                actionLabel: 'Undo',
+                onAction: () => {
+                    // The server's restore also tells everyone it's back on.
+                    meetupApi.restoreMeetup(api, meetup._id)
+                        .then(() => {
+                            queryClient.invalidateQueries({ queryKey: ['meetups'] });
+                            broadcastMeetupUpdate(getToken, meetupGroupId);
+                        })
+                        .catch(() => {});
+                },
+            });
+        } catch (e: any) {
+            Alert.alert("Error", e.response?.data?.error || e.message);
+        } finally {
+            setIsCancelling(false);
+        }
+    };
+
     const handleCancelMeetup = () => {
         if (isExpired) return; // Can't cancel or restore an ended meetup
-        const action = isCancelled ? "Reactivate" : "Cancel";
-        Alert.alert(`${action} Meetup`, `Are you sure?`, [
-            { text: "No", style: "cancel" },
-            {
-                text: "Yes",
-                style: isCancelled ? "default" : "destructive",
-                onPress: async () => {
-                    try {
-                        const newStatus = isCancelled ? 'scheduled' : 'cancelled';
-                        if (isCancelled) {
-                            await meetupApi.restoreMeetup(api, meetup._id);
-                        } else {
-                            await meetupApi.cancelMeetup(api, meetup._id);
-                        }
-
-                        // Apply the new status immediately — invalidateQueries alone leaves
-                        // the card/modal showing the old status until the background
-                        // refetch lands, which can take a beat (or longer offline).
-                        setMeetup(prev => prev ? { ...prev, status: newStatus } : prev);
-                        queryClient.setQueryData<Meetup[]>(['meetups'], (old) =>
-                            old?.map(m => m._id === meetup._id ? { ...m, status: newStatus } : m)
-                        );
-                        queryClient.invalidateQueries({ queryKey: ['meetups'] });
-                        broadcastMeetupUpdate(getToken, meetupGroupId);
-                        if (!isCancelled) onClose();
-                    } catch (e: any) {
-                        Alert.alert("Error", e.response?.data?.error || e.message);
-                    }
-                }
-            }
-        ]);
+        if (isCancelled) {
+            Alert.alert("Reactivate Meetup", "Bring this meetup back? Everyone will be notified.", [
+                { text: "No", style: "cancel" },
+                { text: "Yes", onPress: () => { restoreThisMeetup(); } },
+            ]);
+            return;
+        }
+        setCancelSheetVisible(true);
     };
 
 
@@ -756,6 +797,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     <Text style={[styles.cancelBannerText, { color: colors.danger }]}>
                                         {meetup.cancelReason === 'minimum-headcount' ? 'Cancelled: minimum not met' : 'Meetup Cancelled'}
                                     </Text>
+                                    {!!meetup.cancelNote && meetup.cancelReason !== 'minimum-headcount' && (
+                                        <Text style={[styles.cancelBannerSubtext, { color: colors.danger }]}>{meetup.cancelNote}</Text>
+                                    )}
                                     {meetup.cancelReason === 'minimum-headcount' && (
                                         <Text style={[styles.cancelBannerSubtext, { color: colors.danger }]}>
                                             {meetup.minAttendees
@@ -1091,10 +1135,15 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
                     {renderSectionHeader('Undecided', undecidedUsers.length, colors.textFaint,
                         canManage && undecidedUsers.length > 0 ? (
-                            <PressableOpacity onPress={handleRemindAll} disabled={isSendingReminder} style={[styles.remindAllBtn, { backgroundColor: colors.brandSoft, borderColor: colors.brand }]} activeOpacity={0.7}>
-                                <Feather name="bell" size={12} color={colors.brand} />
-                                <Text style={[styles.remindAllText, { color: colors.brand }]}>Remind All</Text>
-                            </PressableOpacity>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                {meetup.lastRemindedAt ? (
+                                    <Text style={{ color: colors.textFaint, fontSize: 11, fontWeight: '600' }}>Reminded {formatAgo(meetup.lastRemindedAt)}</Text>
+                                ) : null}
+                                <PressableOpacity onPress={handleRemindAll} disabled={isSendingReminder} style={[styles.remindAllBtn, { backgroundColor: colors.brandSoft, borderColor: colors.brand }]} activeOpacity={0.7}>
+                                    <Feather name="bell" size={12} color={colors.brand} />
+                                    <Text style={[styles.remindAllText, { color: colors.brand }]}>Remind All</Text>
+                                </PressableOpacity>
+                            </View>
                         ) : undefined
                     )}
                     <View style={styles.grid}>
@@ -1183,12 +1232,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 onRequestClose={() => setDmTargetUser(null)}
             >
                 <Pressable style={[dmStyles.backdrop, { backgroundColor: colors.overlay }]} onPress={() => setDmTargetUser(null)}>
-                    <Pressable style={[dmStyles.sheet, { backgroundColor: colors.surface }]} onPress={() => {}}>
+                    <Pressable style={[dmStyles.sheet, { backgroundColor: colors.surface, paddingBottom: Math.max(40, insets.bottom + 16) }]} onPress={() => {}}>
                         <View style={[dmStyles.dragHandle, { backgroundColor: colors.borderStrong }]} />
                         {dmTargetUser && (
                             <>
                                 <Image
-                                    source={{ uri: dmTargetUser.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${getUserInitial(dmTargetUser)}` }}
+                                    source={{ uri: dmTargetUser.profilePicture || `https://placehold.co/100x100/EEE/31343C/png?text=${getUserInitial(dmTargetUser)}` }}
                                     style={[dmStyles.avatar, { backgroundColor: colors.backgroundAlt }]}
                                 />
                                 <Text style={[dmStyles.name, { color: colors.textPrimary }]}>
@@ -1286,7 +1335,19 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             )}
 
             {/* Combined Edit Details Modal */}
-            <Modal transparent visible={isEditModalVisible} animationType="slide">
+            {/* onRequestClose: Android's back button/gesture closes whatever is on top of the form first
+                (location search, date/time picker), then the form. Without it, back did nothing here. */}
+            <Modal
+                transparent
+                visible={isEditModalVisible}
+                animationType="slide"
+                onRequestClose={() => {
+                    if (isLocationSearchActive) setIsLocationSearchActive(false);
+                    else if (showTimePicker) setShowTimePicker(false);
+                    else if (showDatePicker) setShowDatePicker(false);
+                    else setIsEditModalVisible(false);
+                }}
+            >
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
                     <View style={styles.modalOverlay}>
                         <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
@@ -1388,6 +1449,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                     <DateTimePicker
                                         value={tempDate}
                                         mode="date"
+                                        minimumDate={minPickableDate}
                                         display="spinner"
                                         onChange={onDateChange}
                                         textColor={isDark ? colors.textPrimary : 'black'}
@@ -1402,6 +1464,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                         <DateTimePicker
                             value={newDate} // Android picker can use the final state directly
                             mode="date"
+                            minimumDate={minPickableDate}
                             display="default"
                             onChange={onDateChange}
                         />
@@ -1413,9 +1476,16 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 )}
             </Modal>
 
+            <CancelReasonSheet
+                visible={cancelSheetVisible}
+                meetupName={meetup.name}
+                busy={isCancelling}
+                onClose={() => setCancelSheetVisible(false)}
+                onConfirm={confirmCancelWithReason}
+            />
             <RsvpResponseOverlay />
         </SafeAreaView>
     );
 };
 
-export default MeetupDetailModal;
+export default MeetupDetailModal;

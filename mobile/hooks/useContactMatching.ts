@@ -23,33 +23,44 @@ export function useContactMatching() {
   const [permissionStatus, setPermissionStatus] = useState<Contacts.PermissionStatus | null>(null);
   const [rawContacts, setRawContacts] = useState<Contacts.ExistingContact[]>([]);
 
-  // Feature paused — intentionally not requesting Contacts permission. Restore
-  // the request -> fetch -> setRawContacts body below to re-enable.
-  useEffect(() => {}, []);
+  const [isReading, setIsReading] = useState(true);
 
-  const emails: string[] = [];
-  const phoneNumbers: string[] = [];
-  const contactIndex: Record<string, { name: string; phone?: string; email?: string }> = {};
+  // Asks for contacts access when the screen opens, then reads names, emails and phone numbers.
+  // Nothing is stored: the numbers/emails are only sent to the server to find which friends already use GroupThat.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Contacts.requestPermissionsAsync();
+        if (cancelled) return;
+        setPermissionStatus(status);
+        if (status !== Contacts.PermissionStatus.GRANTED) return;
+        const { data } = await Contacts.getContactsAsync({
+          fields: [Contacts.Fields.Name, Contacts.Fields.Emails, Contacts.Fields.PhoneNumbers],
+          sort: Contacts.SortTypes.FirstName,
+        });
+        if (!cancelled) setRawContacts(data);
+      } catch {
+        // Treated like "no contacts": the screen still offers the invite link.
+      } finally {
+        if (!cancelled) setIsReading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
+  const emailSet = new Set<string>();
+  const phoneSet = new Set<string>();
   for (const contact of rawContacts) {
-    const name = contact.name ?? '';
-    const email = contact.emails?.[0]?.email?.toLowerCase();
-    const phone = contact.phoneNumbers?.[0]?.number
-      ? normalizePhone(contact.phoneNumbers[0].number)
-      : undefined;
-
-    if (email) {
-      emails.push(email);
-      contactIndex[email] = { name, phone, email };
-    }
-    if (phone) {
-      phoneNumbers.push(phone);
-      if (!contactIndex[phone]) contactIndex[phone] = { name, phone, email };
-    }
+    for (const e of contact.emails ?? []) if (e.email) emailSet.add(e.email.toLowerCase());
+    for (const p of contact.phoneNumbers ?? []) if (p.number) phoneSet.add(normalizePhone(p.number));
   }
+  // The server only looks at the first 500 of each, so send them in a stable order.
+  const emails = [...emailSet].slice(0, 500);
+  const phoneNumbers = [...phoneSet].slice(0, 500);
 
-  const { data: matchedUsers = [], isLoading } = useQuery({
-    queryKey: ['contactMatching', emails.length, phoneNumbers.length],
+  const { data: matchedUsers = [], isLoading: isMatching } = useQuery({
+    queryKey: ['contactMatching', emails.join(','), phoneNumbers.join(',')],
     queryFn: () => userApi.matchContacts(api, emails, phoneNumbers),
     enabled: emails.length > 0 || phoneNumbers.length > 0,
     staleTime: 1000 * 60 * 5,
@@ -68,16 +79,20 @@ export function useContactMatching() {
 
   for (const contact of rawContacts) {
     const name = contact.name ?? '';
-    const email = contact.emails?.[0]?.email?.toLowerCase();
-    const phone = contact.phoneNumbers?.[0]?.number
-      ? normalizePhone(contact.phoneNumbers[0].number)
-      : undefined;
+    const allEmails = (contact.emails ?? []).map((e) => e.email?.toLowerCase()).filter(Boolean) as string[];
+    const allPhones = (contact.phoneNumbers ?? []).map((p) => (p.number ? normalizePhone(p.number) : '')).filter(Boolean);
+    const email = allEmails[0];
+    const phone = allPhones[0];
+    if (!name && !email && !phone) continue;
 
     const dedupeKey = `${name}|${phone ?? email ?? ''}`;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
-    const appUser = (email && userByIdentifier[email]) || (phone && userByIdentifier[phone]) || undefined;
+    const appUser =
+      allEmails.map((e) => userByIdentifier[e]).find(Boolean) ||
+      allPhones.map((p) => userByIdentifier[p]).find(Boolean) ||
+      undefined;
 
     contacts.push({
       id: contact.id ?? dedupeKey,
@@ -95,5 +110,9 @@ export function useContactMatching() {
     return a.name.localeCompare(b.name);
   });
 
-  return { contacts, isLoading, permissionDenied: permissionStatus === Contacts.PermissionStatus.DENIED };
+  return {
+    contacts,
+    isLoading: isReading || isMatching,
+    permissionDenied: permissionStatus === Contacts.PermissionStatus.DENIED,
+  };
 }

@@ -128,7 +128,7 @@ export default function GroupQuestionsScreen() {
         </PressableOpacity>
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 140 }}>
           <Text style={styles.sub}>
             Ask members something when they RSVP "I'm In" to "{schedule.name}". Everyone going can see the answers on the meetup. Up to {MAX_QUESTIONS} questions.

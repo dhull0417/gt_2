@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Alert, ActivityIndicator, Share } from 'react-native';
+import { shareTextFile } from '@/utils/shareFile';
+import { View, Text, StyleSheet, ScrollView, Image, Alert, ActivityIndicator } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -45,7 +46,7 @@ export default function GroupStatsScreen() {
     setExporting(true);
     try {
       const { filename, csv } = await groupApi.exportGroupAttendance(api, id);
-      await Share.share({ title: filename, message: csv });
+      await shareTextFile(filename, csv);
     } catch (e: any) {
       const data = e?.response?.data;
       Alert.alert('Could not export', data?.message || data?.error || 'Please try again.');

@@ -3,7 +3,7 @@ import { Modal, Pressable, StyleSheet, useWindowDimensions } from 'react-native'
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 interface Props {
@@ -89,6 +89,9 @@ export function ChatImageViewer({ visible, imageUrl, imageWidth, imageHeight, on
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+      {/* A Modal is its own native window on Android: gestures inside it only work under their own
+          root view. Without this, pinch-to-zoom and panning did nothing on Android. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         {imageUrl && (
           <GestureDetector gesture={composedGesture}>
@@ -110,6 +113,7 @@ export function ChatImageViewer({ visible, imageUrl, imageWidth, imageHeight, on
           <Feather name="x" size={22} color="#fff" />
         </Pressable>
       </Pressable>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

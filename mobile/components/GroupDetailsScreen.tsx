@@ -3,7 +3,7 @@ import {
   Text,
   ScrollView,
   ActivityIndicator,
-  Keyboard,
+  RefreshControl,
   Alert,
   StyleSheet,
   Modal,
@@ -21,14 +21,13 @@ import { useRemoveMember } from '@/hooks/useRemoveMember';
 import { User, useApiClient, userApi, groupApi } from '@/utils/api';
 import { getDMDisplayName, getUserDisplayName, getUserInitial } from '@/utils/groupDisplay';
 import { Feather } from '@expo/vector-icons';
-import { useSearchUsers } from '@/hooks/useSearchUsers';
-import { useInviteUser } from '@/hooks/useInviteUser';
 import { GroupDetailsView } from '@/components/GroupDetailsView';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { GroupCalendarButton } from '@/components/GroupCalendarButton';
-import { TAB_BAR_HEIGHT } from '@/utils/layout';
+import { tabScreenBottomPadding } from '@/utils/layout';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { getGroupImage } from '@/utils/groupDisplay';
 
 const styles = StyleSheet.create({
   settingsButton: {
@@ -58,7 +57,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
   const { data: groups } = useGetGroups();
   const fallbackGroup = useMemo(() => groups?.find(g => g._id === id), [groups, id]);
 
-  const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(id ?? null);
+  const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails, refetch: refetchDetails, isRefetching: isRefetchingDetails } = useGetGroupDetails(id ?? null);
 
   const { data: currentUser } = useQuery<User, Error>({
     queryKey: ['currentUser'],
@@ -98,21 +97,6 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
     } finally {
       setIsCreatingDM(false);
     }
-  };
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const { data: searchResults } = useSearchUsers(searchQuery);
-  const { mutate: inviteUser } = useInviteUser();
-
-  const handleInvite = (userIdToInvite: string) => {
-    if (!id) return;
-    inviteUser({ groupId: id, userIdToInvite }, {
-        onSuccess: () => {
-            setSearchQuery('');
-            Keyboard.dismiss();
-            Alert.alert("Success", "Invite sent!");
-        }
-    });
   };
 
   const handleRemoveMember = (memberIdToRemove: string) => {
@@ -161,7 +145,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
           </PressableOpacity>
           <View style={{ marginRight: 10 }}>
-            <GroupAvatar name={headerName} imageUrl={groupDetails?.image || fallbackGroup?.image} size={36} borderRadius={9} />
+            <GroupAvatar name={headerName} imageUrl={getGroupImage((groupDetails ?? fallbackGroup) as any, currentUser?.clerkId)} size={36} borderRadius={9} />
           </View>
           <Text className="text-lg font-black text-gray-900 dark:text-white flex-1" numberOfLines={1}>
             {headerName}
@@ -189,23 +173,25 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
         style={{ backgroundColor: colors.backgroundAlt }}
         className="flex-1"
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: showsTabBarBeneath ? insets.bottom + TAB_BAR_HEIGHT : 0 }}
+        refreshControl={<RefreshControl refreshing={isRefetchingDetails} onRefresh={refetchDetails} tintColor={colors.brand} colors={[colors.brand]} />}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: showsTabBarBeneath ? tabScreenBottomPadding(insets.bottom) : 0 }}
       >
         <View className="p-6" style={{ flex: 1 }}>
-          {(isLoadingDetails || !groupDetails) ? (
+          {isErrorDetails && !groupDetails ? (
+              <View style={{ alignItems: 'center', marginTop: 48 }}>
+                <Text style={{ color: colors.textMuted, fontSize: 16, textAlign: 'center', marginBottom: 16 }}>Couldn't load this group.</Text>
+                <PressableOpacity onPress={() => refetchDetails()} style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}>
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Try again</Text>
+                </PressableOpacity>
+              </View>
+          ) : (isLoadingDetails || !groupDetails) ? (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
-          ) : isErrorDetails ? (
-              <Text className="text-center text-red-500 mt-4">Failed to load group details.</Text>
           ) : (
             <GroupDetailsView
               groupDetails={groupDetails}
               currentUser={currentUser!}
               isRemovingMember={isRemovingMember}
               onRemoveMember={handleRemoveMember}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              searchResults={searchResults}
-              onInvite={handleInvite}
               onLeaveSuccess={() => router.dismissTo('/(tabs)/groups')}
               onMemberPress={groupDetails.isDM ? undefined : handleMemberPress}
             />
@@ -226,7 +212,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
             {dmTargetMember && (
               <>
                 <Image
-                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${getUserInitial(dmTargetMember)}` }}
+                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C/png?text=${getUserInitial(dmTargetMember)}` }}
                   style={[dmStyles.avatar, { backgroundColor: colors.backgroundAlt }]}
                 />
                 <Text style={[dmStyles.name, { color: colors.textPrimary }]}>

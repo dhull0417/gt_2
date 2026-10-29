@@ -1,4 +1,5 @@
-import { View } from 'react-native';
+import { AppState, View, Text, ActivityIndicator } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth, useUser } from '@clerk/expo';
@@ -12,11 +13,11 @@ import NetInfo from '@react-native-community/netinfo';
 import { useUserSync } from '@/hooks/useUserSync';
 import { usePurchasesSetup } from '@/hooks/usePurchases';
 import * as SecureStore from 'expo-secure-store';
-import * as Clipboard from 'expo-clipboard';
 import { User, useApiClient, userApi, meetupApi, groupApi, notificationApi } from '@/utils/api';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { useAppBadge } from '@/hooks/useAppBadge';
 import { syncPermissionsIfChanged } from '@/utils/permissions';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 import { ImageCropperHost } from '@/components/ImageCropperHost';
@@ -31,6 +32,7 @@ import type { ChatMessage } from '@/types/chat';
 import { registerOfflineMutationDefaults, RSVP_MUTATION_KEY, ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import type { Meetup } from '@/utils/api';
+import { ToastProvider } from '@/contexts/ToastContext';
 import { AppearanceProvider, useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import "../global.css";
 
@@ -150,6 +152,7 @@ export default function RootLayout() {
   return (
     <AppearanceProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
+        <ToastProvider>
         <ClerkProvider
           tokenCache={tokenCache}
           publishableKey={publishableKey}
@@ -193,6 +196,7 @@ export default function RootLayout() {
             <ImageCropperHost />
           </PersistQueryClientProvider>
         </ClerkProvider>
+        </ToastProvider>
       </GestureHandlerRootView>
     </AppearanceProvider>
   );
@@ -221,6 +225,27 @@ const AuthLayout = () => {
     return () => setClerkTokenGetter(null);
   }, [isSignedIn, getToken]);
 
+  // Coming back to the app after a while: Android suspends the realtime socket in the background,
+  // so updates broadcast meanwhile were missed and the lists stayed stale until a tab switch.
+  // Refresh the main lists (delta-synced, so this is cheap) once the app is in front again.
+  useEffect(() => {
+    if (!isSignedIn) return;
+    let backgroundedAt: number | null = null;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        if (backgroundedAt === null) backgroundedAt = Date.now();
+        return;
+      }
+      const awayMs = backgroundedAt === null ? 0 : Date.now() - backgroundedAt;
+      backgroundedAt = null;
+      if (awayMs < 15_000) return;
+      for (const key of ['meetups', 'groups', 'notifications', 'currentUser', 'unreadCounts']) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
+    });
+    return () => sub.remove();
+  }, [isSignedIn, queryClient]);
+
   // Mutations created in this session auto-resume on reconnect, but a send
   // restored from disk needs an explicit kick once connectivity is confirmed.
   useEffect(() => {
@@ -233,24 +258,17 @@ const AuthLayout = () => {
     if (!isSignedIn) setNameModalDismissed(false);
   }, [isSignedIn]);
 
-  // Deferred deep link for fresh installs: check clipboard for an invite token from the web landing page
-  useEffect(() => {
-    Clipboard.getStringAsync().then(clip => {
-      if (clip?.startsWith('groupthat://join/')) {
-        const token = clip.replace('groupthat://join/', '').trim();
-        if (token) SecureStore.setItemAsync(PENDING_INVITE_KEY, token);
-      }
-    }).catch(() => {});
-  }, []);
-
-  const { data: currentUser, isSuccess, isError: isCurrentUserError } = useQuery<User, Error>({
+  const { data: currentUser, isSuccess, isError: isCurrentUserError, error: currentUserError, refetch: refetchCurrentUser, isRefetching: isRefetchingCurrentUser } = useQuery<User, Error>({
     queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
     enabled: isSignedIn,
   });
 
-  // isCurrentUserError = Clerk session but no Mongo user yet (new sign-up); treat as settled so routing can redirect to profile-setup
-  const currentUserSettled = isSuccess || isCurrentUserError;
+  // Only a 404 means "Clerk session but no Mongo user yet (new sign-up)". Anything else
+  // (no network, server error) must NOT be mistaken for a brand-new user and sent to profile setup.
+  const noBackendUser = isCurrentUserError && (currentUserError as any)?.response?.status === 404;
+  const currentUserLoadFailed = isCurrentUserError && !noBackendUser && !currentUser;
+  const currentUserSettled = isSuccess || noBackendUser;
 
   // Warms the Home/Groups tab caches before the user ever taps those tabs, so the
   // first switch shows real content immediately instead of a loading flash + reflow
@@ -263,6 +281,7 @@ const AuthLayout = () => {
   }, [isSignedIn, isSuccess]);
 
   usePushNotifications(isSignedIn, isSuccess);
+  useAppBadge(!!isSignedIn, isSuccess);
 
   // Silent permission sync — picks up grants/denials changed outside the app (e.g. OS Settings)
   useEffect(() => {
@@ -298,7 +317,7 @@ const AuthLayout = () => {
 
   // === ROUTING LOGIC ===
   useEffect(() => {
-    if (!isLoaded || (isSignedIn && !currentUserSettled)) return;
+    if (!isLoaded || (isSignedIn && !currentUserSettled) || currentUserLoadFailed) return;
 
     const inAuthGroup = segments[0] === '(auth)';
     // Mid-OAuth: Clerk hasn't flipped isSignedIn yet on mount (see sso-callback.tsx) — wait for it to settle
@@ -318,8 +337,6 @@ const AuthLayout = () => {
       'paywall',
       'group-chat',
       'group-details',
-      'meetup-edit',
-      'schedule-meetup',
       'add-members',
       'create-group',
       'group',
@@ -343,13 +360,13 @@ const AuthLayout = () => {
     } else if (!isSignedIn && !inAuthGroup && !inSsoCallback) {
       router.replace('/(auth)');
     }
-  }, [isLoaded, isSignedIn, currentUser, currentUserSettled, segments, router, clerkUser]);
+  }, [isLoaded, isSignedIn, currentUser, currentUserSettled, currentUserLoadFailed, segments, router, clerkUser]);
 
   useEffect(() => {
-    if (isLoaded && ((isSignedIn && currentUserSettled) || !isSignedIn)) {
+    if (isLoaded && ((isSignedIn && (currentUserSettled || currentUserLoadFailed)) || !isSignedIn)) {
       SplashScreen.hideAsync();
     }
-  }, [isLoaded, isSignedIn, isSuccess]);
+  }, [isLoaded, isSignedIn, isSuccess, currentUserLoadFailed, noBackendUser]);
 
   // Redeem a saved invite token after sign-in for users who tapped a link while signed out
   useEffect(() => {
@@ -370,6 +387,21 @@ const AuthLayout = () => {
       <View style={{ flex: 1, backgroundColor: colors.background }}>
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         <OfflineBanner />
+        {currentUserLoadFailed && (
+          <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 50, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: 8, textAlign: 'center' }}>Can't reach GroupThat</Text>
+            <Text style={{ fontSize: 15, color: colors.textMuted, textAlign: 'center', lineHeight: 22, marginBottom: 24 }}>
+              Check your connection and try again. Your groups and meetups are safe.
+            </Text>
+            <PressableOpacity
+              onPress={() => refetchCurrentUser()}
+              disabled={isRefetchingCurrentUser}
+              style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 32, minWidth: 140, alignItems: 'center' }}
+            >
+              {isRefetchingCurrentUser ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Try again</Text>}
+            </PressableOpacity>
+          </View>
+        )}
         <WelcomeModal visible={showWelcomeModal} onClose={closeWelcomeModal} />
         <UpdateNameModal visible={showUpdateNameModal} onClose={() => setNameModalDismissed(true)} />
         <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background } }}>
@@ -387,8 +419,6 @@ const AuthLayout = () => {
           <Stack.Screen name="group-settings" options={{ headerShown: false }} />
           <Stack.Screen name="group-chat" options={{ headerShown: false }} />
           <Stack.Screen name="group-details" options={{ headerShown: false }} />
-          <Stack.Screen name="meetup-edit" options={{ headerShown: false }} />
-          <Stack.Screen name="schedule-meetup" options={{ headerShown: false }} />
           <Stack.Screen name="add-members" options={{ headerShown: false, presentation: 'modal' }} />
           <Stack.Screen name="create-group" options={{ presentation: 'card', headerShown: false }} />
           <Stack.Screen

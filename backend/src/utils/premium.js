@@ -1,11 +1,12 @@
 import { ENV } from "../config/env.js";
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
+import { flags } from "./featureFlags.js";
 
 // Clerk ids that count as Premium without a subscription (testing only).
 // Evaluated at read time so nothing is ever written to the database.
 const testClerkIds = () =>
-  (ENV.PREMIUM_TEST_CLERK_IDS || "user_3JRLGwTK9kOXntq10b9DOdsi5Dt")
+  (ENV.PREMIUM_TEST_CLERK_IDS || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
@@ -34,6 +35,13 @@ export const groupHasPremium = async (group) => {
   const owner = await User.findById(ownerId).select("clerkId premium").lean();
   return hasPremium(owner);
 };
+
+/**
+ * Does this group have a waitlist (with auto-promotion)? A Premium feature once the
+ * PREMIUM_WAITLIST_ENFORCED switch is on; until then every group has one, as in app 1.3.x.
+ */
+export const groupHasWaitlist = async (group) =>
+  (flags.premiumWaitlist() ? groupHasPremium(group) : true);
 
 /** Shape a user for API responses: the stored doc plus a computed `isPremium`. */
 export const serializeUser = (user) => {
@@ -79,7 +87,9 @@ export const withGroupPremium = async (meetups) => {
     if (!ownerId) return m;
     const isPremium = premiumByOwner.get(ownerId) === true;
     const rsvpResponses = isPremium ? responsesByGroup.get(m.group._id.toString()) || [] : [];
-    return { ...m, group: { ...m.group, isPremium, rsvpResponses } };
+    // waitlistEnabled tells the app whether "Join Waitlist" is available (see groupHasWaitlist).
+    const waitlistEnabled = isPremium || !flags.premiumWaitlist();
+    return { ...m, group: { ...m.group, isPremium, waitlistEnabled, rsvpResponses } };
   });
   return isArray ? result : result[0];
 };

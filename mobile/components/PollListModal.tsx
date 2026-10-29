@@ -28,6 +28,12 @@ interface PollListModalProps {
     initialPollId?: string;
 }
 
+const pollTimeLabel = (expiresAt: string | null, active: boolean): string => {
+    if (!expiresAt) return active ? 'Open until closed' : 'Closed';
+    const when = DateTime.fromISO(expiresAt).toFormat('MMM d, h:mm a');
+    return active ? `Expires ${when}` : `Ended ${when}`;
+};
+
 const voterIds = (option: PollOption): string[] =>
     option.voters.map(v => (typeof v === 'string' ? v : v._id));
 
@@ -129,9 +135,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                                     <View style={styles.pollRowMetaRow}>
                                         {isActive && <View style={[styles.activeDot, { backgroundColor: colors.brand }]} />}
                                         <Text style={[styles.pollRowMeta, { color: colors.textFaint }]}>
-                                            {isActive
-                                                ? `Expires ${DateTime.fromISO(poll.expiresAt).toFormat('MMM d, h:mm a')}`
-                                                : `Ended ${DateTime.fromISO(poll.expiresAt).toFormat('MMM d, h:mm a')}`}
+                                            {pollTimeLabel(poll.expiresAt, isActive)}
                                         </Text>
                                     </View>
                                 </View>
@@ -178,9 +182,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                             <Feather name={isExpired ? 'check-circle' : 'bar-chart-2'} size={16} color={isExpired ? colors.textFaint : colors.brand} />
                         </View>
                         <Text style={[styles.detailStatusText, { color: colors.textMuted }]}>
-                            {isExpired
-                                ? `Ended ${DateTime.fromISO(selectedPoll.expiresAt).toFormat('MMM d, h:mm a')}`
-                                : `Expires ${DateTime.fromISO(selectedPoll.expiresAt).toFormat('MMM d, h:mm a')}`}
+                            {pollTimeLabel(selectedPoll.expiresAt, !isExpired)}
                         </Text>
                     </View>
 

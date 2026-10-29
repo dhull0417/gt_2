@@ -12,7 +12,7 @@ test('no-op when Supabase env vars are missing', async () => {
 
 test('posts a kind=system row with the service key', async () => {
   let seen;
-  const env = { SUPABASE_URL: 'https://x.supabase.co/', SUPABASE_SERVICE_ROLE_KEY: 'svc' };
+  const env = { SUPABASE_URL: 'https://x.supabase.co/', SUPABASE_SERVICE_ROLE_KEY: 'svc', CHAT_SYSTEM_MESSAGES_ENABLED: 'true' };
   const ok = await postSystemMessage('g1', 'Sam joined the group', {
     env,
     fetchImpl: async (url, init) => { seen = { url, init }; return { ok: true }; },
@@ -26,7 +26,16 @@ test('posts a kind=system row with the service key', async () => {
 });
 
 test('never throws when the request fails', async () => {
-  const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc' };
+  const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc', CHAT_SYSTEM_MESSAGES_ENABLED: 'true' };
   assert.equal(await postSystemMessage('g1', 'x', { env, fetchImpl: async () => { throw new Error('boom'); } }), false);
   assert.equal(await postSystemMessage('g1', 'x', { env, fetchImpl: async () => ({ ok: false, status: 500, text: async () => 'bad' }) }), false);
+});
+
+test('no-op while the CHAT_SYSTEM_MESSAGES_ENABLED switch is off, even with the keys set', async () => {
+  let called = false;
+  const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc' };
+  const ok = await postSystemMessage('g1', 'hi', { env, fetchImpl: async () => { called = true; } });
+  assert.equal(ok, false);
+  assert.equal(called, false);
+  assert.equal(isSystemMessagingConfigured(env), false);
 });

@@ -20,7 +20,7 @@ export const messagePreview = (record) => {
  * Mentioned members are always notified (like GroupMe, a mention cuts through a
  * mute); everyone else respects mutes. The sender is never notified.
  *
- * members: [{ clerkId, expoPushToken, mutedGroups, mutedUntilNextMeetup }]
+ * members: [{ clerkId, expoPushToken, expoPushTokens, mutedGroups, mutedUntilNextMeetup, notificationPrefs }]
  */
 export const pickRecipients = (members, { senderClerkId, mentions = [], groupId }) => {
   const gid = String(groupId);
@@ -32,7 +32,10 @@ export const pickRecipients = (members, { senderClerkId, mentions = [], groupId 
   const normal = [];
   const mention = [];
   for (const u of members) {
-    if (!u.expoPushToken || u.clerkId === senderClerkId) continue;
+    const hasToken = !!u.expoPushToken || (u.expoPushTokens || []).length > 0;
+    if (!hasToken || u.clerkId === senderClerkId) continue;
+    // A member who switched chat pushes off in Settings gets none (mentions included).
+    if (u.notificationPrefs && u.notificationPrefs.chat === false) continue;
     if (mentioned.has(u.clerkId)) mention.push(u);
     else if (!muted(u)) normal.push(u);
   }

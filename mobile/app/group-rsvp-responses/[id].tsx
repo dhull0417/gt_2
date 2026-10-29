@@ -255,7 +255,7 @@ export default function GroupRsvpResponsesScreen() {
         </PressableOpacity>
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 140 }}>
           <Text style={styles.sub}>
             Create your own catchphrase and emoji for the popup that plays when a member of {group.name} taps I'm In or I'm Out. Once you've made any for In or Out, only yours play for that choice.

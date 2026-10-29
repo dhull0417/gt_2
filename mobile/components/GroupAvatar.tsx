@@ -1,5 +1,6 @@
 import React from "react";
-import { Image, View, Text } from "react-native";
+import { View, Text } from "react-native";
+import { Image } from "expo-image";
 import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const COLORS = ["#C7D2FE", "#FDE68A", "#F9A8D4", "#FDBA74", "#A5B4FC", "#86EFAC", "#BAE6FD"];
@@ -32,6 +33,10 @@ export const GroupAvatar: React.FC<Props> = ({ name, imageUrl, size = 44, border
       <Image
         source={{ uri: imageUrl }}
         style={{ width: size, height: size, borderRadius: radius, backgroundColor: colors.backgroundAlt }}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        transition={150}
+        recyclingKey={imageUrl}
       />
     );
   }

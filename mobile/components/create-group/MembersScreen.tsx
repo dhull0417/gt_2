@@ -7,6 +7,7 @@ import { useThemeColors } from "@/contexts/AppearanceContext";
 import { groupApi, useApiClient } from "@/utils/api";
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
+import { buildInviteMessage } from '@/utils/inviteMessage';
 
 export const MembersScreen = ({ groupId, groupName, onDone }: {
     groupId: string; groupName: string; onDone: () => void;
@@ -29,7 +30,7 @@ export const MembersScreen = ({ groupId, groupName, onDone }: {
         }
         try {
             await Share.share({
-                message: `Join my group "${groupName}" on GroupThat!\n\nSTEP 1 — Download the app:\n→ https://invite.groupthatapp.com/download\n\nSTEP 2 — Join the group:\n→ ${inviteLink}`,
+                message: buildInviteMessage({ groupName, link: inviteLink }),
             });
         } catch {}
     };

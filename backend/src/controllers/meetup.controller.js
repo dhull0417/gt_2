@@ -7,10 +7,13 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { DateTime } from "luxon";
 import { parseTimeString } from "../utils/date.utils.js";
-import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
+import { rememberSkippedSlot } from "../utils/meetupGeneration.js";
+import { headcountOf, loadClerkIds, promoteWaitlist } from "../utils/waitlist.js";
+import { postSystemMessage } from "../utils/systemMessage.js";
 import { canManageGroup, canManageMember } from "./group.controller.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { groupHasPremium, withGroupPremium } from "../utils/premium.js";
+import { flags } from "../utils/featureFlags.js";
 import { evaluateMinimumHeadcount, evaluateDueMeetups } from "../utils/minimumHeadcount.js";
 import { pruneAnswers, MAX_ANSWER_LENGTH } from "../utils/rsvpQuestions.js";
 import { canRsvpNow, userOpensAt, userTierIndex, pickWaitlistIndex, notifyOpenTiers, resolveRsvpOpen } from "../utils/priorityRsvp.js";
@@ -86,6 +89,22 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     if (!['in', 'out'].includes(status)) {
         return res.status(400).json({ error: "Invalid RSVP status." });
     }
+    if (!mongoose.Types.ObjectId.isValid(meetupId)) {
+        return res.status(400).json({ error: "Invalid Meetup ID." });
+    }
+
+    // You can only RSVP to a meetup you belong to, and only while it is still on.
+    const meetupToCheck = await Meetup.findById(meetupId).select('members status date startsAt').lean();
+    if (!meetupToCheck) return res.status(404).json({ error: "Meetup not found." });
+    if (!meetupToCheck.members.some(id => id.toString() === requester._id.toString())) {
+        return res.status(403).json({ error: "You are not a member of this meetup." });
+    }
+    if (meetupToCheck.status !== 'scheduled') {
+        return res.status(400).json({ error: meetupToCheck.status === 'cancelled' ? "This meetup was cancelled." : "This meetup is over." });
+    }
+    if (new Date(meetupToCheck.startsAt || meetupToCheck.date) < new Date(Date.now() - 60 * 60 * 1000)) {
+        return res.status(400).json({ error: "This meetup is over." });
+    }
 
     // Admin override: after the permission check, swap `user` to the target so
     // the rest of the function applies to them instead of the requester.
@@ -116,16 +135,18 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     let bumpedUserId = null;
     let statusUnchanged = false;
 
-    // Waitlist + auto-promotion is a Premium feature of the group's owner.
-    // Looked up lazily (and once) since most RSVPs never touch it.
-    let waitlistEnabled;
-    const getWaitlistEnabled = async () => {
-        if (waitlistEnabled === undefined) {
+    // Priority RSVP is a Premium feature of the group's owner. The waitlist (+ auto-promotion)
+    // is too once PREMIUM_WAITLIST_ENFORCED is on; until then every group has one, as in app 1.3.x.
+    // Looked up lazily (and once) since most RSVPs never touch them.
+    let groupPremium;
+    const getGroupPremium = async () => {
+        if (groupPremium === undefined) {
             const groupDoc = await Group.findById(meetup.group).select('owner').lean();
-            waitlistEnabled = await groupHasPremium(groupDoc);
+            groupPremium = await groupHasPremium(groupDoc);
         }
-        return waitlistEnabled;
+        return groupPremium;
     };
+    const getWaitlistEnabled = async () => (flags.premiumWaitlist() ? getGroupPremium() : true);
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         meetup = await Meetup.findById(meetupId);
@@ -147,7 +168,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         // Before the general open time, only members of a priority group whose window
         // has opened (on schedule, or early because the groups ahead have answered) may RSVP.
         if (!actingAdmin && (meetup.rsvpOpenDate || meetup.priorityTiers?.length)) {
-            const tiersActive = (meetup.priorityTiers?.length ?? 0) > 0 && await getWaitlistEnabled();
+            const tiersActive = (meetup.priorityTiers?.length ?? 0) > 0 && await getGroupPremium();
             if (!canRsvpNow(meetup, user._id, tiersActive)) {
                 return res.status(400).json({
                     error: tiersActive && userTierIndex(meetup, user._id) >= 0
@@ -162,6 +183,12 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             return res.status(400).json({ error: "The RSVP deadline has passed." });
         }
 
+        // Spots are counted the way the app shows them: everyone who is In plus the guests they bring.
+        const clerkIds = await loadClerkIds([...meetup.in, ...meetup.waitlist, user._id]);
+        const guestsByClerk = new Map((meetup.guests || []).map(g => [g.userId, g.count || 0]));
+        const myNeed = 1 + (guestsByClerk.get(user.clerkId) || 0);
+        const spotsUsed = () => headcountOf(meetup, clerkIds);
+
         // Skip re-notifying on a repeat tap; "in" covers both in and waitlist.
         const wasIn = meetup.in.some(id => id.equals(user._id));
         const wasOut = meetup.out.some(id => id.equals(user._id));
@@ -169,7 +196,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         // A waitlisted user's repeat "in" tap is a no-op only while the meetup is
         // still full; once a spot is open (e.g. the owner isn't Premium, so there
         // is no auto-promotion) the tap moves them in.
-        const wasAtCapacity = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
+        const wasAtCapacity = meetup.capacity > 0 && spotsUsed() + myNeed > meetup.capacity;
         statusUnchanged = status === 'in' ? (wasIn || (wasWaitlisted && wasAtCapacity)) : wasOut;
         if (statusUnchanged) break;
 
@@ -193,7 +220,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             // Auto-promote the first person in the waitlist if capacity allows
             // (Premium only; without it people already waitlisted stay put and
             // can tap "I'm In" themselves once a spot is open).
-            if (meetup.capacity > 0 && meetup.waitlist.length > 0 && meetup.in.length < meetup.capacity
+            if (meetup.capacity > 0 && meetup.waitlist.length > 0 && spotsUsed() < meetup.capacity
                 && await getWaitlistEnabled()) {
                 const pickIdx = pickWaitlistIndex(meetup, (meetup.priorityTiers?.length ?? 0) > 0);
                 promotedUserId = meetup.waitlist[pickIdx];
@@ -202,12 +229,12 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             }
         } else if (status === 'in') {
             // Push to waitlist if at capacity (Premium), otherwise 'in'
-            if (meetup.capacity > 0 && meetup.in.length >= meetup.capacity) {
+            if (meetup.capacity > 0 && spotsUsed() + myNeed > meetup.capacity) {
                 // Priority RSVP: a member of a higher group takes a spot from the
                 // lowest-priority person who's in (they go to the front of the waitlist).
                 const myTier = (meetup.priorityTiers?.length ?? 0) > 0 ? userTierIndex(meetup, user._id) : -1;
                 let victimId = null;
-                if (myTier >= 0 && await getWaitlistEnabled()) {
+                if (myTier >= 0 && await getGroupPremium()) {
                     let worst = -1;
                     for (const id of meetup.in) {
                         if (id.equals(user._id)) continue;
@@ -315,6 +342,15 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
         }
     }
 
+    // Someone leaving with guests can free more than one spot: offer any left over to the waitlist.
+    if (!statusUnchanged && status === 'out') {
+        try {
+            await promoteWaitlist(meetup._id);
+        } catch (err) {
+            console.error("RSVP waitlist promotion failed:", err);
+        }
+    }
+
     // Notify all other group members that this user has RSVP'd
     const otherMembers = statusUnchanged
         ? []
@@ -411,9 +447,17 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     const oldTime = meetup.time;
     const oldLocation = meetup.location;
     const oldCapacity = meetup.capacity;
+    const originalSlot = { date: meetup.date, time: meetup.time };
 
     // --- Partial Update & Validation ---
-    const newDate = date || meetup.date;
+    // A plain "YYYY-MM-DD" is a calendar day in the GROUP's timezone (what the app now sends);
+    // full timestamps from older app versions are still accepted.
+    const newDate = date
+        ? (/^\d{4}-\d{2}-\d{2}$/.test(String(date)) ? DateTime.fromISO(String(date), { zone: groupTimezone }).toJSDate() : new Date(date))
+        : meetup.date;
+    if (date && isNaN(new Date(newDate).getTime())) {
+        return res.status(400).json({ error: "Invalid date." });
+    }
     const newTime = time || meetup.time;
 
     // Validate if date/time is being changed to a past date
@@ -490,6 +534,17 @@ export const updateMeetup = asyncHandler(async (req, res) => {
         throw err;
     }
 
+    // Moving a series meetup vacates its original slot: remember that, so the series doesn't recreate it.
+    if (meetup.schedule && (date || time) &&
+        (new Date(originalSlot.date).getTime() !== new Date(meetup.date).getTime() || originalSlot.time !== meetup.time)) {
+        try { await rememberSkippedSlot(meetup.group, meetup.schedule, originalSlot); } catch (err) { console.error("Failed to remember moved slot:", err); }
+    }
+
+    // A higher (or removed) limit lets people in off the waitlist.
+    if (capacity !== undefined && (meetup.capacity === 0 || meetup.capacity > oldCapacity)) {
+        try { await promoteWaitlist(meetup._id); } catch (err) { console.error("Waitlist promotion failed:", err); }
+    }
+
     // --- Notification Logic ---
     const newDateStr = new Date(meetup.date).toLocaleDateString('en-US', { timeZone: groupTimezone });
     const dateOrTimeChanged = oldDateStr !== newDateStr || oldTime !== meetup.time;
@@ -562,22 +617,28 @@ export const cancelMeetup = asyncHandler(async (req, res) => {
         return res.status(400).json({ error: "Cannot cancel a meetup that has already expired." });
     }
 
+    const note = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 200) : '';
+
     meetup.status = 'cancelled';
     meetup.isOverride = true;
+    meetup.cancelNote = note || null;
     await meetup.save();
 
+    const cancelledOn = new Date(meetup.date).toLocaleDateString('en-US', { timeZone: meetup.timezone });
     const membersToNotify = await User.find({ _id: { $in: meetup.members } });
     if (membersToNotify.length > 0) {
         await notifyAndPersist(membersToNotify, {
             title: "Meetup Cancelled",
-            body: `The meetup "${meetup.name}" on ${new Date(meetup.date).toLocaleDateString('en-US', { timeZone: meetup.timezone })} has been cancelled.`,
+            body: `The meetup "${meetup.name}" on ${cancelledOn} has been cancelled.${note ? ` ${note}` : ''}`,
             data: { meetupId: meetup._id.toString(), type: 'meetup_cancellation' },
             type: 'meetup-cancelled',
             sender: requester._id,
             meetup: meetup._id,
             group: meetup.group._id,
+            meta: note ? { note } : undefined,
         });
     }
+    await postSystemMessage(meetup.group._id, `"${meetup.name}" on ${cancelledOn} was cancelled${note ? `: ${note}` : ''}`);
 
     res.status(200).json({ message: "Meetup cancelled successfully.", meetup: await withGroupPremium(meetup) });
 });
@@ -611,6 +672,7 @@ export const restoreMeetup = asyncHandler(async (req, res) => {
 
     meetup.status = 'scheduled';
     meetup.cancelReason = null;
+    meetup.cancelNote = null;
     meetup.isOverride = true;
     await meetup.save();
 
@@ -686,6 +748,7 @@ export const remindUndecided = asyncHandler(async (req, res) => {
     }
 
     const targetUsers = await User.find({ _id: { $in: targetIds } });
+    if (!userId) await Meetup.updateOne({ _id: meetup._id }, { $set: { lastRemindedAt: new Date() } }, { timestamps: false });
     await notifyAndPersist(targetUsers, {
         title: `RSVP Reminder: ${meetup.name}`,
         body: `Don't forget to RSVP for "${meetup.name}"!`,
@@ -721,33 +784,17 @@ export const deleteMeetup = asyncHandler(async (req, res) => {
         return res.status(403).json({ error: "Permission denied." });
     }
 
-    const wasRecurring = !meetup.isOverride;
     const parentGroup = meetup.group;
 
     await Meetup.findByIdAndDelete(meetupId);
 
-    // deleting an active recurring meetup backfills the pipeline immediately,
-    // instead of waiting for the next cron tick.
-    if (wasRecurring && parentGroup.schedules?.some(s => s.active !== false && s.routines?.length)) {
+    // A deleted slot of a series stays deleted: the series remembers it, so the
+    // regenerate job never brings it back (and nobody gets a "New Meetup" push for it).
+    if (meetup.schedule) {
         try {
-            await generateMeetupsForGroup(parentGroup, {
-                onMeetupCreated: async (newMeetup) => {
-                    const membersToNotify = await User.find({ _id: { $in: parentGroup.members } });
-                    if (membersToNotify.length > 0) {
-                        await notifyAndPersist(membersToNotify, {
-                            title: "New Meetup Scheduled",
-                            body: `A new meetup for "${parentGroup.name}" has been scheduled for ${new Date(newMeetup.date).toLocaleDateString('en-US', { timeZone: parentGroup.timezone })}.`,
-                            data: { meetupId: newMeetup._id.toString(), type: 'meetup_created', groupId: parentGroup._id.toString() },
-                            type: 'meetup-created',
-                            sender: requester._id,
-                            meetup: newMeetup._id,
-                            group: parentGroup._id,
-                        });
-                    }
-                },
-            });
-        } catch (regenError) {
-            console.error("Failed to regenerate meetups after deletion:", regenError);
+            await rememberSkippedSlot(parentGroup, meetup.schedule, meetup);
+        } catch (err) {
+            console.error("Failed to remember deleted slot:", err);
         }
     }
 

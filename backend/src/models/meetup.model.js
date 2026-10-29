@@ -27,6 +27,10 @@ const meetupSchema = new mongoose.Schema({
   minimumChecked: { type: Boolean, default: false },
   // Why it was cancelled when the app (not a person) did it, e.g. 'minimum-headcount'.
   cancelReason: { type: String, default: null },
+  // Optional note the organizer typed when cancelling ("Rain delay", ...), shown to members.
+  // When "Remind All" was last sent for this meetup (shown next to the button).
+  lastRemindedAt: { type: Date, default: null },
+  cancelNote: { type: String, trim: true, maxlength: 200, default: null },
   // Premium meetup assignments. bringItems/ridesEnabled are copied from the
   // series (item _ids stay the same as the series' so claims survive refreshes).
   bringItems: [{

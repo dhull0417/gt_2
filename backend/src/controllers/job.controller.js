@@ -10,6 +10,8 @@ import { notifyAndPersist } from "../utils/push.notifications.js";
 import { groupHasPremium } from "../utils/premium.js";
 import { evaluateDueMeetups } from "../utils/minimumHeadcount.js";
 import { notifyOpenTiers } from "../utils/priorityRsvp.js";
+import Notification from "../models/notification.model.js";
+import { postSystemMessage } from "../utils/systemMessage.js";
 
 /**
  * @desc    Generate meetups for groups whose nextGenerationAt is now due.
@@ -112,7 +114,14 @@ export const cleanupExpiredMeetups = asyncHandler(async (req, res) => {
   });
 
   console.log(`[Cleanup] Deleted ${result.deletedCount} old meetup(s).`);
-  res.status(200).json({ message: `Cleanup complete. Deleted ${result.deletedCount} old meetups.` });
+
+  // Notifications older than 90 days are of no use any more.
+  const notifCutoff = new Date();
+  notifCutoff.setDate(notifCutoff.getDate() - 90);
+  const oldNotifs = await Notification.deleteMany({ createdAt: { $lt: notifCutoff }, status: { $ne: 'pending' } });
+  console.log(`[Cleanup] Deleted ${oldNotifs.deletedCount} old notification(s).`);
+
+  res.status(200).json({ message: `Cleanup complete. Deleted ${result.deletedCount} old meetups and ${oldNotifs.deletedCount} old notifications.` });
 });
 
 /**
@@ -354,6 +363,8 @@ export const expirePolls = asyncHandler(async (req, res) => {
     const body = winnerText
       ? `"${poll.prompt}" has closed. Winner: ${winnerText}.`
       : `"${poll.prompt}" has closed with no votes.`;
+
+    if (poll.group?._id) await postSystemMessage(poll.group._id, body);
 
     const members = await User.find({ _id: { $in: poll.group?.members || [] } });
     if (members.length > 0) {

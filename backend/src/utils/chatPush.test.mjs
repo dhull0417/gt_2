@@ -30,3 +30,14 @@ test('pickRecipients: skips sender/no token, honours mutes, mentions cut through
   assert.deepEqual(r.normal.map((u) => u.clerkId), ['a']);
   assert.deepEqual(r.mention.map((u) => u.clerkId), ['d']);
 });
+
+test('pickRecipients: multi-device tokens count, chat switch off blocks everything', () => {
+  const members = [
+    { clerkId: 'tab', expoPushTokens: ['ExponentPushToken[y]'] },
+    { clerkId: 'off', expoPushToken: 'ExponentPushToken[x]', notificationPrefs: { chat: false } },
+    { clerkId: 'on', expoPushToken: 'ExponentPushToken[x]', notificationPrefs: { chat: true } },
+  ];
+  const r = pickRecipients(members, { senderClerkId: 'someone', mentions: ['off'], groupId: 'g1' });
+  assert.deepEqual(r.normal.map((u) => u.clerkId), ['tab', 'on']);
+  assert.deepEqual(r.mention.map((u) => u.clerkId), []);
+});

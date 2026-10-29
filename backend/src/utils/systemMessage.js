@@ -9,11 +9,15 @@
 // Always awaited by callers: on Vercel, work left running after the response is
 // sent can be frozen or dropped.
 
+import { flags } from './featureFlags.js';
+
 const SYSTEM_SENDER_ID = 'system';
 const SYSTEM_SENDER_NAME = 'GroupThat';
 
+// Needs the Supabase keys AND the CHAT_SYSTEM_MESSAGES_ENABLED switch: the same keys also run chat
+// membership sync, while app 1.3.x shows system lines as odd ordinary messages.
 export const isSystemMessagingConfigured = (env = process.env) =>
-  Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY);
+  Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && flags.chatSystemMessages(env));
 
 export const buildSystemRow = (groupId, text) => ({
   group_id: String(groupId),

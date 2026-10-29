@@ -23,13 +23,12 @@ export const connectDB = async () => {
 // log host only, hide credentials
         const uri = process.env.MONGO_URI;
         if (uri) {
-        console.log("MongoDB URI loaded. Host:", uri.split('@')[1].split('/')[0]);
+        console.log("MongoDB URI loaded.");
         } else {
         console.error("MongoDB URI is not set!");
         process.exit(1);
         }
 
-        console.log(process.env.MONGODB_URI)
         // In production, indexes are managed exclusively by migrate-mongo (see
         // src/migrations/) — letting Mongoose auto-build them here is unsafe for
         // changes like a new unique index, which Mongo silently refuses to build

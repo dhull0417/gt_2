@@ -1,10 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
-import { View, TextInput, Text, StyleSheet, ActivityIndicator, Image, Alert, Animated, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { View, TextInput, Text, StyleSheet, ActivityIndicator, Image, ScrollView, Alert, Animated, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@clerk/expo';
-import { ensurePhotoLibraryPermission, uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
+import { ensureCameraPermission, ensurePhotoLibraryPermission, uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
 import { useApiClient } from '@/utils/api';
 import type { PendingImage } from '@/types/chat';
 import { useThemeColors } from '@/contexts/AppearanceContext';
@@ -20,6 +20,9 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+const MAX_PHOTOS = 4;
+interface PendingEntry { key: string; localUri: string; uploaded?: PendingImage }
+
 const TRAY_LAYOUT_ANIM = LayoutAnimation.create(180, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity);
 
 interface Props {
@@ -30,18 +33,24 @@ interface Props {
   onTyping?: () => void;
   onCreateEvent?: () => void;
   onCreatePoll?: () => void;
+  // Photos are stored under chat/<groupId>/ so access can be limited to the group's members.
+  groupId: string;
 }
 
-export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll, mentionMembers }: Props) {
+export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll, mentionMembers, groupId }: Props) {
   const colors = useThemeColors();
   const { getToken } = useAuth();
   const api = useApiClient();
   const [text, setText] = useState('');
-  const [pendingImage, setPendingImage] = useState<{ localUri: string; uploaded?: PendingImage } | null>(null);
+  const [pendingImages, setPendingImages] = useState<PendingEntry[]>([]);
   const [uploading, setUploading] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
-  const [forcedSelection, setForcedSelection] = useState<{ start: number; end: number } | undefined>();
+  // Where to put the cursor once a picked @mention has been written into the text. Applied through the
+  // ref after the new text renders, not via a controlled `selection` prop: on Android that prop can be
+  // applied before the longer text lands, which jumps the cursor (or throws on an out-of-range index).
+  const inputRef = useRef<TextInput>(null);
+  const pendingCursor = useRef<number | null>(null);
   const [picked, setPicked] = useState<MentionMember[]>([]);
   const activeMention = useMemo(
     () => (mentionMembers?.length ? findActiveMention(text, cursor) : null),
@@ -55,11 +64,17 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   const pickMention = (member: MentionMember) => {
     if (!activeMention) return;
     const next = applyMention(text, activeMention, cursor, member.name);
+    pendingCursor.current = next.cursor;
     setText(next.text);
     setCursor(next.cursor);
-    setForcedSelection({ start: next.cursor, end: next.cursor });
     setPicked((prev) => (prev.some((p) => p.clerkId === member.clerkId) ? prev : [...prev, member]));
   };
+  useEffect(() => {
+    if (pendingCursor.current === null) return;
+    const pos = Math.min(pendingCursor.current, text.length);
+    pendingCursor.current = null;
+    inputRef.current?.setSelection(pos, pos);
+  }, [text]);
   const attachAnim = useRef(new Animated.Value(0)).current;
 
   const toggleAttachMenu = () => {
@@ -84,6 +99,38 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
     }).start();
   };
 
+  // Up to MAX_PHOTOS pictures can be attached to one send. Each is uploaded as soon as it's chosen.
+  const addPhotos = async (uris: string[]) => {
+    if (!uris.length) return;
+    const room = MAX_PHOTOS - pendingImages.length;
+    const chosen = uris.slice(0, Math.max(room, 0));
+    if (uris.length > chosen.length) Alert.alert('Photo limit', `You can attach up to ${MAX_PHOTOS} photos at a time.`);
+    if (!chosen.length) return;
+
+    const entries = chosen.map((localUri) => ({ key: `${Date.now()}-${Math.floor(Math.random() * 1e6)}`, localUri } as PendingEntry));
+    setPendingImages((prev) => [...prev, ...entries]);
+    setUploading(true);
+    try {
+      const token = await getToken({ template: 'supabase' });
+      if (!token) throw new Error('No auth token');
+      await Promise.all(entries.map(async (entry) => {
+        try {
+          const filePath = `chat/${groupId}/${entry.key}.jpg`;
+          const uploaded = await uploadImageFromUriWithDimensions(entry.localUri, 'chat-images', filePath, token);
+          setPendingImages((prev) => prev.map((p) => (p.key === entry.key ? { ...p, uploaded } : p)));
+        } catch {
+          setPendingImages((prev) => prev.filter((p) => p.key !== entry.key));
+          Alert.alert('Upload failed', 'Could not upload one of the photos. Please try again.');
+        }
+      }));
+    } catch {
+      setPendingImages((prev) => prev.filter((p) => !entries.some((e) => e.key === p.key)));
+      Alert.alert('Upload failed', 'Could not upload the image. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const pickImage = async () => {
     const hasPermission = await ensurePhotoLibraryPermission(api);
     if (!hasPermission) return;
@@ -92,30 +139,22 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
       mediaTypes: ['images'],
       quality: 0.85,
       allowsEditing: false,
+      allowsMultipleSelection: true,
+      selectionLimit: Math.max(MAX_PHOTOS - pendingImages.length, 1),
     });
-
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-
-    setPendingImage({ localUri: asset.uri });
-    setUploading(true);
-
-    try {
-      const token = await getToken({ template: 'supabase' });
-      if (!token) throw new Error('No auth token');
-      const filePath = `chat/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
-      const { url, width, height } = await uploadImageFromUriWithDimensions(asset.uri, 'chat-images', filePath, token);
-
-      setPendingImage({ localUri: asset.uri, uploaded: { url, width, height } });
-    } catch {
-      Alert.alert('Upload failed', 'Could not upload the image. Please try again.');
-      setPendingImage(null);
-    } finally {
-      setUploading(false);
-    }
+    if (result.canceled || !result.assets?.length) return;
+    await addPhotos(result.assets.map((a) => a.uri));
   };
 
-  const canSend = !uploading && (!!text.trim() || !!pendingImage?.uploaded);
+  const takePhoto = async () => {
+    if (!(await ensureCameraPermission())) return;
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: false });
+    if (result.canceled || !result.assets?.[0]) return;
+    await addPhotos([result.assets[0].uri]);
+  };
+
+  const readyImages = pendingImages.filter((p) => p.uploaded);
+  const canSend = !uploading && (!!text.trim() || readyImages.length > 0);
 
   // Doesn't await onSend: a send can stay paused for a while offline (it's
   // queued, not lost — see useMessages/chatMutations), and this input
@@ -123,36 +162,50 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   // already surfaces genuine failures via Alert, so nothing else to do here.
   const handleSend = () => {
     if (!canSend) return;
-    const image = pendingImage?.uploaded;
+    const images = readyImages.map((p) => p.uploaded!);
     const trimmed = text.trim();
     const mentions = extractMentions(trimmed, picked);
     setText('');
     setCursor(0);
     setPicked([]);
-    setPendingImage(null);
-    onSend(trimmed, image, mentions.length ? mentions : undefined).catch(() => {});
+    setPendingImages([]);
+    // The text goes with the first photo; every extra photo is its own message right after it.
+    if (images.length === 0) {
+      onSend(trimmed, undefined, mentions.length ? mentions : undefined).catch(() => {});
+      return;
+    }
+    (async () => {
+      try {
+        await onSend(trimmed, images[0], mentions.length ? mentions : undefined);
+        for (const extra of images.slice(1)) await onSend('', extra);
+      } catch { /* the chat screen already surfaces send failures */ }
+    })();
   };
 
   const plusRotation = attachAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] });
 
   return (
     <View>
-      {pendingImage && (
-        <View style={styles.previewContainer}>
-          <Image source={{ uri: pendingImage.localUri }} style={styles.previewImage} />
-          {uploading && (
-            <View style={styles.uploadingOverlay}>
-              <ActivityIndicator color="#fff" size="small" />
+      {pendingImages.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.previewRow}>
+          {pendingImages.map((img) => (
+            <View key={img.key} style={styles.previewContainer}>
+              <Image source={{ uri: img.localUri }} style={styles.previewImage} />
+              {!img.uploaded && (
+                <View style={styles.uploadingOverlay}>
+                  <ActivityIndicator color="#fff" size="small" />
+                </View>
+              )}
+              <PressableOpacity accessibilityLabel="Remove"
+                style={[styles.removeBtn, { backgroundColor: colors.textSecondary }]}
+                onPress={() => setPendingImages((prev) => prev.filter((p) => p.key !== img.key))}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Feather name="x" size={13} color="#fff" />
+              </PressableOpacity>
             </View>
-          )}
-          <PressableOpacity accessibilityLabel="Remove"
-            style={[styles.removeBtn, { backgroundColor: colors.textSecondary }]}
-            onPress={() => setPendingImage(null)}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          >
-            <Feather name="x" size={13} color="#fff" />
-          </PressableOpacity>
-        </View>
+          ))}
+        </ScrollView>
       )}
 
       {suggestions.length > 0 && (
@@ -179,6 +232,16 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
                 <Feather name="image" size={20} color={colors.brand} />
               </View>
               <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Photos</Text>
+            </PressableOpacity>
+
+            <PressableOpacity
+              style={styles.trayItem}
+              onPress={() => { closeAttachMenu(); takePhoto(); }}
+            >
+              <View style={[styles.trayIconWrap, { backgroundColor: '#F59E0B20' }]}>
+                <Feather name="camera" size={20} color="#F59E0B" />
+              </View>
+              <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Camera</Text>
             </PressableOpacity>
 
             {onCreateEvent && (
@@ -221,14 +284,11 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
         </PressableOpacity>
 
         <TextInput
+          ref={inputRef}
           style={[styles.input, { backgroundColor: colors.backgroundAlt, color: colors.textPrimary }]}
           value={text}
           onChangeText={(val) => { setText(val); if (val) onTyping?.(); }}
-          onSelectionChange={(e) => {
-            setCursor(e.nativeEvent.selection.start);
-            if (forcedSelection) setForcedSelection(undefined);
-          }}
-          selection={forcedSelection}
+          onSelectionChange={(e) => setCursor(e.nativeEvent.selection.start)}
           onFocus={closeAttachMenu}
           placeholder="Message..."
           placeholderTextColor={colors.placeholder}
@@ -250,8 +310,8 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
 }
 
 const styles = StyleSheet.create({
+  previewRow: { paddingHorizontal: 12, gap: 8 },
   previewContainer: {
-    marginHorizontal: 12,
     marginBottom: 6,
     alignSelf: 'flex-start',
   },

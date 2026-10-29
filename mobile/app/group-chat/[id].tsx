@@ -56,6 +56,8 @@ import { EmojiPickerSheet } from '@/components/EmojiPickerSheet';
 import * as Clipboard from 'expo-clipboard';
 import { isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor } from '@/utils/meetupStatus';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
+import { getGroupImage } from '@/utils/groupDisplay';
+import { setActiveChat } from '@/utils/activeChat';
 
 interface ChatDaySection {
   key: string;
@@ -68,6 +70,7 @@ const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._i
 const GroupChatScreen = () => {
   const { id, promptNotifications } = useLocalSearchParams<{ id: string; promptNotifications?: string }>();
   const [chatHeaderHeight, setChatHeaderHeight] = useState(0);
+  const [pinnedBannerHeight, setPinnedBannerHeight] = useState(0);
   const colors = useThemeColors();
   const { scheme } = useAppearance();
   const isDark = scheme === 'dark';
@@ -93,12 +96,22 @@ const GroupChatScreen = () => {
     promptForNotificationPermissionOnFirstChatOpen(api);
   }, []);
 
-  // Tapping into a chat clears its unread dot on the groups list.
+  // Remember which chat is open so its own pushes stay quiet while you're reading it.
   useEffect(() => {
     if (!id) return;
-    userApi.markGroupRead(api, id)
+    setActiveChat(id);
+    return () => setActiveChat(null);
+  }, [id]);
+
+  // Tapping into a chat clears its unread dot on the groups list.
+  // And leaving marks it read again: whatever arrived while you were watching has been seen.
+  useEffect(() => {
+    if (!id) return;
+    const markRead = () => userApi.markGroupRead(api, id)
       .then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] }))
       .catch(() => {});
+    markRead();
+    return () => { markRead(); };
   }, [id]);
 
   // Instant name/avatar/isDM fallback while the heavier group details request is in flight
@@ -281,9 +294,13 @@ const GroupChatScreen = () => {
     for (const msg of messages) {
       if (!map.has(msg.sender_id)) map.set(msg.sender_id, msg.sender_name);
     }
+    // Members who reacted without ever posting still have a name.
+    for (const m of ((groupDetails as any)?.members as User[] | undefined) ?? []) {
+      if (m.clerkId && !map.has(m.clerkId)) map.set(m.clerkId, getUserDisplayName(m));
+    }
     map.set(senderId, senderName);
     return map;
-  }, [messages, senderId, senderName]);
+  }, [messages, senderId, senderName, groupDetails]);
 
   // Group members who can be @mentioned (everyone but me). Not offered in a one-on-one DM.
   const mentionMembers = useMemo<MentionMember[] | undefined>(() => {
@@ -450,6 +467,7 @@ const GroupChatScreen = () => {
     }
   };
 
+  const handlePendingPressRef = useRef<(item: ChatMessage) => void>(() => {});
   const handlePendingPress = (item: ChatMessage) => {
     if (!item.mutationId) return;
     if (item.failed) {
@@ -473,6 +491,7 @@ const GroupChatScreen = () => {
       );
     }
   };
+  handlePendingPressRef.current = handlePendingPress;
 
   const closeActionPanel = () => {
     setSelectedMessage(null);
@@ -586,12 +605,15 @@ const GroupChatScreen = () => {
           <PressableOpacity accessibilityLabel="Go back" onPress={handleBack} className="mr-2 p-1">
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
           </PressableOpacity>
-          <View style={{ marginRight: 10 }}>
-            <GroupAvatar name={headerName} imageUrl={effectiveGroup?.image} size={36} borderRadius={9} />
-          </View>
-          <Text className="text-lg font-black text-gray-900 dark:text-white flex-1" numberOfLines={1}>
-            {headerName}
-          </Text>
+          {/* Tapping the group's photo or name opens its details (this replaces the old menu button). */}
+          <PressableOpacity accessibilityLabel="Group details" onPress={handleOpenDetails} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+            <View style={{ marginRight: 10 }}>
+              <GroupAvatar name={headerName} imageUrl={getGroupImage(effectiveGroup as any, currentUser?.clerkId)} size={36} borderRadius={9} />
+            </View>
+            <Text className="text-lg font-black text-gray-900 dark:text-white flex-1" numberOfLines={1}>
+              {headerName}
+            </Text>
+          </PressableOpacity>
         </View>
 
         <View className="flex-row items-center" style={{ gap: 8 }}>
@@ -628,23 +650,21 @@ const GroupChatScreen = () => {
             )}
           </PressableOpacity>
 
-          <PressableOpacity
-            onPress={handleOpenDetails}
-            style={[styles.iconButton, detailsChip]}
-          >
-            <Feather name="menu" size={18} color={colors.brand} />
-          </PressableOpacity>
         </View>
       </View>
 
-      <ChatPinnedBanner pins={pins} onPress={() => setPinnedModalVisible(true)} />
+      {/* Measured so the keyboard offset below includes it — otherwise, with a pinned message,
+          Android left the bottom of the composer hidden behind the keyboard by the banner's height. */}
+      <View onLayout={(e) => setPinnedBannerHeight(e.nativeEvent.layout.height)}>
+        <ChatPinnedBanner pins={pins} onPress={() => setPinnedModalVisible(true)} />
+      </View>
 
       <View style={{ flex: 1 }}>
         <KeyboardAvoidingView
           style={{ flex: 1, opacity: chatContentReady ? 1 : 0 }}
           pointerEvents={chatContentReady ? 'auto' : 'none'}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={contentTopInset + chatHeaderHeight}
+          keyboardVerticalOffset={contentTopInset + chatHeaderHeight + pinnedBannerHeight}
         >
           <View style={{ flex: 1, position: 'relative' }}>
             <SectionList
@@ -666,7 +686,7 @@ const GroupChatScreen = () => {
                   onLongPress={(layout) => { setSelectedMessage(item); setSelectedMessageLayout(layout); }}
                   onReactionLongPress={() => setReactionDetailMessage(item)}
                   onImagePress={(url, width, height) => setFullscreenImage({ url, width, height })}
-                  onPendingPress={() => handlePendingPress(item)}
+                  onPendingPress={() => handlePendingPressRef.current(item)}
                   onSwipeReply={() => setReplyingTo(item)}
                   skipEntrance={initialMessageIdsRef.current?.has(item.id) ?? false}
                 />
@@ -787,6 +807,7 @@ const GroupChatScreen = () => {
           )}
 
           <ChatMessageInput
+            groupId={id!}
             mentionMembers={mentionMembers}
             onSend={handleSend}
             onTyping={handleTyping}
@@ -874,6 +895,9 @@ const GroupChatScreen = () => {
 
       {/* Edit modal */}
       <Modal visible={!!editingMessage} transparent animationType="fade" onRequestClose={() => setEditingMessage(null)}>
+        {/* Modal windows aren't resized for the keyboard (edge-to-edge), so lift the panel ourselves —
+            otherwise Save/Cancel sat under the keyboard on Android. */}
+        <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <Pressable style={chatStyles.overlay} onPress={() => setEditingMessage(null)}>
           <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
             <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 12 }}>Edit Message</Text>
@@ -897,6 +921,7 @@ const GroupChatScreen = () => {
             </View>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <ChatImageViewer

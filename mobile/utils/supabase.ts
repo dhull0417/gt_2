@@ -19,6 +19,9 @@ export function getSupabaseClient(clerkToken: string) {
     global: { headers: { Authorization: `Bearer ${clerkToken}` } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  // Without this the realtime socket stays anonymous (it only uses the anon key), so once chat is locked
+  // down to group members it would receive nothing. Keep it fresh with refreshRealtimeAuth() on long sessions.
+  try { client.realtime.setAuth(clerkToken); } catch { /* realtime is optional */ }
 
   clientCache.set(clerkToken, client);
   if (clientCache.size > MAX_CACHED_CLIENTS) {
@@ -26,4 +29,12 @@ export function getSupabaseClient(clerkToken: string) {
     if (oldestKey !== undefined) clientCache.delete(oldestKey);
   }
   return client;
+}
+
+/**
+ * Clerk tokens only live about a minute. A realtime channel authenticated with one stops being allowed to
+ * receive rows after it expires, so call this on a timer while a channel is open with a freshly fetched token.
+ */
+export function refreshRealtimeAuth(client: SupabaseClient, freshToken: string) {
+  try { client.realtime.setAuth(freshToken); } catch { /* ignore */ }
 }

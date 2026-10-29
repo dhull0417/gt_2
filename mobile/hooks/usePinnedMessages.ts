@@ -59,7 +59,13 @@ export function usePinnedMessages(groupId: string) {
           : prev.filter((m) => m.id !== message.id)
       );
 
-      const { error } = await getSupabaseClient(token).from('messages').update(patch).eq('id', message.id);
+      const supabase = getSupabaseClient(token);
+      // Any member may pin, so this goes through a database function (a plain update is limited to your own messages
+      // once chat is locked down). Before that function exists, fall back to the direct update.
+      let { error } = await supabase.rpc('set_message_pinned', { p_message_id: message.id, p_pinned: pinned });
+      if (error && (error.code === 'PGRST202' || error.code === '42883' || /could not find the function/i.test(error.message))) {
+        ({ error } = await supabase.from('messages').update(patch).eq('id', message.id));
+      }
       if (error) {
         applyToThread(previous);
         queryClient.invalidateQueries({ queryKey: pinsKey });

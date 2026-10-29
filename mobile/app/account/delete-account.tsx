@@ -8,6 +8,8 @@ import { Feather } from '@expo/vector-icons';
 import { useApiClient, userApi } from '@/utils/api';
 import { usePremium } from '@/hooks/usePremium';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
+import { unregisterPushToken } from '@/hooks/usePushNotifications';
+import { haptic } from '@/utils/haptics';
 
 const DeleteAccountScreen = () => {
     const { signOut } = useAuth();
@@ -34,7 +36,9 @@ const DeleteAccountScreen = () => {
                     onPress: async () => {
                         setDeleteLoading(true);
                         try {
+                            await unregisterPushToken(api);
                             await userApi.deleteAccount(api);
+                            haptic.success();
                             queryClient.clear();
                             await signOut();
                         } catch {

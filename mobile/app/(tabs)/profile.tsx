@@ -1,14 +1,14 @@
-import { View, Text, ScrollView, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable, Platform, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable, Platform, StyleSheet, RefreshControl } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useCallback, useMemo, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TAB_BAR_HEIGHT } from '@/utils/layout';
+import { tabScreenBottomPadding } from '@/utils/layout';
 import { useAuth } from '@clerk/expo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import * as Updates from 'expo-updates';
+import Constants from 'expo-constants';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { pickAndUploadImage } from '@/utils/uploadImage';
@@ -17,6 +17,7 @@ import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { useAppearance, useThemeColors, type ThemePreference } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
+import { unregisterPushToken } from '@/hooks/usePushNotifications';
 
 const CALENDAR_OPTIONS = [
   {
@@ -69,8 +70,6 @@ const HomeScreen = () => {
       queryFn: () => userApi.getCurrentUser(api),
   });
 
-  useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
-
   const handleChangePhoto = async () => {
     try {
       const token = await getToken({ template: 'supabase' });
@@ -118,22 +117,6 @@ const HomeScreen = () => {
       }
     } catch (error: any) {
       Alert.alert(error.message);
-    }
-  };
-
-  const handleCheckForUpdate = async () => {
-    try {
-      const update = await Updates.checkForUpdateAsync();
-      if (update.isAvailable) {
-        await Updates.fetchUpdateAsync();
-        Alert.alert('Update Downloaded', 'The app will restart to apply the update.', [
-          { text: 'Restart', onPress: () => Updates.reloadAsync() },
-        ]);
-      } else {
-        Alert.alert('No Update', 'You are already running the latest version.');
-      }
-    } catch (error: any) {
-      Alert.alert('Error Checking', error.message);
     }
   };
 
@@ -203,6 +186,13 @@ const HomeScreen = () => {
       onPress: () => router.push('/account'),
     },
     {
+      id: 'notifications',
+      label: 'Notifications',
+      icon: 'bell' as const,
+      color: '#7C3AED',
+      onPress: () => router.push('/account/notifications'),
+    },
+    {
       id: 'share',
       label: 'Share App',
       icon: 'share-2' as const,
@@ -231,11 +221,19 @@ const HomeScreen = () => {
         </Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 20, flexGrow: 1 }}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: tabScreenBottomPadding(insets.bottom) + 20, flexGrow: 1 }}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={() => { refetch(); }} tintColor={colors.brand} colors={[colors.brand]} />}
+      >
         {isLoading ? (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
         ) : isError || !currentUser ? (
-            <Text className="text-center text-red-500 dark:text-red-400 mt-8">Failed to load profile.</Text>
+            <View style={{ alignItems: 'center', marginTop: 48 }}>
+              <Text style={{ color: colors.textMuted, fontSize: 16, marginBottom: 16 }}>Couldn't load your profile.</Text>
+              <PressableOpacity onPress={() => refetch()} style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}>
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Try again</Text>
+              </PressableOpacity>
+            </View>
         ) : (
           <>
             <View className="items-center p-6 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
@@ -318,13 +316,22 @@ const HomeScreen = () => {
                 ))}
 
                 <PressableOpacity
-                    onPress={() => { queryClient.clear(); signOut(); }}
+                    onPress={async () => { await unregisterPushToken(api); queryClient.clear(); signOut(); }}
                     style={[styles.signOutBtn, { marginTop: 28 }]}
                     activeOpacity={0.85}
                 >
                     <Feather name="log-out" size={18} color="white" />
                     <Text style={styles.signOutText}>Sign Out</Text>
                 </PressableOpacity>
+
+                <View style={{ alignItems: 'center', marginTop: 24 }}>
+                  <PressableOpacity onPress={() => Linking.openURL('https://groupthatapp.com/privacy-policy/').catch(() => {})}>
+                    <Text style={{ color: colors.textFaint, fontSize: 13, textDecorationLine: 'underline' }}>Privacy Policy</Text>
+                  </PressableOpacity>
+                  <Text style={{ color: colors.textFaint, fontSize: 12, marginTop: 8 }}>
+                    GroupThat {Constants.expoConfig?.version ?? ''}
+                  </Text>
+                </View>
             </View>
           </>
         )}
@@ -381,7 +388,8 @@ const HomeScreen = () => {
                     Choose your calendar app to subscribe and stay in sync.
                   </Text>
 
-                  {CALENDAR_OPTIONS.map((option) => {
+                  {/* Apple Calendar's webcal:// link can't open on Android (every tap said "Cannot Open"). */}
+                  {CALENDAR_OPTIONS.filter((option) => Platform.OS === 'ios' || option.id !== 'apple').map((option) => {
                     const iconColor = scheme === 'dark' && option.darkColor ? option.darkColor : option.color;
                     return (
                       <PressableOpacity

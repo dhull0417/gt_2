@@ -84,6 +84,13 @@ const namedScheduleSchema = new mongoose.Schema({
     end: { type: String, default: "08:00 AM" },
   },
 
+  // Dates the organizer deleted or skipped. Generation never recreates these slots.
+  skippedSlots: [{
+    date: { type: Date, required: true },
+    time: { type: String, required: true },
+    _id: false,
+  }],
+
   generationLeadDays: { type: Number, min: 0, default: null },
   generationLeadTime: { type: String, default: "09:00 AM" },
   generationDeadlineDays: { type: Number, min: 0, default: null },
@@ -133,9 +140,12 @@ const groupSchema = new mongoose.Schema({
     createdAt: { type: Date },
   },
   isDM: { type: Boolean, default: false },
+  // A sample group created for new people to explore (see createDemoGroup). Safe to delete.
+  isDemo: { type: Boolean, default: false },
   dmParticipants: [{
     userId: { type: String },
     name: { type: String },
+    profilePicture: { type: String },
     _id: false,
   }],
 }, { timestamps: true });

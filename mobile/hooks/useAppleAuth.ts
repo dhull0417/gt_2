@@ -72,12 +72,12 @@ export const useAppleAuth = () => {
                 try {
                     await userApi.syncUser(api, { firstName, lastName });
                 } catch (syncErr) {
-                    console.log("Apple name sync failed:", syncErr);
+                    console.warn("Apple name sync failed:", (syncErr as any)?.message);
                 }
             }
         } catch (err: any) {
             if (err.code === "ERR_REQUEST_CANCELED") return;
-            console.log("Apple sign in error:", JSON.stringify(err, null, 2));
+            console.warn("Apple sign-in failed:", err?.errors?.[0]?.code ?? err?.code ?? err?.message);
             const message = err?.errors?.[0]?.longMessage
                 ?? err?.errors?.[0]?.message
                 ?? err?.message

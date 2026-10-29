@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, Meetup } from "../utils/api";
 import { Alert } from "react-native";
+import { haptic } from "../utils/haptics";
 import { emitRsvpResponse } from "../utils/rsvpResponseBus";
 import { promptForNotificationPermissionOnFirstRsvpIn } from "./usePushNotifications";
 import { RSVP_MUTATION_KEY, type RsvpVariables } from "../utils/offlineMutations";
@@ -21,6 +22,7 @@ export const useRsvp = () => {
     mutationKey: RSVP_MUTATION_KEY,
 
     onSuccess: (_data, variables) => {
+      haptic.success();
       if (!variables.skipResponsePopup) {
         // The group's own reactions (Premium) replace the defaults for that status.
         const meetup = queryClient.getQueryData<Meetup[]>(['meetups'])?.find((m) => m._id === variables.meetupId);
@@ -32,6 +34,7 @@ export const useRsvp = () => {
       if (variables.status === 'in') promptForNotificationPermissionOnFirstRsvpIn(api);
     },
     onError: (error: any) => {
+      haptic.error();
       const errorMessage = error.response?.data?.message || error.response?.data?.error || "Failed to update RSVP.";
       Alert.alert("Error", errorMessage);
     },
@@ -44,7 +47,8 @@ export const useRsvp = () => {
     // doesn't look like a no-op, since the only other visible change offline
     // was the button's own disabled-opacity styling.
     mutate: (variables: RsvpVariables, options?: Parameters<typeof mutation.mutate>[1]) => {
-      if (!isOnline) Alert.alert("You're offline", "Connect to internet to RSVP.");
+      // Not blocking: the RSVP is saved and sent as soon as the connection is back.
+      if (!isOnline) Alert.alert("You're offline", "Your RSVP is saved and will be sent when you're back online.");
       mutation.mutate(variables, options);
     },
   };

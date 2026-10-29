@@ -1,15 +1,19 @@
-import React, { useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, Image, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, SectionList, StyleSheet, RefreshControl } from 'react-native';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from '@/contexts/ToastContext';
+import { SkeletonList } from '@/components/Skeleton';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { useMarkNotificationsAsRead } from '@/hooks/useMarkNotificationsAsRead';
-import { Notification, User, useApiClient, userApi } from '@/utils/api';
+import { Notification, User, useApiClient, userApi, notificationApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
-import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { getNotificationIcon } from '@/utils/notificationIcons';
+import { goToTarget, resolveNotificationTarget } from '@/utils/notificationRouting';
 import { ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
@@ -17,6 +21,7 @@ import type { ThemeColors } from '@/constants/theme';
 
 const timeAgo = (date: string) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
+    if (seconds < 45) return "just now";
     let interval = seconds / 31536000;
     if (interval > 1) return Math.floor(interval) + "y ago";
     interval = seconds / 2592000;
@@ -27,7 +32,7 @@ const timeAgo = (date: string) => {
     if (interval > 1) return Math.floor(interval) + "h ago";
     interval = seconds / 60;
     if (interval > 1) return Math.floor(interval) + "m ago";
-    return Math.floor(seconds) + "s ago";
+    return "just now";
 };
 
 const CHANGED_FIELD_LABELS: Record<string, string> = {
@@ -52,7 +57,7 @@ const formatMeetupDateTime = (meetup?: { date?: string; time?: string; timezone?
     return meetup.time ? `${dateStr} at ${meetup.time}` : dateStr;
 };
 
-const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAccepting, isDeclining, colors, unreadBg }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, isAccepting: boolean, isDeclining: boolean, colors: ThemeColors, unreadBg: string }) => {
+const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDelete, isAccepting, isDeclining, colors, unreadBg, highlight }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, onDelete: (id: string) => void, isAccepting: boolean, isDeclining: boolean, colors: ThemeColors, unreadBg: string, highlight: boolean }) => {
     const router = useRouter();
     const styles = useMemoStyles(colors);
 
@@ -84,6 +89,10 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
                 }
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> made you the owner of <Text style={styles.bold}>{groupName}</Text>.{premiumNote}</Text>;
             }
+            case 'group-deleted':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> deleted the group <Text style={styles.bold}>{notification.meta?.groupName || 'you were in'}</Text>.</Text>;
+            case 'schedule-removed':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> removed the <Text style={styles.bold}>{notification.meta?.scheduleName || 'schedule'}</Text> schedule{groupName ? <> from <Text style={styles.bold}>{groupName}</Text></> : null}. Its upcoming meetups were deleted.</Text>;
             case 'group-updated':
                 return <Text style={styles.messageText}>The group <Text style={styles.bold}>{groupName}</Text> was renamed.</Text>;
             case 'meetup-rsvp-in':
@@ -114,7 +123,7 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
                 if (notification.meta?.reason === 'minimum-headcount') {
                     return <Text style={styles.messageText}><Text style={styles.bold}>{meetupName || 'A meetup'}</Text> was cancelled: only {notification.meta.count ?? 0} of the {notification.meta.needed ?? 0} needed signed up.</Text>;
                 }
-                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> cancelled <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> cancelled <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.{notification.meta?.reason ? <>{' '}<Text style={{ fontStyle: 'italic' }}>"{notification.meta.reason}"</Text></> : null}</Text>;
             case 'meetup-restored':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> restored <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-rsvp-reminder':
@@ -132,39 +141,23 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
         }
     };
 
+    // Every notification leads somewhere (see utils/notificationRouting.ts), and
+    // the same rules apply when the OS push for it is tapped.
     const handlePress = () => {
-        // The user is no longer a member, so the group details screen isn't reachable.
-        if (notification.type === 'group-removed') return;
-        // Meetup-related notifications deep-link straight to that meetup's detail
-        // modal — mirrors the OS push-tap handling in usePushNotifications.ts.
-        if (notification.meetup?._id) {
-            router.push({
-                pathname: '/(tabs)',
-                params: { openMeetupId: notification.meetup._id }
-            });
-            return;
-        }
-        if (notification.group?._id) {
-            // See the matching branch in group-chat/[id].tsx's handleOpenDetails.
-            if (Platform.OS === 'ios') {
-                router.push({
-                    pathname: '/group-details/[id]',
-                    params: { id: notification.group._id }
-                });
-                return;
-            }
-            router.navigate('/(tabs)/groups');
-            router.push({
-                pathname: '/groups/[id]',
-                params: { id: notification.group._id }
-            });
-        }
+        goToTarget(router, resolveNotificationTarget({
+            type: notification.type,
+            groupId: notification.group?._id,
+            meetupId: notification.meetup?._id,
+            pollId: notification.poll?._id,
+        }));
     };
 
     const icon = getNotificationIcon(notification.type);
 
-    return (
-        <PressableOpacity style={[styles.itemContainer, !notification.read && { backgroundColor: unreadBg, borderLeftWidth: 3, borderLeftColor: colors.brand }]} onPress={handlePress} activeOpacity={0.7}>
+    const canDelete = !(notification.type === 'group-invite' && notification.status === 'pending');
+
+    const row = (
+        <PressableOpacity style={[styles.itemContainer, highlight && { backgroundColor: unreadBg, borderLeftWidth: 3, borderLeftColor: colors.brand }]} onPress={handlePress} activeOpacity={0.7}>
             <View style={styles.iconContainer}>
                 <Feather name={icon.name as any} size={24} color={icon.color} />
             </View>
@@ -192,10 +185,34 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
             </View>
         </PressableOpacity>
     );
+
+    if (!canDelete) return row;
+    return (
+        <ReanimatedSwipeable
+            friction={2}
+            overshootRight={false}
+            renderRightActions={() => (
+                <PressableOpacity
+                    haptic="press"
+                    accessibilityLabel="Delete notification"
+                    onPress={() => onDelete(notification._id)}
+                    style={{ width: 84, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}
+                >
+                    <Feather name="trash-2" size={20} color="#fff" />
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 }}>Delete</Text>
+                </PressableOpacity>
+            )}
+        >
+            {row}
+        </ReanimatedSwipeable>
+    );
 };
+
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
 
 const NotificationsScreen = () => {
     const api = useApiClient();
+    const queryClient = useQueryClient();
     const colors = useThemeColors();
     const { scheme } = useAppearance();
     const unreadBg = scheme === 'dark' ? '#152238' : '#EFF6FF';
@@ -203,6 +220,7 @@ const NotificationsScreen = () => {
     const { data: notifications, isLoading, refetch } = useGetNotifications();
     const { mutate: markAsRead } = useMarkNotificationsAsRead();
     const { data: currentUser } = useQuery<User>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
+    const [isPullRefreshing, setIsPullRefreshing] = useState(false);
 
     // mutationFn + the ['notifications']/['groups'] invalidation on success both
     // live in utils/offlineMutations.ts / app/_layout.tsx's MutationCache, so an
@@ -210,6 +228,7 @@ const NotificationsScreen = () => {
     // if this screen isn't around to see it (see useRsvp.ts for the same pattern).
     const acceptMutation = useMutation<unknown, any, string>({
         mutationKey: ACCEPT_INVITE_MUTATION_KEY,
+        onSuccess: () => toast.success('Invite accepted'),
         onError: (error) => console.error("Failed to accept invite", error),
     });
     const declineMutation = useMutation<unknown, any, string>({
@@ -217,15 +236,54 @@ const NotificationsScreen = () => {
         onError: (error) => console.error("Failed to decline invite", error),
     });
 
+    // The unread highlight stays for as long as you're on this screen: remember which rows were
+    // unread when it opened, then mark everything read (which clears the bell and app badge).
+    const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set());
+    const snapshotTaken = useRef(false);
+    const [focusTick, setFocusTick] = useState(0);
     useFocusEffect(useCallback(() => {
+        setFocusTick(t => t + 1);
+        return () => { snapshotTaken.current = false; setUnreadIds(new Set()); };
+    }, []));
+    useEffect(() => {
+        if (!notifications || snapshotTaken.current) return;
+        snapshotTaken.current = true;
+        setUnreadIds(new Set(notifications.filter(n => !n.read).map(n => n._id)));
         markAsRead(undefined, { onSettled: () => refetch() });
-    }, [refetch, markAsRead]));
+    }, [notifications, focusTick, markAsRead, refetch]);
 
     const handleAccept = (id: string) => acceptMutation.mutate(id);
     const handleDecline = (id: string) => declineMutation.mutate(id);
 
+    const handleDelete = async (id: string) => {
+        const previous = queryClient.getQueryData<Notification[]>(['notifications']);
+        queryClient.setQueryData<Notification[]>(['notifications'], (old) => old?.filter(n => n._id !== id));
+        try {
+            await notificationApi.deleteNotification(api, id);
+        } catch {
+            queryClient.setQueryData(['notifications'], previous);
+            toast.error("Couldn't delete that. Try again.");
+        }
+    };
+
+    const handlePullRefresh = async () => {
+        setIsPullRefreshing(true);
+        try { await refetch(); } finally { setIsPullRefreshing(false); }
+    };
+
+    const sections = useMemo(() => {
+        const today = startOfToday();
+        const list = notifications ?? [];
+        const todays = list.filter(n => new Date(n.createdAt).getTime() >= today);
+        const earlier = list.filter(n => new Date(n.createdAt).getTime() < today);
+        return [
+            ...(todays.length ? [{ title: 'Today', data: todays }] : []),
+            ...(earlier.length ? [{ title: 'Earlier', data: earlier }] : []),
+        ];
+    }, [notifications]);
+
     if (isLoading || !currentUser) {
-        return <View style={styles.center}><LoadingAnimation /></View>;
+        return <View style={styles.container}><SkeletonList kind="notification" count={7} /></View>;
     }
 
     if (!notifications || notifications.length === 0) {
@@ -239,22 +297,29 @@ const NotificationsScreen = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-            <FlatList
-                data={notifications}
+            <SectionList
+                sections={sections}
                 renderItem={({ item }) => (
                     <NotificationItem
                         notification={item}
                         currentUser={currentUser}
                         onAccept={handleAccept}
                         onDecline={handleDecline}
+                        onDelete={handleDelete}
                         isAccepting={acceptMutation.isPending && acceptMutation.variables === item._id}
                         isDeclining={declineMutation.isPending && declineMutation.variables === item._id}
                         colors={colors}
                         unreadBg={unreadBg}
+                        highlight={unreadIds.has(item._id)}
                     />
                 )}
+                renderSectionHeader={({ section }) => (
+                    <Text style={styles.sectionHeader}>{section.title}</Text>
+                )}
                 keyExtractor={item => item._id}
+                stickySectionHeadersEnabled={false}
                 contentContainerStyle={{ paddingVertical: 8 }}
+                refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
             />
         </SafeAreaView>
     );
@@ -267,6 +332,7 @@ function buildStyles(colors: ThemeColors) {
     return StyleSheet.create({
         container: { flex: 1, backgroundColor: colors.background },
         center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+        sectionHeader: { fontSize: 12, fontWeight: '800' as const, letterSpacing: 0.8, textTransform: 'uppercase' as const, color: colors.textFaint, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, backgroundColor: colors.background },
         emptyText: { marginTop: 16, fontSize: 16, color: colors.textMuted },
         itemContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.surface },
         iconContainer: { marginRight: 16, marginTop: 2 },

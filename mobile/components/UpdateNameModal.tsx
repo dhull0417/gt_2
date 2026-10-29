@@ -1,4 +1,4 @@
-import { View, Text, TextInput, Modal, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, Modal, ActivityIndicator, KeyboardAvoidingView } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -41,7 +41,7 @@ export function UpdateNameModal({ visible, onClose }: UpdateNameModalProps) {
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         className="flex-1 items-center justify-center px-8"
         style={{ backgroundColor: colors.overlay }}
       >

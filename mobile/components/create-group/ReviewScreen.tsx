@@ -7,7 +7,8 @@ import { PressableOpacity } from "@/components/ui/PressableOpacity";
 import { useThemeColors } from "@/contexts/AppearanceContext";
 import { ScheduleData, UserStub } from "@/utils/createGroupDraft";
 import { getUserDisplayName } from "@/utils/groupDisplay";
-import { DAYS_OF_WEEK, FREQ_LABELS, ordSfx, USA_TIMEZONES } from "@/utils/scheduleConstants";
+import { DAYS_OF_WEEK, FREQ_LABELS, ordSfx } from "@/utils/scheduleConstants";
+import { timezoneLabel } from "@/utils/timezones";
 import { Feather } from "@expo/vector-icons";
 import { DateTime } from "luxon";
 
@@ -53,7 +54,7 @@ export const ReviewScreen = ({ groupName, groupImage, members, schedules, timezo
                     <>
                         <View style={s.reviewInlineRow}>
                             <Feather name="globe" size={13} color={colors.textFaint} />
-                            <Text style={s.reviewInlineText}>{USA_TIMEZONES.find(t => t.value === timezone)?.label}</Text>
+                            <Text style={s.reviewInlineText}>{timezoneLabel(timezone)}</Text>
                         </View>
                         {schedules.map((schedule, idx) => {
                             const maxAttendeesLabel = schedule.maxAttendeesMode === "limited" && schedule.maxAttendeesInput

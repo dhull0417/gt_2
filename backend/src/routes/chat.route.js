@@ -49,8 +49,8 @@ router.post('/webhook/message', async (req, res) => {
 
     const members = await User.find({
       _id: { $in: group.members },
-      expoPushToken: { $exists: true, $ne: null },
-    }).select('clerkId expoPushToken mutedGroups mutedUntilNextMeetup');
+      $or: [{ expoPushToken: { $exists: true, $ne: null } }, { 'expoPushTokens.0': { $exists: true } }],
+    }).select('clerkId expoPushToken expoPushTokens mutedGroups mutedUntilNextMeetup notificationPrefs timezone');
 
     const { normal, mention } = pickRecipients(members, {
       senderClerkId: record.sender_id,
@@ -61,10 +61,10 @@ router.post('/webhook/message', async (req, res) => {
     const data = { type: 'chat', groupId: group._id.toString() };
     await Promise.all([
       normal.length
-        ? notifyUsers(normal, { title: group.name, body: `${senderName}: ${preview}`, data })
+        ? notifyUsers(normal, { title: group.name, body: `${senderName}: ${preview}`, data, type: 'chat' })
         : null,
       mention.length
-        ? notifyUsers(mention, { title: group.name, body: `${senderName} mentioned you: ${preview}`, data })
+        ? notifyUsers(mention, { title: group.name, body: `${senderName} mentioned you: ${preview}`, data, type: 'chat' })
         : null,
     ]);
 

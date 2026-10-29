@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Modal, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useApiClient, meetupApi, Meetup } from '@/utils/api';
@@ -141,6 +142,8 @@ export function AssignmentsSheet({
 }) {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  // 3-button Android navigation is taller than the fixed 34pt pad, which hid the sheet's last row.
+  const insets = useSafeAreaInsets();
   const currentUserId = forUser?.id ?? viewerId;
   const api = useApiClient();
   const [selected, setSelected] = useState<string[]>([]);
@@ -188,7 +191,7 @@ export function AssignmentsSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: Math.max(34, insets.bottom + 16) }]}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{forUser ? `${forUser.name}'s assignments` : meetup.name}</Text>
             <PressableOpacity accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>

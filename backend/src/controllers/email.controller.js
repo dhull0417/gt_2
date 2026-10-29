@@ -104,6 +104,8 @@ export const goPage = (req, res) => {
   const { dest, id } = req.params;
   let path = DEST_PATHS[dest];
   if (dest === "group" && /^[a-f0-9]{24}$/i.test(id || "")) path = `group-details/${id}`;
+  // Calendar events link back to the meetup: the Home tab opens that meetup's details.
+  if (dest === "meetup" && /^[a-f0-9]{24}$/i.test(id || "")) path = `?openMeetupId=${id}`;
   if (path === undefined) return res.redirect(302, "https://groupthatapp.com");
 
   const deepLink = `groupthat://${path}`;

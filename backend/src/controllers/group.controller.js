@@ -4,11 +4,18 @@ import User from "../models/user.model.js";
 import Meetup from "../models/meetup.model.js";
 import Notification from "../models/notification.model.js";
 import InviteToken from "../models/inviteToken.model.js";
+import Poll from "../models/poll.model.js";
+import AttendanceRecord from "../models/attendanceRecord.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
-import { generateMeetupsForGroup, generateMeetupsForSchedule, refreshOverrideMeetupWindows, refreshOverrideAssignments } from "../utils/meetupGeneration.js";
+import { DateTime } from "luxon";
+import { resolveZone } from "../utils/email/lifecycle.js";
+import { generateMeetupsForGroup, generateMeetupsForSchedule, reconcileScheduleMeetups } from "../utils/meetupGeneration.js";
+import { promoteWaitlist } from "../utils/waitlist.js";
+import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
+import { addChatMembers, removeChatMember, removeAllChatMembers, purgeGroupChat } from "../utils/supabaseAdmin.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { buildGroupStats, buildAttendanceCsv } from "../utils/groupStats.js";
 import { parseQuestions, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
@@ -16,6 +23,23 @@ import { refreshPriorityTiers, MAX_PRIORITY_TIERS, MAX_WINDOW_MINUTES } from "..
 import { hasPremium, groupHasPremium } from "../utils/premium.js";
 import { onGroupCreated, onInviteRedeemed } from "../utils/email/lifecycle.js";
 import { postSystemMessage } from "../utils/systemMessage.js";
+import { isLegacyClient } from "../middleware/clientInfo.middleware.js";
+
+const isValidId = (id) => mongoose.Types.ObjectId.isValid(String(id)) && String(new mongoose.Types.ObjectId(String(id))) === String(id);
+
+/** Offers the meetups-capacity change to anyone waiting: capacity went up (or became unlimited). */
+const promoteWaitlistsForSchedule = async (groupId, scheduleId) => {
+    const waiting = await Meetup.find({
+        group: groupId,
+        schedule: scheduleId,
+        status: 'scheduled',
+        date: { $gte: new Date() },
+        'waitlist.0': { $exists: true },
+    }).select('_id').lean();
+    for (const { _id } of waiting) {
+        try { await promoteWaitlist(_id); } catch (err) { console.error("Waitlist promotion failed:", err); }
+    }
+};
 
 // --- Helpers ---
 
@@ -150,6 +174,31 @@ const withLegacyScheduleMirror = (groupObj) => {
 };
 
 /**
+ * DM groups store a snapshot of each person's name from when the chat was created. Replace it with
+ * the people's current name and photo so a rename or new profile picture shows up right away.
+ * Works on a list of lean group objects and returns new objects.
+ */
+export const withLiveDmParticipants = async (groups) => {
+    const dms = groups.filter((g) => g.isDM && Array.isArray(g.dmParticipants) && g.dmParticipants.length);
+    if (dms.length === 0) return groups;
+    const clerkIds = [...new Set(dms.flatMap((g) => g.dmParticipants.map((p) => p.userId)).filter(Boolean))];
+    const users = await User.find({ clerkId: { $in: clerkIds } }).select('clerkId firstName lastName profilePicture').lean();
+    const byClerk = new Map(users.map((u) => [u.clerkId, u]));
+    return groups.map((g) => {
+        if (!g.isDM || !Array.isArray(g.dmParticipants)) return g;
+        return {
+            ...g,
+            dmParticipants: g.dmParticipants.map((p) => {
+                const u = byClerk.get(p.userId);
+                if (!u) return p;
+                const name = [u.firstName, u.lastName].filter(Boolean).join(' ');
+                return { ...p, name: name || p.name, profilePicture: u.profilePicture || undefined };
+            }),
+        };
+    });
+};
+
+/**
  * HELPER: canManageGroup
  * Checks if the user is the primary owner or in the moderator list.
  */
@@ -202,11 +251,18 @@ export const createGroup = asyncHandler(async (req, res) => {
   const owner = await User.findOne({ clerkId });
   if (!owner) return res.status(404).json({ error: "User not found." });
 
-  let initialMemberIds = [owner._id.toString()];
-  if (members && Array.isArray(members)) {
-      initialMemberIds = [...initialMemberIds, ...members];
-  }
-  const uniqueMemberIds = [...new Set(initialMemberIds)];
+  // Only the creator is a member at first. Anyone listed in `members` is sent an
+  // invitation they can accept or decline, rather than being added without a say.
+  // App 1.3.x and older still add the picked people straight away, as their screens promise.
+  const legacyDirectAdd = isLegacyClient(req);
+  const pickedIds = [...new Set(Array.isArray(members) ? members.map(String) : [])]
+      .filter((id) => isValidId(id) && id !== owner._id.toString())
+      .slice(0, 100);
+  const addedUsers = legacyDirectAdd && pickedIds.length > 0
+      ? await User.find({ _id: { $in: pickedIds } })
+      : [];
+  const uniqueMemberIds = [owner._id.toString(), ...addedUsers.map((u) => u._id.toString())];
+  const inviteeIds = legacyDirectAdd ? [] : pickedIds;
 
   // new clients send `schedules`; legacy clients send a single `schedule` +
   // top-level fields — wrap both into the same Group.schedules array.
@@ -263,22 +319,35 @@ export const createGroup = asyncHandler(async (req, res) => {
       { $addToSet: { groups: newGroup._id } }
   );
 
-  // --- NOTIFICATION LOGIC ---
-  const newlyAddedUserIds = uniqueMemberIds.filter(id => id.toString() !== owner._id.toString());
-  if (newlyAddedUserIds.length > 0) {
-      const newlyAddedUsers = await User.find({ _id: { $in: newlyAddedUserIds } });
-      if (newlyAddedUsers.length > 0) {
-          await notifyAndPersist(newlyAddedUsers, {
-              title: "You've been added to a group!",
-              body: `${owner.firstName} ${owner.lastName} added you to the group "${newGroup.name}".`,
-              data: { groupId: newGroup._id.toString(), type: 'group_added' },
-              type: 'group-added',
+  await addChatMembers(newGroup._id, [owner.clerkId, ...addedUsers.map((u) => u.clerkId).filter(Boolean)]);
+
+  // App 1.3.x: the people it added directly are told, as they always have been.
+  if (addedUsers.length > 0) {
+      await notifyAndPersist(addedUsers, {
+          title: "You've been added to a group!",
+          body: `${owner.firstName} ${owner.lastName} added you to the group "${newGroup.name}".`,
+          data: { groupId: newGroup._id.toString(), type: 'group_added' },
+          type: 'group-added',
+          sender: owner._id,
+          group: newGroup._id,
+      });
+  }
+
+  // --- INVITATIONS ---
+  if (inviteeIds.length > 0) {
+      const invitees = await User.find({ _id: { $in: inviteeIds } });
+      if (invitees.length > 0) {
+          await notifyAndPersist(invitees, {
+              title: "Group Invitation",
+              body: `${owner.firstName} invited you to join "${newGroup.name}".`,
+              data: { groupId: newGroup._id.toString(), type: 'group-invite' },
+              type: 'group-invite',
               sender: owner._id,
               group: newGroup._id,
           });
       }
   }
-  // --- END NOTIFICATION LOGIC ---
+  // --- END INVITATIONS ---
 
   // Initial Generation with Window Filling
   if (newGroup.schedules?.length) {
@@ -299,6 +368,57 @@ export const createGroup = asyncHandler(async (req, res) => {
  *          Current clients use createSchedule/updateSchedule instead.
  * @route   PATCH /api/groups/:groupId/schedule
  */
+/**
+ * @desc    Creates a sample group (with one sample meetup) so someone with no invite can try the
+ *          app straight away. A person gets at most one; asking again returns it.
+ * @route   POST /api/groups/demo
+ */
+export const createDemoGroup = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const owner = await User.findOne({ clerkId });
+    if (!owner) return res.status(404).json({ error: "User not found." });
+
+    const existing = await Group.findOne({ owner: owner._id, isDemo: true });
+    if (existing) return res.status(200).json({ group: withLegacyScheduleMirror(existing.toObject()), alreadyExisted: true });
+
+    const timezone = (owner.timezone && resolveZone(owner.timezone)) || "America/Denver";
+    const group = await Group.create({
+        name: "Sample Group",
+        image: "",
+        timezone,
+        owner: owner._id,
+        members: [owner._id],
+        schedules: [],
+        isDemo: true,
+        defaultLocation: "",
+    });
+    await User.updateOne({ _id: owner._id }, { $addToSet: { groups: group._id } });
+    await addChatMembers(group._id, [owner.clerkId]);
+
+    // A sample meetup the coming Saturday at 10:00 AM (a week later if that is too close).
+    let when = DateTime.now().setZone(timezone).set({ hour: 10, minute: 0, second: 0, millisecond: 0 });
+    while (when.weekday !== 6 || when < DateTime.now().plus({ days: 2 })) when = when.plus({ days: 1 });
+    const meetup = await Meetup.create({
+        group: group._id,
+        schedule: null,
+        name: "Sample Meetup",
+        date: when.toJSDate(),
+        startsAt: when.toJSDate(),
+        time: "10:00 AM",
+        timezone,
+        location: "Anywhere you like",
+        description: "This is a sample meetup. Tap I'm In, try the chat, then invite your real group from Group Settings. You can delete this group any time.",
+        members: [owner._id],
+        undecided: [owner._id],
+        capacity: 0,
+        isOverride: true,
+        createdBy: owner._id,
+    });
+    await postSystemMessage(group._id, "Welcome to GroupThat! This sample group is yours to play with.");
+
+    res.status(201).json({ group: withLegacyScheduleMirror(group.toObject()), meetupId: meetup._id });
+});
+
 export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const { schedule, timezone, defaultCapacity, defaultLocation } = req.body;
@@ -350,17 +470,9 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     await group.save();
 
     if (target) {
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
-
-        await Meetup.deleteMany({
-            group: group._id,
-            schedule: target._id,
-            isOverride: false,
-            date: { $gte: today }
-        });
-
         try {
+            // Keeps meetups whose slot is unchanged (and their RSVPs); only removed slots go.
+            await reconcileScheduleMeetups(group, target);
             await generateMeetupsForGroup(group);
         } catch (err) {
             console.error("Update Gen Error:", err);
@@ -516,6 +628,7 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         return res.status(403).json(ASSIGNMENTS_PREMIUM_REQUIRED);
     }
 
+    const previousTimezone = group.timezone;
     if (timezone) group.timezone = timezone;
 
     if (name !== undefined) {
@@ -566,16 +679,13 @@ export const updateSchedule = asyncHandler(async (req, res) => {
 
     await group.save();
 
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    await Meetup.deleteMany({ group: group._id, schedule: target._id, isOverride: false, date: { $gte: today } });
-
-    // Override meetups survive the regeneration above, so bring their RSVP window
-    // and minimum headcount in line with the series' new settings.
+    // Update the series' upcoming meetups IN PLACE: slots that still belong to the series keep
+    // their RSVPs, guests, items and answers; only slots that no longer exist are removed.
+    // (A timezone change moves every slot, so that one case starts the series over.)
     try {
-        await refreshOverrideMeetupWindows(group, target);
+        await reconcileScheduleMeetups(group, target, { resetAll: !!timezone && timezone !== previousTimezone });
     } catch (err) {
-        console.error("Update Schedule Override Window Error:", err);
+        console.error("Update Schedule Reconcile Error:", err);
     }
     try {
         // RSVP open times may have moved, so priority groups' times move with them.
@@ -583,10 +693,9 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     } catch (err) {
         console.error("Update Schedule Priority Refresh Error:", err);
     }
-    try {
-        await refreshOverrideAssignments(group, target);
-    } catch (err) {
-        console.error("Update Schedule Override Assignments Error:", err);
+    // A bigger (or removed) limit lets people off the waitlist.
+    if (defaultCapacity !== undefined) {
+        await promoteWaitlistsForSchedule(group._id, target._id);
     }
 
     if (target.routines?.length) {
@@ -641,7 +750,8 @@ export const deleteSchedule = asyncHandler(async (req, res) => {
                 title: "Schedule Removed",
                 body: `"${target.name}" was removed from "${group.name}" — its upcoming meetups have been deleted.`,
                 data: { groupId: group._id.toString(), type: 'schedule_removed' },
-                type: 'group-updated',
+                type: 'schedule-removed',
+                meta: { scheduleName: target.name },
                 sender: requester._id,
                 group: group._id,
             });
@@ -752,6 +862,11 @@ export const updateModerators = asyncHandler(async (req, res) => {
     const { moderatorIds } = req.body;
     const { userId: clerkId } = getAuth(req);
 
+    if (!isValidId(groupId)) return res.status(400).json({ error: "Invalid group ID." });
+    if (!Array.isArray(moderatorIds) || !moderatorIds.every(isValidId)) {
+        return res.status(400).json({ error: "moderatorIds must be a list of user IDs." });
+    }
+
     const group = await Group.findById(groupId);
     const user = await User.findOne({ clerkId });
 
@@ -775,6 +890,8 @@ export const toggleModerator = asyncHandler(async (req, res) => {
     const { userIdToToggle } = req.body;
     const { userId: clerkId } = getAuth(req);
 
+    if (!isValidId(groupId) || !isValidId(userIdToToggle)) return res.status(400).json({ error: "Invalid ID." });
+
     const group = await Group.findById(groupId);
     const user = await User.findOne({ clerkId });
 
@@ -784,6 +901,10 @@ export const toggleModerator = asyncHandler(async (req, res) => {
     }
     if (group.owner.toString() === userIdToToggle) {
         return res.status(400).json({ error: "The owner cannot be demoted." });
+    }
+
+    if (!group.members.some(id => id.toString() === userIdToToggle)) {
+        return res.status(400).json({ error: "Only group members can be moderators." });
     }
 
     const isCurrentlyMod = group.moderators.some(id => id.toString() === userIdToToggle);
@@ -886,32 +1007,46 @@ export const getGroups = asyncHandler(async (req, res) => {
         }
 
         const [changed, validIds] = await Promise.all([
-            Group.find({ ...filter, updatedAt: { $gte: sinceDate } }).lean(),
+            // DM chats are always re-sent: a rename or new photo changes the User, not the Group.
+            Group.find({ ...filter, $or: [{ updatedAt: { $gte: sinceDate } }, { isDM: true }] }).lean(),
             Group.find(filter).distinct('_id'),
         ]);
 
         return res.status(200).json({
-            changed: changed.map(withLegacyScheduleMirror),
+            changed: (await withLiveDmParticipants(changed)).map(withLegacyScheduleMirror),
             validIds: validIds.map((id) => id.toString()),
             syncedAt: new Date().toISOString(),
         });
     }
 
-    const groups = await Group.find(filter).lean();
+    const groups = await withLiveDmParticipants(await Group.find(filter).lean());
     res.status(200).json(groups.map(withLegacyScheduleMirror));
 });
 
 export const getGroupDetails = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid ID." });
-    
+
+    // Only members can see a group's people and schedules.
+    const { userId: clerkId } = getAuth(req);
+    const viewer = await User.findOne({ clerkId }).select('_id').lean();
+    if (!viewer) return res.status(404).json({ error: "User not found." });
+    // Someone with an open invitation may look before answering: tapping the invitation opens
+    // this screen (in every app version).
+    const isMember = await Group.exists({ _id: groupId, members: viewer._id });
+    if (!isMember) {
+        const invited = await Notification.exists({ recipient: viewer._id, group: groupId, type: 'group-invite', status: 'pending' });
+        if (!invited) return res.status(403).json({ error: "You are not a member of this group." });
+    }
+
     const group = await Group.findById(groupId)
         .populate("members", "firstName lastName _id profilePicture")
         .populate("moderators", "firstName lastName profilePicture _id")
         .lean();
         
     if (!group) return res.status(404).json({ error: "Group not found." });
-    res.status(200).json({ ...withLegacyScheduleMirror(group), isPremium: await groupHasPremium(group) });
+    const [live] = await withLiveDmParticipants([group]);
+    res.status(200).json({ ...withLegacyScheduleMirror(live), isPremium: await groupHasPremium(group) });
 });
 
 export const addMember = asyncHandler(async (req, res) => {
@@ -934,6 +1069,7 @@ export const addMember = asyncHandler(async (req, res) => {
 
   await group.updateOne({ $addToSet: { members: userToAdd._id } });
   await userToAdd.updateOne({ $addToSet: { groups: group._id } });
+  await addChatMembers(group._id, [userToAdd.clerkId]);
 
   try {
     const today = new Date();
@@ -1003,7 +1139,8 @@ export const removeMember = asyncHandler(async (req, res) => {
 
     await group.updateOne({ $pull: { members: memberToRemove._id, moderators: memberToRemove._id } });
     await memberToRemove.updateOne({ $pull: { groups: group._id } });
-    await Meetup.updateMany({ group: group._id, date: { $gte: new Date() } }, { $pull: { members: memberToRemove._id, in: memberToRemove._id, out: memberToRemove._id, undecided: memberToRemove._id, waitlist: memberToRemove._id } });
+    await scrubMemberFromUpcomingMeetups({ userId: memberToRemove._id, clerkId: memberToRemove.clerkId, groupId: group._id });
+    await removeChatMember(group._id, memberToRemove.clerkId);
 
     try {
         await notifyAndPersist([memberToRemove], {
@@ -1096,7 +1233,8 @@ export const leaveGroup = asyncHandler(async (req, res) => {
 
     await group.updateOne({ $pull: { members: user._id, moderators: user._id } });
     await User.updateOne({ _id: user._id }, { $pull: { groups: group._id } });
-    await Meetup.updateMany({ group: group._id, date: { $gte: new Date() } }, { $pull: { members: user._id, in: user._id, out: user._id, undecided: user._id, waitlist: user._id } });
+    await scrubMemberFromUpcomingMeetups({ userId: user._id, clerkId: user.clerkId, groupId: group._id });
+    await removeChatMember(group._id, user.clerkId);
     await postSystemMessage(group._id, `${user.firstName} left the group`);
     res.status(200).json({ message: "You have left." });
 });
@@ -1109,10 +1247,37 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
     if (group.owner.toString() !== requester._id.toString()) return res.status(403).json({ error: "Only owner can delete." });
 
+    // Tell the other members first (the notification keeps the group's name, since the group itself is about to go).
+    const others = await User.find({ _id: { $in: group.members, $ne: requester._id } });
+
+    // Everything that belongs to the group goes with it.
     await Meetup.deleteMany({ group: groupId });
+    await Poll.deleteMany({ group: groupId });
+    await InviteToken.deleteMany({ groupId });
+    await AttendanceRecord.deleteMany({ group: groupId });
     await Notification.deleteMany({ group: groupId });
-    await User.updateMany({ _id: { $in: group.members } }, { $pull: { groups: groupId } });
+    await User.updateMany(
+        { _id: { $in: group.members } },
+        { $pull: { groups: groupId, mutedGroups: groupId, mutedUntilNextMeetup: groupId }, $unset: { [`lastReadAt.${groupId}`]: "" } }
+    );
     await Group.findByIdAndDelete(groupId);
+
+    // Chat messages, shared photos and the chat membership copy (no-ops until Supabase is configured on the server).
+    await purgeGroupChat(groupId);
+    await removeAllChatMembers(groupId);
+
+    if (others.length > 0 && !group.isDM) {
+        try {
+            await notifyAndPersist(others, {
+                title: "Group Deleted",
+                body: `${requester.firstName} deleted the group "${group.name}".`,
+                data: { type: 'group-deleted' },
+                type: 'group-deleted',
+                sender: requester._id,
+                meta: { groupName: group.name },
+            });
+        } catch (err) { console.error(err); }
+    }
     res.status(200).json({ message: "Deleted." });
 });
 
@@ -1159,6 +1324,7 @@ export const redeemInviteToken = asyncHandler(async (req, res) => {
 
     await group.updateOne({ $addToSet: { members: user._id } });
     await user.updateOne({ $addToSet: { groups: group._id } });
+    await addChatMembers(group._id, [user.clerkId]);
     await onInviteRedeemed(user._id, group._id); // remembered for the welcome email
 
     const today = new Date();

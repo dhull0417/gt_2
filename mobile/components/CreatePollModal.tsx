@@ -7,6 +7,7 @@ import {
     Modal,
     ActivityIndicator,
     ScrollView,
+    KeyboardAvoidingView,
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
@@ -26,6 +27,16 @@ interface CreatePollModalProps {
 
 const MAX_PROMPT_LENGTH = 100;
 const MIN_OPTIONS = 2;
+
+// One-tap ways to end a poll; "Pick a date" keeps the full date and time controls.
+type QuickExpiry = '1h' | '1d' | '3d' | '1w' | 'none' | 'custom';
+const QUICK_EXPIRY: { key: Exclude<QuickExpiry, 'custom'>; label: string; add?: { hours?: number; days?: number; weeks?: number } }[] = [
+    { key: '1h', label: '1 hour', add: { hours: 1 } },
+    { key: '1d', label: '1 day', add: { days: 1 } },
+    { key: '3d', label: '3 days', add: { days: 3 } },
+    { key: '1w', label: '1 week', add: { weeks: 1 } },
+    { key: 'none', label: 'No end' },
+];
 const MAX_OPTIONS = 10;
 const PROMPT_PLACEHOLDER = "What time works best for everyone this weekend?";
 
@@ -156,7 +167,8 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
     const [showTimePopup, setShowTimePopup] = useState(false);
 
     const filledOptionCount = options.filter(o => o.trim().length > 0).length;
-    const hasExpiry = !!expiryDate && !!expiryTime;
+    const [quick, setQuick] = useState<QuickExpiry>('1d');
+    const hasExpiry = quick === 'none' || (!!expiryDate && !!expiryTime);
     const canStartPoll = prompt.trim().length > 0 && filledOptionCount >= MIN_OPTIONS && hasExpiry;
 
     const resetAndClose = () => {
@@ -165,6 +177,7 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
         setAllowMultiple(false);
         setExpiryDate(null);
         setExpiryTime(null);
+        setQuick('1d');
         setShowDatePopup(false);
         setShowTimePopup(false);
         onClose();
@@ -180,14 +193,21 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
     };
 
     const handleStartPoll = async () => {
-        if (!canStartPoll || !expiryDate || !expiryTime) return;
+        if (!canStartPoll) return;
         try {
+            let expiresAt: string | null = null;
+            if (quick === 'custom') {
+                expiresAt = combineDateAndTime(expiryDate!, expiryTime!, timezone);
+            } else if (quick !== 'none') {
+                const add = QUICK_EXPIRY.find((q) => q.key === quick)?.add ?? {};
+                expiresAt = DateTime.now().setZone(timezone).plus(add).toISO();
+            }
             await createPoll({
                 groupId,
                 prompt: prompt.trim(),
                 options: options.map(o => o.trim()).filter(Boolean),
                 allowMultiple,
-                expiresAt: combineDateAndTime(expiryDate, expiryTime, timezone),
+                expiresAt,
             });
             resetAndClose();
         } catch {
@@ -206,6 +226,9 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                     <View style={{ width: 36 }} />
                 </View>
 
+                {/* Modal windows aren't resized for the keyboard on Android (edge-to-edge), so the options
+                    and the Start Poll button sat under it. Pad for it on both platforms, as AddMeetupWizard does. */}
+                <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
                 <ScrollView
                     style={{ flex: 1 }}
                     contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
@@ -302,6 +325,33 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                             <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Expiration</Text>
                         </View>
 
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+                            {QUICK_EXPIRY.map((q) => {
+                                const on = quick === q.key;
+                                return (
+                                    <PressableOpacity
+                                        key={q.key}
+                                        haptic="select"
+                                        onPress={() => setQuick(q.key)}
+                                        style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1.5, borderColor: on ? colors.brand : colors.border, backgroundColor: on ? colors.brandSoft : colors.surface }}
+                                    >
+                                        <Text style={{ fontWeight: '700', fontSize: 13, color: on ? colors.brand : colors.textMuted }}>{q.label}</Text>
+                                    </PressableOpacity>
+                                );
+                            })}
+                            <PressableOpacity
+                                haptic="select"
+                                onPress={() => setQuick('custom')}
+                                style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1.5, borderColor: quick === 'custom' ? colors.brand : colors.border, backgroundColor: quick === 'custom' ? colors.brandSoft : colors.surface }}
+                            >
+                                <Text style={{ fontWeight: '700', fontSize: 13, color: quick === 'custom' ? colors.brand : colors.textMuted }}>Pick a date</Text>
+                            </PressableOpacity>
+                        </View>
+                        {quick === 'none' && (
+                            <Text style={{ color: colors.textFaint, fontSize: 12, marginTop: 6 }}>The poll stays open until you close it.</Text>
+                        )}
+
+                        {quick === 'custom' && (<>
                         <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textMuted }]}>Date</Text>
                         <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => setShowDatePopup(true)}>
                             <Feather name="calendar" size={16} color={colors.brand} style={{ marginRight: 8 }} />
@@ -319,6 +369,7 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                             </Text>
                             <Feather name="chevron-right" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                         </PressableOpacity>
+                        </>)}
                     </View>
                 </ScrollView>
 
@@ -331,6 +382,7 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
                         {isPending ? <ActivityIndicator color="white" /> : <Text style={s.startBtnText}>Start Poll</Text>}
                     </PressableOpacity>
                 </View>
+                </KeyboardAvoidingView>
 
                 <DatePickerModal
                     visible={showDatePopup}

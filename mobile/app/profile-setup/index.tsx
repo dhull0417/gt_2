@@ -1,6 +1,6 @@
 import { View, Text, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
@@ -9,6 +9,7 @@ import * as SecureStore from 'expo-secure-store';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { haptic } from '@/utils/haptics';
 
 const ProfileSetupScreen = () => {
     const { user: clerkUser } = useUser();
@@ -28,6 +29,16 @@ const ProfileSetupScreen = () => {
     const [lastName, setLastName] = useState(currentUser?.lastName ?? clerkUser?.lastName ?? '');
     const [zipCode, setZipCode] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const lastNameRef = useRef<TextInput>(null);
+    const zipRef = useRef<TextInput>(null);
+
+    // Names can arrive after first render (the user record loads late); fill them in
+    // unless the person has already started typing.
+    useEffect(() => {
+        if (!firstName && (currentUser?.firstName || clerkUser?.firstName)) setFirstName(currentUser?.firstName ?? clerkUser?.firstName ?? '');
+        if (!lastName && (currentUser?.lastName || clerkUser?.lastName)) setLastName(currentUser?.lastName ?? clerkUser?.lastName ?? '');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentUser?.firstName, currentUser?.lastName, clerkUser?.firstName, clerkUser?.lastName]);
 
     const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
     // Apple only hands us a name on the account's very first authorization ever, so a
@@ -42,8 +53,11 @@ const ProfileSetupScreen = () => {
             Alert.alert('Missing Information', 'Please fill out all fields.');
             return;
         }
-        if (zipCode.trim() && zipCode.trim().length !== 5) {
-            Alert.alert('Invalid Zip Code', 'Zip code must be exactly 5 digits.');
+        // Required: the app won't continue without it (see the routing check in app/_layout.tsx),
+        // and it is what lets us show places near you first when you pick a location.
+        if (zipCode.trim().length !== 5) {
+            haptic.error();
+            Alert.alert('Zip Code Needed', 'Please enter your 5-digit zip code.');
             return;
         }
         // Apple users: omit firstName/lastName so syncUser populates them from Apple's token instead,
@@ -52,17 +66,14 @@ const ProfileSetupScreen = () => {
             ? { firstName: firstName.trim(), lastName: lastName.trim() }
             : {};
         const profileData = isAppleUser
-            ? { ...appleNameOverride, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) }
-            : { firstName: firstName.trim(), lastName: lastName.trim(), ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) };
+            ? { ...appleNameOverride, zipCode: zipCode.trim() }
+            : { firstName: firstName.trim(), lastName: lastName.trim(), zipCode: zipCode.trim() };
 
         setIsSaving(true);
         try {
             // Ensure the Mongo user exists first — idempotent, returns existing user if present
-            const syncRes = await userApi.syncUser(api, { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' });
-            // TEMP DEBUG — remove once the profile-setup redirect-loop bug is diagnosed.
-            console.log('[profile-setup] syncUser response', syncRes.data);
+            await userApi.syncUser(api, { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' });
             const { data } = await userApi.updateProfile(api, profileData);
-            console.log('[profile-setup] updateProfile response', data);
             if (data?.user) {
                 queryClient.setQueryData(['currentUser'], data.user);
             } else {
@@ -77,6 +88,7 @@ const ProfileSetupScreen = () => {
                 router.replace('/(tabs)');
             }
         } catch (error: any) {
+            haptic.error();
             const errorMessage = error.response?.data?.error || 'Failed to update profile.';
             Alert.alert('Error', errorMessage);
         } finally {
@@ -101,14 +113,23 @@ const ProfileSetupScreen = () => {
                                 placeholder="First Name"
                                 value={firstName}
                                 onChangeText={setFirstName}
+                                autoComplete="given-name"
+                                textContentType="givenName"
+                                returnKeyType="next"
+                                onSubmitEditing={() => lastNameRef.current?.focus()}
                                 className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
                                 style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
                                 placeholderTextColor={colors.placeholder}
                             />
                             <TextInput
+                                ref={lastNameRef}
                                 placeholder="Last Name"
                                 value={lastName}
                                 onChangeText={setLastName}
+                                autoComplete="family-name"
+                                textContentType="familyName"
+                                returnKeyType="next"
+                                onSubmitEditing={() => zipRef.current?.focus()}
                                 className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
                                 style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
                                 placeholderTextColor={colors.placeholder}
@@ -117,7 +138,12 @@ const ProfileSetupScreen = () => {
                     )}
 
                     <TextInput
+                        ref={zipRef}
                         placeholder="Zip Code"
+                        autoComplete="postal-code"
+                        textContentType="postalCode"
+                        returnKeyType="done"
+                        onSubmitEditing={handleSaveProfile}
                         value={zipCode}
                         onChangeText={(text) => setZipCode(text.replace(/\D/g, '').slice(0, 5))}
                         keyboardType="numeric"
@@ -126,6 +152,9 @@ const ProfileSetupScreen = () => {
                         style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
                         placeholderTextColor={colors.placeholder}
                     />
+                    <Text className="text-xs text-gray-500 dark:text-gray-400 mb-6 px-1">
+                        Your zip code helps us show places near you first when you pick a meetup location. We never share it.
+                    </Text>
 
                     {needsName && (
                         <View
@@ -158,8 +187,6 @@ const ProfileSetupScreen = () => {
                             If you would like to modify your name, visit the Profile Tab {`>`} Update Account Info.
                         </Text>
                     )}
-
-                    {!isAppleUser && <View className="mb-6" />}
 
                     <PressableOpacity
                         onPress={handleSaveProfile}

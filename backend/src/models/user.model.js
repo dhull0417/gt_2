@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import crypto from "crypto";
 
 const userSchema = new mongoose.Schema(
     {
@@ -68,6 +69,13 @@ const userSchema = new mongoose.Schema(
                 ref: "Group",
             },
         ],
+        // group ids pinned to the top of the member's Groups list
+        pinnedGroups: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Group",
+            },
+        ],
         mutedUntilNextMeetup: [
             {
                 type: mongoose.Schema.Types.ObjectId,
@@ -81,11 +89,42 @@ const userSchema = new mongoose.Schema(
             of: Date,
             default: {},
         },
-        // Expo push token for this device
+        // Expo push token for the most recently used device
         expoPushToken: {
             type: String,
             required: false,
         },
+        // Every device the member is signed in on (max 5), so all of them get pushes.
+        // `expoPushToken` above always holds the latest one for older code paths.
+        expoPushTokens: {
+            type: [String],
+            default: [],
+        },
+        // What the member wants pushes for. Missing = everything on. Chat has its
+        // own switch because it is by far the busiest.
+        notificationPrefs: {
+            type: {
+                chat: { type: Boolean, default: true },
+                rsvps: { type: Boolean, default: true },
+                reminders: { type: Boolean, default: true },
+                polls: { type: Boolean, default: true },
+                quietHours: {
+                    type: {
+                        enabled: { type: Boolean, default: false },
+                        start: { type: String, default: "10:00 PM" },
+                        end: { type: String, default: "08:00 AM" },
+                    },
+                    default: {},
+                },
+            },
+            default: {},
+        },
+        // Which app versions this person uses (from GET /api/users/me), to know when it is safe to
+        // turn on the cutover switches: appVersion = newest version-reporting app seen;
+        // legacyAppSeenAt = last time an app from before version reporting (1.3.x) was used.
+        appVersion: { type: String, default: null },
+        appVersionSeenAt: { type: Date, default: null },
+        legacyAppSeenAt: { type: Date, default: null },
         // OS permission state per type, for granted-user counts.
         // 'undetermined' = never asked or no record yet.
         permissions: {
@@ -129,8 +168,8 @@ const userSchema = new mongoose.Schema(
             unique: true,
             sparse: true,
             default: function() {
-                // timestamp + random base36 strings
-                return Date.now().toString(36) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+                // unguessable url-safe token
+                return crypto.randomBytes(24).toString('hex');
             }
         },
     },

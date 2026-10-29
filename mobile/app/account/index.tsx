@@ -15,6 +15,8 @@ const AccountSettingsScreen = () => {
     const ALL_SETTINGS = [
         { id: 'name', label: 'Update Name', href: '/account/update-name' as const, icon: 'user' as const, color: colors.brand },
         { id: 'email', label: 'Update Email', href: '/account/update-email' as const, icon: 'mail' as const, color: '#7C3AED' },
+        { id: 'phone', label: 'Update Phone Number', href: '/account/update-phone' as const, icon: 'phone' as const, color: '#0EA5E9' },
+        { id: 'zip', label: 'Update Zip Code', href: '/account/update-zip' as const, icon: 'map-pin' as const, color: colors.accentTeal },
         { id: 'password', label: 'Change Password', href: '/account/change-password' as const, icon: 'lock' as const, color: colors.warning },
         { id: 'delete', label: 'Delete Account', href: '/account/delete-account' as const, icon: 'trash-2' as const, color: colors.danger },
     ];

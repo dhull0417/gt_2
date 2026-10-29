@@ -1,6 +1,7 @@
 import express from "express";
 import {
   createGroup,
+  createDemoGroup,
   getGroups,
   getGroupDetails,
   addMember,
@@ -30,6 +31,7 @@ import { getAuth } from "@clerk/express";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import { notifyUsers } from "../utils/push.notifications.js";
+import { addChatMembers } from "../utils/supabaseAdmin.js";
 
 import mongoose from "mongoose";
 
@@ -60,9 +62,13 @@ const displayName = (user, fallback) =>
 
 const router = express.Router();
 
+// best-effort (per server instance) memory of recent reaction pushes, used to collapse repeats
+const recentReactionPushes = new Map();
+
 // --- Group Management ---
 router.get("/", protectRoute, getGroups);
 router.post("/create", protectRoute, createGroup);
+router.post("/demo", protectRoute, createDemoGroup);
 
 // find/create 1-on-1 DM group; must precede /:groupId (wildcard collision)
 router.post("/dm", protectRoute, async (req, res) => {
@@ -75,6 +81,13 @@ router.post("/dm", protectRoute, async (req, res) => {
     const target = await User.findById(targetUserId);
     if (!sender || !target) return res.status(404).json({ message: "User not found" });
     if (sender._id.equals(target._id)) return res.status(400).json({ message: "Cannot DM yourself" });
+
+    // Spam guard: you can only message people you already share a (non-DM) group with.
+    const sharesGroup = await Group.exists({
+      isDM: { $ne: true },
+      members: { $all: [sender._id, target._id] },
+    });
+    if (!sharesGroup) return res.status(403).json({ message: "You can only message people you share a group with." });
 
     const existing = await Group.findOne({
       isDM: true,
@@ -101,6 +114,7 @@ router.post("/dm", protectRoute, async (req, res) => {
       { _id: { $in: [sender._id, target._id] } },
       { $addToSet: { groups: dmGroup._id } }
     );
+    await addChatMembers(dmGroup._id, [sender.clerkId, target.clerkId]);
 
     res.status(201).json({ group: dmGroup, isNew: true });
   } catch (err) {
@@ -170,7 +184,7 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
       const recipients = await User.find({
         _id: { $in: group.members },
         clerkId: { $ne: user.clerkId },
-        expoPushToken: { $exists: true, $ne: null },
+        $or: [{ expoPushToken: { $exists: true, $ne: null } }, { 'expoPushTokens.0': { $exists: true } }],
         mutedGroups: { $ne: group._id },
         mutedUntilNextMeetup: { $ne: group._id },
       });
@@ -179,6 +193,7 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
           title: group.name,
           body: `${senderName}: ${preview}`,
           data: { type: 'chat', groupId: group._id.toString() },
+          type: 'chat',
         });
       }
     } catch (err) {
@@ -209,10 +224,19 @@ router.post("/:id/chat-reaction", protectRoute, async (req, res) => {
     const onlyAuthor = typeof authorId === 'string' && authorId ? { clerkId: authorId } : {};
     if (onlyAuthor.clerkId === user.clerkId) return res.json({ ok: true });
 
+    // Repeated reactions from the same person to the same author are collapsed into one push per minute.
+    const dedupeKey = `${group._id}:${user.clerkId}:${onlyAuthor.clerkId || 'all'}`;
+    const lastSent = recentReactionPushes.get(dedupeKey);
+    if (lastSent && Date.now() - lastSent < 60 * 1000) return res.json({ ok: true, collapsed: true });
+    recentReactionPushes.set(dedupeKey, Date.now());
+    if (recentReactionPushes.size > 2000) {
+      for (const [k, t] of recentReactionPushes) if (Date.now() - t > 60 * 1000) recentReactionPushes.delete(k);
+    }
+
     const recipients = await User.find({
       _id: { $in: group.members },
       ...(onlyAuthor.clerkId ? { clerkId: onlyAuthor.clerkId } : { clerkId: { $ne: user.clerkId } }),
-      expoPushToken: { $exists: true, $ne: null },
+      $or: [{ expoPushToken: { $exists: true, $ne: null } }, { 'expoPushTokens.0': { $exists: true } }],
       mutedGroups: { $ne: group._id },
       mutedUntilNextMeetup: { $ne: group._id },
     });
@@ -223,6 +247,7 @@ router.post("/:id/chat-reaction", protectRoute, async (req, res) => {
           title: group.name,
           body: `${senderName} reacted ${emoji} to ${onlyAuthor.clerkId ? 'your message' : 'a message'}`,
           data: { type: 'chat', groupId: group._id.toString() },
+          type: 'chat',
         });
       } catch (err) {
         console.error('Reaction notification error:', err);
