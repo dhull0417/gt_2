@@ -120,3 +120,8 @@ test("user-supplied names are HTML-escaped", () => {
   assert.doesNotMatch(e.html, /<img src=x/);
   assert.match(e.html, /A&amp;B &lt;b&gt;/);
 });
+
+test("O3 lists the waitlist only when it is a Premium feature", () => {
+  assert.doesNotMatch(renderEmail("O3", ctx()).text, /Waitlist/);
+  assert.match(renderEmail("O3", ctx({ waitlistIsPremium: true })).text, /Waitlist/);
+});

@@ -13,6 +13,7 @@ import mongoose from "mongoose";
 import Poll from "../models/poll.model.js";
 import InviteToken from "../models/inviteToken.model.js";
 import AttendanceRecord from "../models/attendanceRecord.model.js";
+import EmailLog from "../models/emailLog.model.js";
 import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
 import { postSystemMessage } from "../utils/systemMessage.js";
 import { purgeGroupChat, removeAllChatMembers, scrubUserChat, removeChatMemberEverywhere } from "../utils/supabaseAdmin.js";
@@ -556,6 +557,9 @@ export const deleteAccount = asyncHandler(async (req, res) => {
 
   // delete notifications involving the user
   await Notification.deleteMany({ $or: [{ recipient: userId }, { sender: userId }] });
+
+  // record of which lifecycle emails they were sent
+  await EmailLog.deleteMany({ user: userId });
 
   // delete from Clerk first — if it fails, the Mongo record stays intact for retry
   await clerkClient.users.deleteUser(clerkId);

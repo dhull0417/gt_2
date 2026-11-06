@@ -1,7 +1,8 @@
 import { ENV } from "../../config/env.js";
 
+// PUBLIC_BASE_URL is required: every button, the logo and the unsubscribe link are built from it.
 export const emailConfigured = () =>
-  ENV.LIFECYCLE_EMAILS_ENABLED === "true" && !!ENV.RESEND_API_KEY && !!ENV.EMAIL_FROM;
+  ENV.LIFECYCLE_EMAILS_ENABLED === "true" && !!ENV.RESEND_API_KEY && !!ENV.EMAIL_FROM && !!ENV.PUBLIC_BASE_URL;
 
 /**
  * Sends one email through Resend's REST API (no SDK dependency).

@@ -67,6 +67,11 @@
               "scheme": "https",
               "host": "invite.groupthatapp.com",
               "pathPrefix": "/join"
+            },
+{
+              "scheme": "https",
+              "host": "invite.groupthatapp.com",
+              "pathPrefix": "/go"
             }
           ],
           "category": [

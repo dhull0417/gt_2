@@ -53,6 +53,7 @@ export function UpdateNameModal({ visible, onClose }: UpdateNameModalProps) {
             placeholder="First Name"
             value={firstName}
             onChangeText={setFirstName}
+            autoCapitalize="words"
             className="w-full bg-gray-50 dark:bg-gray-900 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base text-gray-900 dark:text-gray-100 mb-3"
             style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
             placeholderTextColor={colors.placeholder}
@@ -61,6 +62,7 @@ export function UpdateNameModal({ visible, onClose }: UpdateNameModalProps) {
             placeholder="Last Name"
             value={lastName}
             onChangeText={setLastName}
+            autoCapitalize="words"
             className="w-full bg-gray-50 dark:bg-gray-900 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base text-gray-900 dark:text-gray-100 mb-4"
             style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
             placeholderTextColor={colors.placeholder}

@@ -113,6 +113,7 @@ const ProfileSetupScreen = () => {
                                 placeholder="First Name"
                                 value={firstName}
                                 onChangeText={setFirstName}
+                                autoCapitalize="words"
                                 autoComplete="given-name"
                                 textContentType="givenName"
                                 returnKeyType="next"
@@ -126,6 +127,7 @@ const ProfileSetupScreen = () => {
                                 placeholder="Last Name"
                                 value={lastName}
                                 onChangeText={setLastName}
+                                autoCapitalize="words"
                                 autoComplete="family-name"
                                 textContentType="familyName"
                                 returnKeyType="next"
@@ -167,6 +169,7 @@ const ProfileSetupScreen = () => {
                                 placeholder="First Name"
                                 value={firstName}
                                 onChangeText={setFirstName}
+                                autoCapitalize="words"
                                 className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-3"
                                 style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
                                 placeholderTextColor={colors.placeholder}
@@ -175,6 +178,7 @@ const ProfileSetupScreen = () => {
                                 placeholder="Last Name"
                                 value={lastName}
                                 onChangeText={setLastName}
+                                autoCapitalize="words"
                                 className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base"
                                 style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
                                 placeholderTextColor={colors.placeholder}

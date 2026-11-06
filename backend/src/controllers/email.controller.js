@@ -118,16 +118,28 @@ export const goPage = (req, res) => {
 <a class="btn ios" id="ios-btn" href="${APP_STORE_URL}">Download on the App Store</a>
 <a class="btn android" id="android-btn" href="${PLAY_STORE_URL}">Get it on Google Play</a></div>
 <script>
-  var ua = navigator.userAgent, isAndroid = /Android/.test(ua);
+  // Phones with the app installed normally never see this page: the OS opens /go/* links in
+  // the app (Universal Links / App Links). Otherwise: try the app's own scheme, then send
+  // people to their store. Desktop gets both store buttons.
+  var ua = navigator.userAgent;
+  var isAndroid = /Android/i.test(ua);
+  var isIOS = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
   var deepLink = ${JSON.stringify(deepLink)}, intentUri = ${JSON.stringify(intentUri)};
+  var showDownload = function(){ document.getElementById('opening').style.display='none'; document.getElementById('download').style.display='block'; };
   if (isAndroid) {
-    setTimeout(function(){ window.location.href = intentUri; }, 25);
-  } else {
+    document.getElementById('ios-btn').style.display = 'none';
+    setTimeout(function(){ window.location.href = intentUri; }, 25); // falls back to Google Play
+    setTimeout(showDownload, 2500);
+  } else if (isIOS) {
     document.getElementById('android-btn').style.display = 'none';
-    var show = setTimeout(function(){ document.getElementById('opening').style.display='none'; document.getElementById('download').style.display='block'; }, 2000);
-    document.addEventListener('visibilitychange', function(){ if (document.hidden) clearTimeout(show); });
-    window.addEventListener('blur', function(){ clearTimeout(show); });
+    var toStore = setTimeout(function(){ showDownload(); window.location.href = ${JSON.stringify(APP_STORE_URL)}; }, 1500);
+    var cancel = function(){ clearTimeout(toStore); };
+    document.addEventListener('visibilitychange', function(){ if (document.hidden) cancel(); });
+    window.addEventListener('pagehide', cancel); // (no 'blur': iOS's "can't open" alert blurs the page too)
     setTimeout(function(){ window.location.href = deepLink; }, 25);
+    setTimeout(showDownload, 2500); // buttons stay as a backup either way
+  } else {
+    showDownload();
   }
 </script>`));
 };

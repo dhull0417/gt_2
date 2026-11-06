@@ -51,6 +51,7 @@ const UpdateNameScreen = () => {
                         <TextInput
                             value={firstName}
                             onChangeText={setFirstName}
+                            autoCapitalize="words"
                             placeholder="Enter your first name"
                             placeholderTextColor={colors.placeholder}
                             style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textSecondary }]}
@@ -61,6 +62,7 @@ const UpdateNameScreen = () => {
                         <TextInput
                             value={lastName}
                             onChangeText={setLastName}
+                            autoCapitalize="words"
                             placeholder="Enter your last name"
                             placeholderTextColor={colors.placeholder}
                             style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textSecondary }]}

@@ -1160,7 +1160,7 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* Capacity */}
-                    <View style={[s.sectionCard, { marginBottom: 8, backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={[s.sectionCard, { marginBottom: 18, backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
                             <View style={[s.sectionIconChip, { backgroundColor: chipTealBg, borderColor: chipTealBorder }]}>
                                 <Feather name="users" size={16} color="#0D9488" />
@@ -1203,8 +1203,19 @@ const EditScheduleScreen = () => {
                             );
                         })()}
 
+                    </View>
+
+                    {/* Premium features */}
+                    <View style={[s.sectionCard, { marginBottom: 8, backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <View style={s.sectionHeaderRow}>
+                            <View style={[s.sectionIconChip, { backgroundColor: chipPurpleBg, borderColor: chipPurpleBorder }]}>
+                                <Feather name="star" size={16} color="#7C3AED" />
+                            </View>
+                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Premium</Text>
+                        </View>
+
                         {/* Minimum headcount (Premium) */}
-                        <Text style={s.fieldLabel}>Minimum to Play</Text>
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Minimum to Play</Text>
                         {group?.isPremium !== true ? (
                             <View style={s.premiumLockRow}>
                                 <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />

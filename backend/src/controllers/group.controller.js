@@ -356,8 +356,8 @@ export const createGroup = asyncHandler(async (req, res) => {
     } catch (err) { console.error("Initial Gen Error:", err); }
   }
 
-  // Lifecycle emails: records the first group and sends the "You made a group!" email. Never throws.
-  await onGroupCreated(owner._id, newGroup._id);
+  // Lifecycle emails: records the first group (the scheduled job sends "You made a group!"). Never throws.
+  await onGroupCreated(owner._id);
 
   res.status(201).json({ group: withLegacyScheduleMirror(newGroup.toObject()), message: "Created successfully." });
 });

@@ -5,6 +5,7 @@ import Group from "../../models/group.model.js";
 import EmailLog from "../../models/emailLog.model.js";
 import { ENV } from "../../config/env.js";
 import { hasPremium } from "../premium.js";
+import { flags } from "../featureFlags.js";
 import { renderEmail, PRICE_TEXT } from "./templates.js";
 import { sendEmail, emailConfigured } from "./resend.js";
 
@@ -126,12 +127,15 @@ const buildContext = async (user, key, { groupId } = {}) => {
   if (key === "O1") {
     const group = groupId
       ? await Group.findById(groupId).select("name").lean()
-      : await Group.findOne({ owner: user._id, isDM: { $ne: true } }).sort({ createdAt: 1 }).select("name").lean();
+      : await Group.findOne({ owner: user._id, isDM: { $ne: true }, isDemo: { $ne: true } }).sort({ createdAt: 1 }).select("name").lean();
     if (group) {
       ctx.groupName = group.name;
       ctx.urls.shareInvite = `${base}/go/group/${group._id}`;
     }
   }
+
+  // While PREMIUM_WAITLIST_ENFORCED is off every group has a waitlist, so O3 mustn't sell it.
+  if (key === "O3") ctx.waitlistIsPremium = flags.premiumWaitlist();
 
   if (RULES[key].marketing) ctx.unsubscribeUrl = unsubscribeUrl(user._id);
   return ctx;
@@ -192,19 +196,18 @@ export const sendLifecycleEmail = async (user, key, opts = {}) => {
 
 // ---------- event hooks (called from controllers; never throw) ----------
 
-/** Called after a group is created. Sends O1 immediately on a user's first group. */
-export const onGroupCreated = async (userId, groupId) => {
+/**
+ * Called after a group is created. Records the user's first group; the scheduled job
+ * (every ~5 minutes) then sends O1. Not sent here, so a slow Resend call can never
+ * hold up the Create Group request.
+ */
+export const onGroupCreated = async (userId) => {
   try {
-    const firstTime = await User.updateOne(
+    await User.updateOne(
       { _id: userId, "lifecycle.firstGroupAt": null },
       { $set: { "lifecycle.firstGroupAt": new Date() } }
     );
     await User.updateOne({ _id: userId }, { $inc: { "lifecycle.groupsCreated": 1 } });
-
-    if (firstTime.modifiedCount === 1) {
-      const user = await User.findById(userId).lean();
-      if (user?.lifecycle?.enrolledAt) await sendLifecycleEmail(user, "O1", { groupId });
-    }
   } catch (err) {
     console.error("[lifecycle] onGroupCreated failed:", err);
   }

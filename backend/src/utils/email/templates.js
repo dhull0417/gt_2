@@ -128,7 +128,9 @@ const T = {
       { p: "Quick reassurance first: everything you and your members use today stays free." },
       { p: "Premium is for organizers who want a little extra control:" },
       { ul: [
-        "**Waitlist.** When your group fills up, extra people get in line, and the next one gets the spot automatically when someone drops.",
+        ...(c.waitlistIsPremium
+          ? ["**Waitlist.** When your group fills up, extra people get in line, and the next one gets the spot automatically when someone drops."]
+          : []),
         "**Regulars first.** Let your most loyal members RSVP before invites open to everyone.",
         "**Assignments.** Who's bringing snacks, who's driving, who's got the ball.",
         "**Custom reaction cards.** Write your own \"Bold. Correct. Iconic.\"",

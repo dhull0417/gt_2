@@ -267,7 +267,14 @@ const AuthLayout = () => {
   // Only a 404 means "Clerk session but no Mongo user yet (new sign-up)". Anything else
   // (no network, server error) must NOT be mistaken for a brand-new user and sent to profile setup.
   const noBackendUser = isCurrentUserError && (currentUserError as any)?.response?.status === 404;
-  const currentUserLoadFailed = isCurrentUserError && !noBackendUser && !currentUser;
+  // Signed-in only: after sign-out a still-mounted screen's ['currentUser'] query can fail with
+  // no token (401), which used to cover the sign-in screen with this message and block routing.
+  const currentUserLoadFailed = !!isSignedIn && isCurrentUserError && !noBackendUser && !currentUser;
+
+  // Drop the signed-out user's record (and any error from fetching it without a token).
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) queryClient.removeQueries({ queryKey: ['currentUser'] });
+  }, [isLoaded, isSignedIn, queryClient]);
   const currentUserSettled = isSuccess || noBackendUser;
 
   // Warms the Home/Groups tab caches before the user ever taps those tabs, so the

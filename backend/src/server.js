@@ -114,6 +114,7 @@ app.get('/.well-known/apple-app-site-association', (req, res) => {
         appIDs: ['9P29PK6A6D.com.dallinhull.groupthat'],
         components: [
           { '/': '/join/*' },
+          { '/': '/go/*' }, // email buttons (lifecycle emails, calendar events)
         ],
       }],
     },
