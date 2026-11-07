@@ -4,6 +4,9 @@ import { DateTime } from "luxon";
 import type { GroupDetails, NamedSchedule, Frequency, DayTime, Routine } from "./api";
 import { DAYS_OF_WEEK, FREQ_LABELS, uid, ordSfx } from "./scheduleConstants";
 import { buildRoutines } from "./scheduleRoutines";
+import { formatTimeRange } from "./timeString";
+
+export { scheduleEndTimeError } from "./scheduleRoutines";
 
 // Minimum headcount: optional, a whole number of at least 1, and no more than the max when there is one.
 export const getMinAttendeesError = (minInput: string, maxMode: "unlimited" | "limited", maxInput: string): string | null => {
@@ -22,6 +25,9 @@ export interface WeekdayRow {
     id: string;
     day: number | null;
     time: string;
+    /** Optional end time ("08:00 PM"); null = none. */
+    endTime?: string | null;
+    showEndTimePicker?: boolean;
     startDate: string | null;
     showTimePicker: boolean;
     showDayPicker: boolean;
@@ -32,6 +38,9 @@ export interface MonthlyDateEntry {
     id: string;
     date: number;
     time: string;
+    /** Optional end time ("08:00 PM"); null = none. */
+    endTime?: string | null;
+    showEndTimePicker?: boolean;
     expanded: boolean;
     showTimePicker: boolean;
 }
@@ -41,6 +50,9 @@ export interface OrdinalEntry {
     occurrence: string;
     day: number;
     time: string;
+    /** Optional end time ("08:00 PM"); null = none. */
+    endTime?: string | null;
+    showEndTimePicker?: boolean;
     expanded: boolean;
     showTimePicker: boolean;
     showOccurrencePicker: boolean;
@@ -106,6 +118,8 @@ export interface ScheduleData {
     showFreqPicker: boolean;
     dailySameTime: boolean | null;
     dailySharedTime: string;
+    dailySharedEndTime?: string | null;
+    showDailySameEndTimePicker?: boolean;
     showDailySameTimePicker: boolean;
     dailyRows: WeekdayRow[];
     weekdayRows: WeekdayRow[];
@@ -144,6 +158,7 @@ export const defaultSchedule = (): ScheduleData => ({
     showFreqPicker: false,
     dailySameTime: null,
     dailySharedTime: "05:00 PM",
+    dailySharedEndTime: null,
     showDailySameTimePicker: false,
     dailyRows: DAYS_OF_WEEK.map(dw => ({
         id: uid(), day: dw.value, time: "05:00 PM",
@@ -164,14 +179,14 @@ export const defaultSchedule = (): ScheduleData => ({
 export const buildLabel = (freq: Frequency, dayTimes: DayTime[], ordEntries?: OrdinalEntry[]): string => {
     if (freq === "ordinal" && ordEntries?.length) {
         const parts = ordEntries.slice(0, 2).map(e =>
-            `${e.occurrence} ${DAYS_OF_WEEK.find(dw => dw.value === e.day)?.short} @ ${e.time}`
+            `${e.occurrence} ${DAYS_OF_WEEK.find(dw => dw.value === e.day)?.short} @ ${formatTimeRange(e.time, e.endTime)}`
         );
         return `Ordinal · ${parts.join(", ")}${ordEntries.length > 2 ? ` +${ordEntries.length - 2}` : ""}`;
     }
     const freqStr = FREQ_LABELS[freq] || freq;
     const parts = dayTimes.slice(0, 2).map(dt => {
-        if (dt.day !== undefined) return `${DAYS_OF_WEEK.find(dw => dw.value === dt.day)?.short} @ ${dt.time}`;
-        if (dt.date !== undefined) return `${dt.date}${ordSfx(dt.date)} @ ${dt.time}`;
+        if (dt.day !== undefined) return `${DAYS_OF_WEEK.find(dw => dw.value === dt.day)?.short} @ ${formatTimeRange(dt.time, dt.endTime)}`;
+        if (dt.date !== undefined) return `${dt.date}${ordSfx(dt.date)} @ ${formatTimeRange(dt.time, dt.endTime)}`;
         return "";
     });
     return `${freqStr} · ${parts.join(", ")}${dayTimes.length > 2 ? ` +${dayTimes.length - 2}` : ""}`;
@@ -212,19 +227,20 @@ export const apiRoutineToBuiltRoutine = (r: Routine): BuiltRoutine => {
 
     if (r.frequency === "daily") {
         const dts = r.dayTimes;
-        const allSame = dts.length > 0 && dts.every(dt => dt.time === dts[0].time);
+        const allSame = dts.length > 0 && dts.every(dt => dt.time === dts[0].time && (dt.endTime ?? null) === (dts[0].endTime ?? null));
         snapshot = {
             dailySameTime: allSame,
             dailySharedTime: allSame ? (dts[0]?.time ?? "05:00 PM") : "05:00 PM",
+            dailySharedEndTime: allSame ? (dts[0]?.endTime ?? null) : null,
             dailyRows: DAYS_OF_WEEK.map(dw => {
                 const dt = dts.find(d => d.day === dw.value);
-                return { id: uid(), day: dw.value, time: dt?.time || "05:00 PM", startDate: null, showTimePicker: false, showDayPicker: false, showStartDatePicker: false };
+                return { id: uid(), day: dw.value, time: dt?.time || "05:00 PM", endTime: dt?.endTime ?? null, startDate: null, showTimePicker: false, showDayPicker: false, showStartDatePicker: false };
             }),
         };
     } else if (r.frequency === "weekly" || r.frequency === "biweekly") {
         snapshot = {
             weekdayRows: r.dayTimes.map(dt => ({
-                id: uid(), day: dt.day ?? null, time: dt.time,
+                id: uid(), day: dt.day ?? null, time: dt.time, endTime: dt.endTime ?? null,
                 startDate: dt.startDate ? DateTime.fromISO(dt.startDate as unknown as string).toISODate() : null,
                 showTimePicker: false, showDayPicker: false, showStartDatePicker: false,
             })),
@@ -233,7 +249,7 @@ export const apiRoutineToBuiltRoutine = (r: Routine): BuiltRoutine => {
         snapshot = {
             monthlyMode: "date",
             monthlyDates: r.dayTimes.map(dt => ({
-                id: uid(), date: dt.date ?? 1, time: dt.time, expanded: false, showTimePicker: false,
+                id: uid(), date: dt.date ?? 1, time: dt.time, endTime: dt.endTime ?? null, expanded: false, showTimePicker: false,
             })),
         };
     } else if (r.frequency === "ordinal") {
@@ -241,7 +257,7 @@ export const apiRoutineToBuiltRoutine = (r: Routine): BuiltRoutine => {
             monthlyMode: "ordinal",
             ordinalEntries: (r.rules || []).map((rule, i) => ({
                 id: uid(), occurrence: rule.occurrence || "1st", day: rule.day ?? 1,
-                time: r.dayTimes[i]?.time || "05:00 PM", expanded: false, showTimePicker: false,
+                time: r.dayTimes[i]?.time || "05:00 PM", endTime: r.dayTimes[i]?.endTime ?? null, expanded: false, showTimePicker: false,
                 showOccurrencePicker: false, showDayOfWeekPicker: false,
             })),
         };
@@ -313,14 +329,15 @@ export const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSched
 
     if (inferredFreq === "daily" && routines[0]) {
         const dts = routines[0].dayTimes;
-        const allSame = dts.length > 0 && dts.every(dt => dt.time === dts[0].time);
+        const allSame = dts.length > 0 && dts.every(dt => dt.time === dts[0].time && (dt.endTime ?? null) === (dts[0].endTime ?? null));
         return {
             ...base, ...common, timezone: tz, startDate, frequency: "daily",
             dailySameTime: allSame,
             dailySharedTime: allSame ? (dts[0]?.time ?? "05:00 PM") : "05:00 PM",
+            dailySharedEndTime: allSame ? (dts[0]?.endTime ?? null) : null,
             dailyRows: allSame ? base.dailyRows : DAYS_OF_WEEK.map(dw => {
                 const dt = dts.find(d => d.day === dw.value);
-                return { id: uid(), day: dw.value, time: dt?.time || "05:00 PM", startDate: null, showTimePicker: false, showDayPicker: false, showStartDatePicker: false };
+                return { id: uid(), day: dw.value, time: dt?.time || "05:00 PM", endTime: dt?.endTime ?? null, startDate: null, showTimePicker: false, showDayPicker: false, showStartDatePicker: false };
             }),
         };
     }
@@ -329,7 +346,7 @@ export const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSched
         return {
             ...base, ...common, timezone: tz, startDate, frequency: inferredFreq,
             weekdayRows: routines[0].dayTimes.map(dt => ({
-                id: uid(), day: dt.day ?? null, time: dt.time,
+                id: uid(), day: dt.day ?? null, time: dt.time, endTime: dt.endTime ?? null,
                 startDate: dt.startDate ? DateTime.fromISO(dt.startDate as unknown as string).toISODate() : null,
                 showTimePicker: false, showDayPicker: false, showStartDatePicker: false,
             })),
@@ -341,7 +358,7 @@ export const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSched
             ...base, ...common, timezone: tz, startDate, frequency: "monthly",
             monthlyMode: "date",
             monthlyDates: routines[0].dayTimes.map(dt => ({
-                id: uid(), date: dt.date ?? 1, time: dt.time, expanded: false, showTimePicker: false,
+                id: uid(), date: dt.date ?? 1, time: dt.time, endTime: dt.endTime ?? null, expanded: false, showTimePicker: false,
             })),
         };
     }
@@ -356,6 +373,7 @@ export const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSched
                 occurrence: rule.occurrence || "1st",
                 day: rule.day ?? 1,
                 time: routine.dayTimes[i]?.time || "05:00 PM",
+                endTime: routine.dayTimes[i]?.endTime ?? null,
                 expanded: false, showTimePicker: false,
                 showOccurrencePicker: false, showDayOfWeekPicker: false,
             })),

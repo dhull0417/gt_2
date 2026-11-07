@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { isMutedFor } from './groupMute.js';
 
 // Constant-time string compare so the webhook secret can't be guessed byte by byte.
 export const safeEqual = (a, b) => {
@@ -20,14 +21,11 @@ export const messagePreview = (record) => {
  * Mentioned members are always notified (like GroupMe, a mention cuts through a
  * mute); everyone else respects mutes. The sender is never notified.
  *
- * members: [{ clerkId, expoPushToken, expoPushTokens, mutedGroups, mutedUntilNextMeetup, notificationPrefs }]
+ * members: [{ clerkId, expoPushToken, expoPushTokens, groupMutes, mutedGroups, mutedUntilNextMeetup, notificationPrefs }]
  */
 export const pickRecipients = (members, { senderClerkId, mentions = [], groupId }) => {
-  const gid = String(groupId);
   const mentioned = new Set((Array.isArray(mentions) ? mentions : []).map(String));
-  const muted = (u) =>
-    (u.mutedGroups || []).some((id) => String(id) === gid) ||
-    (u.mutedUntilNextMeetup || []).some((id) => String(id) === gid);
+  const muted = (u) => isMutedFor(u, groupId, 'chat');
 
   const normal = [];
   const mention = [];

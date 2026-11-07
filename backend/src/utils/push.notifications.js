@@ -5,6 +5,7 @@ import Meetup from '../models/meetup.model.js';
 import { flags } from './featureFlags.js';
 import { DateTime } from 'luxon';
 import { parseTimeString } from './date.utils.js';
+import { isMutedFor, muteEntryFor } from './groupMute.js';
 
 const expo = new Expo();
 
@@ -26,12 +27,6 @@ const PREF_FOR_TYPE = {
 
 // Delivered even during a member's quiet hours.
 const QUIET_HOURS_EXEMPT = new Set(['meetup-cancelled', 'meetup-starting-soon']);
-
-// Personal events that matter even when the group is muted.
-const MUTE_EXEMPT = new Set([
-  'group-invite', 'group-added', 'group-removed', 'group-deleted', 'ownership-transferred',
-  'waitlist-promotion', 'priority-bumped', 'meetup-rsvp-admin-in', 'meetup-rsvp-admin-out',
-]);
 
 // Android channel per type, so each can be tuned in system settings. Older app
 // builds don't have the new channels and fall back to the default one.
@@ -204,18 +199,17 @@ export const notifyAndPersist = async (users, { title, body, data, type, sender,
     ...(type ? { pushType: type } : {}),
   };
 
-  // Muting a group quiets its pushes (the in-app record is still kept). "Mute until next
-  // meetup" is cleared automatically once that meetup has passed. Personal events
-  // (invites, removals, waitlist moves) are never muted.
-  // Until MUTE_ALL_PUSHES_ENABLED is on, the 1.3.x rule applies: a mute only quiets pushes
-  // about the group's next meetup.
+  // Group mutes quiet pushes per kind (the in-app record is still kept); see utils/groupMute.js.
+  // Personal events (invites, removals, waitlist moves) are never muted. For mutes set by
+  // 1.3.x apps, while MUTE_ALL_PUSHES_ENABLED is off, most kinds are only muted when the
+  // push is about the group's next meetup.
   let pushRecipients = users;
-  if (flags.muteAllPushes()) {
-    if (group && !MUTE_EXEMPT.has(type)) {
-      pushRecipients = users.filter(user => !isGroupMuted(user, group));
-    }
-  } else if (group && meetup && await isNextUpcomingMeetup(group, meetup)) {
-    pushRecipients = users.filter(user => !isGroupMuted(user, group));
+  if (group) {
+    const muteAll = flags.muteAllPushes();
+    // Only look up "is this the next meetup" when someone has a 1.3.x-style mute it matters for.
+    const needsNextCheck = !muteAll && !!meetup && users.some(user => isGroupMuted(user, group) && !muteEntryFor(user, group));
+    const aboutNextMeetup = needsNextCheck && await isNextUpcomingMeetup(group, meetup);
+    pushRecipients = users.filter(user => !isMutedFor(user, group, type, { aboutNextMeetup, muteAll }));
   }
 
   await notifyUsers(pushRecipients, { title, body, data: pushData, type });

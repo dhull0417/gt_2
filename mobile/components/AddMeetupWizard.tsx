@@ -20,6 +20,8 @@ import { Group, groupApi, useApiClient } from '@/utils/api';
 import { pickAndUploadImage } from '@/utils/uploadImage';
 import { DateTime } from 'luxon';
 import NativeTimePicker from './NativeTimePicker';
+import EndTimeField from './EndTimeField';
+import { addHour, endTimeError } from '@/utils/timeString';
 import LocationField from './LocationField';
 import LocationSearchModal from './LocationSearchModal';
 import OptionPickerModal from './OptionPickerModal';
@@ -64,6 +66,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
     // --- Data States ---
     const [meetupDate, setMeetupDate] = useState<string>(DateTime.now().toISODate()!);
     const [meetupTime, setMeetupTime] = useState("05:00 PM");
+    const [meetupEndTime, setMeetupEndTime] = useState<string | null>(null);
     const [meetupTZ, setMeetupTZ] = useState(initialGroup?.timezone || deviceTimeZone());
     const [maxAttendeesMode, setMaxAttendeesMode] = useState<"unlimited" | "limited">(
         initialGroup?.defaultCapacity ? "limited" : "unlimited"
@@ -76,6 +79,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
     const [meetupDescription, setMeetupDescription] = useState("");
 
     const [showTimePicker, setShowTimePicker] = useState(false);
+    const [showEndTimePicker, setShowEndTimePicker] = useState(false);
     const [showTZPicker, setShowTZPicker] = useState(false);
 
     // --- Group picker state (only relevant when groupPickerMode is set) ---
@@ -124,7 +128,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
 
     const maxAttendeesError = getMaxAttendeesError(maxAttendeesMode, maxAttendeesInput);
     const needsNewGroupName = !!groupPickerMode && pickerChoice === 'new' && !justCreatedGroup && newGroupName.trim().length === 0;
-    const canSubmit = (maxAttendeesMode !== "limited" || (maxAttendeesInput !== "" && !maxAttendeesError))
+    const canSubmit = !endTimeError(meetupTime, meetupEndTime) && (maxAttendeesMode !== "limited" || (maxAttendeesInput !== "" && !maxAttendeesError))
         && !needsNewGroupName
         && !isUploadingGroupImage;
 
@@ -208,6 +212,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                 groupId: targetGroupId,
                 date: meetupDate as any,
                 time: meetupTime,
+                endTime: meetupEndTime,
                 timezone: meetupTZ,
                 capacity,
                 location: meetupLocation,
@@ -228,7 +233,9 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
     const resetAndClose = () => {
         setMeetupDate(DateTime.now().toISODate()!);
         setMeetupTime("05:00 PM");
+        setMeetupEndTime(null);
         setShowTimePicker(false);
+        setShowEndTimePicker(false);
         setShowTZPicker(false);
         setMaxAttendeesMode(initialGroup?.defaultCapacity ? "limited" : "unlimited");
         setMaxAttendeesInput(initialGroup?.defaultCapacity ? String(initialGroup.defaultCapacity) : "");
@@ -251,6 +258,7 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
             onRequestClose={() => {
                 if (isLocationSearchActive) setIsLocationSearchActive(false);
                 else if (showTimePicker) setShowTimePicker(false);
+                else if (showEndTimePicker) setShowEndTimePicker(false);
                 else resetAndClose();
             }}
         >
@@ -368,12 +376,25 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                     <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
                     <PressableOpacity
                         style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        onPress={() => { setShowTimePicker(v => !v); setShowTZPicker(false); }}
+                        onPress={() => { setShowTimePicker(v => !v); setShowEndTimePicker(false); setShowTZPicker(false); }}
                     >
                         <Feather name="clock" size={16} color={colors.brand} style={{ marginRight: 8 }} />
                         <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{meetupTime}</Text>
                         <Feather name={showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </PressableOpacity>
+
+                    {/* Optional end time (an end earlier than the start is the next day) */}
+                    <EndTimeField
+                        startTime={meetupTime}
+                        endTime={meetupEndTime}
+                        onChange={setMeetupEndTime}
+                        open={showEndTimePicker}
+                        onOpenChange={(o) => { setShowEndTimePicker(o); if (o) { setShowTimePicker(false); setShowTZPicker(false); } }}
+                        renderPicker={false}
+                        labelStyle={[s.fieldLabel, { color: colors.textFaint }]}
+                        fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        textStyle={[s.dateFieldText, { color: colors.textSecondary }]}
+                    />
 
                     {/* Timezone */}
                     <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Timezone</Text>
@@ -471,6 +492,9 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                 {/* Sibling of ScrollView, not descendant — an overlay inside it only fills the scrollable content */}
                 {showTimePicker && (
                     <NativeTimePicker value={meetupTime} onChange={setMeetupTime} onClose={() => setShowTimePicker(false)} asOverlay />
+                )}
+                {showEndTimePicker && (
+                    <NativeTimePicker value={meetupEndTime || addHour(meetupTime)} onChange={setMeetupEndTime} onClose={() => setShowEndTimePicker(false)} asOverlay />
                 )}
 
                 {showTZPicker && (

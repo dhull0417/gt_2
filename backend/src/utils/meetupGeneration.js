@@ -2,6 +2,7 @@ import { DateTime } from "luxon";
 import Meetup from "../models/meetup.model.js";
 import { resolveRsvpOpen } from "./priorityRsvp.js";
 import { groupHasPremium } from "./premium.js";
+import { slotEndFields, buildEndTimeUpdates } from "./meetupEndTime.js";
 import { calculateNextMeetupDate, computeNextGenerationAt, getGenerationWindowDays, parseTimeString } from "./date.utils.js";
 
 const existenceKey = (date, time) => `${new Date(date).toISOString()}|${time}`;
@@ -157,6 +158,7 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
         name: schedule.name,
         date: nextDate,
         time: dtEntry.time,
+        ...slotEndFields(dtEntry, nextDate, timezone),
         timezone,
         location: schedule.defaultLocation || "",
         description: schedule.defaultDescription || "",
@@ -395,7 +397,7 @@ export const reconcileScheduleMeetups = async (group, schedule, { resetAll = fal
     schedule: schedule._id,
     isOverride: false,
     date: { $gte: today },
-  }).select('date time').lean();
+  }).select('date time endTime isOverride').lean();
 
   const { candidates } = schedule.routines?.length ? computeScheduleCandidates(group, schedule) : { candidates: [] };
   const wanted = new Set(candidates.map(({ nextDate, dtEntry }) => existenceKey(nextDate, dtEntry.time)));
@@ -407,6 +409,10 @@ export const reconcileScheduleMeetups = async (group, schedule, { resetAll = fal
 
   const kept = upcoming.length - staleIds.length;
   if (kept > 0) {
+    // Kept slots match on date + start time; their end times follow the edited rows.
+    const staleSet = new Set(staleIds.map(String));
+    const endOps = buildEndTimeUpdates(upcoming.filter((m) => !staleSet.has(String(m._id))), candidates, group.timezone);
+    if (endOps.length > 0) await Meetup.bulkWrite(endOps);
     // Plain fields are copied straight from the series to the meetups that stay.
     await Meetup.updateMany(
       { group: group._id, schedule: schedule._id, isOverride: false, status: 'scheduled', date: { $gte: today } },

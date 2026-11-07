@@ -50,7 +50,7 @@ router.post('/webhook/message', async (req, res) => {
     const members = await User.find({
       _id: { $in: group.members },
       $or: [{ expoPushToken: { $exists: true, $ne: null } }, { 'expoPushTokens.0': { $exists: true } }],
-    }).select('clerkId expoPushToken expoPushTokens mutedGroups mutedUntilNextMeetup notificationPrefs timezone');
+    }).select('clerkId expoPushToken expoPushTokens groupMutes mutedGroups mutedUntilNextMeetup notificationPrefs timezone');
 
     const { normal, mention } = pickRecipients(members, {
       senderClerkId: record.sender_id,

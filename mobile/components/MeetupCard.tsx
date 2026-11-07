@@ -9,7 +9,7 @@ import { RsvpBreather } from '@/components/RsvpBreather';
 import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor, canPriorityBump } from '@/utils/meetupStatus';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
-import { formatMeetupTime, viewerZone } from '@/utils/meetupTime';
+import { formatMeetupTimeRange, viewerZone } from '@/utils/meetupTime';
 
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
@@ -142,7 +142,7 @@ export const MeetupCard = ({
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 1 }}>
-              {formatMeetupTime(meetup)}
+              {formatMeetupTimeRange(meetup)}
             </Text>
 
             <View className="flex-row justify-between items-start" style={{ marginTop: 4 }}>

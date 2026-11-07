@@ -64,6 +64,9 @@ import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import { getGroupImage } from '@/utils/groupDisplay';
 import { setActiveChat } from '@/utils/activeChat';
 import { formatMeetupDate } from '@/utils/meetupTime';
+import { GroupMuteSheet } from '@/components/GroupMuteSheet';
+import { muteStateFor } from '@/utils/groupMute';
+import { haptic } from '@/utils/haptics';
 
 interface ChatDaySection {
   key: string;
@@ -151,39 +154,12 @@ const GroupChatScreen = () => {
   // Only the group owner/moderators can create a one-off meetup.
   const canCreateEvent = !isDM && canManageGroup;
 
-  const isMutedUntilNext = useMemo(() => {
-    if (!id || !currentUser) return false;
-    return !!currentUser.mutedUntilNextMeetup?.includes(id);
-  }, [id, currentUser]);
-
-  const isCurrentlyMuted = useMemo(() => {
-    if (!id || !currentUser) return false;
-    return !!currentUser.mutedGroups?.includes(id) || isMutedUntilNext;
-  }, [id, currentUser, isMutedUntilNext]);
-
-  const performMuteUpdate = async (type: 'indefinite' | 'untilNext' | 'none') => {
-    if (!id) return;
-    try {
-      await userApi.toggleGroupMute(api, id, type);
-      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-    } catch {
-      Alert.alert("Error", "Failed to update notification settings.");
-    }
-  };
-
-  const [muteOptionsVisible, setMuteOptionsVisible] = useState(false);
-
+  // Per-kind group mute (see utils/groupMute.ts). The bell opens the shared mute sheet.
+  const muteState = useMemo(() => muteStateFor(currentUser, id ?? ''), [currentUser, id]);
+  const [muteSheetVisible, setMuteSheetVisible] = useState(false);
   const handleMutePress = () => {
-    if (isCurrentlyMuted) {
-      performMuteUpdate('none');
-    } else {
-      setMuteOptionsVisible(true);
-    }
-  };
-
-  const handleMuteOptionPress = (type: 'indefinite' | 'untilNext') => {
-    setMuteOptionsVisible(false);
-    performMuteUpdate(type);
+    haptic.tap();
+    setMuteSheetVisible(true);
   };
 
   const headerName = effectiveGroup?.isDM
@@ -708,8 +684,6 @@ const GroupChatScreen = () => {
   const mutedUntilNextChip = { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB', borderColor: isDark ? '#5C4A1E' : '#FDE68A' };
   const activeChip = { backgroundColor: isDark ? '#132A1E' : '#F0FDF4', borderColor: isDark ? '#1F4A34' : '#BBF7D0' };
   const detailsChip = { backgroundColor: isDark ? '#1E2340' : '#EEF2FF', borderColor: isDark ? '#333B6B' : '#C7D2FE' };
-  const amberText = isDark ? '#FBBF24' : '#B45309';
-  const redText = isDark ? '#F87171' : '#DC2626';
 
   return (
     <SafeAreaView
@@ -750,21 +724,30 @@ const GroupChatScreen = () => {
 
           <PressableOpacity
             onPress={handleMutePress}
+            accessibilityLabel={
+              muteState.state === 'full' ? 'Notifications muted' : muteState.state === 'partial' ? 'Some notifications muted' : 'Mute notifications'
+            }
             style={[
               styles.iconButton,
-              isMutedUntilNext ? mutedUntilNextChip : isCurrentlyMuted ? mutedChip : activeChip,
+              muteState.state === 'partial' || muteState.until === 'nextMeetup' ? mutedUntilNextChip
+                : muteState.state === 'full' ? mutedChip : activeChip,
             ]}
           >
-            {isMutedUntilNext ? (
+            {muteState.state === 'partial' ? (
+              <>
+                <Feather name="bell" size={18} color="#D97706" />
+                <View style={[styles.partialMuteDot, { borderColor: colors.surface }]} />
+              </>
+            ) : muteState.until === 'nextMeetup' ? (
               <>
                 <Feather name="bell-off" size={18} color="#D97706" />
                 <Feather name="clock" size={10} color="#D97706" style={styles.mutedUntilNextClockIcon} />
               </>
             ) : (
               <Feather
-                name={isCurrentlyMuted ? "bell-off" : "bell"}
+                name={muteState.state === 'full' ? "bell-off" : "bell"}
                 size={18}
-                color={isCurrentlyMuted ? "#EF4444" : "#10B981"}
+                color={muteState.state === 'full' ? "#EF4444" : "#10B981"}
               />
             )}
           </PressableOpacity>
@@ -1151,45 +1134,12 @@ const GroupChatScreen = () => {
         />
       )}
 
-      {/* Mute options */}
-      <Modal visible={muteOptionsVisible} transparent animationType="fade" onRequestClose={() => setMuteOptionsVisible(false)}>
-        <Pressable style={chatStyles.overlay} onPress={() => setMuteOptionsVisible(false)}>
-          <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 16 }}>Mute Notifications</Text>
-            <PressableOpacity
-              style={[muteStyles.option, mutedUntilNextChip]}
-              onPress={() => handleMuteOptionPress('untilNext')}
-              activeOpacity={0.7}
-            >
-              <View style={[muteStyles.iconWrap, { backgroundColor: isDark ? '#4A3A18' : '#FEF3C7' }]}>
-                <Feather name="clock" size={18} color="#D97706" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[muteStyles.untilNextText, { color: amberText }]}>Mute until next meetup</Text>
-                <Text style={[muteStyles.optionSubtitle, { color: colors.textFaint }]}>We'll turn notifications back on for you</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={colors.textFaint} />
-            </PressableOpacity>
-            <PressableOpacity
-              style={[muteStyles.option, mutedChip]}
-              onPress={() => handleMuteOptionPress('indefinite')}
-              activeOpacity={0.7}
-            >
-              <View style={[muteStyles.iconWrap, { backgroundColor: isDark ? '#4A2424' : '#FEE2E2' }]}>
-                <Feather name="bell-off" size={18} color="#DC2626" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[muteStyles.indefiniteText, { color: redText }]}>Mute</Text>
-                <Text style={[muteStyles.optionSubtitle, { color: colors.textFaint }]}>Stay silent until you turn it back on</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={colors.textFaint} />
-            </PressableOpacity>
-            <PressableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setMuteOptionsVisible(false)}>
-              <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600', textAlign: 'center' }}>Cancel</Text>
-            </PressableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <GroupMuteSheet
+        visible={muteSheetVisible}
+        group={effectiveGroup ? { _id: effectiveGroup._id, name: headerName, isDM } : null}
+        currentUser={currentUser}
+        onClose={() => setMuteSheetVisible(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -1209,6 +1159,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
   },
+  partialMuteDot: { position: 'absolute', top: 6, right: 6, width: 9, height: 9, borderRadius: 5, backgroundColor: '#F59E0B', borderWidth: 1.5 },
   mutedUntilNextClockIcon: {
     position: 'absolute',
     top: 2,
@@ -1236,29 +1187,6 @@ const chatStyles = StyleSheet.create({
   editInput: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14, padding: 12, fontSize: 15, color: '#111827', backgroundColor: '#F9FAFB', minHeight: 80, maxHeight: 200, textAlignVertical: 'top', marginBottom: 16 },
   cancelBtn: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: '#F3F4F6' },
   saveBtn: { paddingHorizontal: 20, paddingVertical: 9, borderRadius: 10, backgroundColor: '#4A90E2' },
-});
-
-const muteStyles = StyleSheet.create({
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    marginBottom: 10,
-  },
-  iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  untilNextText: { fontSize: 15, fontWeight: '800', color: '#B45309' },
-  indefiniteText: { fontSize: 15, fontWeight: '800', color: '#DC2626' },
-  optionSubtitle: { fontSize: 12, fontWeight: '500', color: '#9CA3AF', marginTop: 2 },
 });
 
 export default GroupChatScreen;

@@ -26,7 +26,8 @@ import { buildInviteMessage } from '@/utils/inviteMessage';
 import { tzAbbr } from '@/utils/timezones';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
-import { formatMeetupDate, formatMeetupTime, meetupStartInstant } from '@/utils/meetupTime';
+import { formatMeetupDate, formatMeetupTimeRange, meetupStartInstant } from '@/utils/meetupTime';
+import { formatTimeRange } from '@/utils/timeString';
 import type { Meetup } from '@/utils/api';
 import { addGroupToCalendar } from '@/utils/calendarFeed';
 import { getGroupImage } from '@/utils/groupDisplay';
@@ -150,7 +151,7 @@ export const GroupDetailsView = ({
 
                 return matches.map((mt, mtIdx) => (
                     <Text key={`daily-${dayIdx}-${mtIdx}`} style={[styles.scheduleDetailText, { color: colors.textSecondary }]}>
-                        • {dayName} @ {mt.time} {groupTimezoneAbbr}
+                        • {dayName} @ {formatTimeRange(mt.time, mt.endTime)} {groupTimezoneAbbr}
                     </Text>
                 ));
             });
@@ -176,7 +177,7 @@ export const GroupDetailsView = ({
 
             return (
                 <Text key={dtIdx} style={[styles.scheduleDetailText, { color: colors.textSecondary }]}>
-                    • {dayLabel} @ {dt.time} {groupTimezoneAbbr}
+                    • {dayLabel} @ {formatTimeRange(dt.time, dt.endTime)} {groupTimezoneAbbr}
                 </Text>
             );
         });
@@ -208,7 +209,7 @@ export const GroupDetailsView = ({
                         <Text style={{ color: colors.textFaint, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 }}>Next meetup</Text>
                         <Text style={{ color: colors.textPrimary, fontSize: 15, fontWeight: '800', marginTop: 2 }} numberOfLines={1}>{nextMeetup.name}</Text>
                         <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 1 }} numberOfLines={1}>
-                            {formatMeetupDate(nextMeetup, { weekday: 'short', month: 'short', day: 'numeric' })} at {formatMeetupTime(nextMeetup)}
+                            {formatMeetupDate(nextMeetup, { weekday: 'short', month: 'short', day: 'numeric' })} at {formatMeetupTimeRange(nextMeetup)}
                         </Text>
                     </View>
                     <Feather name="chevron-right" size={18} color={colors.textFaint} />

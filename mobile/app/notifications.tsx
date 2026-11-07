@@ -12,6 +12,7 @@ import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { useMarkNotificationsAsRead } from '@/hooks/useMarkNotificationsAsRead';
 import { Notification, User, useApiClient, userApi, notificationApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
+import { getChangeLines, type ChangeLine } from '@/utils/changeLines';
 import { getNotificationIcon } from '@/utils/notificationIcons';
 import { goToTarget, resolveNotificationTarget } from '@/utils/notificationRouting';
 import { ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
@@ -60,6 +61,16 @@ const formatMeetupDateTime = (meetup?: { date?: string; time?: string; timezone?
     const m = { date: meetup.date, time: meetup.time, timezone: meetup.timezone };
     return `${formatMeetupDate(m, { weekday: 'long', month: 'long', day: 'numeric' })} at ${formatMeetupTime(m)}`;
 };
+
+const ChangeLines = ({ lines, styles }: { lines: ChangeLine[]; styles: ReturnType<typeof useMemoStyles> }) => (
+    <View style={styles.changeLines}>
+        {lines.map(line => (
+            <Text key={line.label} style={styles.changeLine}>
+                <Text style={styles.bold}>{line.label}: </Text>{line.value}
+            </Text>
+        ))}
+    </View>
+);
 
 const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDelete, isAccepting, isDeclining, colors, unreadBg, highlight }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, onDelete: (id: string) => void, isAccepting: boolean, isDeclining: boolean, colors: ThemeColors, unreadBg: string, highlight: boolean }) => {
     const router = useRouter();
@@ -123,9 +134,27 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDe
             case 'meetup-created':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> scheduled a new meetup{groupName ? <> for <Text style={styles.bold}>{groupName}</Text></> : null}.</Text>;
             case 'meetup-updated': {
+                const lines = getChangeLines(notification.meta);
+                if (lines.length > 0) {
+                    return (
+                        <View>
+                            <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> updated <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>:</Text>
+                            <ChangeLines lines={lines} styles={styles} />
+                        </View>
+                    );
+                }
                 const changeSummary = describeChangedFields(notification.meta?.changedFields);
                 const when = formatMeetupDateTime(notification.meetup);
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> updated the {changeSummary || 'details'} for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>{when ? <>{' — '}<Text style={styles.bold}>{when}</Text></> : null}.</Text>;
+            }
+            case 'schedule-updated': {
+                const lines = getChangeLines(notification.meta);
+                return (
+                    <View>
+                        <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> updated the <Text style={styles.bold}>{notification.meta?.scheduleName || 'recurring'}</Text> schedule{groupName ? <> in <Text style={styles.bold}>{groupName}</Text></> : null}{lines.length > 0 ? ':' : '.'}</Text>
+                        <ChangeLines lines={lines} styles={styles} />
+                    </View>
+                );
             }
             case 'meetup-cancelled':
                 if (notification.meta?.reason === 'minimum-headcount') {
@@ -347,6 +376,8 @@ function buildStyles(colors: ThemeColors) {
         textContainer: { flex: 1 },
         messageText: { fontSize: 15, color: colors.textSecondary, lineHeight: 22 },
         bold: { fontWeight: 'bold' as const },
+        changeLines: { marginTop: 4, gap: 2 },
+        changeLine: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
         timeText: { fontSize: 12, color: colors.textFaint, marginTop: 4 },
         actionContainer: { flexDirection: 'row' as const, marginTop: 12, gap: 12 },
         actionButton: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },

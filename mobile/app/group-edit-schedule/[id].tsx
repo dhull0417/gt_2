@@ -19,7 +19,7 @@ import { DAYS_OF_WEEK, DAY_COLORS_LIGHT, ORDINAL_OCCURRENCES, FREQ_LABELS, uid, 
 import { timezoneOptions, tzAbbr } from '@/utils/timezones';
 import { toast } from '@/contexts/ToastContext';
 import { haptic } from '@/utils/haptics';
-import { getMinAttendeesError, WeekdayRow, MonthlyDateEntry, OrdinalEntry, BuiltRoutine, newBringItemKey, getBringItemsError, ScheduleData, defaultSchedule, buildLabel, buildSchedulePayload, scheduleFromNamedSchedule } from '@/utils/editScheduleDraft';
+import { getMinAttendeesError, WeekdayRow, MonthlyDateEntry, OrdinalEntry, BuiltRoutine, newBringItemKey, getBringItemsError, ScheduleData, defaultSchedule, buildLabel, buildSchedulePayload, scheduleFromNamedSchedule, scheduleEndTimeError } from '@/utils/editScheduleDraft';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
@@ -31,6 +31,8 @@ import { useApiClient, groupApi, Frequency, DayTime } from "../../utils/api";
 import { broadcastGroupUpdate, broadcastMeetupUpdate } from "../../utils/groupRealtime";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
 import NativeTimePicker from "../../components/NativeTimePicker";
+import EndTimeField from "../../components/EndTimeField";
+import { formatTimeRange } from "@/utils/timeString";
 import OptionPickerModal from "../../components/OptionPickerModal";
 import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
@@ -277,6 +279,8 @@ const EditScheduleScreen = () => {
 
     // ── Custom routines ───────────────────────────────────────────────────────
 
+    const withEnd = (endTime?: string | null) => (endTime ? { endTime } : {});
+
     const buildRoutineFromState = (): BuiltRoutine | null => {
         const freq = d.customFreq;
         if (!freq) return null;
@@ -286,16 +290,16 @@ const EditScheduleScreen = () => {
 
         if (freq === "daily") {
             dayTimes = d.dailySameTime
-                ? DAYS_OF_WEEK.map(dw => ({ day: dw.value, time: d.dailySharedTime }))
-                : d.dailyRows.map(r => ({ day: r.day!, time: r.time }));
+                ? DAYS_OF_WEEK.map(dw => ({ day: dw.value, time: d.dailySharedTime, ...withEnd(d.dailySharedEndTime) }))
+                : d.dailyRows.map(r => ({ day: r.day!, time: r.time, ...withEnd(r.endTime) }));
         } else if (freq === "weekly" || freq === "biweekly") {
-            dayTimes = d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time, ...(r.startDate ? { startDate: r.startDate } : {}) }));
+            dayTimes = d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time, ...withEnd(r.endTime), ...(r.startDate ? { startDate: r.startDate } : {}) }));
         } else if (freq === "monthly") {
             if (d.monthlyMode === "date") {
-                dayTimes = d.monthlyDates.map(e => ({ date: e.date, time: e.time }));
+                dayTimes = d.monthlyDates.map(e => ({ date: e.date, time: e.time, ...withEnd(e.endTime) }));
             } else if (d.monthlyMode === "ordinal") {
                 finalFreq = "ordinal" as Frequency;
-                dayTimes = d.ordinalEntries.map(e => ({ day: e.day, time: e.time }));
+                dayTimes = d.ordinalEntries.map(e => ({ day: e.day, time: e.time, ...withEnd(e.endTime) }));
                 rules = d.ordinalEntries.map(e => ({ type: "byDay", occurrence: e.occurrence, day: e.day }));
             }
         }
@@ -309,10 +313,11 @@ const EditScheduleScreen = () => {
             snapshot: {
                 dailySameTime: d.dailySameTime,
                 dailySharedTime: d.dailySharedTime,
-                weekdayRows: d.weekdayRows.map(r => ({ ...r, showTimePicker: false, showDayPicker: false, showStartDatePicker: false })),
+                dailySharedEndTime: d.dailySharedEndTime ?? null,
+                weekdayRows: d.weekdayRows.map(r => ({ ...r, showTimePicker: false, showEndTimePicker: false, showDayPicker: false, showStartDatePicker: false })),
                 monthlyMode: d.monthlyMode,
-                monthlyDates: d.monthlyDates.map(e => ({ ...e, expanded: false, showTimePicker: false })),
-                ordinalEntries: d.ordinalEntries.map(e => ({ ...e, expanded: false, showTimePicker: false, showOccurrencePicker: false, showDayOfWeekPicker: false })),
+                monthlyDates: d.monthlyDates.map(e => ({ ...e, expanded: false, showTimePicker: false, showEndTimePicker: false })),
+                ordinalEntries: d.ordinalEntries.map(e => ({ ...e, expanded: false, showTimePicker: false, showEndTimePicker: false, showOccurrencePicker: false, showDayOfWeekPicker: false })),
             },
         };
     };
@@ -325,7 +330,7 @@ const EditScheduleScreen = () => {
             ...prev,
             builtRoutines: [...prev.builtRoutines, routine],
             customBuilding: false, customFreq: null, customShowFreqPicker: false,
-            weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null,
+            weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, dailySharedEndTime: null,
         }));
     };
 
@@ -341,6 +346,7 @@ const EditScheduleScreen = () => {
                 customShowFreqPicker: false,
                 dailySameTime: r.snapshot.dailySameTime ?? null,
                 dailySharedTime: r.snapshot.dailySharedTime ?? "05:00 PM",
+                dailySharedEndTime: r.snapshot.dailySharedEndTime ?? null,
                 weekdayRows: r.snapshot.weekdayRows ?? [],
                 monthlyMode: r.snapshot.monthlyMode ?? null,
                 monthlyDates: r.snapshot.monthlyDates ?? [],
@@ -358,7 +364,7 @@ const EditScheduleScreen = () => {
             ...prev,
             builtRoutines: prev.builtRoutines.map(r => r.id === editingId ? { ...routine, id: editingId } : r),
             customBuilding: false, customFreq: null,
-            weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null,
+            weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, dailySharedEndTime: null,
         }));
     };
 
@@ -399,6 +405,8 @@ const EditScheduleScreen = () => {
     // ── Save ──────────────────────────────────────────────────────────────────
 
     const handleSave = async () => {
+        const endProblem = scheduleEndTimeError(d);
+        if (endProblem) { Alert.alert("Check the end time", endProblem); return; }
         const payload = buildSchedulePayload(d);
         if (!payload || !id) return;
         if (inFlightRef.current) return;
@@ -496,6 +504,10 @@ const EditScheduleScreen = () => {
                         <NativeTimePicker value={d.dailySharedTime} onChange={t => upd({ dailySharedTime: t })}
                             onClose={() => upd({ showDailySameTimePicker: false })} />
                     )}
+                    <EndTimeField startTime={d.dailySharedTime} endTime={d.dailySharedEndTime}
+                        onChange={t => upd({ dailySharedEndTime: t })}
+                        open={!!d.showDailySameEndTimePicker} onOpenChange={o => upd({ showDailySameEndTimePicker: o })}
+                        labelStyle={[s.fieldLabel, { color: colors.textFaint }]} fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} textStyle={[s.dateFieldText, { color: colors.textSecondary }]} />
                 </View>
             )}
 
@@ -528,6 +540,11 @@ const EditScheduleScreen = () => {
                                         dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, showTimePicker: false } : r),
                                     }))} />
                             )}
+                            <EndTimeField startTime={row.time} endTime={row.endTime}
+                                onChange={t => setD(prev => ({ ...prev, dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, endTime: t } : r) }))}
+                                open={!!row.showEndTimePicker}
+                                onOpenChange={o => setD(prev => ({ ...prev, dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, showEndTimePicker: o } : { ...r, showEndTimePicker: false }) }))}
+                                labelStyle={[s.fieldLabel, { color: colors.textFaint }]} fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} textStyle={[s.dateFieldText, { color: colors.textSecondary }]} />
                         </View>
                     ))}
                 </View>
@@ -587,6 +604,13 @@ const EditScheduleScreen = () => {
                             onClose={() => updWeekdayRow(row.id, { showTimePicker: false })} />
                     )}
 
+                    {row.day !== null && (
+                        <EndTimeField startTime={row.time} endTime={row.endTime}
+                            onChange={t => updWeekdayRow(row.id, { endTime: t })}
+                            open={!!row.showEndTimePicker} onOpenChange={o => updWeekdayRow(row.id, { showEndTimePicker: o, showDayPicker: false, showStartDatePicker: false })}
+                            labelStyle={[s.fieldLabel, { color: colors.textFaint }]} fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} textStyle={[s.dateFieldText, { color: colors.textSecondary }]} />
+                    )}
+
                     {isBiweekly && row.day !== null && (
                         <View style={{ marginTop: 8 }}>
                             <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Start Date</Text>
@@ -618,7 +642,7 @@ const EditScheduleScreen = () => {
         <View key={entry.id} style={[s.ordinalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {!entry.expanded ? (
                 <PressableOpacity style={s.collapsedRuleRow} onPress={() => updMonthlyDate(entry.id, { expanded: true })}>
-                    <Text style={[s.collapsedRuleText, { color: blueTextActive }]}>{entry.date}{ordSfx(entry.date)} of month · {entry.time}</Text>
+                    <Text style={[s.collapsedRuleText, { color: blueTextActive }]}>{entry.date}{ordSfx(entry.date)} of month · {formatTimeRange(entry.time, entry.endTime)}</Text>
                     <View style={s.collapsedRuleActions}>
                         <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
                         <PressableOpacity onPress={() => removeMonthlyDate(entry.id)}>
@@ -649,8 +673,12 @@ const EditScheduleScreen = () => {
                         <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.time}</Text>
                         <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </PressableOpacity>
+                    <EndTimeField startTime={entry.time} endTime={entry.endTime}
+                        onChange={t => updMonthlyDate(entry.id, { endTime: t })}
+                        open={!!entry.showEndTimePicker} onOpenChange={o => updMonthlyDate(entry.id, { showEndTimePicker: o })}
+                        labelStyle={[s.fieldLabel, { color: colors.textFaint }]} fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} textStyle={[s.dateFieldText, { color: colors.textSecondary }]} />
                     <PressableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10, backgroundColor: colors.brand }]}
-                        onPress={() => updMonthlyDate(entry.id, { expanded: false, showTimePicker: false })}>
+                        onPress={() => updMonthlyDate(entry.id, { expanded: false, showTimePicker: false, showEndTimePicker: false })}>
                         <Text style={s.doneBtnText}>Done</Text>
                     </PressableOpacity>
                     {entry.showTimePicker && (
@@ -668,7 +696,7 @@ const EditScheduleScreen = () => {
             {!entry.expanded ? (
                 <PressableOpacity style={s.collapsedRuleRow} onPress={() => updOrdinal(entry.id, { expanded: true })}>
                     <Text style={[s.collapsedRuleText, { color: blueTextActive }]}>
-                        {entry.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label} · {entry.time}
+                        {entry.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label} · {formatTimeRange(entry.time, entry.endTime)}
                     </Text>
                     <View style={s.collapsedRuleActions}>
                         <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
@@ -702,8 +730,12 @@ const EditScheduleScreen = () => {
                         <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.time}</Text>
                         <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </PressableOpacity>
+                    <EndTimeField startTime={entry.time} endTime={entry.endTime}
+                        onChange={t => updOrdinal(entry.id, { endTime: t })}
+                        open={!!entry.showEndTimePicker} onOpenChange={o => updOrdinal(entry.id, { showEndTimePicker: o, showOccurrencePicker: false, showDayOfWeekPicker: false })}
+                        labelStyle={[s.fieldLabel, { color: colors.textFaint }]} fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} textStyle={[s.dateFieldText, { color: colors.textSecondary }]} />
                     <PressableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10, backgroundColor: colors.brand }]}
-                        onPress={() => updOrdinal(entry.id, { expanded: false, showTimePicker: false })}>
+                        onPress={() => updOrdinal(entry.id, { expanded: false, showTimePicker: false, showEndTimePicker: false })}>
                         <Text style={s.doneBtnText}>Done</Text>
                     </PressableOpacity>
                     {entry.showTimePicker && (

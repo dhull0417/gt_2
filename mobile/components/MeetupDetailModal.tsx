@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DateTime } from 'luxon';
-import { meetupDayKey, meetupStartInstant, dayKeyToLocalDate, localDateToDayKey, formatMeetupDate, formatMeetupTime, viewerZone } from '@/utils/meetupTime';
+import { meetupDayKey, meetupStartInstant, meetupEndInstant, dayKeyToLocalDate, localDateToDayKey, formatMeetupDate, formatMeetupTimeRange, viewerZone } from '@/utils/meetupTime';
+import { addHour, endTimeError } from '@/utils/timeString';
 import { tzAbbr } from '@/utils/timezones';
 import { LinkifiedText } from '@/components/LinkifiedText';
 import { haptic } from '@/utils/haptics';
@@ -58,6 +59,7 @@ import { RsvpBreather } from '@/components/RsvpBreather';
 import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
 import NativeTimePicker from './NativeTimePicker';
+import EndTimeField from './EndTimeField';
 import LocationField from './LocationField';
 import LocationSearchModal from './LocationSearchModal';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -68,6 +70,7 @@ import { PulsingWatermark } from '@/components/meetup-detail/PulsingWatermark';
 import { InOutSwapIcon } from '@/components/meetup-detail/InOutSwapIcon';
 import { styles, dmStyles } from '@/components/meetup-detail/styles';
 import { buildInviteMessage } from '@/utils/inviteMessage';
+import { muteStateFor, restoreRequest } from '@/utils/groupMute';
 
 interface MeetupDetailModalProps {
   meetup: Meetup | null;
@@ -97,6 +100,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [isCancelling, setIsCancelling] = useState(false);
     const [tempDate, setTempDate] = useState(new Date());
     const [newTime, setNewTime] = useState('');
+    const [newEndTime, setNewEndTime] = useState<string | null>(null);
     const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
     const [newCapacity, setNewCapacity] = useState('');
     const [newLocation, setNewLocation] = useState('');
@@ -104,6 +108,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const [isLocationSearchActive, setIsLocationSearchActive] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [showTimePicker, setShowTimePicker] = useState(false);
+    const [showEndTimePicker, setShowEndTimePicker] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [dmTargetUser, setDmTargetUser] = useState<User | null>(null);
     // Member an owner/moderator is editing assignments for.
@@ -354,13 +359,19 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
     const handleRsvpOutAndMute = () => {
         setGuestExpanded(false);
         handleRsvpAction('out', { skipResponsePopup: true });
+        // Undo puts back whatever mute the member had before (it may have been a partial one).
+        const previousMute = muteStateFor(currentUser, meetup.group._id);
         userApi.toggleGroupMute(api, meetup.group._id, 'untilNext')
             .then(() => {
                 toast.show({
                     message: `Out. ${meetup.group.name} muted until the next meetup.`,
                     kind: 'success',
                     actionLabel: 'Undo',
-                    onAction: () => { userApi.toggleGroupMute(api, meetup.group._id, 'none').then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] })).catch(() => {}); },
+                    onAction: () => {
+                        const { muteType, kinds } = restoreRequest(previousMute);
+                        userApi.toggleGroupMute(api, meetup.group._id, muteType, muteType === 'none' ? undefined : kinds)
+                          .then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] })).catch(() => {});
+                    },
                 });
             })
             .catch(() => {});
@@ -375,7 +386,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
         // The real start moment in the GROUP's timezone, whatever timezone this phone is in.
         const startDate = meetupStartInstant(meetup);
-        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+        // The meetup's end time when it has one, otherwise 1 hour.
+        const endDate = meetupEndInstant(meetup);
         const groupName = (meetup.group as any)?.name || '';
 
         try {
@@ -517,6 +529,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         // Plain calendar days in the GROUP's timezone, so the date can't shift for someone far from the group.
         if (localDateToDayKey(newDate) !== meetupDayKey(meetup)) payload.date = localDateToDayKey(newDate);
         if (newTime !== meetup.time) payload.time = newTime;
+        const endProblem = endTimeError(newTime, newEndTime);
+        if (endProblem) { Alert.alert('Check the end time', endProblem); return; }
+        if ((newEndTime || null) !== (meetup.endTime || null)) payload.endTime = newEndTime;
         if (newLocation !== (meetup.location || '')) payload.location = newLocation;
         if (newDescription !== (meetup.description || '')) payload.description = newDescription;
         if (capInt !== meetup.capacity) payload.capacity = capInt;
@@ -568,6 +583,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         setNewDate(dayKeyToLocalDate(meetupDayKey(meetup)));
         setTempDate(dayKeyToLocalDate(meetupDayKey(meetup)));
         setNewTime(meetup.time);
+        setNewEndTime(meetup.endTime ?? null);
+        setShowEndTimePicker(false);
         setCapacityMode(meetup.capacity > 0 ? "limited" : "unlimited");
         setNewCapacity(meetup.capacity > 0 ? meetup.capacity.toString() : "");
         setNewLocation(meetup.location || '');
@@ -778,8 +795,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     <Feather name="x" size={28} color={colors.textFaint} />
                 </PressableOpacity>
                 <Animated.View layout={LinearTransition.duration(300).easing(Easing.out(Easing.cubic))} style={styles.headerTitleContainer}>
+                    {/* Date, then time (a range when there is an end time), then the address below. */}
                     <Text style={[styles.headerTitle, { color: colors.textFaint }]}>
-                        {formatMeetupDate(meetup, { weekday: 'short', month: 'short', day: 'numeric' })} • {formatMeetupTime(meetup)}
+                        {formatMeetupDate(meetup, { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </Text>
+                    <Text style={[styles.headerTitle, styles.headerTime, { color: colors.textFaint }]}>
+                        {formatMeetupTimeRange(meetup)}
                     </Text>
                     {!!resolvedLocation && (
                         <View style={styles.headerLocationWrap}>
@@ -1415,6 +1436,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 onRequestClose={() => {
                     if (isLocationSearchActive) setIsLocationSearchActive(false);
                     else if (showTimePicker) setShowTimePicker(false);
+                    else if (showEndTimePicker) setShowEndTimePicker(false);
                     else if (showDatePicker) setShowDatePicker(false);
                     else setIsEditModalVisible(false);
                 }}
@@ -1447,6 +1469,18 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         {newTime}{meetup.timezone ? ` ${tzAbbr(meetup.timezone)}` : ''}
                                     </Text>
                                 </PressableOpacity>
+
+                                <EndTimeField
+                                    startTime={newTime}
+                                    endTime={newEndTime}
+                                    onChange={setNewEndTime}
+                                    open={showEndTimePicker}
+                                    onOpenChange={(o) => { setShowEndTimePicker(o); if (o) setShowTimePicker(false); }}
+                                    renderPicker={false}
+                                    labelStyle={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}
+                                    fieldStyle={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+                                    textStyle={[styles.dateInputText, { color: colors.textSecondary }]}
+                                />
 
                                 <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Location Override</Text>
                                 <LocationField
@@ -1547,6 +1581,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
                 {showTimePicker && (
                     <NativeTimePicker value={newTime} onChange={setNewTime} onClose={() => setShowTimePicker(false)} asOverlay />
+                )}
+                {showEndTimePicker && (
+                    <NativeTimePicker value={newEndTime || addHour(newTime)} onChange={setNewEndTime} onClose={() => setShowEndTimePicker(false)} asOverlay />
                 )}
             </Modal>
 

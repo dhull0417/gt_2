@@ -137,7 +137,8 @@ export const getCalendarFeed = asyncHandler(async (req, res) => {
     for (const meetup of upcomingMeetups) {
         if (!meetup.group) continue;
         const startDT = meetupStart(meetup);
-        const endDT = startDT.plus({ hours: 1 }); // blocks default to 1 hour
+        // Ends at the meetup's end time when it has one; otherwise blocks default to 1 hour.
+        const endDT = meetup.endsAt ? DateTime.fromJSDate(new Date(meetup.endsAt)) : startDT.plus({ hours: 1 });
         const cancelled = meetup.status === "cancelled";
 
         const descriptionParts = [];

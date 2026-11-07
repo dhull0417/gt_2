@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { formatTimeRange } from "@/utils/timeString";
 import { GroupAvatar } from "@/components/GroupAvatar";
 import { StepDots } from "@/components/create-group/StepDots";
 import { makeStyles } from "@/components/create-group/styles";
@@ -109,20 +110,20 @@ export const ReviewScreen = ({ groupName, groupImage, members, schedules, timezo
 
                                     <View style={{ gap: 4 }}>
                                         {schedule.frequency === "daily" && (schedule.dailySameTime
-                                            ? <Text style={s.reviewMutedBullet}>Every day @ {schedule.dailySharedTime}</Text>
-                                            : schedule.dailyRows.map(r => <Text key={r.id} style={s.reviewMutedBullet}>• {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}</Text>)
+                                            ? <Text style={s.reviewMutedBullet}>Every day @ {formatTimeRange(schedule.dailySharedTime, schedule.dailySharedEndTime)}</Text>
+                                            : schedule.dailyRows.map(r => <Text key={r.id} style={s.reviewMutedBullet}>• {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {formatTimeRange(r.time, r.endTime)}</Text>)
                                         )}
                                         {(schedule.frequency === "weekly" || schedule.frequency === "biweekly") && schedule.weekdayRows.filter(r => r.day !== null).map(r => (
                                             <Text key={r.id} style={s.reviewMutedBullet}>
-                                                • {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {r.time}
+                                                • {DAYS_OF_WEEK.find(dw => dw.value === r.day)?.label} @ {formatTimeRange(r.time, r.endTime)}
                                                 {schedule.frequency === "biweekly" && r.startDate ? ` (from ${DateTime.fromISO(r.startDate).toLocaleString(DateTime.DATE_MED)})` : ""}
                                             </Text>
                                         ))}
                                         {schedule.frequency === "monthly" && schedule.monthlyMode === "date" && schedule.monthlyDates.map(e => (
-                                            <Text key={e.id} style={s.reviewMutedBullet}>• {e.date}{ordSfx(e.date)} of month @ {e.time}</Text>
+                                            <Text key={e.id} style={s.reviewMutedBullet}>• {e.date}{ordSfx(e.date)} of month @ {formatTimeRange(e.time, e.endTime)}</Text>
                                         ))}
                                         {schedule.frequency === "monthly" && schedule.monthlyMode === "ordinal" && schedule.ordinalEntries.map(e => (
-                                            <Text key={e.id} style={s.reviewMutedBullet}>• {e.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === e.day)?.label} @ {e.time}</Text>
+                                            <Text key={e.id} style={s.reviewMutedBullet}>• {e.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === e.day)?.label} @ {formatTimeRange(e.time, e.endTime)}</Text>
                                         ))}
                                         {schedule.frequency === "custom" && (
                                             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>

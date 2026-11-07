@@ -31,6 +31,7 @@ import { getAuth } from "@clerk/express";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import { notifyUsers } from "../utils/push.notifications.js";
+import { isMutedFor } from "../utils/groupMute.js";
 import { addChatMembers } from "../utils/supabaseAdmin.js";
 
 import mongoose from "mongoose";
@@ -181,13 +182,11 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
 
     // Awaited: on Vercel, work still running after the response is sent can be dropped.
     try {
-      const recipients = await User.find({
+      const recipients = (await User.find({
         _id: { $in: group.members },
         clerkId: { $ne: user.clerkId },
         $or: [{ expoPushToken: { $exists: true, $ne: null } }, { 'expoPushTokens.0': { $exists: true } }],
-        mutedGroups: { $ne: group._id },
-        mutedUntilNextMeetup: { $ne: group._id },
-      });
+      })).filter((u) => !isMutedFor(u, group._id, 'chat'));
       if (recipients.length > 0) {
         await notifyUsers(recipients, {
           title: group.name,
@@ -233,13 +232,11 @@ router.post("/:id/chat-reaction", protectRoute, async (req, res) => {
       for (const [k, t] of recentReactionPushes) if (Date.now() - t > 60 * 1000) recentReactionPushes.delete(k);
     }
 
-    const recipients = await User.find({
+    const recipients = (await User.find({
       _id: { $in: group.members },
       ...(onlyAuthor.clerkId ? { clerkId: onlyAuthor.clerkId } : { clerkId: { $ne: user.clerkId } }),
       $or: [{ expoPushToken: { $exists: true, $ne: null } }, { 'expoPushTokens.0': { $exists: true } }],
-      mutedGroups: { $ne: group._id },
-      mutedUntilNextMeetup: { $ne: group._id },
-    });
+    })).filter((u) => !isMutedFor(u, group._id, 'chat'));
 
     if (recipients.length > 0) {
       try {

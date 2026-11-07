@@ -16,6 +16,7 @@ import { generateMeetupsForGroup, generateMeetupsForSchedule, reconcileScheduleM
 import { promoteWaitlist } from "../utils/waitlist.js";
 import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
 import { addChatMembers, removeChatMember, removeAllChatMembers, purgeGroupChat } from "../utils/supabaseAdmin.js";
+import { scheduleChanges, scheduleSnapshot, pushBody } from "../utils/changeSummary.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { buildGroupStats, buildAttendanceCsv } from "../utils/groupStats.js";
 import { parseQuestions, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
@@ -24,6 +25,7 @@ import { hasPremium, groupHasPremium } from "../utils/premium.js";
 import { onGroupCreated, onInviteRedeemed } from "../utils/email/lifecycle.js";
 import { postSystemMessage } from "../utils/systemMessage.js";
 import { isLegacyClient } from "../middleware/clientInfo.middleware.js";
+import { validateRoutineEndTimes, preserveLegacyEndTimes, validateEndTime, computeEndsAt } from "../utils/meetupEndTime.js";
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(String(id)) && String(new mongoose.Types.ObjectId(String(id))) === String(id);
 
@@ -285,6 +287,11 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
 
   for (const s of initialSchedules) {
+      const endTimeError = validateRoutineEndTimes(s.routines);
+      if (endTimeError) return res.status(400).json({ error: endTimeError });
+  }
+
+  for (const s of initialSchedules) {
       const problem = minHeadcountProblem({
           min: s.defaultMinAttendees,
           capacity: s.defaultCapacity,
@@ -446,7 +453,8 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
         target = group.schedules[group.schedules.length - 1];
     } else if (target && schedule) {
         target.startDate = schedule.startDate || target.startDate;
-        target.routines = schedule.routines || target.routines;
+        // Legacy (pre-multi-schedule) path: those builds never send end times, so keep existing ones.
+        target.routines = schedule.routines ? preserveLegacyEndTimes(schedule.routines, target.routines) : target.routines;
         if (defaultLocation !== undefined) target.defaultLocation = defaultLocation;
         if (defaultCapacity !== undefined) target.defaultCapacity = Number(defaultCapacity);
     }
@@ -523,6 +531,8 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (!name || !String(name).trim()) {
         return res.status(400).json({ error: "Schedule name is required." });
     }
+    const endTimeError = validateRoutineEndTimes(routines);
+    if (endTimeError) return res.status(400).json({ error: endTimeError });
 
     // Guards against a double-fired create (a mistimed double-tap, or a
     // client-side retry) pushing two identical schedules: a legitimate second
@@ -628,7 +638,11 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         return res.status(403).json(ASSIGNMENTS_PREMIUM_REQUIRED);
     }
 
+    const endTimeError = validateRoutineEndTimes(routines);
+    if (endTimeError) return res.status(400).json({ error: endTimeError });
+
     const previousTimezone = group.timezone;
+    const scheduleBefore = scheduleSnapshot(target, previousTimezone);
     if (timezone) group.timezone = timezone;
 
     if (name !== undefined) {
@@ -641,7 +655,8 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         );
     }
     if (startDate !== undefined) target.startDate = startDate;
-    if (routines !== undefined) target.routines = routines;
+    // Old app builds don't send end times; keep the ones already on unchanged rows.
+    if (routines !== undefined) target.routines = isLegacyClient(req) ? preserveLegacyEndTimes(routines, target.routines) : routines;
     if (defaultCapacity !== undefined) target.defaultCapacity = Number(defaultCapacity);
     if (defaultMinAttendees !== undefined) target.defaultMinAttendees = newMin;
     if (newBringItems) target.defaultBringItems = newBringItems;
@@ -705,6 +720,26 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         } catch (err) {
             console.error("Update Schedule Gen Error:", err);
         }
+    }
+
+    // Tell the group what changed and what it is now: one notification for the whole schedule,
+    // only fields whose shown value differs (the editor resends every setting on every save).
+    try {
+        const changes = scheduleChanges(scheduleBefore, scheduleSnapshot(target, group.timezone));
+        if (changes.length > 0) {
+            const membersToNotify = await User.find({ _id: { $in: group.members } });
+            await notifyAndPersist(membersToNotify, {
+                title: `Schedule Updated: ${target.name} (${group.name})`,
+                body: pushBody(changes),
+                data: { groupId: group._id.toString(), type: 'schedule_updated' },
+                type: 'schedule-updated',
+                sender: user._id,
+                group: group._id,
+                meta: { changes, scheduleName: target.name },
+            });
+        }
+    } catch (err) {
+        console.error("Update Schedule Notify Error:", err);
     }
 
     res.status(200).json({ message: "Schedule updated.", group: withLegacyScheduleMirror(group.toObject()) });
@@ -1138,7 +1173,7 @@ export const removeMember = asyncHandler(async (req, res) => {
     }
 
     await group.updateOne({ $pull: { members: memberToRemove._id, moderators: memberToRemove._id } });
-    await memberToRemove.updateOne({ $pull: { groups: group._id } });
+    await memberToRemove.updateOne({ $pull: { groups: group._id, mutedGroups: group._id, mutedUntilNextMeetup: group._id, groupMutes: { group: group._id } } });
     await scrubMemberFromUpcomingMeetups({ userId: memberToRemove._id, clerkId: memberToRemove.clerkId, groupId: group._id });
     await removeChatMember(group._id, memberToRemove.clerkId);
 
@@ -1161,7 +1196,7 @@ export const removeMember = asyncHandler(async (req, res) => {
 export const createOneOffMeetup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
-    const { date, time, timezone, capacity, name, location, description, scheduleId } = req.body;
+    const { date, time, endTime, timezone, capacity, name, location, description, scheduleId } = req.body;
 
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
@@ -1170,6 +1205,9 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
 
     const meetupDate = calculateNextMeetupDate(date, time, timezone, 'once');
     if (meetupDate < new Date()) return res.status(400).json({ error: "Cannot schedule in the past." });
+    const endTimeError = validateEndTime(time, endTime);
+    if (endTimeError) return res.status(400).json({ error: endTimeError });
+    const meetupEndTime = endTime ? String(endTime).trim() : null;
 
     // use the linked schedule's location/capacity defaults if this belongs to a
     // series; otherwise fall back to the group-level defaults.
@@ -1186,6 +1224,8 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
             name: name || (linkedSchedule ? linkedSchedule.name : group.name),
             date: meetupDate,
             time: time,
+            endTime: meetupEndTime,
+            endsAt: computeEndsAt(meetupDate, meetupEndTime, timezone),
             timezone: timezone,
             location: location !== undefined ? location : fallbackLocation,
             description: description !== undefined ? description : fallbackDescription,
@@ -1232,7 +1272,7 @@ export const leaveGroup = asyncHandler(async (req, res) => {
     if (group.owner.toString() === user._id.toString()) return res.status(403).json({ error: "Owner cannot leave." });
 
     await group.updateOne({ $pull: { members: user._id, moderators: user._id } });
-    await User.updateOne({ _id: user._id }, { $pull: { groups: group._id } });
+    await User.updateOne({ _id: user._id }, { $pull: { groups: group._id, mutedGroups: group._id, mutedUntilNextMeetup: group._id, groupMutes: { group: group._id } } });
     await scrubMemberFromUpcomingMeetups({ userId: user._id, clerkId: user.clerkId, groupId: group._id });
     await removeChatMember(group._id, user.clerkId);
     await postSystemMessage(group._id, `${user.firstName} left the group`);
@@ -1258,7 +1298,7 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     await Notification.deleteMany({ group: groupId });
     await User.updateMany(
         { _id: { $in: group.members } },
-        { $pull: { groups: groupId, mutedGroups: groupId, mutedUntilNextMeetup: groupId }, $unset: { [`lastReadAt.${groupId}`]: "" } }
+        { $pull: { groups: groupId, mutedGroups: groupId, mutedUntilNextMeetup: groupId, groupMutes: { group: groupId } }, $unset: { [`lastReadAt.${groupId}`]: "" } }
     );
     await Group.findByIdAndDelete(groupId);
 

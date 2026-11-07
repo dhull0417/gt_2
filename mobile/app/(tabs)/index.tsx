@@ -31,6 +31,7 @@ import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { getMeetupStatus } from '@/utils/meetupStatus';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import { toast } from '@/contexts/ToastContext';
+import { muteStateFor, restoreRequest } from '@/utils/groupMute';
 
 type GroupedMeetups = {
   'Upcoming': Meetup[];
@@ -345,12 +346,18 @@ const DashboardScreen = () => {
             ));
         }
         if (mute) {
+          // Undo puts back whatever mute the member had before (it may have been a partial one).
+          const previousMute = muteStateFor(currentUser, meetup.group._id);
           userApi.toggleGroupMute(api, meetup.group._id, 'untilNext')
             .then(() => toast.show({
               message: `Out. ${meetup.group.name} muted until the next meetup.`,
               kind: 'success',
               actionLabel: 'Undo',
-              onAction: () => { userApi.toggleGroupMute(api, meetup.group._id, 'none').then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] })).catch(() => {}); },
+              onAction: () => {
+                const { muteType, kinds } = restoreRequest(previousMute);
+                userApi.toggleGroupMute(api, meetup.group._id, muteType, muteType === 'none' ? undefined : kinds)
+                  .then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] })).catch(() => {});
+              },
             }))
             .catch(() => {});
         }

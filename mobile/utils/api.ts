@@ -2,6 +2,7 @@ import axios, { AxiosInstance } from "axios";
 import { useAuth } from "@clerk/expo";
 import { useMemo } from "react";
 import Constants from "expo-constants";
+import type { GroupMute, MuteKind, MuteRequest } from './groupMute';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -25,6 +26,8 @@ export interface DayTime {
   day?: number;    // Used for daily/weekly/biweekly/ordinal
   date?: number;   // Used for monthly
   time: string;
+  /** Optional end time ("08:00 PM"); earlier than `time` means the next day. */
+  endTime?: string | null;
   startDate?: string; // Biweekly-only: chosen first occurrence for this specific day
 }
 
@@ -100,6 +103,8 @@ export interface User {
   mutedGroups: string[];
   pinnedGroups?: string[];
   mutedUntilNextMeetup: string[];
+  /** Per-group, per-kind mutes (app 1.4+). See utils/groupMute.ts. */
+  groupMutes?: GroupMute[];
   lastReadAt?: Record<string, string>;
   zipCode?: string;
   hasSeenWelcome?: boolean;
@@ -213,6 +218,9 @@ export interface Meetup {
   name: string;
   date: string;
   time: string;
+  /** Optional end time ("08:00 PM") and the exact moment it ends (server-computed). */
+  endTime?: string | null;
+  endsAt?: string | null;
   timezone: string;
   location: string;
   description: string;
@@ -287,7 +295,7 @@ export type NotificationType =
   | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled' | 'meetup-restored'
   | 'meetup-rsvp-reminder' | 'meetup-rsvp-open' | 'meetup-starting-soon'
   | 'poll-created' | 'poll-closed'
-  | 'group-deleted' | 'schedule-removed';
+  | 'group-deleted' | 'schedule-removed' | 'schedule-updated';
 
 export interface Notification {
   _id: string;
@@ -301,6 +309,8 @@ export interface Notification {
   read: boolean;
   meta?: {
     changedFields?: ('schedule' | 'location' | 'capacity')[];
+    /** meetup-updated / schedule-updated: what changed and its new value, built by the server. */
+    changes?: { field: string; label: string; value: string }[];
     /** ownership-transferred: the group's Premium features paused with the change of owner. */
     premiumPaused?: boolean;
     reason?: string;
@@ -375,6 +385,8 @@ interface UpdateMeetupPayload {
   meetupId: string;
   date?: Date;
   time?: string;
+  /** undefined = unchanged, null = clear */
+  endTime?: string | null;
   timezone?: string;
   capacity?: number;
   location?: string;
@@ -391,6 +403,7 @@ interface CreateOneOffMeetupPayload {
   groupId: string;
   date: Date;
   time: string;
+  endTime?: string | null;
   timezone?: string;
   capacity?: number;
   name?: string;
@@ -495,8 +508,13 @@ export const userApi = {
     const response = await api.post<User[]>('/api/users/match-contacts', { emails, phoneNumbers });
     return response.data;
   },
-  toggleGroupMute: async (api: AxiosInstance, groupId: string, muteType: 'indefinite' | 'untilNext' | 'none'): Promise<{ muted: boolean }> => {
-    const response = await api.patch<{ muted: boolean }>("/api/users/mute-group", { groupId, muteType });
+  /** mutedTypes omitted = mute every kind (what the "I'm Out + mute" button sends). */
+  toggleGroupMute: async (api: AxiosInstance, groupId: string, muteType: MuteRequest, mutedTypes?: MuteKind[]): Promise<{ muted: boolean; groupMutes?: GroupMute[] }> => {
+    const response = await api.patch<{ muted: boolean; groupMutes?: GroupMute[] }>("/api/users/mute-group", {
+      groupId,
+      muteType,
+      ...(mutedTypes ? { mutedTypes } : {}),
+    });
     return response.data;
   },
   togglePinGroup: async (api: AxiosInstance, groupId: string, pinned: boolean): Promise<{ pinnedGroups: string[] }> => {

@@ -5,7 +5,13 @@ interface MeetupTimeFields {
   date: string;
   time: string;
   timezone?: string | null;
+  /** Optional end time ("08:00 PM") and the exact moment it ends (server-computed). */
+  endTime?: string | null;
+  endsAt?: string | null;
 }
+
+/** A meetup without an end time is treated as lasting this long. */
+export const DEFAULT_MEETUP_DURATION_MS = 60 * 60 * 1000;
 
 const parseClock = (time: string) => {
   const [clock, modifier] = (time || '12:00 AM').split(' ');
@@ -30,6 +36,21 @@ export function meetupStartInstant(m: MeetupTimeFields): Date {
   return (start.isValid ? start : DateTime.fromISO(m.date)).toJSDate();
 }
 
+/**
+ * When the meetup ends: its endsAt; else its end clock time (next day when not after the start);
+ * else start + 1 hour. Mirrors effectiveEnd in backend/src/utils/meetupEndTime.js.
+ */
+export function meetupEndInstant(m: MeetupTimeFields): Date {
+  if (m.endsAt) return new Date(m.endsAt);
+  const start = meetupStartInstant(m);
+  if (!m.endTime) return new Date(start.getTime() + DEFAULT_MEETUP_DURATION_MS);
+  const startDT = DateTime.fromJSDate(start).setZone(m.timezone || 'local');
+  const { hours, minutes } = parseClock(m.endTime);
+  let end = startDT.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+  if (end <= startDT) end = end.plus({ days: 1 });
+  return end.toJSDate();
+}
+
 /** The timezone meetup times are shown in: the phone's own. */
 export const viewerZone = (): string => deviceTimeZone();
 
@@ -49,6 +70,17 @@ export function meetupViewerDayKey(m: MeetupTimeFields, zone: string = viewerZon
 export function formatMeetupTime(m: MeetupTimeFields, zone: string = viewerZone()): string {
   const local = startIn(m, zone);
   return local.toFormat('h:mm a') + zoneSuffix(local.toJSDate(), m.timezone, zone);
+}
+
+/**
+ * "5:00 PM – 8:00 PM" in the viewer's timezone (zone label once, at the end, as formatMeetupTime).
+ * Without an end time it is just formatMeetupTime.
+ */
+export function formatMeetupTimeRange(m: MeetupTimeFields, zone: string = viewerZone()): string {
+  if (!m.endTime && !m.endsAt) return formatMeetupTime(m, zone);
+  const local = startIn(m, zone);
+  const end = DateTime.fromJSDate(meetupEndInstant(m)).setZone(zone);
+  return `${local.toFormat('h:mm a')} – ${end.toFormat('h:mm a')}` + zoneSuffix(local.toJSDate(), m.timezone, zone);
 }
 
 /** Any moment (e.g. when RSVPs open) as a clock time for the viewer, labelled like formatMeetupTime. */

@@ -3,7 +3,7 @@
 import { DateTime } from "luxon";
 import type { Frequency, DayTime } from "./api";
 import { DAYS_OF_WEEK, uid, getMaxAttendeesError } from "./scheduleConstants";
-import { buildRoutines } from "./scheduleRoutines";
+import { buildRoutines, scheduleEndTimeError } from "./scheduleRoutines";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,6 +13,9 @@ export interface WeekdayRow {
     id: string;
     day: number | null;
     time: string;
+    /** Optional end time ("08:00 PM"); null = none. */
+    endTime?: string | null;
+    showEndTimePicker?: boolean;
     startDate: string | null;
     showTimePicker: boolean;
 }
@@ -21,6 +24,9 @@ export interface MonthlyDateEntry {
     id: string;
     date: number;
     time: string;
+    /** Optional end time ("08:00 PM"); null = none. */
+    endTime?: string | null;
+    showEndTimePicker?: boolean;
     expanded: boolean;
     showTimePicker: boolean;
 }
@@ -30,6 +36,9 @@ export interface OrdinalEntry {
     occurrence: string;
     day: number;
     time: string;
+    /** Optional end time ("08:00 PM"); null = none. */
+    endTime?: string | null;
+    showEndTimePicker?: boolean;
     expanded: boolean;
     showTimePicker: boolean;
     showOccurrencePicker: boolean;
@@ -65,6 +74,8 @@ export interface ScheduleData {
     showFreqPicker: boolean;
     dailySameTime: boolean | null;
     dailySharedTime: string;
+    dailySharedEndTime?: string | null;
+    showDailySameEndTimePicker?: boolean;
     showDailySameTimePicker: boolean;
     dailyRows: WeekdayRow[];
     weekdayRows: WeekdayRow[];
@@ -87,6 +98,7 @@ export interface ScheduleData {
 export const isScheduleTabValid = (sch: ScheduleData): boolean => {
     if (!sch.frequency) return true;
     if (!sch.name.trim()) return false;
+    if (scheduleEndTimeError(sch)) return false;
     if (sch.maxAttendeesMode === "limited" && (sch.maxAttendeesInput === "" || getMaxAttendeesError(sch.maxAttendeesMode, sch.maxAttendeesInput))) return false;
     if (sch.frequency === "daily") return sch.dailySameTime !== null;
     if (sch.frequency === "weekly" || sch.frequency === "biweekly")
@@ -119,6 +131,7 @@ export const defaultSchedule = (name = ""): ScheduleData => ({
     showFreqPicker: false,
     dailySameTime: null,
     dailySharedTime: "05:00 PM",
+    dailySharedEndTime: null,
     showDailySameTimePicker: false,
     dailyRows: DAYS_OF_WEEK.map(dw => ({
         id: uid(), day: dw.value, time: "05:00 PM",

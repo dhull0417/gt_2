@@ -4,6 +4,8 @@ import InfoBubble from "@/components/InfoBubble";
 import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
 import NativeTimePicker from "@/components/NativeTimePicker";
+import EndTimeField from "@/components/EndTimeField";
+import { formatTimeRange } from "@/utils/timeString";
 import OptionPickerModal from "@/components/OptionPickerModal";
 import { CalendarPickerModal } from "@/components/create-group/CalendarPickerModal";
 import { StepDots } from "@/components/create-group/StepDots";
@@ -149,17 +151,19 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
     // ── Custom routines ───────────────────────────────────────────────────────
     const buildLabel = (freq: Frequency, dayTimes: DayTime[], ordEntries?: OrdinalEntry[]): string => {
         if (freq === "ordinal" && ordEntries?.length) {
-            const parts = ordEntries.slice(0, 2).map(e => `${e.occurrence} ${DAYS_OF_WEEK.find(dw => dw.value === e.day)?.short} @ ${e.time}`);
+            const parts = ordEntries.slice(0, 2).map(e => `${e.occurrence} ${DAYS_OF_WEEK.find(dw => dw.value === e.day)?.short} @ ${formatTimeRange(e.time, e.endTime)}`);
             return `Ordinal · ${parts.join(", ")}${ordEntries.length > 2 ? ` +${ordEntries.length - 2}` : ""}`;
         }
         const freqStr = FREQ_LABELS[freq] || freq;
         const parts = dayTimes.slice(0, 2).map(dt => {
-            if (dt.day !== undefined) return `${DAYS_OF_WEEK.find(dw => dw.value === dt.day)?.short} @ ${dt.time}`;
-            if (dt.date !== undefined) return `${dt.date}${ordSfx(dt.date)} @ ${dt.time}`;
+            if (dt.day !== undefined) return `${DAYS_OF_WEEK.find(dw => dw.value === dt.day)?.short} @ ${formatTimeRange(dt.time, dt.endTime)}`;
+            if (dt.date !== undefined) return `${dt.date}${ordSfx(dt.date)} @ ${formatTimeRange(dt.time, dt.endTime)}`;
             return "";
         });
         return `${freqStr} · ${parts.join(", ")}${dayTimes.length > 2 ? ` +${dayTimes.length - 2}` : ""}`;
     };
+
+    const withEnd = (endTime?: string | null) => (endTime ? { endTime } : {});
 
     const buildRoutineFromState = (): BuiltRoutine | null => {
         const freq = d.customFreq;
@@ -170,16 +174,16 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
 
         if (freq === "daily") {
             dayTimes = d.dailySameTime
-                ? DAYS_OF_WEEK.map(dw => ({ day: dw.value, time: d.dailySharedTime }))
-                : d.dailyRows.map(r => ({ day: r.day!, time: r.time }));
+                ? DAYS_OF_WEEK.map(dw => ({ day: dw.value, time: d.dailySharedTime, ...withEnd(d.dailySharedEndTime) }))
+                : d.dailyRows.map(r => ({ day: r.day!, time: r.time, ...withEnd(r.endTime) }));
         } else if (freq === "weekly" || freq === "biweekly") {
-            dayTimes = d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time, ...(r.startDate ? { startDate: r.startDate } : {}) }));
+            dayTimes = d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time, ...withEnd(r.endTime), ...(r.startDate ? { startDate: r.startDate } : {}) }));
         } else if (freq === "monthly") {
             if (d.monthlyMode === "date") {
-                dayTimes = d.monthlyDates.map(e => ({ date: e.date, time: e.time }));
+                dayTimes = d.monthlyDates.map(e => ({ date: e.date, time: e.time, ...withEnd(e.endTime) }));
             } else if (d.monthlyMode === "ordinal") {
                 finalFreq = "ordinal" as Frequency;
-                dayTimes = d.ordinalEntries.map(e => ({ day: e.day, time: e.time }));
+                dayTimes = d.ordinalEntries.map(e => ({ day: e.day, time: e.time, ...withEnd(e.endTime) }));
                 rules = d.ordinalEntries.map(e => ({ type: "byDay", occurrence: e.occurrence, day: e.day }));
             }
         }
@@ -193,10 +197,11 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
             snapshot: {
                 dailySameTime: d.dailySameTime,
                 dailySharedTime: d.dailySharedTime,
-                weekdayRows: d.weekdayRows.map(r => ({ ...r, showTimePicker: false })),
+                dailySharedEndTime: d.dailySharedEndTime ?? null,
+                weekdayRows: d.weekdayRows.map(r => ({ ...r, showTimePicker: false, showEndTimePicker: false })),
                 monthlyMode: d.monthlyMode,
-                monthlyDates: d.monthlyDates.map(e => ({ ...e, expanded: false, showTimePicker: false })),
-                ordinalEntries: d.ordinalEntries.map(e => ({ ...e, expanded: false, showTimePicker: false, showOccurrencePicker: false, showDayOfWeekPicker: false })),
+                monthlyDates: d.monthlyDates.map(e => ({ ...e, expanded: false, showTimePicker: false, showEndTimePicker: false })),
+                ordinalEntries: d.ordinalEntries.map(e => ({ ...e, expanded: false, showTimePicker: false, showEndTimePicker: false, showOccurrencePicker: false, showDayOfWeekPicker: false })),
             },
         };
     };
@@ -209,7 +214,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
             ...prev,
             builtRoutines: [...prev.builtRoutines, routine],
             customBuilding: false, customFreq: null, customShowFreqPicker: false,
-            weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null,
+            weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, dailySharedEndTime: null,
         }));
     };
 
@@ -225,6 +230,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                 customShowFreqPicker: false,
                 dailySameTime: r.snapshot.dailySameTime ?? null,
                 dailySharedTime: r.snapshot.dailySharedTime ?? "05:00 PM",
+                dailySharedEndTime: r.snapshot.dailySharedEndTime ?? null,
                 weekdayRows: r.snapshot.weekdayRows ?? [],
                 monthlyMode: r.snapshot.monthlyMode ?? null,
                 monthlyDates: r.snapshot.monthlyDates ?? [],
@@ -242,7 +248,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
             ...prev,
             builtRoutines: prev.builtRoutines.map(r => r.id === editingId ? { ...routine, id: editingId } : r),
             customBuilding: false, customFreq: null,
-            weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null,
+            weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, dailySharedEndTime: null,
         }));
     };
 
@@ -286,6 +292,10 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                         <NativeTimePicker value={d.dailySharedTime} onChange={t => upd({ dailySharedTime: t })}
                             onClose={() => upd({ showDailySameTimePicker: false })} />
                     )}
+                    <EndTimeField startTime={d.dailySharedTime} endTime={d.dailySharedEndTime}
+                        onChange={t => upd({ dailySharedEndTime: t })}
+                        open={!!d.showDailySameEndTimePicker} onOpenChange={o => upd({ showDailySameEndTimePicker: o })}
+                        labelStyle={s.fieldLabel} fieldStyle={s.dateFieldRow} textStyle={s.dateFieldText} />
                 </View>
             )}
 
@@ -318,6 +328,11 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                                         dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, showTimePicker: false } : r),
                                     }))} />
                             )}
+                            <EndTimeField startTime={row.time} endTime={row.endTime}
+                                onChange={t => setD(prev => ({ ...prev, dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, endTime: t } : r) }))}
+                                open={!!row.showEndTimePicker}
+                                onOpenChange={o => setD(prev => ({ ...prev, dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, showEndTimePicker: o } : { ...r, showEndTimePicker: false }) }))}
+                                labelStyle={s.fieldLabel} fieldStyle={s.dateFieldRow} textStyle={s.dateFieldText} />
                         </View>
                     ))}
                 </View>
@@ -369,6 +384,13 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                             onClose={() => updWeekdayRow(row.id, { showTimePicker: false })} />
                     )}
 
+                    {row.day !== null && (
+                        <EndTimeField startTime={row.time} endTime={row.endTime}
+                            onChange={t => updWeekdayRow(row.id, { endTime: t })}
+                            open={!!row.showEndTimePicker} onOpenChange={o => updWeekdayRow(row.id, { showEndTimePicker: o })}
+                            labelStyle={s.fieldLabel} fieldStyle={s.dateFieldRow} textStyle={s.dateFieldText} />
+                    )}
+
                     {isBiweekly && row.day !== null && (
                         <View style={{ marginTop: 8 }}>
                             <Text style={s.startDateLabel}>Start Date</Text>
@@ -417,7 +439,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
         <View key={entry.id} style={s.ordinalCard}>
             {!entry.expanded ? (
                 <PressableOpacity style={s.collapsedRuleRow} onPress={() => updMonthlyDate(entry.id, { expanded: true })}>
-                    <Text style={s.collapsedRuleText}>{entry.date}{ordSfx(entry.date)} of month · {entry.time}</Text>
+                    <Text style={s.collapsedRuleText}>{entry.date}{ordSfx(entry.date)} of month · {formatTimeRange(entry.time, entry.endTime)}</Text>
                     <View style={s.collapsedRuleActions}>
                         <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
                         <PressableOpacity onPress={() => removeMonthlyDate(entry.id)}>
@@ -448,8 +470,12 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                         <Text style={s.dateFieldText}>{entry.time}</Text>
                         <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </PressableOpacity>
+                    <EndTimeField startTime={entry.time} endTime={entry.endTime}
+                        onChange={t => updMonthlyDate(entry.id, { endTime: t })}
+                        open={!!entry.showEndTimePicker} onOpenChange={o => updMonthlyDate(entry.id, { showEndTimePicker: o })}
+                        labelStyle={s.fieldLabel} fieldStyle={s.dateFieldRow} textStyle={s.dateFieldText} />
                     <PressableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10 }]}
-                        onPress={() => updMonthlyDate(entry.id, { expanded: false, showTimePicker: false })}>
+                        onPress={() => updMonthlyDate(entry.id, { expanded: false, showTimePicker: false, showEndTimePicker: false })}>
                         <Text style={s.doneBtnText}>Done</Text>
                     </PressableOpacity>
                     {entry.showTimePicker && (
@@ -467,7 +493,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
             {!entry.expanded ? (
                 <PressableOpacity style={s.collapsedRuleRow} onPress={() => updOrdinal(entry.id, { expanded: true })}>
                     <Text style={s.collapsedRuleText}>
-                        {entry.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label} · {entry.time}
+                        {entry.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label} · {formatTimeRange(entry.time, entry.endTime)}
                     </Text>
                     <View style={s.collapsedRuleActions}>
                         <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
@@ -501,8 +527,12 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                         <Text style={s.dateFieldText}>{entry.time}</Text>
                         <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
                     </PressableOpacity>
+                    <EndTimeField startTime={entry.time} endTime={entry.endTime}
+                        onChange={t => updOrdinal(entry.id, { endTime: t })}
+                        open={!!entry.showEndTimePicker} onOpenChange={o => updOrdinal(entry.id, { showEndTimePicker: o, showOccurrencePicker: false, showDayOfWeekPicker: false })}
+                        labelStyle={s.fieldLabel} fieldStyle={s.dateFieldRow} textStyle={s.dateFieldText} />
                     <PressableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10 }]}
-                        onPress={() => updOrdinal(entry.id, { expanded: false, showTimePicker: false })}>
+                        onPress={() => updOrdinal(entry.id, { expanded: false, showTimePicker: false, showEndTimePicker: false })}>
                         <Text style={s.doneBtnText}>Done</Text>
                     </PressableOpacity>
                     {entry.showTimePicker && (

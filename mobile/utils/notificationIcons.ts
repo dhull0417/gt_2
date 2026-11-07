@@ -39,6 +39,7 @@ const NOTIFICATION_ICONS: Record<NotificationType, NotificationIconSpec> = {
   'poll-closed': { name: 'flag', color: '#6B7280' },
   'group-deleted': { name: 'trash-2', color: '#EF4444' },
   'schedule-removed': { name: 'calendar', color: '#F59E0B' },
+  'schedule-updated': { name: 'repeat', color: '#F59E0B' },
 };
 
 export const getNotificationIcon = (type: string): NotificationIconSpec =>

@@ -1,4 +1,5 @@
 import { syncPremiumForUser } from "../utils/revenuecat.js";
+import { applyMuteChange, muteEntryFor } from '../utils/groupMute.js';
 import asyncHandler from "express-async-handler";
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
@@ -26,7 +27,7 @@ const MAX_PUSH_TOKENS = 5;
  */
 export const toggleGroupMute = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
-  const { groupId, muteType } = req.body;
+  const { groupId, muteType, mutedTypes } = req.body;
 
   if (!groupId || !mongoose.Types.ObjectId.isValid(String(groupId))) {
     return res.status(400).json({ error: "A valid group ID is required." });
@@ -40,22 +41,22 @@ export const toggleGroupMute = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "User not found." });
   }
 
-  // clear both lists first to avoid duplicates/cross-over
-  user.mutedGroups = user.mutedGroups.filter(id => id.toString() !== groupId);
-  user.mutedUntilNextMeetup = user.mutedUntilNextMeetup.filter(id => id.toString() !== groupId);
-
-  // add to the requested list
-  if (muteType === 'indefinite') {
-    user.mutedGroups.push(groupId);
-  } else if (muteType === 'untilNext') {
-    user.mutedUntilNextMeetup.push(groupId);
+  // Missing muteType = unmute (as before). Missing mutedTypes = mute every kind.
+  try {
+    applyMuteChange(user, String(groupId), muteType ?? 'none', mutedTypes);
+  } catch (err) {
+    if (err.status === 400) return res.status(400).json({ error: err.message });
+    throw err;
   }
 
   await user.save();
 
-  res.status(200).json({ 
-    muteType,
-    message: muteType === 'none' ? "Notifications unmuted." : "Notifications muted." 
+  const entry = muteEntryFor(user, String(groupId));
+  res.status(200).json({
+    muted: !!entry,
+    muteType: entry ? muteType : 'none',
+    groupMutes: user.groupMutes,
+    message: entry ? "Notifications muted." : "Notifications unmuted."
   });
 });
 

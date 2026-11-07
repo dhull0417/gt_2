@@ -29,6 +29,8 @@ import { formatListTime } from '@/utils/listTime';
 import { haptic } from '@/utils/haptics';
 import { toast } from '@/contexts/ToastContext';
 import { getGroupImage } from '@/utils/groupDisplay';
+import { GroupMuteSheet } from '@/components/GroupMuteSheet';
+import { muteStateFor, type MuteState } from '@/utils/groupMute';
 
 const ACTION_WIDTH = 76;
 
@@ -180,46 +182,15 @@ const GroupScreen = () => {
     }
   };
 
-  const applyMute = async (group: Group, muteType: 'indefinite' | 'untilNext' | 'none') => {
-    closeAllSwipes();
-    setUserField((u) => ({
-      ...u,
-      mutedGroups: muteType === 'indefinite' ? [...(u.mutedGroups ?? []).filter((id) => id !== group._id), group._id] : (u.mutedGroups ?? []).filter((id) => id !== group._id),
-      mutedUntilNextMeetup: muteType === 'untilNext' ? [...(u.mutedUntilNextMeetup ?? []).filter((id) => id !== group._id), group._id] : (u.mutedUntilNextMeetup ?? []).filter((id) => id !== group._id),
-    }));
-    try {
-      await userApi.toggleGroupMute(api, group._id, muteType);
-      if (muteType === 'none') {
-        toast.success('Notifications back on');
-      } else {
-        toast.show({
-          message: muteType === 'untilNext' ? 'Muted until the next meetup' : 'Muted',
-          kind: 'success',
-          actionLabel: 'Undo',
-          onAction: () => { applyMute(group, 'none'); },
-        });
-      }
-    } catch {
-      refetchUser();
-      toast.error("Couldn't change notifications. Try again.");
-    }
-  };
-
-  const handleMutePress = (group: Group, isMuted: boolean) => {
+  // Swipe "Mute" opens the same mute sheet as the chat header bell.
+  const [muteSheetGroup, setMuteSheetGroup] = useState<Group | null>(null);
+  const handleMutePress = (group: Group) => {
     haptic.press();
-    if (isMuted) {
-      applyMute(group, 'none');
-      return;
-    }
     closeAllSwipes();
-    Alert.alert('Mute notifications', 'Stop notifications from this group?', [
-      { text: 'Mute', onPress: () => applyMute(group, 'indefinite') },
-      { text: 'Mute until next meetup', onPress: () => applyMute(group, 'untilNext') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setMuteSheetGroup(group);
   };
 
-  const renderRightActions = (group: Group, isMuted: boolean, isPinned: boolean) => () => (
+  const renderRightActions = (group: Group, muteState: MuteState, isPinned: boolean) => () => (
     <View style={{ flexDirection: 'row', alignItems: 'stretch', marginVertical: 8, marginLeft: 8, gap: 8 }}>
       <PressableOpacity
         haptic={false}
@@ -232,18 +203,18 @@ const GroupScreen = () => {
       </PressableOpacity>
       <PressableOpacity
         haptic={false}
-        onPress={() => handleMutePress(group, isMuted)}
-        accessibilityLabel={isMuted ? 'Unmute group' : 'Mute group'}
+        onPress={() => handleMutePress(group)}
+        accessibilityLabel={muteState.state === 'none' ? 'Mute group' : 'Change mute settings'}
         style={{ width: ACTION_WIDTH, borderRadius: 16, backgroundColor: colors.textMuted, alignItems: 'center', justifyContent: 'center' }}
       >
-        <Feather name={isMuted ? 'bell' : 'bell-off'} size={20} color="#fff" />
-        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 }}>{isMuted ? 'Unmute' : 'Mute'}</Text>
+        <Feather name={muteState.state === 'none' ? 'bell-off' : 'bell'} size={20} color="#fff" />
+        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 }}>{muteState.state === 'none' ? 'Mute' : 'Muted'}</Text>
       </PressableOpacity>
     </View>
   );
 
   const renderGroup = ({ item: group }: { item: Group }) => {
-    const isMuted = !!(currentUser?.mutedGroups?.includes(group._id) || currentUser?.mutedUntilNextMeetup?.includes(group._id));
+    const muteState = muteStateFor(currentUser, group._id);
     const isPinned = pinnedSet.has(group._id);
     const displayName = group.isDM ? getDMDisplayName(group, currentUser?.clerkId) : group.name;
     const lastReadAt = currentUser?.lastReadAt?.[group._id];
@@ -261,7 +232,7 @@ const GroupScreen = () => {
         <SwipeRow
           id={group._id}
           registry={swipeRefs}
-          renderRightActions={renderRightActions(group, isMuted, isPinned)}
+          renderRightActions={renderRightActions(group, muteState, isPinned)}
         >
           <PressableOpacity
             className="relative bg-white dark:bg-gray-900 px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800"
@@ -281,7 +252,8 @@ const GroupScreen = () => {
                   <Text className="text-lg font-bold text-gray-800 dark:text-gray-100 flex-1" numberOfLines={1}>
                     {displayName}
                   </Text>
-                  {isMuted && <Feather name="bell-off" size={14} color={colors.textFaint} style={{ marginLeft: 6 }} />}
+                  {muteState.state === 'full' && <Feather name="bell-off" size={14} color={colors.textFaint} style={{ marginLeft: 6 }} accessibilityLabel="Muted" />}
+                  {muteState.state === 'partial' && <Feather name="bell" size={14} color={colors.textFaint} style={{ marginLeft: 6, opacity: 0.7 }} accessibilityLabel="Some notifications muted" />}
                   {!!timeLabel && (
                     <Text style={{ marginLeft: 8, fontSize: 12, color: isUnread ? colors.brand : colors.textFaint, fontWeight: isUnread ? '700' : '500' }}>
                       {timeLabel}
@@ -370,6 +342,16 @@ const GroupScreen = () => {
           }
         />
       )}
+      <GroupMuteSheet
+        visible={!!muteSheetGroup}
+        group={muteSheetGroup ? {
+          _id: muteSheetGroup._id,
+          name: muteSheetGroup.isDM ? getDMDisplayName(muteSheetGroup, currentUser?.clerkId) : muteSheetGroup.name,
+          isDM: muteSheetGroup.isDM,
+        } : null}
+        currentUser={currentUser}
+        onClose={() => setMuteSheetGroup(null)}
+      />
     </SafeAreaView>
   );
 };

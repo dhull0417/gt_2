@@ -10,6 +10,10 @@ const meetupSchema = new mongoose.Schema({
   name: { type: String, required: true },
   date: { type: Date, required: true },
   time: { type: String, required: true },
+  // Optional end time ("08:00 PM") and the exact moment it ends (next day when earlier
+  // than `time`). Without one, the meetup is treated as lasting 1 hour.
+  endTime: { type: String, default: null },
+  endsAt: { type: Date, default: null },
   timezone: { type: String, required: true },
   location: { type: String, trim: true, default: "" },
   description: { type: String, trim: true, default: "" },

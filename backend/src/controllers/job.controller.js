@@ -12,6 +12,8 @@ import { evaluateDueMeetups } from "../utils/minimumHeadcount.js";
 import { notifyOpenTiers } from "../utils/priorityRsvp.js";
 import Notification from "../models/notification.model.js";
 import { postSystemMessage } from "../utils/systemMessage.js";
+import { clearNextMeetupMutesUpdate } from "../utils/groupMute.js";
+import { expiryFilter } from "../utils/meetupEndTime.js";
 
 /**
  * @desc    Generate meetups for groups whose nextGenerationAt is now due.
@@ -48,20 +50,18 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
   res.status(200).json({ generated: generatedCount, failed: failedCount, message: "Regeneration complete." });
 });
 
-// Meetups stay "happening now" for this long after startsAt before expiring — mirrors MEETUP_ACTIVE_DURATION_MS in mobile/utils/meetupStatus.ts.
-const MEETUP_ACTIVE_DURATION_MS = 60 * 60 * 1000;
-
 /**
- * @desc    Expire meetups whose active window (startsAt + 1hr) has passed.
- *          Uses startsAt for a single atomic DB operation — no JS loop.
+ * @desc    Expire meetups that are over: past their end time (endsAt), or 1 hour after
+ *          start when they have none (mirrors meetupEndInstant in mobile/utils/meetupTime.ts).
+ *          A single atomic DB operation — no JS loop.
  * @route   POST /api/jobs/expire-meetups
  */
 export const expirePastMeetups = asyncHandler(async (req, res) => {
   const now = new Date();
-  const cutoff = new Date(now.getTime() - MEETUP_ACTIVE_DURATION_MS);
+  const filter = expiryFilter(now);
 
   const toExpire = await Meetup.find(
-    { status: 'scheduled', startsAt: { $lte: cutoff } },
+    filter,
     'group'
   );
 
@@ -72,15 +72,13 @@ export const expirePastMeetups = asyncHandler(async (req, res) => {
   const groupIds = [...new Set(toExpire.map(m => m.group.toString()))];
 
   const result = await Meetup.updateMany(
-    { status: 'scheduled', startsAt: { $lte: cutoff } },
+    filter,
     { $set: { status: 'expired' } }
   );
 
   if (groupIds.length > 0) {
-    await User.updateMany(
-      { mutedUntilNextMeetup: { $in: groupIds } },
-      { $pull: { mutedUntilNextMeetup: { $in: groupIds } } }
-    );
+    const { filter, update } = clearNextMeetupMutesUpdate(groupIds);
+    await User.updateMany(filter, update);
     console.log(`[Expire] Unmuted users for ${groupIds.length} group(s).`);
   }
 
@@ -213,8 +211,7 @@ export const notifyMeetupReminder = asyncHandler(async (req, res) => {
     const recipients = await User.find({
       _id: { $in: recipientIds },
       expoPushToken: { $exists: true, $ne: null },
-      mutedGroups: { $ne: meetup.group },
-      mutedUntilNextMeetup: { $ne: meetup.group },
+      // Group mutes are applied per kind inside notifyAndPersist.
     });
 
     if (recipients.length > 0) {
@@ -312,8 +309,7 @@ export const notifyRsvpReminderStages = asyncHandler(async (req, res) => {
     const recipients = await User.find({
       _id: { $in: meetup.undecided },
       expoPushToken: { $exists: true, $ne: null },
-      mutedGroups: { $ne: meetup.group },
-      mutedUntilNextMeetup: { $ne: meetup.group },
+      // Group mutes are applied per kind inside notifyAndPersist.
     });
 
     if (recipients.length > 0) {

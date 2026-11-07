@@ -1,22 +1,22 @@
 import { Meetup } from '@/utils/api';
-import { formatInstantTime, viewerZone } from '@/utils/meetupTime';
+import { formatInstantTime, viewerZone, meetupEndInstant, DEFAULT_MEETUP_DURATION_MS } from '@/utils/meetupTime';
 
-/** A meetup stays "happening now" for this long after its start time before it's treated as past. */
-export const MEETUP_ACTIVE_DURATION_MS = 60 * 60 * 1000;
+/** Without an end time, a meetup stays "happening now" this long after its start before it's past. */
+export const MEETUP_ACTIVE_DURATION_MS = DEFAULT_MEETUP_DURATION_MS;
 
 export interface MeetupStatusFlags {
   isCancelled: boolean;
-  /** True once the meetup's active window (start -> start + 1hr) has elapsed. */
+  /** True once the meetup has ended (its end time, or start + 1hr without one). */
   isPast: boolean;
   isExpired: boolean;
-  /** True while now is within the meetup's start time and start time + 1hr. */
+  /** True between the meetup's start and its end (end time, or start + 1hr). */
   isHappeningNow: boolean;
   isReadOnly: boolean;
 }
 
 export const getMeetupStatus = (meetup: Meetup, now: Date = new Date()): MeetupStatusFlags => {
   const start = new Date(meetup.date);
-  const end = new Date(start.getTime() + MEETUP_ACTIVE_DURATION_MS);
+  const end = meetupEndInstant(meetup);
 
   const isCancelled = meetup.status === 'cancelled';
   // Time-based, not server `status` — the backend only flips to 'expired' via a

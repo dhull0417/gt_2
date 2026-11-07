@@ -7,6 +7,7 @@ export const styles = StyleSheet.create({
     // Fixed minHeight reserves room for the location line so header height never shifts.
     headerTitleContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
     headerTitle: { fontSize: 14, fontWeight: '900', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 },
+    headerTime: { fontSize: 13, marginTop: 2 },
     headerLocationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, maxWidth: '100%', flexShrink: 1 },
     headerLocationTextWrap: { flexShrink: 1 },
     headerLocationInnerRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },

@@ -41,3 +41,18 @@ test('pickRecipients: multi-device tokens count, chat switch off blocks everythi
   assert.deepEqual(r.normal.map((u) => u.clerkId), ['tab', 'on']);
   assert.deepEqual(r.mention.map((u) => u.clerkId), []);
 });
+
+test('pickRecipients: per-kind group mutes (only a chat mute stops chat; mentions still cut through)', () => {
+  const g = '64b000000000000000000001';
+  const m = (clerkId, extra = {}) => ({ clerkId, expoPushToken: 'ExponentPushToken[x]', ...extra });
+  const mute = (mutedTypes) => ({ groupMutes: [{ group: g, until: 'indefinite', mutedTypes }] });
+  const members = [
+    m('rsvpsOnly', mute(['rsvps'])),
+    m('chatMuted', mute(['chat', 'polls'])),
+    m('chatMutedMentioned', mute(['chat'])),
+    m('mentionedButChatOff', { ...mute(['chat']), notificationPrefs: { chat: false } }),
+  ];
+  const r = pickRecipients(members, { senderClerkId: 'x', mentions: ['chatMutedMentioned', 'mentionedButChatOff'], groupId: g });
+  assert.deepEqual(r.normal.map((u) => u.clerkId), ['rsvpsOnly']);
+  assert.deepEqual(r.mention.map((u) => u.clerkId), ['chatMutedMentioned']);
+});

@@ -69,6 +69,19 @@ const userSchema = new mongoose.Schema(
                 ref: "Group",
             },
         ],
+        // Per-group mutes set by app 1.4+: which kinds of the group's pushes are muted and for
+        // how long (see utils/groupMute.js). A full mute is also mirrored into mutedGroups /
+        // mutedUntilNextMeetup for 1.3.x apps.
+        groupMutes: {
+            type: [{
+                _id: false,
+                group: { type: mongoose.Schema.Types.ObjectId, ref: "Group", required: true },
+                until: { type: String, enum: ["indefinite", "nextMeetup"], default: "indefinite" },
+                mutedTypes: { type: [String], default: [] },
+                updatedAt: { type: Date, default: Date.now },
+            }],
+            default: [],
+        },
         // group ids pinned to the top of the member's Groups list
         pinnedGroups: [
             {

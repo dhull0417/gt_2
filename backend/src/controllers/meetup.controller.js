@@ -15,6 +15,8 @@ import { notifyAndPersist } from "../utils/push.notifications.js";
 import { groupHasPremium, withGroupPremium } from "../utils/premium.js";
 import { flags } from "../utils/featureFlags.js";
 import { evaluateMinimumHeadcount, evaluateDueMeetups } from "../utils/minimumHeadcount.js";
+import { meetupChanges, pushBody } from "../utils/changeSummary.js";
+import { applyEndTimeEdit, isMeetupOver } from "../utils/meetupEndTime.js";
 import { pruneAnswers, MAX_ANSWER_LENGTH } from "../utils/rsvpQuestions.js";
 import { canRsvpNow, userOpensAt, userTierIndex, chooseBumpVictim, pickWaitlistIndex, notifyOpenTiers, resolveRsvpOpen } from "../utils/priorityRsvp.js";
 
@@ -94,7 +96,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     }
 
     // You can only RSVP to a meetup you belong to, and only while it is still on.
-    const meetupToCheck = await Meetup.findById(meetupId).select('members status date startsAt').lean();
+    const meetupToCheck = await Meetup.findById(meetupId).select('members status date startsAt endsAt').lean();
     if (!meetupToCheck) return res.status(404).json({ error: "Meetup not found." });
     if (!meetupToCheck.members.some(id => id.toString() === requester._id.toString())) {
         return res.status(403).json({ error: "You are not a member of this meetup." });
@@ -102,7 +104,8 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     if (meetupToCheck.status !== 'scheduled') {
         return res.status(400).json({ error: meetupToCheck.status === 'cancelled' ? "This meetup was cancelled." : "This meetup is over." });
     }
-    if (new Date(meetupToCheck.startsAt || meetupToCheck.date) < new Date(Date.now() - 60 * 60 * 1000)) {
+    // Open until the meetup's end time (or 1 hour after start without one), like the app shows.
+    if (isMeetupOver(meetupToCheck)) {
         return res.status(400).json({ error: "This meetup is over." });
     }
 
@@ -409,6 +412,7 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     const { 
         date, 
         time,
+        endTime, // undefined = unchanged, null/"" = clear
         // timezone is intentionally omitted from destructuring
         capacity,
         location,
@@ -434,11 +438,12 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     const groupTimezone = meetup.group.timezone;
 
     // Store old values for notification check
-    const oldDateStr = new Date(meetup.date).toLocaleDateString('en-US', { timeZone: groupTimezone });
-    const oldTime = meetup.time;
-    const oldLocation = meetup.location;
     const oldCapacity = meetup.capacity;
     const originalSlot = { date: meetup.date, time: meetup.time };
+    const before = {
+        date: meetup.date, time: meetup.time, endTime: meetup.endTime || null, timezone: groupTimezone,
+        location: meetup.location, capacity: meetup.capacity, description: meetup.description,
+    };
 
     // --- Partial Update & Validation ---
     // A plain "YYYY-MM-DD" is a calendar day in the GROUP's timezone (what the app now sends);
@@ -512,6 +517,10 @@ export const updateMeetup = asyncHandler(async (req, res) => {
         meetup.rsvpReminderStagesSent = [];
     }
 
+    // End time: also re-derives endsAt when only the date/start moved.
+    const endEdit = applyEndTimeEdit(meetup, endTime);
+    if (endEdit.error) return res.status(400).json({ error: endEdit.error });
+
     meetup.isOverride = true;
     try {
         await meetup.save();
@@ -537,33 +546,28 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     }
 
     // --- Notification Logic ---
-    const newDateStr = new Date(meetup.date).toLocaleDateString('en-US', { timeZone: groupTimezone });
-    const dateOrTimeChanged = oldDateStr !== newDateStr || oldTime !== meetup.time;
-    const locationChanged = location !== undefined && oldLocation !== meetup.location;
-    const capacityChanged = capacity !== undefined && oldCapacity !== meetup.capacity;
+    // Says exactly what changed and what it is now (only fields whose shown value differs).
+    const changes = meetupChanges(before, {
+        date: meetup.date, time: meetup.time, endTime: meetup.endTime || null, timezone: groupTimezone,
+        location: meetup.location, capacity: meetup.capacity, description: meetup.description,
+    });
 
-    // lets the bell-icon list say exactly what changed
-    const changedFields = [
-        ...(dateOrTimeChanged ? ['schedule'] : []),
-        ...(locationChanged ? ['location'] : []),
-        ...(capacityChanged ? ['capacity'] : []),
-    ];
-
-    if (changedFields.length > 0) {
-        const fieldLabels = { schedule: 'date and time', location: 'location', capacity: 'capacity' };
-        const changeSummary = changedFields.map(f => fieldLabels[f]).join(' and ');
+    if (changes.length > 0) {
+        // 1.3.x apps read these names for their own "what changed" line
+        const legacyFields = { when: 'schedule', location: 'location', capacity: 'capacity', description: 'description' };
+        const changedFields = changes.map(c => legacyFields[c.field]);
 
         const membersToNotify = await User.find({ _id: { $in: meetup.members } });
         if (membersToNotify.length > 0) {
             await notifyAndPersist(membersToNotify, {
                 title: `Meetup Updated: ${meetup.name}`,
-                body: `The ${changeSummary} for "${meetup.name}" changed. Tap to see what's new.`,
+                body: pushBody(changes),
                 data: { meetupId: meetup._id.toString(), type: 'meetup_updated' },
                 type: 'meetup-updated',
                 sender: requester._id,
                 meetup: meetup._id,
                 group: meetup.group._id,
-                meta: { changedFields },
+                meta: { changedFields, changes },
             });
         }
     }
