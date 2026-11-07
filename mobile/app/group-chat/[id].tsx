@@ -18,6 +18,7 @@ import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { nextJumpStep, takeJumpRequest } from '@/utils/chatJump';
+import { CHAT_LOAD_LIMIT_MS, chatLoadState } from '@/utils/chatLoadState';
 import { toast } from '@/contexts/ToastContext';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
@@ -211,7 +212,7 @@ const GroupChatScreen = () => {
 
   const {
     messages, loading, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage,
-    fetchOlder, loadingOlder, reachedStart,
+    fetchOlder, loadingOlder, reachedStart, refetch: refetchMessages,
   } = useMessages(id ?? '');
   const { typingNames, handleTyping, clearTypingFor } = useTypingIndicator(id ?? '', senderId, senderName);
   const { pins, pinMessage, unpinMessage } = usePinnedMessages(id ?? '');
@@ -664,6 +665,30 @@ const GroupChatScreen = () => {
 
   const chatContentReady = contentReady && !!effectiveGroup && !!currentUser;
 
+  // If something never loads, show an error with Retry after a while instead of a blank screen
+  // forever (a tester saw a chat stay white even after restarting the app).
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  useEffect(() => {
+    setLoadTimedOut(false);
+    if (chatContentReady) return;
+    const t = setTimeout(() => setLoadTimedOut(true), CHAT_LOAD_LIMIT_MS);
+    return () => clearTimeout(t);
+  }, [chatContentReady, loadAttempt, id]);
+  const loadState = chatLoadState({
+    hasGroup: !!effectiveGroup,
+    hasUser: !!currentUser,
+    messagesReady: contentReady,
+    elapsedMs: loadTimedOut ? CHAT_LOAD_LIMIT_MS : 0,
+  });
+  const retryLoad = () => {
+    queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+    queryClient.invalidateQueries({ queryKey: ['groups'] });
+    queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+    refetchMessages();
+    setLoadAttempt((n) => n + 1);
+  };
+
   // Pastel status-chip colors (icon buttons + mute options) adapt background/border by
   // scheme while keeping the same hue family, mirroring MeetupCard's RSVP tint treatment.
   const mutedChip = { backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2', borderColor: isDark ? '#5C2E2E' : '#FECACA' };
@@ -910,8 +935,30 @@ const GroupChatScreen = () => {
         </KeyboardAvoidingView>
 
         {!chatContentReady && (
-          <View style={[styles.loadingContainer, { backgroundColor: colors.background }, StyleSheet.absoluteFillObject]} pointerEvents="none">
-            <LoadingAnimation />
+          <View
+            style={[styles.loadingContainer, { backgroundColor: colors.background }, StyleSheet.absoluteFillObject]}
+            pointerEvents={loadState.state === 'failed' ? 'auto' : 'none'}
+          >
+            {loadState.state === 'failed' ? (
+              <View style={{ alignItems: 'center', paddingHorizontal: 32 }}>
+                <Feather name="wifi-off" size={30} color={colors.textFaint} />
+                <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginTop: 12 }}>Couldn't load this chat</Text>
+                {/* Says which piece never arrived, so a screenshot tells us why. */}
+                <Text style={{ fontSize: 12, color: colors.textFaint, marginTop: 6, textAlign: 'center' }}>
+                  Still waiting for: {loadState.missing.join(', ')}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+                  <PressableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={handleBack}>
+                    <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600' }}>Back</Text>
+                  </PressableOpacity>
+                  <PressableOpacity style={[chatStyles.saveBtn, { backgroundColor: colors.brand }]} onPress={retryLoad}>
+                    <Text style={{ fontSize: 15, color: '#fff', fontWeight: '600' }}>Retry</Text>
+                  </PressableOpacity>
+                </View>
+              </View>
+            ) : (
+              <LoadingAnimation />
+            )}
           </View>
         )}
       </View>
