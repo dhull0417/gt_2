@@ -12,6 +12,7 @@ import { useThemeColors } from '@/contexts/AppearanceContext';
 import { getSupabaseClient } from '@/utils/supabase';
 import { ChatImageViewer } from '@/components/ChatImageViewer';
 import type { ChatMessage } from '@/types/chat';
+import { requestJump } from '@/utils/chatJump';
 
 const SEARCH_LIMIT = 50;
 const PHOTO_PAGE = 60;
@@ -180,7 +181,15 @@ export default function ChatSearchScreen() {
           }
           ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 16 }} />}
           renderItem={({ item }) => (
-            <View style={styles.result}>
+            <PressableOpacity
+              style={styles.result}
+              accessibilityLabel={`Message from ${item.sender_name}. Show in chat.`}
+              onPress={() => {
+                // Back to the chat, which pages in history until this message is on screen.
+                requestJump(groupId, item.id);
+                router.back();
+              }}
+            >
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textMuted }}>{item.sender_name}</Text>
                 <Text style={{ fontSize: 12, color: colors.textFaint }}>
@@ -188,7 +197,7 @@ export default function ChatSearchScreen() {
                 </Text>
               </View>
               <Highlighted text={item.content} query={query} color={colors.textPrimary} hi={colors.brandSoft} />
-            </View>
+            </PressableOpacity>
           )}
         />
       ) : (

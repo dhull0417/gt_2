@@ -64,10 +64,12 @@ export function useMessages(groupId: string) {
 
   // Loads the page of messages just before the oldest one we have. Keyset on (created_at, id)
   // so messages sharing a timestamp are never skipped or repeated.
-  const fetchOlder = useCallback(async () => {
-    if (loadingOlderRef.current || reachedStartRef.current) return;
+  // Resolves to how many older messages were added, -1 if the request failed, or null if it
+  // didn't run (already loading, or the start of the chat is already loaded).
+  const fetchOlder = useCallback(async (): Promise<number | null> => {
+    if (loadingOlderRef.current || reachedStartRef.current) return null;
     const oldest = queryClient.getQueryData<ChatMessage[]>(queryKey)?.[0];
-    if (!oldest) return;
+    if (!oldest) return null;
     loadingOlderRef.current = true;
     setLoadingOlder(true);
     try {
@@ -88,8 +90,10 @@ export function useMessages(groupId: string) {
       if (rows.length > 0) {
         queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) => mergeOlderPage(prev, rows));
       }
+      return rows.length;
     } catch {
       // Leave it: scrolling to the top again retries.
+      return -1;
     } finally {
       loadingOlderRef.current = false;
       setLoadingOlder(false);

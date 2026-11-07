@@ -7,9 +7,12 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  interpolateColor,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
+  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -48,6 +51,8 @@ interface Props {
   isLast?: boolean;
   // Clerk id -> display name, to render "@Name" mentions highlighted.
   mentionNames?: Record<string, string>;
+  // Briefly tints the row (about 1.5 s) after jumping to this message from search or a pin.
+  flash?: boolean;
 }
 
 const MAX_IMAGE_WIDTH = 240;
@@ -92,6 +97,7 @@ function ChatMessageBubbleBase({
   isFirst = true,
   isLast = true,
   mentionNames,
+  flash,
 }: Props) {
   const colors = useThemeColors();
   const isDeleted = !!message.deleted_at;
@@ -171,6 +177,20 @@ function ChatMessageBubbleBase({
     ],
   }));
 
+  // --- Flash after a jump: fade a tint in, hold, fade out (1500 ms in all) ---
+  const flashValue = useSharedValue(0);
+  useEffect(() => {
+    if (!flash) return;
+    flashValue.value = withSequence(
+      withTiming(1, { duration: 200 }),
+      withDelay(1100, withTiming(0, { duration: 200 }))
+    );
+  }, [flash, flashValue]);
+  const flashTint = colors.brandSoft;
+  const flashStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(flashValue.value, [0, 1], ['rgba(0,0,0,0)', flashTint]),
+  }));
+
   // --- Highlight while the press-and-hold menu is open for this message ---
   const highlight = useSharedValue(1);
   useEffect(() => {
@@ -217,7 +237,7 @@ function ChatMessageBubbleBase({
 
   return (
     <Animated.View
-      style={[styles.row, { marginTop: isFirst ? 5 : 1, marginBottom: isLast ? 5 : 1 }, isOwn && styles.rowOwn, entranceStyle]}
+      style={[styles.row, { marginTop: isFirst ? 5 : 1, marginBottom: isLast ? 5 : 1 }, isOwn && styles.rowOwn, entranceStyle, flashStyle]}
     >
       <Animated.View style={[styles.replyHint, replyIconStyle]} pointerEvents="none">
         <Feather name="corner-up-left" size={16} color={colors.brand} />
@@ -405,5 +425,6 @@ export const ChatMessageBubble = React.memo(ChatMessageBubbleBase, (a, b) =>
   a.isFirst === b.isFirst &&
   a.isLast === b.isLast &&
   a.skipEntrance === b.skipEntrance &&
-  a.mentionNames === b.mentionNames
+  a.mentionNames === b.mentionNames &&
+  a.flash === b.flash
 );

@@ -16,7 +16,9 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { nextJumpStep, takeJumpRequest } from '@/utils/chatJump';
+import { toast } from '@/contexts/ToastContext';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
@@ -402,6 +404,83 @@ const GroupChatScreen = () => {
     requestAnimationFrame(() => requestAnimationFrame(() => setContentReady(true)));
   }, [messages.length, contentReady, scrollToBottom]);
 
+  // --- Jump to a message (from search or the pinned list) ---
+  // Older history is paged in until the message is loaded, then it's scrolled into view and flashed.
+  // While jumping, the list must not follow new content down to the bottom.
+  const [jumpTarget, setJumpTarget] = useState<string | null>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const jumpingRef = useRef(false);
+  const jumpPagesRef = useRef(0);
+  const pendingScrollRef = useRef<{ sectionIndex: number; itemIndex: number; viewPosition: number; animated: boolean } | null>(null);
+  const jumpRetryRef = useRef(0);
+  const jumpFetchingRef = useRef(false);
+  const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const endJump = useCallback((message?: string) => {
+    if (message) toast.show({ message, kind: 'info' });
+    if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
+    setJumpTarget(null);
+    // Keep auto-follow off until the jump's scroll has settled.
+    setTimeout(() => { jumpingRef.current = false; pendingScrollRef.current = null; }, 1000);
+  }, []);
+
+  const startJump = useCallback((messageId: string) => {
+    jumpPagesRef.current = 0;
+    jumpFetchingRef.current = false;
+    jumpingRef.current = true;
+    isNearBottomRef.current = false;
+    setJumpTarget(messageId);
+    // Never leave the chat stuck with auto-follow off if paging stalls.
+    if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
+    jumpTimerRef.current = setTimeout(() => endJump("Couldn't load that message."), 15_000);
+  }, [endJump]);
+
+  // The search screen leaves its jump request behind and goes back to this screen.
+  useFocusEffect(useCallback(() => {
+    if (!id) return;
+    const target = takeJumpRequest(id);
+    if (target) startJump(target);
+  }, [id, startJump]));
+
+  useEffect(() => {
+    if (!jumpTarget || !contentReady) return;
+    const step = nextJumpStep({ messages, targetId: jumpTarget, pagesLoaded: jumpPagesRef.current, reachedStart });
+    if (step === 'loadMore') {
+      if (loadingOlder || jumpFetchingRef.current) return;
+      jumpFetchingRef.current = true;
+      jumpPagesRef.current += 1;
+      fetchOlder().then((added) => {
+        jumpFetchingRef.current = false;
+        // A failed page: stop rather than retry 20 times. Otherwise the new messages (or the
+        // start of the chat) re-run this effect for the next step.
+        if (added === -1) endJump("Couldn't load older messages. Check your connection.");
+        // Didn't run because a scroll-triggered load was in flight: count it as not done.
+        else if (added === null) jumpPagesRef.current -= 1;
+      });
+      return;
+    }
+    if (step === 'found') {
+      const sectionIndex = sections.findIndex((s) => s.data.some((m) => m.id === jumpTarget));
+      const itemIndex = sectionIndex >= 0 ? sections[sectionIndex].data.findIndex((m) => m.id === jumpTarget) : -1;
+      if (sectionIndex >= 0 && itemIndex >= 0) {
+        const params = { sectionIndex, itemIndex, viewPosition: 0.5, animated: true };
+        pendingScrollRef.current = params;
+        jumpRetryRef.current = 0;
+        // Let the rows that were just paged in lay out first.
+        requestAnimationFrame(() => sectionListRef.current?.scrollToLocation(params));
+        const target = jumpTarget;
+        setFlashId(target);
+        setTimeout(() => setFlashId((f) => (f === target ? null : f)), 1600);
+        if (messages.find((m) => m.id === target)?.deleted_at) {
+          toast.show({ message: 'That message was deleted.', kind: 'info' });
+        }
+      }
+      endJump();
+    } else {
+      endJump(step === 'tooFar' ? 'That message is too far back to jump to.' : "Couldn't find that message.");
+    }
+  }, [jumpTarget, contentReady, messages, reachedStart, loadingOlder, fetchOlder, sections, endJump]);
+
   // A genuinely empty chat has nothing to position — reveal the empty state immediately.
   useEffect(() => {
     if (!loading && messages.length === 0) setContentReady(true);
@@ -435,7 +514,7 @@ const GroupChatScreen = () => {
   // Re-anchor on list height change — the real signal a keyboard-driven resize has landed,
   // unlike guessing a delay off the keyboard event (which fires before resize finishes).
   useEffect(() => {
-    if (listHeight > 0) scrollToBottom(true);
+    if (listHeight > 0 && !jumpingRef.current) scrollToBottom(true);
   }, [listHeight]);
 
   const isOwnSelected = selectedMessage?.sender_id === senderId;
@@ -691,6 +770,7 @@ const GroupChatScreen = () => {
                   onPendingPress={() => handlePendingPressRef.current(item)}
                   onSwipeReply={() => setReplyingTo(item)}
                   skipEntrance={initialMessageIdsRef.current?.has(item.id) ?? false}
+                  flash={flashId === item.id}
                 />
               )}
               renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}
@@ -708,6 +788,16 @@ const GroupChatScreen = () => {
               // Keeps the message you were reading in place when an older page is added above it.
               maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
               stickySectionHeadersEnabled
+              onScrollToIndexFailed={(info) => {
+                // The rows above the jump target haven't been measured yet: scroll near the
+                // estimate so they render, then try again (a few times at most).
+                sectionListRef.current?.getScrollResponder()?.scrollTo({ y: info.averageItemLength * info.index, animated: false });
+                const params = pendingScrollRef.current;
+                if (params && jumpRetryRef.current < 3) {
+                  jumpRetryRef.current += 1;
+                  setTimeout(() => sectionListRef.current?.scrollToLocation(params), 250);
+                }
+              }}
               contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}
               ListEmptyComponent={
                 <View style={chatStyles.center}>
@@ -715,6 +805,7 @@ const GroupChatScreen = () => {
                 </View>
               }
               onContentSizeChange={() => {
+                if (jumpingRef.current) return;
                 // Follow content growth only during the initial reveal or while the user is at the
                 // bottom. Jumping down unconditionally yanked people out of history they were
                 // reading whenever an image loaded, a reaction landed, or a message arrived.
@@ -858,6 +949,10 @@ const GroupChatScreen = () => {
         pins={pins}
         onClose={() => setPinnedModalVisible(false)}
         canUnpin={canPin}
+        onJump={(m) => {
+          setPinnedModalVisible(false);
+          startJump(m.id);
+        }}
         onUnpin={(m) => {
           unpinMessage(m, senderId).catch((err: any) => Alert.alert('Unpin failed', err?.message ?? 'Could not unpin.'));
         }}

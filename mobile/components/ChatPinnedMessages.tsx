@@ -38,9 +38,11 @@ interface ModalProps {
   onClose: () => void;
   canUnpin: boolean;
   onUnpin: (m: ChatMessage) => void;
+  /** Tapping a pin shows it in the thread. */
+  onJump?: (m: ChatMessage) => void;
 }
 
-export function ChatPinnedModal({ visible, pins, onClose, canUnpin, onUnpin }: ModalProps) {
+export function ChatPinnedModal({ visible, pins, onClose, canUnpin, onUnpin, onJump }: ModalProps) {
   const colors = useThemeColors();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -61,12 +63,12 @@ export function ChatPinnedModal({ visible, pins, onClose, canUnpin, onUnpin }: M
             ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />}
             renderItem={({ item }) => (
               <View style={styles.item}>
-                <View style={{ flex: 1 }}>
+                <PressableOpacity style={{ flex: 1 }} disabled={!onJump} onPress={() => onJump?.(item)} accessibilityLabel="Show in chat">
                   <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMuted }}>
                     {item.sender_name} · {new Date(item.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                   </Text>
                   <Text style={{ fontSize: 15, color: colors.textPrimary, marginTop: 2 }}>{summary(item)}</Text>
-                </View>
+                </PressableOpacity>
                 {canUnpin && (
                   <PressableOpacity onPress={() => onUnpin(item)} hitSlop={8} accessibilityLabel="Unpin">
                     <Feather name="x-circle" size={20} color={colors.textFaint} />
