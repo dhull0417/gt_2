@@ -5,6 +5,9 @@ import { AxiosInstance } from "axios";
 import { getSupabaseClient } from "./supabase";
 import { requestImageCrop } from "../components/ImageCropperHost";
 import { reportPermissionStatus } from "./permissions";
+import { PhotoReadError } from "./photoErrors";
+
+export { PhotoReadError };
 
 type Bucket = "profile-pictures" | "group-images" | "chat-images";
 
@@ -106,21 +109,27 @@ function offerSettings() {
   );
 }
 
-/** Opens the image picker; returns a local URI (no upload). Android skips native allowsEditing (its toolbar has no visible confirm/cancel) and uses ImageCropperHost instead. */
+/**
+ * Opens the image picker, then our own square cropper (ImageCropperHost); returns a local URI (no upload).
+ * The system crop step isn't used on either platform: on Android its toolbar has no visible confirm/cancel,
+ * and on iPhone its "Choose" button hangs on photos stored in iCloud until they finish downloading
+ * (testers had to try up to 6 times). Throws PhotoReadError when the photo can't be read or cropped.
+ */
 export async function pickImageUri(api?: AxiosInstance): Promise<string | null> {
   const hasPermission = await ensurePhotoLibraryPermission(api);
   if (!hasPermission) return null;
 
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ["images"],
-    quality: 1,
-    ...(Platform.OS === "ios" ? { allowsEditing: true, aspect: [1, 1] as [number, number] } : {}),
-  });
+  let result: ImagePicker.ImagePickerResult;
+  try {
+    result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1 });
+  } catch (e) {
+    throw new PhotoReadError(e);
+  }
   if (result.canceled) return null;
 
   const asset = result.assets[0];
-  if (Platform.OS !== "android") return asset.uri;
-
+  // iOS: let the picker finish dismissing first, or the cropper's modal can fail to appear.
+  if (Platform.OS === "ios") await new Promise((r) => setTimeout(r, 400));
   return requestImageCrop(asset.uri, asset.width, asset.height);
 }
 

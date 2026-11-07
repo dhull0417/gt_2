@@ -230,7 +230,13 @@ const GroupSettings = () => {
   const avatarPopScale = useRef(new Animated.Value(1)).current;
 
   const handlePickNewImage = async () => {
-    const uri = await pickImageUri(api);
+    let uri: string | null = null;
+    try {
+      uri = await pickImageUri(api);
+    } catch {
+      Alert.alert("Couldn't use that photo", "Couldn't read that photo. Try another one.");
+      return;
+    }
     if (uri) {
       setPreviewUri(uri);
       avatarPopScale.setValue(1);

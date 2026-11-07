@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { PhotoReadError } from '@/utils/photoErrors';
 
 const MAX_ZOOM = 4;
 function clamp(value: number, min: number, max: number) {
@@ -19,11 +20,13 @@ type CropRequest = {
   width: number;
   height: number;
   resolve: (uri: string | null) => void;
+  reject: (err: Error) => void;
 };
 
 let showCropper: ((uri: string, width: number, height: number) => Promise<string | null>) | null = null;
 
-/** Opens the crop UI for a picked photo. Resolves with the cropped local URI, or null if canceled. */
+/** Opens the crop UI for a picked photo. Resolves with the cropped local URI, or null if canceled;
+ *  rejects with PhotoReadError if the photo couldn't be cropped. */
 export function requestImageCrop(uri: string, width: number, height: number): Promise<string | null> {
   if (!showCropper) return Promise.resolve(null);
   return showCropper(uri, width, height);
@@ -46,7 +49,7 @@ export function ImageCropperHost() {
 
   useEffect(() => {
     showCropper = (uri, width, height) => {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         scale.value = 1;
         savedScale.value = 1;
         translateX.value = 0;
@@ -54,7 +57,7 @@ export function ImageCropperHost() {
         savedTranslateX.value = 0;
         savedTranslateY.value = 0;
         setProcessing(false);
-        setRequest({ uri, width, height, resolve });
+        setRequest({ uri, width, height, resolve, reject });
       });
     };
     return () => {
@@ -138,8 +141,10 @@ export function ImageCropperHost() {
         { format: ImageManipulator.SaveFormat.JPEG },
       );
       activeRequest.resolve(result.uri);
-    } catch {
-      activeRequest.resolve(null);
+    } catch (e) {
+      // Used to resolve null (looked like a cancel, so nothing happened and people retried);
+      // report it so the screen can say the photo couldn't be used.
+      activeRequest.reject(new PhotoReadError(e));
     } finally {
       setRequest(null);
     }

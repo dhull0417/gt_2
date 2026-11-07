@@ -11,7 +11,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import Constants from 'expo-constants';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
-import { pickAndUploadImage } from '@/utils/uploadImage';
+import { pickAndUploadImage, PhotoReadError } from '@/utils/uploadImage';
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useContentTopInset } from '@/hooks/useContentTopInset';
@@ -86,8 +86,9 @@ const HomeScreen = () => {
           old ? { ...old, profilePicture: url } : old
         );
       }
-    } catch {
-      Alert.alert('Error', 'Could not update your profile picture. Please try again.');
+    } catch (e) {
+      if (e instanceof PhotoReadError) Alert.alert("Couldn't use that photo", "Couldn't read that photo. Try another one.");
+      else Alert.alert('Error', 'Could not update your profile picture. Please try again.');
     } finally {
       setPhotoUploading(false);
     }
