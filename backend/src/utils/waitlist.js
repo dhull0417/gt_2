@@ -26,6 +26,23 @@ export const loadClerkIds = async (userIds) => {
   return new Map(users.map((u) => [String(u._id), u.clerkId]));
 };
 
+/**
+ * How many guests a host may bring. Guests only ever take spots that are free: the host's
+ * current guests are replaced by nextCount, and when the host isn't In their own spot counts
+ * too (so guests added while Out can't over-fill the meetup once they tap In).
+ * Capacity 0 means unlimited. Returns { ok, room } where room is the most guests that fit.
+ */
+export const guestRoom = (meetup, clerkIdByUserId, { hostId, hostClerkId, nextCount }) => {
+  if (!(meetup.capacity > 0)) return { ok: true, room: Infinity };
+  const hostIsIn = (meetup.in || []).some((id) => String(id) === String(hostId));
+  const currentGuests = (meetup.guests || []).find((g) => g.userId === hostClerkId)?.count || 0;
+  let used = headcountOf(meetup, clerkIdByUserId);
+  if (hostIsIn) used -= currentGuests; // the host's guests are being replaced
+  else used += 1; // the host's own spot, once they go In
+  const room = Math.max(0, meetup.capacity - used);
+  return { ok: nextCount <= room, room };
+};
+
 /** Convenience: current headcount of a meetup document. */
 export const headcount = async (meetup) => headcountOf(meetup, await loadClerkIds(meetup.in));
 

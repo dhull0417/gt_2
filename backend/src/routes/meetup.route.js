@@ -17,7 +17,7 @@ import Meetup from "../models/meetup.model.js";
 import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
 import mongoose from "mongoose";
-import { headcountOf, loadClerkIds, promoteWaitlist } from "../utils/waitlist.js";
+import { guestRoom, loadClerkIds, promoteWaitlist } from "../utils/waitlist.js";
 
 const router = express.Router();
 
@@ -61,15 +61,16 @@ router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
         const existingIdx = meetup.guests.findIndex(g => g.userId === clerkId);
         const previousCount = existingIdx >= 0 ? (meetup.guests[existingIdx].count || 0) : 0;
 
-        // Guests take spots like everyone else: refuse more than there is room for.
-        if (count > previousCount && meetup.capacity > 0 && meetup.in.some(id => id.equals(guestUser._id))) {
+        // Guests take spots like everyone else: refuse more than there is room for, whether or not
+        // the host is In yet (otherwise guests added while Out would over-fill the meetup on "I'm In").
+        if (count > previousCount && meetup.capacity > 0) {
             const clerkIds = await loadClerkIds(meetup.in);
-            const used = headcountOf(meetup, clerkIds);
-            if (used + (count - previousCount) > meetup.capacity) {
-                const room = Math.max(0, meetup.capacity - used);
+            const { ok, room } = guestRoom(meetup, clerkIds, { hostId: guestUser._id, hostClerkId: clerkId, nextCount: count });
+            if (!ok) {
                 return res.status(409).json({
                     error: 'meetup_full',
-                    message: room === 0 ? 'There are no spots left for guests.' : `Only ${room} more spot${room === 1 ? '' : 's'} left for guests.`,
+                    message: room === 0 ? 'There are no spots left for guests.' : `There's only room for ${room} guest${room === 1 ? '' : 's'}.`,
+                    room,
                 });
             }
         }

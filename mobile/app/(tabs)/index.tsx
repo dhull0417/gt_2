@@ -337,7 +337,12 @@ const DashboardScreen = () => {
               queryClient.invalidateQueries({ queryKey: ['meetups'] });
               broadcastMeetupUpdate(getToken, meetup.group._id);
             })
-            .catch(() => Alert.alert('Note', 'RSVP saved, but guests could not be added. Try from the meetup details.'));
+            .catch((e: any) => Alert.alert(
+              'Note',
+              e?.response?.status === 409 && e.response.data?.message
+                ? `You're in, but your guests weren't added. ${e.response.data.message}`
+                : 'RSVP saved, but guests could not be added. Try from the meetup details.'
+            ));
         }
         if (mute) {
           userApi.toggleGroupMute(api, meetup.group._id, 'untilNext')

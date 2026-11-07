@@ -313,10 +313,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             queryClient.invalidateQueries({ queryKey: ['meetups'] });
             broadcastMeetupUpdate(getToken, meetupGroupId);
             if (result.meetup) setMeetup(result.meetup);
-        } catch {
+        } catch (e: any) {
             const prev = meetup.guests?.find(g => g.userId === currentUser.clerkId)?.count ?? 0;
             setLocalGuestCount(prev);
-            Alert.alert('Error', 'Could not update your guests. Please try again.');
+            // 409: not enough open spots (guests never take a spot that isn't free).
+            if (e?.response?.status === 409 && e.response.data?.message) Alert.alert('Not enough room', e.response.data.message);
+            else Alert.alert('Error', 'Could not update your guests. Please try again.');
         } finally {
             setIsSettingGuests(false);
         }
