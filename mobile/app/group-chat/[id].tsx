@@ -10,6 +10,8 @@ import {
   SectionList,
   Modal,
   Pressable,
+  Keyboard,
+  useWindowDimensions,
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
@@ -625,6 +627,17 @@ const GroupChatScreen = () => {
     closeActionPanel();
   };
 
+  // The edit box grows with the message; cap it to part of the space above the keyboard so Save
+  // and Cancel always stay on screen (on 1.3.3 a long message pushed them under the keyboard).
+  const { height: windowHeight } = useWindowDimensions();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  const editInputMaxHeight = Math.max(80, Math.min(200, (windowHeight - keyboardHeight) * 0.35));
+
   const handleEditOpen = () => {
     if (!selectedMessage) return;
     setEditText(selectedMessage.content);
@@ -1046,7 +1059,7 @@ const GroupChatScreen = () => {
           <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
             <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 12 }}>Edit Message</Text>
             <TextInput
-              style={[chatStyles.editInput, { borderColor: colors.border, backgroundColor: colors.backgroundAlt, color: colors.textPrimary }]}
+              style={[chatStyles.editInput, { borderColor: colors.border, backgroundColor: colors.backgroundAlt, color: colors.textPrimary, maxHeight: editInputMaxHeight }]}
               value={editText}
               onChangeText={setEditText}
               multiline
