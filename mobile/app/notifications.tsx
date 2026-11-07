@@ -18,6 +18,7 @@ import { ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
+import { formatMeetupDate, formatMeetupTime } from '@/utils/meetupTime';
 
 const timeAgo = (date: string) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
@@ -50,11 +51,14 @@ const describeChangedFields = (fields?: string[]) => {
     return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
 };
 
+// In the viewer's own timezone, like everywhere else meetup times are shown.
 const formatMeetupDateTime = (meetup?: { date?: string; time?: string; timezone?: string }) => {
     if (!meetup?.date) return null;
-    const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: meetup.timezone };
-    const dateStr = new Date(meetup.date).toLocaleDateString(undefined, options);
-    return meetup.time ? `${dateStr} at ${meetup.time}` : dateStr;
+    if (!meetup.time) {
+        return new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', timeZone: meetup.timezone });
+    }
+    const m = { date: meetup.date, time: meetup.time, timezone: meetup.timezone };
+    return `${formatMeetupDate(m, { weekday: 'long', month: 'long', day: 'numeric' })} at ${formatMeetupTime(m)}`;
 };
 
 const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDelete, isAccepting, isDeclining, colors, unreadBg, highlight }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, onDelete: (id: string) => void, isAccepting: boolean, isDeclining: boolean, colors: ThemeColors, unreadBg: string, highlight: boolean }) => {

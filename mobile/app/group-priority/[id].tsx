@@ -19,6 +19,7 @@ import NativeTimePicker from '@/components/NativeTimePicker';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
 import { UpgradeButton } from '@/components/UpgradeButton';
+import { formatInstantTime, viewerZone } from '@/utils/meetupTime';
 
 const ROW_H = 60;
 const DIV_H = 56;
@@ -111,7 +112,8 @@ export default function GroupPriorityScreen() {
     if (!next) return null;
     const fmt = (iso: string) => {
       const d = new Date(iso);
-      return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: next.timezone })} at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: next.timezone })}`;
+      // The organizer's own date and clock, labelled when it differs from the group's.
+      return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: viewerZone() })} at ${formatInstantTime(d, next.timezone)}`;
     };
     return {
       name: next.name,

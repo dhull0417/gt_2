@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DateTime } from 'luxon';
-import { meetupDayKey, meetupStartInstant, dayKeyToLocalDate, localDateToDayKey } from '@/utils/meetupTime';
+import { meetupDayKey, meetupStartInstant, dayKeyToLocalDate, localDateToDayKey, formatMeetupDate, formatMeetupTime, viewerZone } from '@/utils/meetupTime';
+import { tzAbbr } from '@/utils/timezones';
 import { haptic } from '@/utils/haptics';
 import { CancelReasonSheet } from '@/components/CancelReasonSheet';
 import {
@@ -777,7 +778,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                 </PressableOpacity>
                 <Animated.View layout={LinearTransition.duration(300).easing(Easing.out(Easing.cubic))} style={styles.headerTitleContainer}>
                     <Text style={[styles.headerTitle, { color: colors.textFaint }]}>
-                        {new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone })} • {meetup.time}
+                        {formatMeetupDate(meetup, { weekday: 'short', month: 'short', day: 'numeric' })} • {formatMeetupTime(meetup)}
                     </Text>
                     {!!resolvedLocation && (
                         <View style={styles.headerLocationWrap}>
@@ -979,7 +980,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Text style={[styles.rsvpLockedTitle, { color: colors.textMuted }]}>RSVP Deadline Passed</Text>
                                 <Text style={[styles.rsvpLockedSubtitle, { color: colors.textFaint }]}>
                                     Closed {new Date(meetup.rsvpCloseDate!).toLocaleDateString(undefined, {
-                                        weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone
+                                        weekday: 'short', month: 'short', day: 'numeric', timeZone: viewerZone()
                                     })}
                                 </Text>
                             </View>
@@ -1437,7 +1438,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                 <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Time</Text>
                                 <PressableOpacity style={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} onPress={() => setShowTimePicker(true)}>
                                     <Feather name="clock" size={18} color={colors.brand} />
-                                    <Text style={[styles.dateInputText, { color: colors.textSecondary }]}>{newTime}</Text>
+                                    <Text style={[styles.dateInputText, { color: colors.textSecondary }]}>
+                                        {/* Edited in the group's own time, so say which zone that is. */}
+                                        {newTime}{meetup.timezone ? ` ${tzAbbr(meetup.timezone)}` : ''}
+                                    </Text>
                                 </PressableOpacity>
 
                                 <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Location Override</Text>

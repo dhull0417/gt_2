@@ -1,4 +1,5 @@
 import { Meetup } from '@/utils/api';
+import { formatInstantTime, viewerZone } from '@/utils/meetupTime';
 
 /** A meetup stays "happening now" for this long after its start time before it's treated as past. */
 export const MEETUP_ACTIVE_DURATION_MS = 60 * 60 * 1000;
@@ -104,14 +105,14 @@ export const isRsvpLockedFor = (meetup: Meetup, userId: string | undefined, now:
 };
 
 /** When RSVPs open for this user, as text: a date for everyone else, date + time for a priority group. */
-export const describeRsvpOpensFor = (meetup: Meetup, userId: string | undefined): string => {
+export const describeRsvpOpensFor = (meetup: Meetup, userId: string | undefined, zone: string = viewerZone()): string => {
   const tierK = userId && tiersActive(meetup) ? tierIndexOf(meetup, userId) : -1;
   const when = new Date(tierK >= 0 ? meetup.priorityTiers![tierK].opensAt : everyoneOpensAt(meetup)!);
-  const date = when.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone });
+  // The viewer's own date and clock (labelled when it differs from the group's).
+  const date = when.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: zone });
   // Priority groups open at specific times; so can everyone else (a head-start series).
   if (tierK < 0 && !tiersActive(meetup)) return date;
-  const time = when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: meetup.timezone });
-  return `${date} at ${time}`;
+  return `${date} at ${formatInstantTime(when, meetup.timezone, zone)}`;
 };
 
 /** Which priority group (1-based) this user is in for the meetup, or null. */

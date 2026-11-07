@@ -58,6 +58,7 @@ import { isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor } from 
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import { getGroupImage } from '@/utils/groupDisplay';
 import { setActiveChat } from '@/utils/activeChat';
+import { formatMeetupDate } from '@/utils/meetupTime';
 
 interface ChatDaySection {
   key: string;
@@ -224,11 +225,12 @@ const GroupChatScreen = () => {
   const [nextMeetupModalVisible, setNextMeetupModalVisible] = useState(false);
   const [meetupWizardVisible, setMeetupWizardVisible] = useState(false);
   const [createPollVisible, setCreatePollVisible] = useState(false);
+  // The viewer's own day (a late meetup in a group further west can be tomorrow for them).
   const nextMeetupLabel = nextMeetup
-    ? new Date(nextMeetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: nextMeetup.timezone })
+    ? formatMeetupDate(nextMeetup, { weekday: 'short', month: 'short', day: 'numeric' })
     : null;
   const nextMeetupDay = nextMeetup
-    ? new Date(nextMeetup.date).toLocaleDateString(undefined, { day: 'numeric', timeZone: nextMeetup.timezone })
+    ? formatMeetupDate(nextMeetup, { day: 'numeric' })
     : null;
   // Mirrors MeetupDetailModal/meetup card RSVP state so the bar shows the same tint/status
   const nextMeetupRsvpStatus = useMemo(() => {

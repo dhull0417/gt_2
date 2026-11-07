@@ -48,10 +48,20 @@ export function meetupViewerDayKey(m: MeetupTimeFields, zone: string = viewerZon
  */
 export function formatMeetupTime(m: MeetupTimeFields, zone: string = viewerZone()): string {
   const local = startIn(m, zone);
-  const text = local.toFormat('h:mm a');
-  if (!m.timezone) return text;
-  const groupOffset = local.setZone(m.timezone).offset;
-  return groupOffset === local.offset ? text : `${text} ${tzAbbr(zone)}`;
+  return local.toFormat('h:mm a') + zoneSuffix(local.toJSDate(), m.timezone, zone);
+}
+
+/** Any moment (e.g. when RSVPs open) as a clock time for the viewer, labelled like formatMeetupTime. */
+export function formatInstantTime(instant: Date | string, groupZone: string | null | undefined, zone: string = viewerZone()): string {
+  const local = DateTime.fromJSDate(new Date(instant)).setZone(zone);
+  return local.toFormat('h:mm a') + zoneSuffix(local.toJSDate(), groupZone, zone);
+}
+
+// " ET" when the viewer's clock differs from the group's at that moment, otherwise nothing.
+function zoneSuffix(instant: Date, groupZone: string | null | undefined, zone: string): string {
+  if (!groupZone) return '';
+  const at = DateTime.fromJSDate(instant);
+  return at.setZone(groupZone).offset === at.setZone(zone).offset ? '' : ` ${tzAbbr(zone)}`;
 }
 
 /** The meetup's date formatted for the viewer (their day, not necessarily the group's). */
