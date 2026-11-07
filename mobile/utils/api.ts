@@ -282,7 +282,7 @@ export interface Poll {
 
 export type NotificationType =
   | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-member-joined' | 'group-removed' | 'group-updated' | 'ownership-transferred'
-  | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion' | 'priority-bumped'
+  | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion' | 'priority-bumped' | 'guests-removed'
   | 'meetup-rsvp-admin-in' | 'meetup-rsvp-admin-out'
   | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled' | 'meetup-restored'
   | 'meetup-rsvp-reminder' | 'meetup-rsvp-open' | 'meetup-starting-soon'
@@ -707,6 +707,11 @@ export const meetupApi = {
   },
   restoreMeetup: async (api: AxiosInstance, meetupId: string): Promise<{ message: string; meetup: Meetup }> => {
     const response = await api.patch(`/api/meetups/${meetupId}/restore`);
+    return response.data;
+  },
+  /** Owners/moderators lowering (or clearing) another member's guests. */
+  setGuestCountFor: async (api: AxiosInstance, meetupId: string, hostClerkId: string, count: number): Promise<{ meetup: Meetup }> => {
+    const response = await api.patch(`/api/meetups/${meetupId}/guests/${encodeURIComponent(hostClerkId)}`, { count });
     return response.data;
   },
   setGuestCount: async (api: AxiosInstance, meetupId: string, count: number): Promise<{ meetup: Meetup }> => {

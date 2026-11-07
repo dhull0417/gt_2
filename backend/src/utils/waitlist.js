@@ -5,6 +5,7 @@ import User from "../models/user.model.js";
 import { groupHasWaitlist } from "./premium.js";
 import { pickWaitlistIndex } from "./priorityRsvp.js";
 import { notifyAndPersist } from "./push.notifications.js";
+import { canManageMember } from "../controllers/group.controller.js";
 
 /**
  * Spots taken: everyone who is In plus the guests they're bringing. Guests are
@@ -42,6 +43,13 @@ export const guestRoom = (meetup, clerkIdByUserId, { hostId, hostClerkId, nextCo
   const room = Math.max(0, meetup.capacity - used);
   return { ok: nextCount <= room, room };
 };
+
+/**
+ * Who may change a member's guest count: the member themself, or someone who can manage that
+ * member (the owner, or a moderator over a regular member; same rule as RSVP overrides).
+ */
+export const canEditGuestsOf = (requesterId, hostUserId, group) =>
+  String(requesterId) === String(hostUserId) || canManageMember(requesterId, hostUserId, group);
 
 /** Convenience: current headcount of a meetup document. */
 export const headcount = async (meetup) => headcountOf(meetup, await loadClerkIds(meetup.in));

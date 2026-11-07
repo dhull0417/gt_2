@@ -112,6 +112,10 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDe
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> was promoted to "in" for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'priority-bumped':
                 return <Text style={styles.messageText}>A member with RSVP priority took a spot in <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>. You're first on the waitlist.</Text>;
+            case 'guests-removed':
+                return notification.meta?.count
+                    ? <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> changed your guests for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text> to {notification.meta.count}.</Text>
+                    : <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> removed your guests from <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-created':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> scheduled a new meetup{groupName ? <> for <Text style={styles.bold}>{groupName}</Text></> : null}.</Text>;
             case 'meetup-updated': {

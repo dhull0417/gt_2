@@ -34,3 +34,15 @@ test('guestRoom refuses guests beyond open spots whether or not the host is In',
   // capacity 0 means unlimited
   assert.equal(guestRoom({ capacity: 0, in: ids, guests: [] }, clerk, { hostId: 'host', hostClerkId: 'c-host', nextCount: 40 }).ok, true);
 });
+
+test('canEditGuestsOf: the host, the owner, or a moderator over a regular member', async () => {
+  const { canEditGuestsOf } = await import('./waitlist.js');
+  const group = { owner: 'owner', moderators: ['mod', 'mod2'], members: ['owner', 'mod', 'mod2', 'm1', 'm2'] };
+  assert.equal(canEditGuestsOf('m1', 'm1', group), true);      // own guests
+  assert.equal(canEditGuestsOf('owner', 'm1', group), true);   // owner on a member
+  assert.equal(canEditGuestsOf('owner', 'mod', group), true);  // owner on a moderator
+  assert.equal(canEditGuestsOf('mod', 'm1', group), true);     // moderator on a member
+  assert.equal(canEditGuestsOf('mod', 'owner', group), false); // moderator on the owner
+  assert.equal(canEditGuestsOf('mod', 'mod2', group), false);  // moderator on another moderator
+  assert.equal(canEditGuestsOf('m2', 'm1', group), false);     // member on someone else
+});

@@ -27,6 +27,7 @@ const NOTIFICATION_ICONS: Record<NotificationType, NotificationIconSpec> = {
   'meetup-waitlist-join': { name: 'clock', color: '#F59E0B' },
   'waitlist-promotion': { name: 'arrow-up-circle', color: '#A855F7' },
   'priority-bumped': { name: 'arrow-down-circle', color: '#2563EB' },
+  'guests-removed': { name: 'user-minus', color: '#F97316' },
   'meetup-created': { name: 'calendar', color: '#22C55E' },
   'meetup-updated': { name: 'edit-3', color: '#F59E0B' },
   'meetup-cancelled': { name: 'slash', color: '#EF4444' },

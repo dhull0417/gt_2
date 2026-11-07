@@ -628,17 +628,64 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         );
     };
 
+    // Owners/moderators (and the host themself) can take guests off a meetup.
+    const canRemoveGuestsOf = (host: User | undefined) =>
+        !!host && !isReadOnly && (host._id === currentUser._id || canManageTarget(host));
+
+    const removeGuests = async (hostClerkId: string, count: number) => {
+        try {
+            const result = await meetupApi.setGuestCountFor(api, meetup._id, hostClerkId, count);
+            if (result.meetup) setMeetup(result.meetup);
+            if (hostClerkId === currentUser.clerkId) setLocalGuestCount(count);
+            queryClient.invalidateQueries({ queryKey: ['meetups'] });
+            broadcastMeetupUpdate(getToken, meetupGroupId);
+            haptic.success();
+        } catch (e: any) {
+            Alert.alert('Error', e?.response?.data?.message || 'Could not remove the guests. Please try again.');
+        }
+    };
+
+    const confirmRemoveGuests = (host: User) => {
+        const current = (meetup.guests || []).find(g => g.userId === host.clerkId)?.count ?? 0;
+        if (!host.clerkId || current === 0) return;
+        const name = getUserDisplayName(host);
+        const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [];
+        if (current > 1) buttons.push({ text: 'Remove 1 guest', onPress: () => removeGuests(host.clerkId!, current - 1) });
+        buttons.push({ text: current > 1 ? `Remove all ${current}` : 'Remove guest', style: 'destructive', onPress: () => removeGuests(host.clerkId!, 0) });
+        buttons.push({ text: 'Cancel', style: 'cancel' });
+        Alert.alert(
+            host._id === currentUser._id ? 'Remove your guests?' : `Remove ${name}'s guests?`,
+            host._id === currentUser._id ? undefined : `${name} will be notified. Freed spots go to the waitlist.`,
+            buttons,
+        );
+    };
+
     const renderGuestTiles = (g: { userId: string; count: number }) => {
         const host = (meetup.members || []).find(m => (m as any).clerkId === g.userId);
         const hostName = host ? getUserDisplayName(host) : 'A member';
-        return Array.from({ length: g.count }, (_, i) => (
-            <View key={`guest-${g.userId}-${i}`} style={styles.gridItem}>
-                <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder, styles.guestAvatarPlaceholder]}>
-                    <Feather name="user" size={22} color="#FFFFFF" />
-                </View>
-                <Text style={[styles.gridName, { color: colors.textSecondary }]} numberOfLines={1}>{hostName}&apos;s Guest</Text>
-            </View>
-        ));
+        const removable = canRemoveGuestsOf(host);
+        return Array.from({ length: g.count }, (_, i) => {
+            const tile = (
+                <>
+                    <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder, styles.guestAvatarPlaceholder]}>
+                        <Feather name="user" size={22} color="#FFFFFF" />
+                    </View>
+                    <Text style={[styles.gridName, { color: colors.textSecondary }]} numberOfLines={1}>{hostName}&apos;s Guest</Text>
+                </>
+            );
+            return removable ? (
+                <PressableOpacity
+                    key={`guest-${g.userId}-${i}`}
+                    style={styles.gridItem}
+                    onPress={() => confirmRemoveGuests(host!)}
+                    accessibilityLabel={`${hostName}'s guest. Tap to remove guests.`}
+                >
+                    {tile}
+                </PressableOpacity>
+            ) : (
+                <View key={`guest-${g.userId}-${i}`} style={styles.gridItem}>{tile}</View>
+            );
+        });
     };
 
     const renderSectionHeader = (label: string, count: number, color: string, rightElement?: React.ReactNode) => (
@@ -1314,6 +1361,23 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                         <Text style={dmStyles.remindBtnText}>Edit Assignments</Text>
                                     </PressableOpacity>
                                 )}
+                                {canManageTarget(dmTargetUser) && (() => {
+                                    const n = (meetup.guests || []).find(g => g.userId === dmTargetUser.clerkId)?.count ?? 0;
+                                    if (n === 0 || isReadOnly) return null;
+                                    return (
+                                        <PressableOpacity
+                                            style={dmStyles.remindBtn}
+                                            onPress={() => {
+                                                const target = dmTargetUser;
+                                                setDmTargetUser(null);
+                                                setTimeout(() => confirmRemoveGuests(target), 350);
+                                            }}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Text style={[dmStyles.remindBtnText, { color: colors.danger }]}>Remove Guests ({n})</Text>
+                                        </PressableOpacity>
+                                    );
+                                })()}
                             </>
                         )}
                     </Pressable>
