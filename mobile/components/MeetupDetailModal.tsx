@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { DateTime } from 'luxon';
 import { meetupDayKey, meetupStartInstant, dayKeyToLocalDate, localDateToDayKey, formatMeetupDate, formatMeetupTime, viewerZone } from '@/utils/meetupTime';
 import { tzAbbr } from '@/utils/timezones';
+import { LinkifiedText } from '@/components/LinkifiedText';
 import { haptic } from '@/utils/haptics';
 import { CancelReasonSheet } from '@/components/CancelReasonSheet';
 import {
@@ -926,7 +927,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                                                 style={[styles.meetupDescriptionText, { color: colors.textMuted }]}
                                                 numberOfLines={descriptionExpanded ? undefined : 1}
                                             >
-                                                {meetup.description.trim()}
+                                                {/* Links become tappable once the description is open; collapsed, a tap just expands it. */}
+                                                {descriptionExpanded
+                                                    ? <LinkifiedText text={meetup.description.trim()} linkColor={colors.brand} />
+                                                    : meetup.description.trim()}
                                             </Animated.Text>
                                             <Animated.View style={[styles.meetupDescriptionChevron, descriptionChevronStyle]}>
                                                 <Feather name="chevron-down" size={14} color={colors.textFaint} />
