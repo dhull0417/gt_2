@@ -140,6 +140,38 @@ export const pickWaitlistIndex = (meetup, tiersActive = true) => {
   return best;
 };
 
+/** Spots a person takes: themself plus the guests they bring (guests are keyed by Clerk id). */
+const spotsFor = (meetup, userId, clerkIdByUserId) => {
+  const clerk = clerkIdByUserId.get(idStr(userId));
+  const g = (meetup.guests || []).find((x) => x.userId === clerk);
+  return 1 + (g?.count || 0);
+};
+
+/**
+ * Who a priority member may bump to get into a full meetup: the lowest-priority person who's In
+ * and ranks strictly below them (ties go to the most recent RSVP). Returns null when there's no
+ * such person or when bumping them still wouldn't make room for the requester's whole party
+ * (need = 1 + their guests); a bump must never over-fill the meetup.
+ */
+export const chooseBumpVictim = (meetup, requesterId, { need, used, capacity, clerkIdByUserId }) => {
+  const myTier = userTierIndex(meetup, requesterId);
+  if (myTier < 0) return null;
+  const me = idStr(requesterId);
+  let victim = null;
+  let worst = -1;
+  for (const id of meetup.in || []) {
+    if (idStr(id) === me) continue;
+    const rank = rankOf(meetup, id);
+    if (rank > myTier && rank >= worst) {
+      worst = rank;
+      victim = id;
+    }
+  }
+  if (victim === null) return null;
+  const freed = spotsFor(meetup, victim, clerkIdByUserId);
+  return used - freed + need <= capacity ? victim : null;
+};
+
 /**
  * Bring a full-or-filling meetup in line with the current priority ranking: open spots go
  * to the best waitlisted people, and a waitlisted person who outranks someone who's In
@@ -153,24 +185,28 @@ export const rebalanceMeetup = async (meetupId) => {
     if ((meetup.priorityTiers?.length ?? 0) === 0 || (meetup.waitlist?.length ?? 0) === 0) return null;
 
     const before = new Set(meetup.in.map(idStr));
+    // Guests take spots too, so count people plus their guests, and only swap when the
+    // waitlisted person's whole party fits once the bumped person's party has left.
+    const people = await User.find({ _id: { $in: [...meetup.in, ...meetup.waitlist] } }).select("clerkId").lean();
+    const clerkIds = new Map(people.map((u) => [idStr(u._id), u.clerkId]));
+    let used = meetup.in.reduce((sum, id) => sum + spotsFor(meetup, id, clerkIds), 0);
     for (let guard = 0; guard < 500 && meetup.waitlist.length > 0; guard++) {
       const wi = pickWaitlistIndex(meetup, true);
       const w = meetup.waitlist[wi];
-      if (meetup.in.length < meetup.capacity) {
+      const need = spotsFor(meetup, w, clerkIds);
+      if (used + need <= meetup.capacity) {
         meetup.waitlist.splice(wi, 1);
         meetup.in.push(w);
+        used += need;
         continue;
       }
-      let vi = -1;
-      for (let i = 0; i < meetup.in.length; i++) {
-        if (vi < 0 || rankOf(meetup, meetup.in[i]) >= rankOf(meetup, meetup.in[vi])) vi = i;
-      }
-      if (vi < 0 || rankOf(meetup, w) >= rankOf(meetup, meetup.in[vi])) break;
-      const v = meetup.in[vi];
-      meetup.in.splice(vi, 1);
+      const v = chooseBumpVictim(meetup, w, { need, used, capacity: meetup.capacity, clerkIdByUserId: clerkIds });
+      if (v === null) break;
+      meetup.in.splice(meetup.in.findIndex((id) => idStr(id) === idStr(v)), 1);
       meetup.waitlist.splice(wi, 1);
       meetup.waitlist.unshift(v);
       meetup.in.push(w);
+      used += need - spotsFor(meetup, v, clerkIds);
     }
 
     const after = new Set(meetup.in.map(idStr));

@@ -16,7 +16,7 @@ import { groupHasPremium, withGroupPremium } from "../utils/premium.js";
 import { flags } from "../utils/featureFlags.js";
 import { evaluateMinimumHeadcount, evaluateDueMeetups } from "../utils/minimumHeadcount.js";
 import { pruneAnswers, MAX_ANSWER_LENGTH } from "../utils/rsvpQuestions.js";
-import { canRsvpNow, userOpensAt, userTierIndex, pickWaitlistIndex, notifyOpenTiers, resolveRsvpOpen } from "../utils/priorityRsvp.js";
+import { canRsvpNow, userOpensAt, userTierIndex, chooseBumpVictim, pickWaitlistIndex, notifyOpenTiers, resolveRsvpOpen } from "../utils/priorityRsvp.js";
 
 /**
  * @desc    Get all meetups for the current user
@@ -231,22 +231,13 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             // Push to waitlist if at capacity (Premium), otherwise 'in'
             if (meetup.capacity > 0 && spotsUsed() + myNeed > meetup.capacity) {
                 // Priority RSVP: a member of a higher group takes a spot from the
-                // lowest-priority person who's in (they go to the front of the waitlist).
-                const myTier = (meetup.priorityTiers?.length ?? 0) > 0 ? userTierIndex(meetup, user._id) : -1;
+                // lowest-priority person who's in (they go to the front of the waitlist),
+                // but only when that makes room for the member and all their guests.
                 let victimId = null;
-                if (myTier >= 0 && await getGroupPremium()) {
-                    let worst = -1;
-                    for (const id of meetup.in) {
-                        if (id.equals(user._id)) continue;
-                        const t = userTierIndex(meetup, id);
-                        const rank = t < 0 ? Infinity : t;
-                        // must be strictly lower priority than the requester; ties go to
-                        // the most recent RSVP (later in the array)
-                        if (rank > myTier && rank >= worst) {
-                            worst = rank;
-                            victimId = id;
-                        }
-                    }
+                if ((meetup.priorityTiers?.length ?? 0) > 0 && userTierIndex(meetup, user._id) >= 0 && await getGroupPremium()) {
+                    victimId = chooseBumpVictim(meetup, user._id, {
+                        need: myNeed, used: spotsUsed(), capacity: meetup.capacity, clerkIdByUserId: clerkIds,
+                    });
                 }
                 if (victimId) {
                     meetup.in.pull(victimId);
