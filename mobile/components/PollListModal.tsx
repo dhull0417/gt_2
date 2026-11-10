@@ -104,7 +104,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
             <View style={styles.modalHeader}>
                 <View style={{ width: 24 }} />
                 <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>Polls</Text>
-                <PressableOpacity accessibilityLabel="Close" onPress={onClose}>
+                <PressableOpacity accessibilityLabel="Close" onPress={onClose} hitSlop={12}>
                     <Feather name="x" size={24} color={colors.textSecondary} />
                 </PressableOpacity>
             </View>
@@ -162,11 +162,11 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
         return (
             <>
                 <View style={styles.modalHeader}>
-                    <PressableOpacity accessibilityLabel="Go back" onPress={backToList}>
+                    <PressableOpacity accessibilityLabel="Go back" onPress={backToList} hitSlop={12}>
                         <Feather name="chevron-left" size={24} color={colors.textSecondary} />
                     </PressableOpacity>
                     <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>{isExpired ? 'Results' : 'Vote'}</Text>
-                    <PressableOpacity accessibilityLabel="Close" onPress={onClose}>
+                    <PressableOpacity accessibilityLabel="Close" onPress={onClose} hitSlop={12}>
                         <Feather name="x" size={24} color={colors.textSecondary} />
                     </PressableOpacity>
                 </View>
@@ -276,7 +276,7 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
     };
 
     return (
-        <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={selectedPoll ? backToList : onClose}>
             {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
             <SafeAreaView style={[styles.modalContent, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
                 {selectedPoll ? renderDetail() : renderList()}

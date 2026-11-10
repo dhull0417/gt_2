@@ -32,6 +32,7 @@ import { getMeetupStatus } from '@/utils/meetupStatus';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import { toast } from '@/contexts/ToastContext';
 import { muteStateFor, restoreRequest } from '@/utils/groupMute';
+import { runBackInterceptor } from '@/utils/backInterceptors';
 
 type GroupedMeetups = {
   'Upcoming': Meetup[];
@@ -629,7 +630,7 @@ const DashboardScreen = () => {
           visible={isModalVisible}
           animationType="slide"
           presentationStyle="pageSheet"
-          onRequestClose={handleCloseModal}
+          onRequestClose={() => { if (!runBackInterceptor()) handleCloseModal(); }}
         >
           <MeetupDetailModal meetup={selectedMeetup} onClose={handleCloseModal} />
         </Modal>

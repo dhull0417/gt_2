@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth, useUser } from '@clerk/expo';
 import { resourceCache } from '@clerk/expo/resource-cache';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { MutationCache, QueryClient, onlineManager, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
@@ -411,6 +412,21 @@ const AuthLayout = () => {
         )}
         <WelcomeModal visible={showWelcomeModal} onClose={closeWelcomeModal} />
         <UpdateNameModal visible={showUpdateNameModal} onClose={() => setNameModalDismissed(true)} />
+        {/* Navigation theme follows the app theme, so every nested stack's screen background is dark in
+            dark mode. Without it a stack with no contentStyle (e.g. create-group) showed a white card
+            behind screens as they animated in. */}
+        <ThemeProvider value={{
+          ...(scheme === 'dark' ? DarkTheme : DefaultTheme),
+          colors: {
+            ...(scheme === 'dark' ? DarkTheme : DefaultTheme).colors,
+            primary: colors.brand,
+            background: colors.background,
+            card: colors.surface,
+            text: colors.textPrimary,
+            border: colors.border,
+            notification: colors.danger,
+          },
+        }}>
         <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background } }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
@@ -442,6 +458,7 @@ const AuthLayout = () => {
           <Stack.Screen name="join" options={{ headerShown: false }} />
           <Stack.Screen name="sso-callback" options={{ headerShown: false }} />
         </Stack>
+        </ThemeProvider>
       </View>
     </OfflineBannerHeightProvider>
   );

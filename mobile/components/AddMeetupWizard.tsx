@@ -501,7 +501,6 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
                     <OptionPickerModal
                         title="Timezone"
                         options={timezoneOptions(meetupTZ)}
-                        searchable
                         selectedKey={meetupTZ}
                         onSelect={key => { setMeetupTZ(key); setShowTZPicker(false); }}
                         onClose={() => setShowTZPicker(false)}

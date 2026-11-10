@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { useBackInterceptor } from '@/hooks/useBackInterceptor';
 
 interface Props {
   visible: boolean;
@@ -21,11 +22,14 @@ export function CancelReasonSheet({ visible, meetupName, onClose, onConfirm, bus
   const colors = useThemeColors();
   const [reason, setReason] = useState('');
   useEffect(() => { if (visible) setReason(''); }, [visible]);
+  // Android back closes just this box, not the meetup sheet (Modal) it's drawn in.
+  useBackInterceptor(visible, () => { if (!busy) onClose(); });
   if (!visible) return null;
 
   return (
     <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={StyleSheet.absoluteFill}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.backdrop}>
+      {/* The meetup sheet is a Modal, which Android doesn't resize for the keyboard, so pad on both platforms. */}
+      <KeyboardAvoidingView behavior="padding" style={styles.backdrop}>
         <PressableOpacity activeOpacity={1} haptic={false} style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[styles.title, { color: colors.textPrimary }]}>Cancel "{meetupName}"?</Text>

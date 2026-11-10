@@ -8,13 +8,14 @@ import { pickAndUploadImage } from "@/utils/uploadImage";
 import { useAuth } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 
-export const NameScreen = ({ onNext, onClose }: { onNext: (name: string, imageUrl: string) => void; onClose: () => void }) => {
+// initialName/initialImage: what was entered before, so going Back from the next step keeps it.
+export const NameScreen = ({ onNext, onClose, initialName = "", initialImage = "" }: { onNext: (name: string, imageUrl: string) => void; onClose: () => void; initialName?: string; initialImage?: string }) => {
     const colors = useThemeColors();
     const s = useMemo(() => makeStyles(colors), [colors]);
-    const [name, setName] = useState("");
+    const [name, setName] = useState(initialName);
     const [nameFocused, setNameFocused] = useState(false);
-    const [localUri, setLocalUri] = useState<string | null>(null);
-    const [imageUrl, setImageUrl] = useState("");
+    const [localUri, setLocalUri] = useState<string | null>(initialImage || null);
+    const [imageUrl, setImageUrl] = useState(initialImage);
     const [uploading, setUploading] = useState(false);
     const { getToken } = useAuth();
 

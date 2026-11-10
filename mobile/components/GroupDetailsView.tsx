@@ -31,6 +31,7 @@ import { formatTimeRange } from '@/utils/timeString';
 import type { Meetup } from '@/utils/api';
 import { addGroupToCalendar } from '@/utils/calendarFeed';
 import { getGroupImage } from '@/utils/groupDisplay';
+import { runBackInterceptor } from '@/utils/backInterceptors';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -216,7 +217,7 @@ export const GroupDetailsView = ({
                 </PressableOpacity>
             )}
             {openMeetup && (
-                <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpenMeetup(null)}>
+                <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { if (!runBackInterceptor()) setOpenMeetup(null); }}>
                     <MeetupDetailModal meetup={openMeetup} onClose={() => setOpenMeetup(null)} />
                 </Modal>
             )}
@@ -377,6 +378,9 @@ export const GroupDetailsView = ({
                                         style={[styles.removeBadge, { borderColor: colors.surface }]}
                                         onPress={() => onRemoveMember(member._id)}
                                         disabled={isRemovingMember}
+                                        // Part of the badge sits outside the avatar, where Android ignores taps; grow the
+                                        // tap area inward so a ~32 px target stays inside it.
+                                        hitSlop={{ top: 4, right: 4, bottom: 12, left: 12 }}
                                     >
                                         <Feather name="x" size={12} color="white" />
                                     </PressableOpacity>

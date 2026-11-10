@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { Feather } from '@expo/vector-icons';
 import { useApiClient, userApi } from '@/utils/api';
 import { useThemeColors } from '@/contexts/AppearanceContext';
@@ -22,6 +23,8 @@ const UpdatePhoneScreen = () => {
     const colors = useThemeColors();
     const [digits, setDigits] = useState('');
     const [pendingId, setPendingId] = useState<string | null>(null);
+    // Android back from the code step returns to the number entered, like the form's Back.
+    useAndroidBack(!!pendingId, () => setPendingId(null));
     const [isLoading, setIsLoading] = useState(false);
 
     const e164 = `+1${digits}`; // the app is US-only for now

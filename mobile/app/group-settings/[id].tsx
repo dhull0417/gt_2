@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { useAuth } from '@clerk/expo';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -64,6 +65,8 @@ const GroupSettings = () => {
 
   // --- Top-level navigation between Settings home / Edit Group / Edit Schedule ---
   const [view, setView] = useState<'main' | 'group' | 'schedules'>('main');
+  // Android back from a sub-page returns to the main settings page, like the on-screen arrow.
+  useAndroidBack(view !== 'main', () => setView('main'));
 
   // --- State for Edit Modals ---
   const [isImageModalVisible, setIsImageModalVisible] = useState(false);

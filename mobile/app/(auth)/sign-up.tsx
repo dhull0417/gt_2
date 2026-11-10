@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import { useSignUp } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { VerificationCodeForm } from '@/components/auth/VerificationCodeForm';
@@ -21,6 +22,8 @@ const SignUpScreen = () => {
   const [isPasswordVisible, setPasswordVisible] = useState(false);
   const [isConfirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [needsEmailCode, setNeedsEmailCode] = useState(false);
+  // Back (Android button or the arrow) from the code step returns to the filled-in form.
+  useAndroidBack(needsEmailCode, () => setNeedsEmailCode(false));
   const passwordRef = useRef<TextInput>(null);
   const confirmRef = useRef<TextInput>(null);
 
@@ -97,7 +100,7 @@ const SignUpScreen = () => {
         className="flex-1"
       >
         <View className="flex-row items-center px-4 pt-2">
-            <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()}>
+            <PressableOpacity accessibilityLabel="Go back" onPress={() => (needsEmailCode ? setNeedsEmailCode(false) : router.back())} hitSlop={12}>
               <Feather name="arrow-left" size={28} color="#FF7A6E" />
             </PressableOpacity>
         </View>

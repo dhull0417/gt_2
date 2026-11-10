@@ -1432,7 +1432,6 @@ const EditScheduleScreen = () => {
                     <OptionPickerModal
                         title="Timezone"
                         options={timezoneOptions(d.timezone)}
-                        searchable
                         selectedKey={d.timezone}
                         onSelect={key => upd({ timezone: key, showTZPicker: false })}
                         onClose={() => upd({ showTZPicker: false })}

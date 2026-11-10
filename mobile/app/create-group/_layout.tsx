@@ -9,7 +9,7 @@ const CreateGroupLayout = () => {
     const colors = useThemeColors();
 
     return (
-        <Stack>
+        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background } }}>
             <Stack.Screen
                 name="index"
                 options={{

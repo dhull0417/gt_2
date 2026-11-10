@@ -67,6 +67,7 @@ import { formatMeetupDate } from '@/utils/meetupTime';
 import { GroupMuteSheet } from '@/components/GroupMuteSheet';
 import { muteStateFor } from '@/utils/groupMute';
 import { haptic } from '@/utils/haptics';
+import { runBackInterceptor } from '@/utils/backInterceptors';
 
 interface ChatDaySection {
   key: string;
@@ -176,7 +177,8 @@ const GroupChatScreen = () => {
     // Android: land on the Groups list first so Details pushes on top of it,
     // not as the nested stack's only screen (else the tab has nothing to reset to)
     router.navigate('/(tabs)/groups');
-    router.push({ pathname: '/groups/[id]', params: { id } });
+    // from=chat makes Android's back button return to this chat (GroupDetailsScreen).
+    router.push({ pathname: '/groups/[id]', params: { id, from: 'chat' } });
   };
 
   // Always the groups list, regardless of entry point — chat has no consistent screen underneath it
@@ -695,7 +697,7 @@ const GroupChatScreen = () => {
         onLayout={(e) => setChatHeaderHeight(e.nativeEvent.layout.height)}
       >
         <View className="flex-row items-center flex-1">
-          <PressableOpacity accessibilityLabel="Go back" onPress={handleBack} className="mr-2 p-1">
+          <PressableOpacity accessibilityLabel="Go back" onPress={handleBack} className="mr-2 p-1" hitSlop={8}>
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
           </PressableOpacity>
           {/* Tapping the group's photo or name opens its details (this replaces the old menu button). */}
@@ -1076,7 +1078,7 @@ const GroupChatScreen = () => {
         visible={nextMeetupModalVisible}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setNextMeetupModalVisible(false)}
+        onRequestClose={() => { if (!runBackInterceptor()) setNextMeetupModalVisible(false); }}
       >
         <MeetupDetailModal meetup={nextMeetup} onClose={() => setNextMeetupModalVisible(false)} />
       </Modal>

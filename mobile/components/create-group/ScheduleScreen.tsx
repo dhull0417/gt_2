@@ -1037,7 +1037,6 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                 <OptionPickerModal
                     title="Timezone"
                     options={timezoneOptions(timezone)}
-                    searchable
                     selectedKey={timezone}
                     onSelect={key => { setTimezone(key); setShowTZPicker(false); }}
                     onClose={() => setShowTZPicker(false)}

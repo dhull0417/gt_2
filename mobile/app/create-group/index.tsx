@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Alert, BackHandler } from "react-native";
+import { Alert, BackHandler, View } from "react-native";
 import { MembersScreen } from "@/components/create-group/MembersScreen";
 import { NameScreen } from "@/components/create-group/NameScreen";
 import { ReviewScreen } from "@/components/create-group/ReviewScreen";
@@ -77,7 +77,7 @@ const CreateGroupScreen = () => {
     };
 
     const screen = (() => {
-    if (step === "name") return <SafeAreaView style={s.safe}><NameScreen onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("schedule"); }} onClose={handleClose} /></SafeAreaView>;
+    if (step === "name") return <SafeAreaView style={s.safe}><NameScreen initialName={groupName} initialImage={groupImage} onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("schedule"); }} onClose={handleClose} /></SafeAreaView>;
     if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen groupName={groupName} initialSchedules={schedules} initialTimezone={timezone} onNext={(data, tz) => { setSchedules(data); setTimezone(tz); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedules([]); setStep("review"); }} /></SafeAreaView>;
     if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} groupImage={groupImage} members={[]} schedules={schedules} timezone={timezone} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
     return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} groupName={groupName} onDone={() => {
@@ -88,7 +88,12 @@ const CreateGroupScreen = () => {
     })();
 
     // Each step slides in from the right so the flow reads as forward motion.
-    return <Animated.View key={step} entering={FadeInRight.duration(220)} style={{ flex: 1 }}>{screen}</Animated.View>;
+    // The themed backdrop shows (instead of a white card) while the new step fades in.
+    return (
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+            <Animated.View key={step} entering={FadeInRight.duration(220)} style={{ flex: 1 }}>{screen}</Animated.View>
+        </View>
+    );
 };
 
 export default CreateGroupScreen;

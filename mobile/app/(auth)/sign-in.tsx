@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import { useSignIn } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, useRouter } from 'expo-router';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { VerificationCodeForm } from '@/components/auth/VerificationCodeForm';
@@ -20,6 +21,8 @@ const SignInScreen = () => {
   const [isPasswordVisible, setPasswordVisible] = useState(false);
   // Set when Clerk asks for a second step (email/SMS code or authenticator app) after the password.
   const [secondFactor, setSecondFactor] = useState<null | { strategy: 'email_code' | 'phone_code' | 'totp' | 'backup_code'; destination: string }>(null);
+  // Back (Android button or the arrow) from the code step returns to the filled-in form.
+  useAndroidBack(!!secondFactor, () => setSecondFactor(null));
   const passwordRef = useRef<TextInput>(null);
 
   const finishIfComplete = async (): Promise<boolean> => {
@@ -121,7 +124,7 @@ const SignInScreen = () => {
         className="flex-1"
       >
         <View className="flex-row items-center px-4 pt-2">
-          <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()}>
+          <PressableOpacity accessibilityLabel="Go back" onPress={() => (secondFactor ? setSecondFactor(null) : router.back())} hitSlop={12}>
             <Feather name="arrow-left" size={28} color="#FF7A6E" />
           </PressableOpacity>
         </View>

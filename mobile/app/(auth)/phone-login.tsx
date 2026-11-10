@@ -3,6 +3,7 @@ import { View, Text, TextInput, StyleSheet, Alert, ActivityIndicator, KeyboardAv
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useSignIn, useSignUp } from '@clerk/expo';
 import { useRouter } from 'expo-router';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 
@@ -15,6 +16,8 @@ export default function PhoneLogin() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [code, setCode] = useState("");
   const [pendingVerification, setPendingVerification] = useState(false);
+  // Android back from the code step returns to the phone number, like the arrow.
+  useAndroidBack(pendingVerification, () => setPendingVerification(false));
   const [isSigningUp, setIsSigningUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const phoneInputRef = useRef<TextInput>(null);
@@ -106,6 +109,7 @@ export default function PhoneLogin() {
         <PressableOpacity accessibilityLabel="Go back"
           onPress={() => (pendingVerification ? setPendingVerification(false) : router.back())}
           style={styles.backButton}
+          hitSlop={8}
         >
           <Feather name="arrow-left" size={24} color="#FF7A6E" />
         </PressableOpacity>

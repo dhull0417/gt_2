@@ -54,7 +54,7 @@ const ResetPasswordScreen = () => {
         className="flex-1"
       >
         <View className="flex-row items-center px-4 pt-2">
-          <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()}>
+          <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()} hitSlop={12}>
             <Feather name="arrow-left" size={28} color="#FF7A6E" />
           </PressableOpacity>
         </View>

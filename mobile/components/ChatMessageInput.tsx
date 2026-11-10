@@ -199,7 +199,8 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
               <PressableOpacity accessibilityLabel="Remove"
                 style={[styles.removeBtn, { backgroundColor: colors.textSecondary }]}
                 onPress={() => setPendingImages((prev) => prev.filter((p) => p.key !== img.key))}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                // Extend the tap area into the thumbnail (Android drops touches outside the parent).
+                hitSlop={{ top: 6, bottom: 12, left: 12, right: 6 }}
               >
                 <Feather name="x" size={13} color="#fff" />
               </PressableOpacity>
@@ -310,7 +311,9 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
 }
 
 const styles = StyleSheet.create({
-  previewRow: { paddingHorizontal: 12, gap: 8 },
+  // Room for the remove (x) that pokes 6 px above/right of each thumbnail: the horizontal
+  // ScrollView clips it otherwise, and Android ignores taps outside a parent's bounds.
+  previewRow: { paddingHorizontal: 12, paddingTop: 8, paddingRight: 18, gap: 8 },
   previewContainer: {
     marginBottom: 6,
     alignSelf: 'flex-start',

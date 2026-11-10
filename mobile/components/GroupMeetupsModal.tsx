@@ -12,6 +12,7 @@ import { DayHeader, splitByDay } from '@/components/MeetupDayGroups';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { DateTime } from 'luxon';
+import { runBackInterceptor } from '@/utils/backInterceptors';
 
 interface GroupMeetupsModalProps {
     visible: boolean;
@@ -67,7 +68,11 @@ const GroupMeetupsModal = ({ visible, onClose, groupId }: GroupMeetupsModalProps
             visible={visible}
             animationType="slide"
             presentationStyle="pageSheet"
-            onRequestClose={selectedMeetup ? () => setSelectedMeetup(null) : onClose}
+            onRequestClose={() => {
+                if (runBackInterceptor()) return;
+                if (selectedMeetup) setSelectedMeetup(null);
+                else onClose();
+            }}
         >
             {selectedMeetup ? (
                 <MeetupDetailModal meetup={selectedMeetup} onClose={() => setSelectedMeetup(null)} />
@@ -77,7 +82,7 @@ const GroupMeetupsModal = ({ visible, onClose, groupId }: GroupMeetupsModalProps
                     <View style={styles.modalHeader}>
                         <View style={{ width: 24 }} />
                         <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>Upcoming Meetups</Text>
-                        <PressableOpacity accessibilityLabel="Close" onPress={onClose}>
+                        <PressableOpacity accessibilityLabel="Close" onPress={onClose} hitSlop={12}>
                             <Feather name="x" size={24} color={colors.textSecondary} />
                         </PressableOpacity>
                     </View>

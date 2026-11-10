@@ -9,7 +9,9 @@ import {
   Modal,
   Pressable,
   Image,
+  Platform,
 } from 'react-native';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState, useMemo } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -45,7 +47,8 @@ interface GroupDetailsScreenProps {
 }
 
 export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsScreenProps) => {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // from=chat: Android opened Details from the chat header (see group-chat/[id].tsx handleOpenDetails).
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
   const colors = useThemeColors();
 
   const insets = useSafeAreaInsets();
@@ -123,11 +126,21 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
 
   const handleOpenChat = () => {
     if (!id) return;
+    if (Platform.OS === 'android') {
+      // On Android, Details sits in the Groups tab stack with no chat beneath it. Pop Details so the
+      // Groups list is underneath, then open the chat, so the chat's back lands on the list.
+      if (router.canGoBack()) router.back();
+      router.push({ pathname: '/group-chat/[id]', params: { id } });
+      return;
+    }
     // Pops back to an already-open chat for this group (correct back-slide animation,
     // matching the chevron-left affordance); falls back to a push for entry points that
     // never went through chat (groups list, notifications, DM creation, meetup modal).
     router.dismissTo({ pathname: '/group-chat/[id]', params: { id } });
   };
+
+  // Android back returns to the chat when Details was opened from it, like the on-screen arrow.
+  useAndroidBack(from === 'chat', handleOpenChat);
 
   const headerName = groupDetails?.isDM
     ? getDMDisplayName(groupDetails as any, currentUser?.clerkId)
@@ -141,7 +154,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
       <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
         <View className="flex-row items-center flex-1">
           {/* Always back to chat — its only meaningful parent, regardless of nav stack */}
-          <PressableOpacity accessibilityLabel="Go back" onPress={handleOpenChat} className="mr-2 p-1">
+          <PressableOpacity accessibilityLabel="Go back" onPress={handleOpenChat} className="mr-2 p-1" hitSlop={8}>
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
           </PressableOpacity>
           <View style={{ marginRight: 10 }}>
