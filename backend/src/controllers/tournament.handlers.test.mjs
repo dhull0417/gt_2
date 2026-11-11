@@ -146,6 +146,20 @@ test('preview does not save or notify', async () => {
   assert.ok(res.body.tournament.matches.length > 0);
 });
 
+test('Start with the previewed teams, seeds and seed gives exactly the previewed matches', async () => {
+  const extra = { rngSeed: 12345 };
+  const pv = await create({ mode: 'teams', teamSize: 2, format: 'roundRobin', resultType: 'points' }, { ...extra, preview: true });
+  meetup.in = [...meetup.in, P.d._id];
+  const pv2 = await create({ mode: 'teams', teamSize: 2, format: 'roundRobin', resultType: 'points' }, { ...extra, preview: true });
+  const teams = pv2.body.tournament.teams.map((t) => ({ name: t.name, players: t.players.map((p) => p.key) }));
+  const seedOrder = [...teams.keys()].sort((a, b) => pv2.body.tournament.teams[a].seed - pv2.body.tournament.teams[b].seed);
+  const made = await create({ mode: 'teams', teamSize: 2, format: 'roundRobin', resultType: 'points' }, { ...extra, teams, seedOrder });
+  assert.equal(made.code, 201);
+  const slots = (t) => t.matches.map((m) => m.slots.map((s) => s.team).join('v'));
+  assert.deepEqual(slots(made.body.tournament), slots(pv2.body.tournament));
+  assert.ok(pv.body.tournament.matches.length > 0);
+});
+
 test('a second event on the same meetup is refused', async () => {
   await create();
   const res = await create();

@@ -36,7 +36,7 @@ test('rankBy lower is better keeps zero', () => {
   assert.deepEqual(r.map((x) => [x.id, x.rank]), [['b', 1], ['a', 2]]);
 });
 
-test('reliable winner is most attended, needs 3 eligible', () => {
+test('reliable ranks everyone with at least one meetup', () => {
   const events = newestFirst([
     ev(1, { members: ['a', 'b'], inn: ['a', 'b'] }),
     ev(2, { members: ['a', 'b'], inn: ['a', 'b'] }),
@@ -47,7 +47,7 @@ test('reliable winner is most attended, needs 3 eligible', () => {
   assert.equal(m.get('a').eligible, 4);
   assert.equal(m.get('b').eligible, 2);
   const r = award(computeAwards(m, noExtras), 'reliable');
-  assert.deepEqual(r.ranking.map((x) => [x.id, x.value, x.rank]), [['a', 3, 1]]);
+  assert.deepEqual(r.ranking.map((x) => [x.id, x.value, x.rank]), [['a', 3, 1], ['b', 2, 2], ['c', 1, 3]]);
 });
 
 test('reliable ties are broken by rate in order but share rank', () => {
@@ -84,9 +84,13 @@ test('decliner and ghost count out and no reply; responder = attended + declined
   assert.deepEqual(award(awards, 'responder').ranking.map((x) => [x.id, x.value]), [['a', 3], ['b', 2]]);
 });
 
-test('awards with nobody qualifying are omitted', () => {
+test('one meetup is enough to win', () => {
   const m = memberMetrics([ev(1, { members: ['a'], inn: ['a'] })], ['a']);
-  assert.deepEqual(computeAwards(m, noExtras), []);
+  assert.deepEqual(computeAwards(m, noExtras).map((a) => a.key), ['reliable', 'streak', 'responder']);
+});
+
+test('awards with nobody qualifying are omitted', () => {
+  assert.deepEqual(computeAwards(memberMetrics([], ['a']), noExtras), []);
 });
 
 // ---- Task 2: timing and per-person awards ----
@@ -134,12 +138,12 @@ test('quickDraw ignores events without rsvpOpenDate', () => {
   events[0].rsvpOpenDate = null;
   const m = memberMetrics(events, ['a']).get('a');
   assert.equal(m.timedAnswered, 3);
-  assert.equal(m.quickDrawMin, null); // only 2 timed answers with an opening time
+  assert.equal(m.quickDrawMin, 10); // averaged over the 2 meetups that have an opening time
 });
 
-test('quickDraw needs 3 answered logged meetups', () => {
-  const events = newestFirst([1, 2].map((n) => logged(n, [['a', 'in', 5]])));
-  assert.equal(award(withExtras(events, ['a']), 'quickDraw'), undefined);
+test('quickDraw works from one answered meetup', () => {
+  const events = [logged(1, [['a', 'in', 5]])];
+  assert.deepEqual(award(withExtras(events, ['a']), 'quickDraw').ranking.map((x) => [x.id, x.value]), [['a', 5]]);
 });
 
 test('buzzer counts first answers within 2h of close, falls back to start', () => {
@@ -182,7 +186,7 @@ test('old records without log are ignored by timing awards', () => {
   assert.equal(award(awards, 'buzzer'), undefined);
 });
 
-test('plusOne/chauffeur/snackCaptain sum per-person data and are omitted when fewer than 3 events carry it', () => {
+test('plusOne/chauffeur/snackCaptain sum per-person data and need at least one event carrying it', () => {
   const pp = (n, extra) => ev(n, { members: ['a', 'b'], guestsBy: [], itemsBy: [], seatsBy: [], ...extra });
   const two = newestFirst([
     pp(1, { guestsBy: [{ user: 'a', count: 2 }], itemsBy: [{ user: 'b', count: 1 }], seatsBy: [{ user: 'b', seats: 3 }] }),
@@ -190,7 +194,9 @@ test('plusOne/chauffeur/snackCaptain sum per-person data and are omitted when fe
     ev(3, { members: ['a', 'b'] }),
   ]);
   const twoAwards = withExtras(two, ['a', 'b']);
-  assert.equal(award(twoAwards, 'plusOne'), undefined);
+  assert.deepEqual(award(twoAwards, 'plusOne').ranking.map((x) => [x.id, x.value]), [['a', 3], ['b', 1]]);
+  const none = newestFirst([ev(5, { members: ['a'] })]);
+  assert.equal(award(withExtras(none, ['a']), 'plusOne'), undefined); // no meetup has the data yet
   const three = newestFirst([...two, pp(4, { itemsBy: [{ user: 'b', count: 2 }], seatsBy: [{ user: 'a', seats: 4 }, { user: 'b', seats: 1 }] })]);
   assert.deepEqual(countEventsWith(three), { log: 0, perPerson: 3 });
   const awards = withExtras(three, ['a', 'b']);

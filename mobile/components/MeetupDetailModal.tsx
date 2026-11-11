@@ -75,12 +75,16 @@ import { muteStateFor, restoreRequest } from '@/utils/groupMute';
 interface MeetupDetailModalProps {
   meetup: Meetup | null;
   onClose: () => void;
+  /** Called when the sheet opens another screen (chat, DM, Teams & Tourneys). A container that
+   *  hosts this sheet inside its own Modal (e.g. Upcoming meetups) closes itself here, or the
+   *  new screen opens hidden underneath it. */
+  onNavigate?: () => void;
 }
 
 // Extracts user ID whether the array holds strings or populated objects
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
-const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModalProps) => {
+const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: MeetupDetailModalProps) => {
     const api = useApiClient();
     const router = useRouter();
     const queryClient = useQueryClient();
@@ -445,9 +449,15 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
 
     const handleOpenLocation = (address: string) => openLocation(address);
 
-    const handleGoToChat = () => {
+    // Close this sheet (and any modal hosting it), then open the screen.
+    const leaveTo = (href: any) => {
         onClose();
-        router.push({
+        onNavigate?.();
+        router.push(href);
+    };
+
+    const handleGoToChat = () => {
+        leaveTo({
             pathname: '/group-chat/[id]',
             params: { id: meetup.group._id }
         });
@@ -471,8 +481,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
             const { group } = await groupApi.createOrGetDM(api, dmTargetUser._id);
             queryClient.invalidateQueries({ queryKey: ['groups'] });
             setDmTargetUser(null);
-            onClose();
-            router.push({
+            leaveTo({
                 pathname: '/group-chat/[id]',
                 params: { id: group._id }
             });
@@ -1174,10 +1183,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     meetup={meetup}
                     currentUserId={currentUser._id}
                     canManage={canManage}
-                    onOpen={(href) => {
-                        onClose();
-                        router.push(href as any);
-                    }}
+                    onOpen={leaveTo}
                 />
 
                 <MeetupQuestions

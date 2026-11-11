@@ -1,4 +1,4 @@
-// "Teams & matches" on the meetup sheet: set up (owners/moderators), or your team, your next
+// "Teams & Tourneys" on the meetup sheet: set up (owners/moderators), or your team, your next
 // match and See Results. Replaces the old Teams card (team splits are now an event format).
 import React, { useMemo } from 'react';
 import { View, Text } from 'react-native';
@@ -37,7 +37,7 @@ export default function MeetupTournamentCard({ meetup, currentUserId, canManage,
       <View style={[styles.card, { marginTop: 12 }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Feather name="users" size={16} color={colors.textMuted} />
-          <Text style={[styles.cardTitle, { flex: 1 }]}>Teams & matches</Text>
+          <Text style={[styles.cardTitle, { flex: 1 }]}>Teams & Tourneys</Text>
           <PressableOpacity onPress={() => onOpen({ pathname: '/tournament-setup/[meetupId]', params: { meetupId: meetup._id, groupId: meetup.group._id } })}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.action}>Set up</Text>
@@ -54,7 +54,7 @@ export default function MeetupTournamentCard({ meetup, currentUserId, canManage,
     <View style={[styles.card, { marginTop: 12 }]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Feather name={t.status === 'finished' ? 'award' : 'users'} size={16} color={t.status === 'finished' ? '#F59E0B' : colors.textMuted} />
-        <Text style={[styles.cardTitle, { flex: 1 }]}>{t.format === 'none' ? 'Teams' : 'Teams & matches'}</Text>
+        <Text style={[styles.cardTitle, { flex: 1 }]}>{t.format === 'none' ? 'Teams' : 'Teams & Tourneys'}</Text>
       </View>
       <Text style={styles.hint}>{FORMAT_LABEL[t.format]} · {t.teams.length} {t.mode === 'singles' ? 'players' : 'teams'}</Text>
       {t.status === 'finished' && t.champion

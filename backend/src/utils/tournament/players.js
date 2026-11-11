@@ -43,6 +43,18 @@ export const collectPlayers = (meetup, { extraPlayers = [], clerkIdOf } = {}) =>
 
 export const playersKey = (players) => players.map((p) => p.key).sort().join(',');
 
+/** Small deterministic random generator (mulberry32): the same seed always gives the same numbers. */
+export const seededRng = (seed) => {
+  let a = (Number(seed) >>> 0) || 1;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
 export const shuffle = (arr, rng = Math.random) => {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -66,16 +78,30 @@ export const rankPlayers = (players, order = [], rng = Math.random) => {
 
 /**
  * Split players (already in rank or random order) into teams. Give `teamSize` or `teamCount`.
- * Leftover players are spread so sizes differ by at most one. `balance` snake-drafts
- * (1→N, then N→1); otherwise players are dealt in order.
+ * - By number of teams: leftover players are spread so sizes differ by at most one.
+ * - By team size: when players don't divide evenly, the leftover players each play on their own
+ *   team, taken from the top of `topOrder` (the ranking, or a random order; defaults to `players`).
+ *   Those solo teams come first.
+ * `balance` snake-drafts (1→N, then N→1); otherwise players are dealt in order.
  */
-export const formTeams = (players, { teamSize, teamCount, balance = false } = {}) => {
+export const formTeams = (players, { teamSize, teamCount, balance = false, topOrder } = {}) => {
   const n = players.length;
-  let count;
-  if (Number.isInteger(teamCount) && teamCount > 0) count = teamCount;
-  else if (Number.isInteger(teamSize) && teamSize > 0) count = Math.floor(n / teamSize);
-  else throw new TournamentError('team_size_required', 'Choose a team size or a number of teams.');
-  if (count < 1 || count > n) throw new TournamentError('too_many_teams', 'Not enough players for that many teams.');
+  if (!(Number.isInteger(teamCount) && teamCount > 0) && Number.isInteger(teamSize) && teamSize > 0) {
+    const leftover = n % teamSize;
+    const soloKeys = new Set((topOrder || players).slice(0, leftover).map((p) => p.key));
+    const solos = (topOrder || players).filter((p) => soloKeys.has(p.key)).map((p) => [p]);
+    const rest = players.filter((p) => !soloKeys.has(p.key));
+    const full = rest.length ? dealTeams(rest, rest.length / teamSize, balance) : [];
+    return [...solos, ...full];
+  }
+  if (!(Number.isInteger(teamCount) && teamCount > 0)) {
+    throw new TournamentError('team_size_required', 'Choose a team size or a number of teams.');
+  }
+  if (teamCount > n) throw new TournamentError('too_many_teams', 'Not enough players for that many teams.');
+  return dealTeams(players, teamCount, balance);
+};
+
+const dealTeams = (players, count, balance) => {
   const teams = Array.from({ length: count }, () => []);
   players.forEach((p, i) => {
     let t = i % count;

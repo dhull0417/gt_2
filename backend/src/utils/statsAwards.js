@@ -18,8 +18,9 @@ export const AWARDS = [
   { key: 'weathervane', title: 'Weathervane', emoji: '🌀', joke: true, lowerIsBetter: false },
 ];
 
-export const MIN_MEETUPS = 3;      // eligible meetups (or logged answers) a person needs
-export const MIN_EVENTS_WITH_DATA = 3; // events in the group carrying per-person data
+// One meetup is enough (owner decision 2026-11-11: no 3-meetup minimum).
+export const MIN_MEETUPS = 1;          // eligible meetups (or logged answers) a person needs
+export const MIN_EVENTS_WITH_DATA = 1; // events in the group carrying per-person data
 const MINIMUMS = { chatty: 10, voice: 3, weathervane: 2, buzzer: 2 };
 const MINUTE = 60 * 1000;
 const BUZZER_WINDOW = 2 * 60 * MINUTE;

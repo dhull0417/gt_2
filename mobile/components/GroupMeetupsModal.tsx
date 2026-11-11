@@ -75,7 +75,7 @@ const GroupMeetupsModal = ({ visible, onClose, groupId }: GroupMeetupsModalProps
             }}
         >
             {selectedMeetup ? (
-                <MeetupDetailModal meetup={selectedMeetup} onClose={() => setSelectedMeetup(null)} />
+                <MeetupDetailModal meetup={selectedMeetup} onClose={() => setSelectedMeetup(null)} onNavigate={onClose} />
             ) : (
                 // pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually
                 <SafeAreaView style={[styles.modalContent, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>

@@ -161,4 +161,5 @@ Layout per spec: tiles → Your stats → Awards (2-column grid, public) → Hal
 - Tasks 1–12 done. Backend `npm test` 413/413 (local copy; the OneDrive mount is too slow). `statsFormat` jest 6/6. Mobile `tsc --noEmit` clean.
 - Fresh review done; fixes applied (see the spec's "Changes after review").
 - Plan deviations: `ARCHIVE_FIELDS` shared with the cleanup job (`job.controller.js`); account-deletion cleanup in `removeUserStatsData` (unit-tested).
+- 2026-11-11: 3-meetup minimum removed (`MIN_MEETUPS` and `MIN_EVENTS_WITH_DATA` = 1); backend 418/418.
 - Remaining: the device checklist above; run the Supabase migration; review and commit. Nothing committed.

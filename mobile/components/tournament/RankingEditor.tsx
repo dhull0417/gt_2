@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Modal, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Feather } from '@expo/vector-icons';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
@@ -36,9 +36,11 @@ export default function RankingEditor({ visible, title, hint, items, onCancel, o
   const slotTops = ids.map((_, i) => i * ROW_H);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onCancel}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" statusBarTranslucent onRequestClose={onCancel}>
+      {/* A Modal is its own window, so it needs its own provider or the top inset reads as 0 and the header sits under the status bar. */}
+      <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <SafeAreaView style={styles.safe}>
+        <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
           <View style={styles.headerBar}>
             <PressableOpacity onPress={onCancel} style={{ minWidth: 60 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={styles.cancel}>Cancel</Text>
@@ -80,6 +82,7 @@ export default function RankingEditor({ visible, title, hint, items, onCancel, o
           />
         </SafeAreaView>
       </GestureHandlerRootView>
+      </SafeAreaProvider>
     </Modal>
   );
 }

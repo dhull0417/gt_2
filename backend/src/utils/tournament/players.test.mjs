@@ -47,11 +47,22 @@ test('rankPlayers: listed players in list order, the rest after (shuffled)', () 
 const people = (n) => Array.from({ length: n }, (_, i) => ({ key: `p${i + 1}`, user: `p${i + 1}`, guestOf: null, guestIndex: null }));
 const sizes = (teams) => teams.map((t) => t.length).sort((a, b) => b - a);
 
-test('formTeams by size spreads the leftover so sizes differ by at most one', () => {
+test('formTeams by size: players who do not divide evenly play on their own, the top ones first', () => {
   const t = formTeams(people(13), { teamSize: 2 });
-  assert.equal(t.length, 6);
-  assert.deepEqual(sizes(t), [3, 2, 2, 2, 2, 2]);
+  assert.equal(t.length, 7);
+  assert.deepEqual(sizes(t), [2, 2, 2, 2, 2, 2, 1]);
+  assert.deepEqual(t[0].map((p) => p.key), ['p1']);
   assert.equal(t.flat().length, 13);
+  const fours = formTeams(people(14), { teamSize: 4, topOrder: people(14).slice().reverse() });
+  assert.deepEqual(sizes(fours), [4, 4, 4, 1, 1]);
+  assert.deepEqual(fours.filter((x) => x.length === 1).map((x) => x[0].key), ['p14', 'p13']);
+  assert.deepEqual(sizes(formTeams(people(3), { teamSize: 2 })), [2, 1]);
+  assert.deepEqual(sizes(formTeams(people(12), { teamSize: 2 })), [2, 2, 2, 2, 2, 2]);
+});
+
+test('formTeams by size with balance still snake-drafts the rest', () => {
+  const t = formTeams(people(9), { teamSize: 2, balance: true });
+  assert.deepEqual(t.map((x) => x.map((p) => p.key)), [['p1'], ['p2', 'p9'], ['p3', 'p8'], ['p4', 'p7'], ['p5', 'p6']]);
 });
 
 test('formTeams by count', () => {
@@ -67,7 +78,7 @@ test('formTeams with balance snake-drafts by rank', () => {
 test('formTeams errors', () => {
   assert.throws(() => formTeams(people(4), {}), { code: 'team_size_required' });
   assert.throws(() => formTeams(people(3), { teamCount: 4 }), { code: 'too_many_teams' });
-  assert.throws(() => formTeams(people(3), { teamSize: 4 }), { code: 'too_many_teams' });
+  assert.deepEqual(sizes(formTeams(people(3), { teamSize: 4 })), [1, 1, 1]);
 });
 
 test('teamSeeds: lower average rank = stronger seed; ties go to the best single rank', () => {

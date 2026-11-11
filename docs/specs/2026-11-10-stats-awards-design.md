@@ -125,3 +125,6 @@ Exact copy for award descriptions, card styling details, sheet component choice 
 - The 200-entry log cap drops the oldest entry that isn't someone's first answer.
 - The reveal switch saves with `updateOne` instead of saving the whole group.
 - Accepted: Quick Draw times from the *scheduled* tier opening (an early-opened tier can score 0 minutes); a slow Supabase can delay the stats screen by up to 8 s (Chatty Cathy is then left out).
+
+## Change 2026-11-11 (owner)
+- The 3-meetup minimum is removed: one eligible meetup (or one logged answer for timing awards) is enough, and Plus-One Pro / Chauffeur / Snack Captain appear once a single meetup carries the data. Value minimums stay (Chatty Cathy 10, Voice 3 polls, Buzzer 2, Weathervane 2).

@@ -71,8 +71,10 @@ leftover `teams` field on existing meetups is simply ignored).
 - *(My call)* Limits: 2–32 entrants; round robin up to 16 entrants (120 two-team matches).
 
 ### Teams
-- Teams mode: organizer sets **team size** or **number of teams**. Leftover players are spread so
-  team sizes differ by at most one *(my call)*; the organizer can move people between teams (tap a player, pick the team) and
+- Teams mode: organizer sets **team size** or **number of teams**. By number of teams, leftover
+  players are spread so sizes differ by at most one. By team size, players who don't divide evenly
+  each play on their own team: the top-ranked ones, or random ones without a ranking (owner's
+  decision 2026-11-11; the setup screen says so); the organizer can move people between teams (tap a player, pick the team) and
   rename teams (≤24 chars, as today) before starting.
 - With a ranking and **Balance teams**: snake draft by rank. Guests and anyone not on the list
   rank at the bottom in random order.

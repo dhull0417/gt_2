@@ -11,13 +11,13 @@ import User from "../models/user.model.js";
 import { canManageGroup } from "./group.controller.js";
 import { groupHasPremium } from "../utils/premium.js";
 import { loadClerkIds } from "../utils/waitlist.js";
-import { TournamentError, collectPlayers, playersKey } from "../utils/tournament/players.js";
+import { TournamentError, collectPlayers, playersKey, seededRng } from "../utils/tournament/players.js";
 import { buildEvent } from "../utils/tournament/build.js";
 import { applyResult, standings } from "../utils/tournament/results.js";
 import { buildTournamentStats } from "../utils/tournament/stats.js";
 import { notifyTournament } from "../utils/tournamentNotify.js";
 
-const PREMIUM_REQUIRED = { error: "premium_required", message: "Teams & tournaments require GroupThat Premium." };
+const PREMIUM_REQUIRED = { error: "premium_required", message: "Teams & Tourneys require GroupThat Premium." };
 const MAX_LISTS = 10;
 const MAX_LIST_NAME = 30;
 const MAX_RETRIES = 3;
@@ -29,6 +29,8 @@ const sendTournamentError = (res, err) => {
   if (err instanceof TournamentError) return fail(res, 400, err.code, err.message);
   throw err;
 };
+/** With a seed (sent by the app's preview and its Start), the same choices give the same event. */
+const rngsFor = (seed) => (Number.isInteger(seed) ? { rng: seededRng(seed), orderRng: seededRng(seed + 7919) } : {});
 const hasResults = (t) => (t.matches || []).some((m) => m.results?.length);
 const plain = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc);
 
@@ -158,9 +160,9 @@ export const getTournament = asyncHandler(async (req, res) => {
   res.status(200).json({ tournament: await serialize(t, { canManage: canManageGroup(requester._id, group) }) });
 });
 
-// --- POST /api/tournaments  { meetupId, config, extraPlayers, ranking?, rankingListId?, teams?, seedOrder?, preview? } ---
+// --- POST /api/tournaments  { meetupId, config, extraPlayers, ranking?, rankingListId?, teams?, seedOrder?, rngSeed?, preview? } ---
 export const createTournament = asyncHandler(async (req, res) => {
-  const { meetupId, config: rawConfig, extraPlayers = [], ranking, rankingListId, teams, seedOrder, preview } = req.body || {};
+  const { meetupId, config: rawConfig, extraPlayers = [], ranking, rankingListId, teams, seedOrder, preview, rngSeed } = req.body || {};
   const requester = await requesterOf(req);
   if (!requester) return fail(res, 404, 'not_found', 'User not found.');
   const meetup = await Meetup.findById(meetupId).lean();
@@ -176,7 +178,7 @@ export const createTournament = asyncHandler(async (req, res) => {
   const order = rankingFor(group, { ranking, rankingListId });
   let event;
   try {
-    event = buildEvent({ players, config, rankingOrder: order });
+    event = buildEvent({ players, config, rankingOrder: order, ...rngsFor(rngSeed) });
   } catch (err) {
     return sendTournamentError(res, err);
   }
@@ -263,13 +265,13 @@ export const randomizeTournament = asyncHandler(async (req, res) => {
 export const editTournament = asyncHandler(async (req, res) => {
   const ctx = await loadForManager(req, res);
   if (!ctx?.t) return;
-  const { config: rawConfig, extraPlayers = [], ranking, rankingListId, teams, seedOrder } = req.body || {};
+  const { config: rawConfig, extraPlayers = [], ranking, rankingListId, teams, seedOrder, rngSeed } = req.body || {};
   req.notifyAlways = Array.isArray(teams) && teams.length > 0;
   await regenerate(req, res, ctx, async (_doc, meetup) => {
     const config = { ...configFrom(rawConfig), teams, seedOrder };
     const { players, extras } = await currentPlayers(meetup, ctx.group, extraPlayers);
     const order = rankingFor(ctx.group, { ranking, rankingListId });
-    const built = tryBuild({ players, config, rankingOrder: order });
+    const built = tryBuild({ players, config, rankingOrder: order, ...rngsFor(rngSeed) });
     if (built.status) return built;
     return { event: built.event, config: configFrom(rawConfig), meta: { order, listId: rankingListId, extras } };
   });

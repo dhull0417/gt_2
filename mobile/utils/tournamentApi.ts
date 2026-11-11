@@ -65,6 +65,8 @@ export interface SetupBody {
   rankingListId?: string | null;
   teams?: { name: string | null; players: string[] }[];
   seedOrder?: number[];
+  /** Same seed as the preview, so Start creates exactly the previewed matches. */
+  rngSeed?: number;
   confirm?: boolean;
 }
 

@@ -153,7 +153,7 @@ export default function GroupStatsScreen() {
       {header}
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}>
         <Text style={styles.sub}>
-          Attendance counts "I'm In" on meetups that have happened. Awards are all-time; you need 3 meetups to qualify.
+          Attendance counts "I'm In" on meetups that have happened. Awards are all-time.
         </Text>
 
         {summary.totalMeetups === 0 ? (

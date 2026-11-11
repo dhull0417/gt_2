@@ -40,12 +40,13 @@ const handTeams = (players, teams) => {
 };
 
 /**
- * @param {{ players, config, rankingOrder?: string[], rng?: () => number }} args
+ * @param {{ players, config, rankingOrder?: string[], rng?: () => number, orderRng?: () => number }} args
+ *   `orderRng` drives only the match order, so a preview and its Start agree once the teams are fixed.
  *   config: { mode, teamSize?, teamCount?, format, teamsPerMatch, resultType, balanceTeams, buildToFinale,
  *             teams?: [{ name, players: key[] }], seedOrder?: number[] (team indexes, strongest first) }
  * @returns {{ teams: [{ key, name, seed, players }], matches, playersKey }}
  */
-export const buildEvent = ({ players, config, rankingOrder = [], rng = Math.random }) => {
+export const buildEvent = ({ players, config, rankingOrder = [], rng = Math.random, orderRng = rng }) => {
   const c = validateConfig(config);
   const weighted = (c.balanceTeams || c.buildToFinale) && rankingOrder.length > 0;
   const ranked = weighted ? rankPlayers(players, rankingOrder, rng) : shuffle(players, rng);
@@ -55,7 +56,10 @@ export const buildEvent = ({ players, config, rankingOrder = [], rng = Math.rand
   else if (c.mode === 'singles') groups = ranked.map((p) => [p]);
   else {
     if (players.length < 2) fail('not_enough_players', 'You need at least 2 players.');
-    groups = formTeams(c.balanceTeams && weighted ? ranked : shuffle(players, rng), { teamSize: c.teamSize, teamCount: c.teamCount, balance: c.balanceTeams && weighted });
+    // Who plays alone when pairs (etc.) don't divide evenly: the top of the ranking, else random.
+    groups = formTeams(c.balanceTeams && weighted ? ranked : shuffle(players, rng), {
+      teamSize: c.teamSize, teamCount: c.teamCount, balance: c.balanceTeams && weighted, topOrder: ranked,
+    });
   }
 
   const n = groups.length;
@@ -87,7 +91,7 @@ export const buildEvent = ({ players, config, rankingOrder = [], rng = Math.rand
   const seedOf = (key) => teams.find((t) => t.key === key).seed;
   let matches = [];
   if (c.format === 'roundRobin') {
-    matches = roundRobin(teams.map((t) => t.key), { perMatch: c.teamsPerMatch, seedOf, finale: c.buildToFinale && weighted, rng })
+    matches = roundRobin(teams.map((t) => t.key), { perMatch: c.teamsPerMatch, seedOf, finale: c.buildToFinale && weighted, rng: orderRng })
       .map((m) => ({ id: `m${m.order}`, round: m.round, order: m.order, bracket: null, advance: null, slots: m.teams.map((team) => ({ team, from: null })), results: [], status: 'ready' }));
   } else if (c.format === 'single' || c.format === 'double') {
     const seeded = [...teams].sort((a, b) => a.seed - b.seed).map((t) => t.key);

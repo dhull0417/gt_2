@@ -24,6 +24,18 @@ test('pairs of 12 into single elimination: 6 teams, 2 byes', () => {
   assert.equal(e.matches.filter((m) => m.status === 'bye').length, 2);
 });
 
+test('an odd number in pairs: the top-ranked player gets their own team (and seed 1)', () => {
+  const e = buildEvent({ players: people(7), config: { ...base, teamSize: 2, balanceTeams: true }, rankingOrder: people(7).map((p) => p.user), rng: Math.random });
+  const solo = e.teams.filter((t) => t.players.length === 1);
+  assert.equal(e.teams.length, 4);
+  assert.deepEqual(solo.map((t) => t.players[0].key), ['p1']);
+  assert.equal(solo[0].seed, 1);
+  const finaleOnly = buildEvent({ players: people(5), config: { ...base, teamSize: 2, buildToFinale: true }, rankingOrder: ['p3'], rng: Math.random });
+  assert.deepEqual(finaleOnly.teams.filter((t) => t.players.length === 1).map((t) => t.players[0].key), ['p3']);
+  const unranked = build(5, { teamSize: 2 });
+  assert.deepEqual(unranked.teams.map((t) => t.players.length).sort(), [1, 2, 2]);
+});
+
 test('just teams: teams, no matches', () => {
   const e = build(8, { teamCount: 2, format: 'none' });
   assert.equal(e.teams.length, 2);
@@ -64,4 +76,21 @@ test('weighting off: different random draws give different orders', () => {
   const b = buildEvent({ players: people(6), config: { ...base, mode: 'singles' }, rankingOrder: [], rng: seq([0.1, 0.6, 0.3]) });
   const order = (e) => e.matches.map((m) => m.slots.map((s) => e.teams.find((t) => t.key === s.team).players[0].key).join('v'));
   assert.notDeepEqual(order(a), order(b));
+});
+
+test('a seed makes the event repeatable, and Start with the previewed teams gives the previewed matches', async () => {
+  const { seededRng } = await import('./players.js');
+  const cfgRR = { ...base, mode: 'teams', teamSize: 2, format: 'roundRobin' };
+  const preview = buildEvent({ players: people(8), config: cfgRR, rankingOrder: [], rng: seededRng(42), orderRng: seededRng(43) });
+  const again = buildEvent({ players: people(8), config: cfgRR, rankingOrder: [], rng: seededRng(42), orderRng: seededRng(43) });
+  assert.deepEqual(again.matches, preview.matches);
+  const teams = preview.teams.map((t) => ({ name: t.name, players: t.players.map((p) => p.key) }));
+  const seedOrder = [...preview.teams.keys()].sort((a, b) => preview.teams[a].seed - preview.teams[b].seed);
+  const start = buildEvent({ players: people(8), config: { ...cfgRR, teams, seedOrder }, rankingOrder: [], rng: seededRng(42), orderRng: seededRng(43) });
+  assert.deepEqual(start.matches, preview.matches);
+  const other = buildEvent({ players: people(8), config: { ...cfgRR, teams, seedOrder }, rankingOrder: [], rng: seededRng(7), orderRng: seededRng(8) });
+  assert.notDeepEqual(other.matches.map((m) => m.slots.map((s) => s.team)), preview.matches.map((m) => m.slots.map((s) => s.team)));
+  const r1 = seededRng(1);
+  const vals = [r1(), r1(), r1()];
+  assert.ok(vals.every((v) => v >= 0 && v < 1) && new Set(vals).size === 3);
 });

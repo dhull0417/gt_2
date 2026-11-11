@@ -77,7 +77,7 @@ export default function GroupRankingsScreen() {
         {!isPremium ? (
           <View style={[styles.card, { marginTop: 16 }]}>
             <Text style={styles.cardTitle}>Premium</Text>
-            <Text style={styles.hint}>Rankings are part of Teams & matches, which require the group owner to have Premium.</Text>
+            <Text style={styles.hint}>Rankings are part of Teams & Tourneys, which require the group owner to have Premium.</Text>
             <UpgradeButton owner={group.owner} />
           </View>
         ) : (
