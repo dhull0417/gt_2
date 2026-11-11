@@ -26,6 +26,7 @@ import userRoutes from "./routes/user.route.js";
 import groupRoutes from "./routes/group.route.js";
 import meetupRoutes from "./routes/meetup.route.js";
 import pollRoutes from "./routes/poll.route.js";
+import healthRoutes from "./routes/health.route.js";
 import jobRoutes from "./routes/job.route.js";
 import notificationRoutes from "./routes/notification.route.js";
 import placesRoutes from "./routes/places.route.js";
@@ -65,6 +66,7 @@ app.get('/og-image.png', async (req, res) => {
 
 app.get("/", (req, res) => res.send("Hello from server"));
 
+app.use("/api/health", healthRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/meetups", meetupRoutes);
