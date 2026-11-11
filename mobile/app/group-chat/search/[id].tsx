@@ -1,13 +1,12 @@
 import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { getSupabaseClient } from '@/utils/supabase';
 import { ChatImageViewer } from '@/components/ChatImageViewer';
@@ -52,7 +51,8 @@ export default function ChatSearchScreen() {
   const groupId = id ?? '';
   const router = useRouter();
   const colors = useThemeColors();
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
   const { width } = useWindowDimensions();
   const { getToken } = useAuth();
   const getTokenRef = useRef(getToken);

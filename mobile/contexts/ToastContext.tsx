@@ -33,6 +33,7 @@ export const toast = {
   show: (opts: ToastOptions) => externalShow?.(opts),
   success: (message: string, extra?: Partial<ToastOptions>) => externalShow?.({ message, kind: 'success', ...extra }),
   error: (message: string, extra?: Partial<ToastOptions>) => externalShow?.({ message, kind: 'error', ...extra }),
+  info: (message: string, extra?: Partial<ToastOptions>) => externalShow?.({ message, kind: 'info', ...extra }),
 };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {

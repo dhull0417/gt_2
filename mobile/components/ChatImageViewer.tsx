@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
+import { useWindowInsets } from '@/contexts/WindowInsetsContext';
 import { Modal, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
@@ -19,7 +19,8 @@ const MAX_SCALE = 4;
 
 export function ChatImageViewer({ visible, imageUrl, imageWidth, imageHeight, onClose }: Props) {
   const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
+  // Drawn full-screen over the offline banner: needs the real top inset.
+  const insets = useWindowInsets();
   const viewerHeight = height * 0.85;
 
   // Rendered image box within the letterboxed container, so panning clamps to

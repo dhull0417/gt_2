@@ -22,12 +22,14 @@ import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 import { SkeletonList } from '@/components/Skeleton';
+import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
 import { NotificationBell } from '@/components/NotificationBell';
 import { haptic } from '@/utils/haptics';
 import { tabScreenBottomPadding } from '@/utils/layout';
 import { MeetupCard } from '@/components/MeetupCard';
 import { DayHeader, splitByDay } from '@/components/MeetupDayGroups';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { getMeetupStatus } from '@/utils/meetupStatus';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import { toast } from '@/contexts/ToastContext';
@@ -151,7 +153,8 @@ const DashboardScreen = () => {
   const { getToken } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
   const { scheme } = useAppearance();
   const colors = useThemeColors();
   const { openMeetupId } = useLocalSearchParams<{ openMeetupId?: string }>();
@@ -163,9 +166,10 @@ const DashboardScreen = () => {
   const pendingQuestions = React.useRef<Meetup | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
 
-  const { data: meetups, isLoading, isError, refetch, dataUpdatedAt } = useGetMeetups();
+  const meetupsQuery = useGetMeetups();
+  const { data: meetups, isLoading, isError, refetch, dataUpdatedAt } = meetupsQuery;
   const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
-  const { mutate: rsvp, isPending: isRsvping, variables: rsvpVariables } = useRsvp();
+  const { mutate: rsvp, isBusyFor: isRsvpBusyFor, isQueuedFor: isRsvpQueuedFor } = useRsvp();
   const { data: groups } = useGetGroups();
   const meetupCapableGroups = useMemo(() => {
     if (!currentUser) return [];
@@ -184,7 +188,6 @@ const DashboardScreen = () => {
   const [rsvpFilter, setRsvpFilter] = useState<RsvpFilter>('all');
 
   const [filterOpen, setFilterOpen] = useState(false);
-  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [hintDismissed, setHintDismissed] = useState(false);
 
   // Realtime + the 5-minute stale time already keep this fresh; only refetch on focus when it's a bit old.
@@ -200,18 +203,12 @@ const DashboardScreen = () => {
     }).catch(() => {});
   }, []);
 
-  const handlePullRefresh = useCallback(async () => {
-    setIsPullRefreshing(true);
-    try {
-      await Promise.all([
-        refetch(),
-        queryClient.invalidateQueries({ queryKey: ['groups'] }),
-        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
-      ]);
-    } finally {
-      setIsPullRefreshing(false);
-    }
-  }, [refetch, queryClient]);
+  // Offline, this says so and stops instead of spinning until the connection is back.
+  const { refreshing: isPullRefreshing, refresh: handlePullRefresh } = useRefreshOrToast([
+    () => refetch(),
+    () => queryClient.invalidateQueries({ queryKey: ['groups'] }),
+    () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+  ]);
 
   const uniqueGroups = useMemo(() => {
     if (!meetups) return [];
@@ -424,7 +421,8 @@ const DashboardScreen = () => {
           onPress={() => handleOpenModal(meetup)}
           showRsvpButtons={true}
           onRsvp={(status, guestCount, mute) => handleDashboardRsvp(meetup, status, guestCount, mute)}
-          isRsvping={isRsvping && rsvpVariables?.meetupId === meetup._id}
+          isRsvping={isRsvpBusyFor(meetup._id)}
+          rsvpQueued={isRsvpQueuedFor(meetup._id)}
           currentUser={currentUser}
         />
       </FadeInCard>
@@ -602,6 +600,8 @@ const DashboardScreen = () => {
 
       {isLoading ? (
         <View style={{ flex: 1, padding: 16 }}><SkeletonList kind="meetup" count={3} /></View>
+      ) : isOfflineEmpty(meetupsQuery) ? (
+        <OfflineEmptyState message="Connect to the internet to load your meetups." onRetry={handlePullRefresh} />
       ) : isError && !meetups ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
           <Text style={{ textAlign: 'center', color: colors.textMuted, fontSize: 16, marginBottom: 16 }}>Couldn't load your meetups.</Text>

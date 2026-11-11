@@ -77,3 +77,53 @@ describe('mergeOlderPage', () => {
     expect(ids(mergeOlderPage([msg('a', 1)], []))).toEqual(['a']);
   });
 });
+
+describe('applyReactionToggle', () => {
+  const { applyReactionToggle } = require('../chatCache');
+  const msg = (id: string, reactions?: Record<string, string[]>) =>
+    ({ id, group_id: 'g', sender_id: 'author', sender_name: 'Al', content: '', created_at: '2026-01-01T00:00:00Z', reactions });
+
+  it('adds my reaction', () => {
+    const list = [msg('a'), msg('b', { '👍': ['x'] })];
+    const { messages, result } = applyReactionToggle(list, 'b', '❤️', 'me');
+    expect(messages[1].reactions).toEqual({ '👍': ['x'], '❤️': ['me'] });
+    expect(result).toMatchObject({ action: 'added', emoji: '❤️', messageId: 'b', senderId: 'author', senderName: 'Al' });
+    expect(messages[0]).toBe(list[0]); // untouched rows keep their identity (no re-render)
+  });
+
+  it('changes my reaction from one emoji to another', () => {
+    const { messages, result } = applyReactionToggle([msg('b', { '👍': ['me', 'x'] })], 'b', '❤️', 'me');
+    expect(messages[0].reactions).toEqual({ '👍': ['x'], '❤️': ['me'] });
+    expect(result).toMatchObject({ action: 'changed', emoji: '❤️', previousEmoji: '👍' });
+  });
+
+  it('removes my reaction when I tap the same emoji, dropping empty emoji keys', () => {
+    const { messages, result } = applyReactionToggle([msg('b', { '👍': ['me'] })], 'b', '👍', 'me');
+    expect(messages[0].reactions).toEqual({});
+    expect(result).toMatchObject({ action: 'removed', emoji: '👍' });
+  });
+
+  it('keeps reactions that arrived from others when undoing mine', () => {
+    // Undo = apply the same toggle again on the current state, not restore an old snapshot.
+    const after = applyReactionToggle([msg('b', {})], 'b', '😂', 'me').messages;
+    const withOthers = [{ ...after[0], reactions: { ...after[0].reactions, '🔥': ['other'] } }];
+    expect(applyReactionToggle(withOthers, 'b', '😂', 'me').messages[0].reactions).toEqual({ '🔥': ['other'] });
+  });
+});
+
+describe('undoReactionToggle', () => {
+  const { applyReactionToggle, undoReactionToggle } = require('../chatCache');
+  const msg = (reactions: Record<string, string[]>) =>
+    [{ id: 'b', group_id: 'g', sender_id: 'a', sender_name: 'A', content: '', created_at: '2026-01-01T00:00:00Z', reactions }];
+
+  it('puts a changed reaction back to the previous emoji', () => {
+    const { messages, result } = applyReactionToggle(msg({ '👍': ['me'] }), 'b', '❤️', 'me');
+    expect(undoReactionToggle(messages, result, 'me')[0].reactions).toEqual({ '👍': ['me'] });
+  });
+  it('removes an added one and restores a removed one', () => {
+    const added = applyReactionToggle(msg({}), 'b', '❤️', 'me');
+    expect(undoReactionToggle(added.messages, added.result, 'me')[0].reactions).toEqual({});
+    const removed = applyReactionToggle(msg({ '❤️': ['me'] }), 'b', '❤️', 'me');
+    expect(undoReactionToggle(removed.messages, removed.result, 'me')[0].reactions).toEqual({ '❤️': ['me'] });
+  });
+});

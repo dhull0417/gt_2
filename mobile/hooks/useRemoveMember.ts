@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getErrorMessage } from "../utils/networkError";
 import { useAuth } from "@clerk/expo";
 import { useApiClient, groupApi } from "../utils/api";
 import { broadcastGroupUpdate } from "../utils/groupRealtime";
@@ -25,7 +26,7 @@ export const useRemoveMember = () => {
       broadcastGroupUpdate(getToken, variables.groupId);
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Could not remove member.";
+      const errorMessage = getErrorMessage(error, "Could not remove member.");
       Alert.alert("Error", errorMessage);
     },
   });

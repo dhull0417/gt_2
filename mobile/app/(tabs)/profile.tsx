@@ -14,7 +14,6 @@ import * as WebBrowser from 'expo-web-browser';
 import { pickAndUploadImage, PhotoReadError } from '@/utils/uploadImage';
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { useAppearance, useThemeColors, type ThemePreference } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
 import { unregisterPushToken } from '@/hooks/usePushNotifications';
@@ -53,7 +52,8 @@ const HomeScreen = () => {
   const api = useApiClient();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
   const queryClient = useQueryClient();
   const { preference, setPreference, scheme } = useAppearance();
   const colors = useThemeColors();

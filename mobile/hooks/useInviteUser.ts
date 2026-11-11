@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getErrorMessage } from "../utils/networkError";
 import { useApiClient, groupApi } from "../utils/api";
 import { Alert } from "react-native";
 
@@ -19,7 +20,7 @@ export const useInviteUser = () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to send invite.";
+      const errorMessage = getErrorMessage(error, "Failed to send invite.");
       Alert.alert("Error", errorMessage);
     },
   });

@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
 import {
   View, Text, TextInput, StyleSheet, Alert, Switch, ActivityIndicator,
   ScrollView, KeyboardAvoidingView, Platform,
@@ -40,7 +42,8 @@ export default function GroupQuestionsScreen() {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const { getToken } = useAuth();
-  const { data: group, isLoading } = useGetGroupDetails(id);
+  const groupQuery = useGetGroupDetails(id);
+  const { data: group, isLoading } = groupQuery;
 
   const schedule = useMemo(() => group?.schedules?.find((s) => s._id === scheduleId) ?? null, [group, scheduleId]);
   const isPremium = group?.isPremium === true;
@@ -105,6 +108,10 @@ export default function GroupQuestionsScreen() {
       setSaving(false);
     }
   };
+
+  if (isOfflineEmpty(groupQuery)) {
+    return <SafeAreaView style={styles.safe}><OfflineEmptyState onBack={() => router.back()} /></SafeAreaView>;
+  }
 
   if (isLoading || !group || !schedule) {
     return (

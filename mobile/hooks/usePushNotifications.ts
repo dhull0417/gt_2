@@ -4,14 +4,15 @@ import * as Device from 'expo-device';
 import { Alert, Linking, Platform } from 'react-native';
 import { AxiosInstance } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MutationObserver, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '@/utils/api';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import Constants from 'expo-constants';
 import { reportPermissionStatus } from '@/utils/permissions';
 import { getActiveChat } from '@/utils/activeChat';
 import { goToTarget, resolveNotificationTarget, routeInputFromPush } from '@/utils/notificationRouting';
-import { RSVP_MUTATION_KEY, type RsvpVariables } from '@/utils/offlineMutations';
+import { type RsvpVariables } from '@/utils/offlineMutations';
+import { queueMutation } from '@/utils/queuedMutations';
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
@@ -98,8 +99,8 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
       const status = actionIdentifier === 'GOING' ? 'in' : 'out';
       try {
         // The shared RSVP mutation: queued if offline, and refreshes the lists when it lands.
-        await new MutationObserver<unknown, any, RsvpVariables>(queryClient, { mutationKey: RSVP_MUTATION_KEY })
-          .mutate({ meetupId: String(meetupId), status, skipResponsePopup: true });
+        const variables: RsvpVariables = { meetupId: String(meetupId), status, skipResponsePopup: true };
+        await queueMutation(queryClient, 'rsvp', variables);
       } catch {
         // Couldn't RSVP from the notification (not signed in yet, full, deadline passed): open the meetup.
         handleNotificationNavigation(data);

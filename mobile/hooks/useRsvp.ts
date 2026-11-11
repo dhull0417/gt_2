@@ -1,55 +1,69 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
+import { onlineManager, useMutationState, useQueryClient } from "@tanstack/react-query";
 import { useApiClient, Meetup } from "../utils/api";
-import { Alert } from "react-native";
 import { haptic } from "../utils/haptics";
 import { emitRsvpResponse } from "../utils/rsvpResponseBus";
 import { promptForNotificationPermissionOnFirstRsvpIn } from "./usePushNotifications";
 import { RSVP_MUTATION_KEY, type RsvpVariables } from "../utils/offlineMutations";
-import { useIsOnline } from "./useIsOnline";
+import { queueMutation } from "../utils/queuedMutations";
+import { toast } from "@/contexts/ToastContext";
 
-// The mutationFn lives in utils/offlineMutations.ts (registered on the
-// QueryClient), not here — see the comment there. The ['meetups'] cache
-// invalidation on success also runs globally (app/_layout.tsx's MutationCache),
-// so it still happens even if this screen isn't mounted when a queued RSVP
-// finally goes through. What's left here is UI-only and fine to skip if that's
-// the case: the popup/notification-prompt has nothing to attach to.
+// Meetups we've already said "saved, sends when online" about during this offline stretch,
+// so tapping In/Out/In doesn't stack three toasts.
+const toldOffline = new Set<string>();
+onlineManager.subscribe((online) => { if (online) toldOffline.clear(); });
+
+interface RsvpCallbacks {
+  onSuccess?: (data: any) => void;
+  onError?: (error: any) => void;
+}
+
+// The mutationFn, the optimistic card flip and the error toast all live on the QueryClient
+// (utils/offlineMutations.ts, app/_layout.tsx), so a queued RSVP resolves correctly even when no
+// screen is mounted. What's here is UI-only: the reaction popup, the haptic, and per-meetup state.
 export const useRsvp = () => {
   const api = useApiClient();
-  const isOnline = useIsOnline();
   const queryClient = useQueryClient();
 
-  const mutation = useMutation<unknown, any, RsvpVariables>({
-    mutationKey: RSVP_MUTATION_KEY,
-
-    onSuccess: (_data, variables) => {
-      haptic.success();
-      if (!variables.skipResponsePopup) {
-        // The group's own reactions (Premium) replace the defaults for that status.
-        const meetup = queryClient.getQueryData<Meetup[]>(['meetups'])?.find((m) => m._id === variables.meetupId);
-        const custom = meetup?.group?.isPremium === false
-          ? undefined
-          : meetup?.group?.rsvpResponses?.filter((r) => r.status === variables.status);
-        emitRsvpResponse(variables.status, custom);
-      }
-      if (variables.status === 'in') promptForNotificationPermissionOnFirstRsvpIn(api);
-    },
-    onError: (error: any) => {
-      haptic.error();
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || "Failed to update RSVP.";
-      Alert.alert("Error", errorMessage);
-    },
+  const states = useMutationState({
+    filters: { mutationKey: RSVP_MUTATION_KEY, status: 'pending' },
+    select: (m) => ({ vars: m.state.variables as RsvpVariables, paused: m.state.isPaused }),
   });
 
+  // Sending right now (show a spinner) vs. waiting for a connection (leave the buttons usable:
+  // the card already shows the new answer, and tapping again just replaces the queued one).
+  const busyIds = useMemo(() => new Set(states.filter((s) => !s.paused).map((s) => s.vars?.meetupId)), [states]);
+  const queuedIds = useMemo(() => new Set(states.filter((s) => s.paused).map((s) => s.vars?.meetupId)), [states]);
+
+  const mutate = useCallback((variables: RsvpVariables, callbacks?: RsvpCallbacks) => {
+    if (!onlineManager.isOnline() && !variables.targetUserId && !toldOffline.has(variables.meetupId)) {
+      toldOffline.add(variables.meetupId);
+      toast.info("Saved. It'll send when you're back online.");
+    }
+    queueMutation<{ meetup?: Meetup }>(queryClient, 'rsvp', variables).then(
+      (data) => {
+        haptic.success();
+        if (!variables.skipResponsePopup) {
+          // The group's own reactions (Premium) replace the defaults for that status.
+          const meetup = queryClient.getQueryData<Meetup[]>(['meetups'])?.find((m) => m._id === variables.meetupId);
+          const custom = meetup?.group?.isPremium === false
+            ? undefined
+            : meetup?.group?.rsvpResponses?.filter((r) => r.status === variables.status);
+          emitRsvpResponse(variables.status, custom);
+        }
+        if (variables.status === 'in') promptForNotificationPermissionOnFirstRsvpIn(api);
+        callbacks?.onSuccess?.(data);
+      },
+      // The message itself is shown once, globally (MutationCache.onError in app/_layout.tsx).
+      (error) => callbacks?.onError?.(error),
+    );
+  }, [api, queryClient]);
+
   return {
-    ...mutation,
-    // Tapping while offline still queues the RSVP (it's applied once
-    // reconnected, same as before) - this just surfaces feedback so the tap
-    // doesn't look like a no-op, since the only other visible change offline
-    // was the button's own disabled-opacity styling.
-    mutate: (variables: RsvpVariables, options?: Parameters<typeof mutation.mutate>[1]) => {
-      // Not blocking: the RSVP is saved and sent as soon as the connection is back.
-      if (!isOnline) Alert.alert("You're offline", "Your RSVP is saved and will be sent when you're back online.");
-      mutation.mutate(variables, options);
-    },
+    mutate,
+    /** A request for this meetup is on its way right now. */
+    isBusyFor: (meetupId: string) => busyIds.has(meetupId),
+    /** An RSVP for this meetup is saved and waiting for a connection. */
+    isQueuedFor: (meetupId: string) => queuedIds.has(meetupId),
   };
 };

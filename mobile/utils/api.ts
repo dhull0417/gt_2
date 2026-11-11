@@ -496,13 +496,11 @@ interface VotePollPayload {
 export const createApiClient = (getToken: () => Promise<string | null>): AxiosInstance => {
   const api = axios.create({
     baseURL: API_BASE_URL,
-    // Bounds every request so a call made with no real connectivity fails
-    // fast (see utils/networkError.ts) instead of hanging indefinitely -
-    // axios has no timeout by default. Mutations that are meant to queue and
-    // wait for reconnect (sendMessage/rsvp/acceptInvite/declineInvite) are
-    // paused by React Query's offline handling before the request is ever
-    // sent, so they're unaffected by this.
-    timeout: 5000,
+    // Bounds every request so one stuck on a dead connection fails instead of hanging forever
+    // (axios has no timeout by default). It used to be 5s, which cut off big first loads and slow
+    // cellular links and then called them "no internet". Offline, requests don't get this far:
+    // queued actions pause, and everything else fails at once (see utils/networkError.ts).
+    timeout: 15000,
     headers: {
       "User-Agent": "GT2MobileApp/1.0",
       "Content-Type": "application/json",

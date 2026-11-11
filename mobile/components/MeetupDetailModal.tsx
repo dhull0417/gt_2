@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { requireOnline } from '@/utils/offlineState';
 import { DateTime } from 'luxon';
 import { meetupDayKey, meetupStartInstant, meetupEndInstant, dayKeyToLocalDate, localDateToDayKey, formatMeetupDate, formatMeetupTimeRange, viewerZone } from '@/utils/meetupTime';
 import { addHour, endTimeError } from '@/utils/timeString';
@@ -144,7 +145,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
         queryFn: () => userApi.getCurrentUser(api),
     });
 
-    const { mutate: rsvp, isPending: isRsvping } = useRsvp();
+    const { mutate: rsvp, isBusyFor: isRsvpBusyFor, isQueuedFor: isRsvpQueuedFor } = useRsvp();
+    const isRsvping = meetup ? isRsvpBusyFor(meetup._id) : false;
+    const rsvpQueued = meetup ? isRsvpQueuedFor(meetup._id) : false;
 
     const [assignmentsSignal, setAssignmentsSignal] = useState(0);
     const [questionsSignal, setQuestionsSignal] = useState(0);
@@ -310,9 +313,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                     setQuestionsSignal((n) => n + 1);
                 }
             },
-            onError: (error: any) => {
-                Alert.alert("RSVP Failed", error.response?.data?.error || "An error occurred while updating your RSVP.");
-            }
+            // The reason ("deadline passed", "full") is shown once by the global RSVP error toast.
         });
     };
 
@@ -782,6 +783,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
 
     const handleCancelMeetup = () => {
         if (isExpired) return; // Can't cancel or restore an ended meetup
+        if (!requireOnline(isCancelled ? 'bring this meetup back' : 'cancel this meetup')) return;
         if (isCancelled) {
             Alert.alert("Reactivate Meetup", "Bring this meetup back? Everyone will be notified.", [
                 { text: "No", style: "cancel" },
@@ -999,6 +1001,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                             </PressableOpacity>
                         )}
                     </Animated.View>
+                    {rsvpQueued && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8 }}>
+                            <Feather name="clock" size={12} color={colors.textMuted} />
+                            <Text style={{ color: colors.textMuted, fontSize: 12, marginLeft: 4 }}>Your RSVP sends when you're back online</Text>
+                        </View>
+                    )}
                 </View>
 
                 {!isReadOnly && (

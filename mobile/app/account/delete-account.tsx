@@ -1,4 +1,5 @@
 import { View, Text, Alert, ActivityIndicator, StyleSheet } from 'react-native';
+import { requireOnline } from '@/utils/offlineState';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +23,7 @@ const DeleteAccountScreen = () => {
     const [deleteLoading, setDeleteLoading] = useState(false);
 
     const handleDeleteAccount = () => {
+        if (!requireOnline('delete your account')) return;
         Alert.alert(
             'Final Confirmation',
             'This will permanently delete your account from GroupThat. There is no way to recover it.' +

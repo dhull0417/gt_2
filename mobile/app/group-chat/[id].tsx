@@ -15,9 +15,10 @@ import {
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
+import { queueMutation } from '@/utils/queuedMutations';
+import { useIsOnline } from '@/hooks/useIsOnline';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { nextJumpStep, takeJumpRequest } from '@/utils/chatJump';
 import { CHAT_LOAD_LIMIT_MS, chatLoadState } from '@/utils/chatLoadState';
@@ -85,7 +86,9 @@ const GroupChatScreen = () => {
   const { scheme } = useAppearance();
   const isDark = scheme === 'dark';
 
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
+  const isOnline = useIsOnline();
   const api = useApiClient();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -117,9 +120,8 @@ const GroupChatScreen = () => {
   // And leaving marks it read again: whatever arrived while you were watching has been seen.
   useEffect(() => {
     if (!id) return;
-    const markRead = () => userApi.markGroupRead(api, id)
-      .then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] }))
-      .catch(() => {});
+    // Queued, so a chat read offline still clears its unread badge once the connection is back.
+    const markRead = () => { queueMutation(queryClient, 'markGroupRead', { groupId: id }).catch(() => {}); };
     markRead();
     return () => { markRead(); };
   }, [id]);
@@ -192,7 +194,7 @@ const GroupChatScreen = () => {
 
   const {
     messages, loading, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage,
-    fetchOlder, loadingOlder, reachedStart, refetch: refetchMessages,
+    fetchOlder, loadingOlder, reachedStart, refetch: refetchMessages, offlineNoMessages,
   } = useMessages(id ?? '');
   const { typingNames, handleTyping, clearTypingFor } = useTypingIndicator(id ?? '', senderId, senderName);
   const { pins, pinMessage, unpinMessage } = usePinnedMessages(id ?? '');
@@ -464,8 +466,9 @@ const GroupChatScreen = () => {
 
   // A genuinely empty chat has nothing to position — reveal the empty state immediately.
   useEffect(() => {
-    if (!loading && messages.length === 0) setContentReady(true);
-  }, [loading, messages.length]);
+    // Offline with nothing saved isn't an empty chat: keep the overlay up so it can say so.
+    if (!loading && !offlineNoMessages && messages.length === 0) setContentReady(true);
+  }, [loading, offlineNoMessages, messages.length]);
 
   // Once visibly open, new messages get the usual animated scroll-into-view —
   // but only when the user is already near the bottom; otherwise surface the FAB instead.
@@ -523,9 +526,10 @@ const GroupChatScreen = () => {
       const notifyText = text || '📷 Photo';
       api.patch(`/api/groups/${id}/last-message`, { text: notifyText, senderName }).catch(() => {});
       // Mark read so your own message doesn't re-trigger the unread dot after you leave
-      userApi.markGroupRead(api, id).catch(() => {});
-    } catch (err: any) {
-      Alert.alert('Error', err?.message ?? JSON.stringify(err));
+      queueMutation(queryClient, 'markGroupRead', { groupId: id }).catch(() => {});
+    } catch {
+      // The bubble itself turns red with Retry / Discard; no extra alert (it could pop up over
+      // another screen a minute later, after the retries run out).
     }
   };
 
@@ -545,7 +549,7 @@ const GroupChatScreen = () => {
     } else {
       Alert.alert(
         'Still sending…',
-        'This message is waiting for a connection.',
+        isOnline ? 'This message is still being sent.' : 'This message is waiting for a connection.',
         [
           { text: 'Discard', style: 'destructive', onPress: () => discardSend(item.mutationId!) },
           { text: 'Close', style: 'cancel' },
@@ -560,23 +564,12 @@ const GroupChatScreen = () => {
     setSelectedMessageLayout(null);
   };
 
-  const handleReact = async (emoji: string) => {
+  const handleReact = (emoji: string) => {
     if (!selectedMessage || !id) return;
     const target = selectedMessage;
     closeActionPanel();
-    try {
-      const result = await addReaction(target.id, emoji, senderId);
-      if (result.action !== 'removed') {
-        api.post(`/api/groups/${id}/chat-reaction`, {
-          emoji: result.emoji,
-          senderName,
-          // Lets the server notify just the message's author instead of the whole group.
-          authorId: result.senderId || undefined,
-        }).catch(() => {});
-      }
-    } catch (err: any) {
-      Alert.alert('Reaction failed', err?.message ?? JSON.stringify(err));
-    }
+    // Queued: works offline. The push to the author is sent with it (utils/chatMutations.ts).
+    addReaction(target.id, emoji, senderId, senderName);
   };
 
   // Anyone can pin in a DM; in a group only owners and moderators (enforced in the app, not the database).
@@ -670,9 +663,11 @@ const GroupChatScreen = () => {
     hasGroup: !!effectiveGroup,
     hasUser: !!currentUser,
     messagesReady: contentReady,
+    messagesPaused: offlineNoMessages,
     elapsedMs: loadTimedOut ? CHAT_LOAD_LIMIT_MS : 0,
   });
   const retryLoad = () => {
+    if (!onlineManager.isOnline()) { toast.info("You're still offline."); return; }
     queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
     queryClient.invalidateQueries({ queryKey: ['groups'] });
     queryClient.invalidateQueries({ queryKey: ['currentUser'] });
@@ -802,6 +797,10 @@ const GroupChatScreen = () => {
                   <View style={{ paddingVertical: 12 }}>
                     <LoadingAnimation />
                   </View>
+                ) : !isOnline && !reachedStart && messages.length > 0 ? (
+                  <Text style={{ textAlign: 'center', color: colors.textFaint, fontSize: 12, paddingVertical: 10 }}>
+                    Connect to the internet to load older messages
+                  </Text>
                 ) : reachedStart && messages.length > 0 ? (
                   <Text style={{ textAlign: 'center', color: colors.textFaint, fontSize: 12, paddingVertical: 10 }}>
                     Start of the conversation
@@ -935,9 +934,20 @@ const GroupChatScreen = () => {
         {!chatContentReady && (
           <View
             style={[styles.loadingContainer, { backgroundColor: colors.background }, StyleSheet.absoluteFillObject]}
-            pointerEvents={loadState.state === 'failed' ? 'auto' : 'none'}
+            pointerEvents={loadState.state === 'failed' || loadState.state === 'offline' ? 'auto' : 'none'}
           >
-            {loadState.state === 'failed' ? (
+            {loadState.state === 'offline' ? (
+              <View style={{ alignItems: 'center', paddingHorizontal: 32 }}>
+                <Feather name="wifi-off" size={30} color={colors.textFaint} />
+                <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginTop: 12 }}>You're offline</Text>
+                <Text style={{ fontSize: 15, color: colors.textMuted, marginTop: 6, textAlign: 'center' }}>
+                  This chat hasn't been saved on this phone yet. It loads as soon as you're back online.
+                </Text>
+                <PressableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt, marginTop: 18 }]} onPress={handleBack}>
+                  <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600' }}>Back</Text>
+                </PressableOpacity>
+              </View>
+            ) : loadState.state === 'failed' ? (
               <View style={{ alignItems: 'center', paddingHorizontal: 32 }}>
                 <Feather name="wifi-off" size={30} color={colors.textFaint} />
                 <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginTop: 12 }}>Couldn't load this chat</Text>

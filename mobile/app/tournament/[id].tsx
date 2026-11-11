@@ -1,6 +1,8 @@
 // An event's results: matches, standings or bracket, and teams. Players enter their own
 // match results; owners and moderators can fix any result and Update / Randomize / Edit.
 import React, { useCallback, useMemo, useState } from 'react';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
 import { View, Text, ScrollView, RefreshControl, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -29,12 +31,13 @@ export default function TournamentScreen() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { data: me } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
-  const { data: t, isLoading, error, refetch, isRefetching } = useQuery({
+  const tournamentQuery = useQuery({
     queryKey: ['tournament', id],
     queryFn: () => tournamentApi.get(api, id!),
     enabled: !!id,
     refetchInterval: 15000,
   });
+  const { data: t, isLoading, error, refetch, isRefetching } = tournamentQuery;
   useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
   const [tab, setTab] = useState<Tab>('matches');
   const [open, setOpen] = useState<TMatch | null>(null);
@@ -100,7 +103,9 @@ export default function TournamentScreen() {
           <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()} style={styles.iconBtn}><Feather name="arrow-left" size={24} color={colors.textMuted} /></PressableOpacity>
         </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          {error ? <Text style={styles.body}>{apiError(error).message}</Text> : <LoadingAnimation />}
+          {isOfflineEmpty(tournamentQuery)
+            ? <OfflineEmptyState message="Connect to the internet to load this event." />
+            : error ? <Text style={styles.body}>{apiError(error).message}</Text> : <LoadingAnimation />}
         </View>
       </SafeAreaView>
     );

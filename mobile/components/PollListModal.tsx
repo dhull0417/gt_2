@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty, requireOnline } from '@/utils/offlineState';
 import {
     View,
     Text,
@@ -41,8 +43,9 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
     const colors = useThemeColors();
     const { scheme } = useAppearance();
     const isDark = scheme === 'dark';
-    const { data: polls, isLoading } = useGetPolls(groupId);
-    const { mutateAsync: votePoll, isPending: isVoting } = useVotePoll();
+    const pollsQuery = useGetPolls(groupId);
+    const { data: polls, isLoading } = pollsQuery;
+    const { vote: votePoll, isBusyFor: isVoteBusyFor, isQueuedFor: isVoteQueuedFor } = useVotePoll();
     const { mutateAsync: cancelPoll, isPending: isCancelling } = useCancelPoll();
 
     const [selectedPollId, setSelectedPollId] = useState<string | null>(null);
@@ -54,6 +57,9 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
     }, [visible, initialPollId]);
 
     const selectedPoll = polls?.find(p => p._id === selectedPollId) || null;
+    // Sending now (spinner) vs. saved offline (button stays usable; a new choice replaces the queued one).
+    const isVoting = selectedPoll ? isVoteBusyFor(selectedPoll._id) : false;
+    const voteQueued = selectedPoll ? isVoteQueuedFor(selectedPoll._id) : false;
 
     useEffect(() => {
         if (!selectedPoll) return;
@@ -81,11 +87,12 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
         try {
             await votePoll({ pollId: selectedPoll._id, optionIds: selectedOptionIds, groupId });
         } catch {
-            // Errors surfaced via the mutation's onError alert.
+            // Shown once by the global queued-action error toast (app/_layout.tsx).
         }
     };
 
     const handleCancelPoll = (poll: Poll) => {
+        if (!requireOnline('cancel this poll')) return;
         Alert.alert('Cancel Poll', `Are you sure you want to cancel "${poll.prompt}"?`, [
             { text: 'No', style: 'cancel' },
             {
@@ -109,7 +116,9 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                 </PressableOpacity>
             </View>
 
-            {isLoading ? (
+            {isOfflineEmpty(pollsQuery) ? (
+                <OfflineEmptyState message="Connect to the internet to load the polls." />
+            ) : isLoading ? (
                 <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
             ) : !polls || polls.length === 0 ? (
                 <Text style={[styles.emptyText, { color: colors.textFaint }]}>No polls yet.</Text>
@@ -270,6 +279,11 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                     >
                         {isVoting ? <ActivityIndicator color="white" /> : <Text style={styles.submitBtnText}>Submit Vote</Text>}
                     </PressableOpacity>
+                )}
+                {!isExpired && voteQueued && (
+                    <Text style={{ color: colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 8 }}>
+                        Your vote sends when you're back online
+                    </Text>
                 )}
             </>
         );

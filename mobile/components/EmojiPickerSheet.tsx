@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useWindowInsets } from '@/contexts/WindowInsetsContext';
 import {
   Animated,
   Keyboard,
@@ -12,7 +13,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { EmojiKeyboard, type EmojiType } from 'rn-emoji-keyboard';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 
 /**
@@ -97,7 +97,8 @@ export function EmojiPickerSheet({ open, onClose, onEmojiSelected, heightRatio =
   const colors = useThemeColors();
   const { scheme } = useAppearance();
   const isDark = scheme === 'dark';
-  const insets = useSafeAreaInsets();
+  // Drawn full-screen over the offline banner: needs the real top inset.
+  const insets = useWindowInsets();
   const { height: windowHeight } = useWindowDimensions();
   const keyboardVisible = useKeyboardVisible(open);
 

@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getErrorMessage } from "../utils/networkError";
 import { useAuth } from "@clerk/expo";
 import { useApiClient, groupApi } from "../utils/api";
 import { Alert } from "react-native";
@@ -29,7 +30,7 @@ export const useDeleteGroup = () => {
       broadcastMeetupUpdate(getToken, variables.groupId);
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to delete group.";
+      const errorMessage = getErrorMessage(error, "Failed to delete group.");
       Alert.alert("Error", errorMessage);
     },
   });

@@ -70,6 +70,7 @@ export const MeetupCard = ({
   showRsvpButtons,
   onRsvp,
   isRsvping,
+  rsvpQueued = false,
   currentUser,
 }: {
   meetup: Meetup;
@@ -77,6 +78,8 @@ export const MeetupCard = ({
   showRsvpButtons: boolean;
   onRsvp: (status: 'in' | 'out', guestCount?: number, mute?: boolean) => void;
   isRsvping: boolean;
+  /** An RSVP for this meetup is saved offline and will send when the connection is back. */
+  rsvpQueued?: boolean;
   currentUser: User | undefined;
 }) => {
   const { scheme } = useAppearance();
@@ -375,6 +378,12 @@ export const MeetupCard = ({
               )}
             </>
           )}
+        </View>
+      )}
+      {rsvpQueued && (
+        <View className="flex-row items-center justify-center mt-3">
+          <Feather name="clock" size={12} color={colors.textMuted} />
+          <Text style={{ color: colors.textMuted, fontSize: 12, marginLeft: 4 }}>Your RSVP sends when you're back online</Text>
         </View>
       )}
     </View>

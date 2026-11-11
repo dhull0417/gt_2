@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { useWindowInsets } from '@/contexts/WindowInsetsContext';
+import { requireOnline } from '@/utils/offlineState';
 import {
   View,
   Text,
@@ -27,7 +29,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi, groupApi } from '@/utils/api';
 import { usePremium } from '@/hooks/usePremium';
 import { getErrorMessage } from '@/utils/networkError';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { formatSchedule } from '@/utils/schedule';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
@@ -47,7 +48,10 @@ const GroupSettings = () => {
   const { isPremium } = usePremium();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
+  // Full-screen modals below cover the offline banner too, so they pad by the real inset.
+  const windowInsets = useWindowInsets();
   const colors = useThemeColors();
   const { scheme } = useAppearance();
   const isDark = scheme === 'dark';
@@ -391,6 +395,7 @@ const GroupSettings = () => {
 
   // --- MEMBER REMOVAL LOGIC ---
   const handleRemoveMemberPress = (member: User) => {
+    if (!requireOnline('remove a member')) return;
     Alert.alert(
       "Remove Member",
       `Are you sure you want to remove ${getUserDisplayName(member)} from the group?`,
@@ -426,6 +431,7 @@ const GroupSettings = () => {
 
   // --- OWNERSHIP TRANSFER LOGIC ---
   const handleTransferPress = (member: User) => {
+    if (!requireOnline('transfer ownership')) return;
     Alert.alert(
       "Transfer Ownership",
       `Are you sure you want to make ${getUserDisplayName(member)} the new owner? You will become a moderator.` +
@@ -464,6 +470,7 @@ const GroupSettings = () => {
   // --- TERMINATION LOGIC ---
 
   const handleConfirmDelete = () => {
+    if (!requireOnline('delete this group')) return;
     // Step 1: Standard Deletion Alert
     Alert.alert(
       "Delete Group",
@@ -501,6 +508,7 @@ const GroupSettings = () => {
   };
 
   const handleConfirmLeave = () => {
+    if (!requireOnline('leave this group')) return;
     Alert.alert("Leave Group", "Are you sure you want to leave this group?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -790,7 +798,7 @@ const GroupSettings = () => {
         animationType="slide"
         onRequestClose={() => setIsEditingMods(false)}
       >
-        <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+        <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: windowInsets.top }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <PressableOpacity onPress={() => setIsEditingMods(false)} style={styles.headerIconButton}>
               <Feather name="x" size={24} color={colors.textSecondary} />
@@ -854,7 +862,7 @@ const GroupSettings = () => {
         animationType="slide"
         onRequestClose={() => setIsEditingMembers(false)}
       >
-        <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+        <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: windowInsets.top }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <PressableOpacity onPress={() => setIsEditingMembers(false)} style={styles.headerIconButton}>
               <Feather name="chevron-down" size={28} color={colors.textSecondary} />
@@ -883,7 +891,7 @@ const GroupSettings = () => {
                   </View>
 
                   {canRemove ? (
-                    <PressableOpacity onPress={() => Alert.alert("Remove Member", `Remove ${item.firstName} from the group?`, [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: () => performMemberRemoval(mId) }])} disabled={isRemovingMemberId === mId}>
+                    <PressableOpacity onPress={() => requireOnline('remove a member') && Alert.alert("Remove Member", `Remove ${item.firstName} from the group?`, [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: () => performMemberRemoval(mId) }])} disabled={isRemovingMemberId === mId}>
                         {isRemovingMemberId === mId ? <ActivityIndicator size="small" color={colors.danger} /> : <Feather name="x-circle" size={24} color={colors.danger} />}
                     </PressableOpacity>
                   ) : isMbrOwner ? <View style={[styles.ownerBadgeShield, { backgroundColor: chipIndigo }]}><Feather name="shield" size={16} color={colors.brand} /></View> : null}
@@ -901,7 +909,7 @@ const GroupSettings = () => {
         animationType="slide"
         onRequestClose={() => setIsTransferModalVisible(false)}
       >
-        <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+        <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: windowInsets.top }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <PressableOpacity onPress={() => setIsTransferModalVisible(false)} style={styles.headerIconButton}>
               <Feather name="chevron-down" size={28} color={colors.textSecondary} />

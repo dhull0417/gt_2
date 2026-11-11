@@ -4,10 +4,14 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/contexts/ToastContext';
 import { SkeletonList } from '@/components/Skeleton';
+import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { onlineManager, useMutationState, useQuery } from '@tanstack/react-query';
+import { queueMutation } from '@/utils/queuedMutations';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { useMarkNotificationsAsRead } from '@/hooks/useMarkNotificationsAsRead';
 import { rideNoticeLead } from '@/utils/rides';
@@ -16,7 +20,6 @@ import { Feather } from '@expo/vector-icons';
 import { getChangeLines, type ChangeLine } from '@/utils/changeLines';
 import { getNotificationIcon } from '@/utils/notificationIcons';
 import { goToTarget, resolveNotificationTarget } from '@/utils/notificationRouting';
-import { ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
@@ -73,7 +76,7 @@ const ChangeLines = ({ lines, styles }: { lines: ChangeLine[]; styles: ReturnTyp
     </View>
 );
 
-const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDelete, isAccepting, isDeclining, colors, unreadBg, highlight }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, onDelete: (id: string) => void, isAccepting: boolean, isDeclining: boolean, colors: ThemeColors, unreadBg: string, highlight: boolean }) => {
+const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDelete, isAccepting, isDeclining, replyQueued = false, colors, unreadBg, highlight }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, onDelete: (id: string) => void, isAccepting: boolean, isDeclining: boolean, replyQueued?: boolean, colors: ThemeColors, unreadBg: string, highlight: boolean }) => {
     const router = useRouter();
     const styles = useMemoStyles(colors);
 
@@ -219,14 +222,14 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDe
                             onPress={() => onAccept(notification._id)}
                             disabled={isAccepting || isDeclining}
                         >
-                            <Text style={styles.actionTextAccept}>{isAccepting ? 'Accepting…' : 'Accept'}</Text>
+                            <Text style={styles.actionTextAccept}>{isAccepting ? (replyQueued ? 'Accepts when online' : 'Accepting…') : 'Accept'}</Text>
                         </PressableOpacity>
                         <PressableOpacity
                             style={[styles.actionButton, styles.declineButton, (isAccepting || isDeclining) && styles.actionButtonDisabled]}
                             onPress={() => onDecline(notification._id)}
                             disabled={isAccepting || isDeclining}
                         >
-                            <Text style={styles.actionTextDecline}>{isDeclining ? 'Declining…' : 'Decline'}</Text>
+                            <Text style={styles.actionTextDecline}>{isDeclining ? (replyQueued ? 'Declines when online' : 'Declining…') : 'Decline'}</Text>
                         </PressableOpacity>
                     </View>
                 )}
@@ -265,24 +268,23 @@ const NotificationsScreen = () => {
     const { scheme } = useAppearance();
     const unreadBg = scheme === 'dark' ? '#152238' : '#EFF6FF';
     const styles = useMemoStyles(colors);
-    const { data: notifications, isLoading, refetch } = useGetNotifications();
+    const notificationsQuery = useGetNotifications();
+    const { data: notifications, isLoading, refetch } = notificationsQuery;
     const { mutate: markAsRead } = useMarkNotificationsAsRead();
     const { data: currentUser } = useQuery<User>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
-    const [isPullRefreshing, setIsPullRefreshing] = useState(false);
 
     // mutationFn + the ['notifications']/['groups'] invalidation on success both
     // live in utils/offlineMutations.ts / app/_layout.tsx's MutationCache, so an
     // accept/decline tapped offline is queued and still resolves correctly even
     // if this screen isn't around to see it (see useRsvp.ts for the same pattern).
-    const acceptMutation = useMutation<unknown, any, string>({
-        mutationKey: ACCEPT_INVITE_MUTATION_KEY,
-        onSuccess: () => toast.success('Invite accepted'),
-        onError: (error) => console.error("Failed to accept invite", error),
+    // Invitation replies are queued: tapped offline they are saved and sent when the connection
+    // is back (mutationFn + list refresh are in utils/offlineMutations.ts / app/_layout.tsx).
+    const queryClientForInvites = useQueryClient();
+    const inviteReplies = useMutationState({
+        filters: { status: 'pending', predicate: (m) => ['acceptInvite', 'declineInvite'].includes(m.options.mutationKey?.[0] as string) },
+        select: (m) => ({ id: m.state.variables as string, kind: m.options.mutationKey?.[0] as string, paused: m.state.isPaused }),
     });
-    const declineMutation = useMutation<unknown, any, string>({
-        mutationKey: DECLINE_INVITE_MUTATION_KEY,
-        onError: (error) => console.error("Failed to decline invite", error),
-    });
+    const replyFor = (id: string) => inviteReplies.find((r) => r.id === id);
 
     // The unread highlight stays for as long as you're on this screen: remember which rows were
     // unread when it opened, then mark everything read (which clears the bell and app badge).
@@ -300,8 +302,14 @@ const NotificationsScreen = () => {
         markAsRead(undefined, { onSettled: () => refetch() });
     }, [notifications, focusTick, markAsRead, refetch]);
 
-    const handleAccept = (id: string) => acceptMutation.mutate(id);
-    const handleDecline = (id: string) => declineMutation.mutate(id);
+    const replyToInvite = (key: 'acceptInvite' | 'declineInvite', id: string) => {
+        if (!onlineManager.isOnline()) toast.info("Saved. It'll send when you're back online.");
+        queueMutation(queryClientForInvites, key, id)
+            .then(() => { if (key === 'acceptInvite') toast.success('Invite accepted'); })
+            .catch(() => { /* MutationCache.onError shows why */ });
+    };
+    const handleAccept = (id: string) => replyToInvite('acceptInvite', id);
+    const handleDecline = (id: string) => replyToInvite('declineInvite', id);
 
     const handleDelete = async (id: string) => {
         const previous = queryClient.getQueryData<Notification[]>(['notifications']);
@@ -314,10 +322,8 @@ const NotificationsScreen = () => {
         }
     };
 
-    const handlePullRefresh = async () => {
-        setIsPullRefreshing(true);
-        try { await refetch(); } finally { setIsPullRefreshing(false); }
-    };
+    // Offline, this says so and stops instead of spinning until the connection is back.
+    const { refreshing: isPullRefreshing, refresh: handlePullRefresh } = useRefreshOrToast([() => refetch()]);
 
     const sections = useMemo(() => {
         const today = startOfToday();
@@ -329,6 +335,10 @@ const NotificationsScreen = () => {
             ...(earlier.length ? [{ title: 'Earlier', data: earlier }] : []),
         ];
     }, [notifications]);
+
+    if (isOfflineEmpty(notificationsQuery)) {
+        return <View style={styles.container}><OfflineEmptyState message="Connect to the internet to load your notifications." onRetry={handlePullRefresh} /></View>;
+    }
 
     if (isLoading || !currentUser) {
         return <View style={styles.container}><SkeletonList kind="notification" count={7} /></View>;
@@ -354,8 +364,9 @@ const NotificationsScreen = () => {
                         onAccept={handleAccept}
                         onDecline={handleDecline}
                         onDelete={handleDelete}
-                        isAccepting={acceptMutation.isPending && acceptMutation.variables === item._id}
-                        isDeclining={declineMutation.isPending && declineMutation.variables === item._id}
+                        isAccepting={replyFor(item._id)?.kind === 'acceptInvite'}
+                        isDeclining={replyFor(item._id)?.kind === 'declineInvite'}
+                        replyQueued={!!replyFor(item._id)?.paused}
                         colors={colors}
                         unreadBg={unreadBg}
                         highlight={unreadIds.has(item._id)}

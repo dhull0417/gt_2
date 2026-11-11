@@ -21,3 +21,12 @@ describe('chatLoadState', () => {
     expect(chatLoadState({ hasGroup: true, hasUser: true, messagesReady: true, elapsedMs: 20000 }).state).toBe('ready');
   });
 });
+
+describe('chatLoadState offline', () => {
+  it('says offline right away when messages are waiting for a connection and none are saved', () => {
+    expect(chatLoadState({ hasGroup: true, hasUser: true, messagesReady: false, messagesPaused: true, elapsedMs: 0 }).state).toBe('offline');
+  });
+  it('shows saved messages normally while offline', () => {
+    expect(chatLoadState({ hasGroup: true, hasUser: true, messagesReady: true, messagesPaused: true, elapsedMs: 0 }).state).toBe('ready');
+  });
+});

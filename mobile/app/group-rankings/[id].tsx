@@ -1,5 +1,7 @@
 // Saved strength rankings for teams & tournaments (owners and moderators, Premium, up to 10).
 import React, { useMemo, useState } from 'react';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
 import { View, Text, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -24,13 +26,15 @@ export default function GroupRankingsScreen() {
   const router = useRouter();
   const api = useApiClient();
   const queryClient = useQueryClient();
-  const { data: group } = useGetGroupDetails(id);
+  const groupQuery = useGetGroupDetails(id);
+  const { data: group } = groupQuery;
   const isPremium = group?.isPremium === true;
-  const { data: lists, isLoading } = useQuery({
+  const listsQuery = useQuery({
     queryKey: ['rankingLists', id],
     queryFn: () => tournamentApi.listRankings(api, id!),
     enabled: !!id && isPremium,
   });
+  const { data: lists, isLoading } = listsQuery;
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<RankingList | null>(null);
@@ -53,6 +57,10 @@ export default function GroupRankingsScreen() {
     const everyone = [...members].sort((a, b) => label(a._id).localeCompare(label(b._id))).map((m) => m._id);
     run(async () => { const r = await tournamentApi.saveRanking(api, id!, n, everyone); setName(''); return r.lists; });
   };
+
+  if (isOfflineEmpty(groupQuery) || (isPremium && isOfflineEmpty(listsQuery))) {
+    return <SafeAreaView style={styles.safe}><OfflineEmptyState onBack={() => router.back()} /></SafeAreaView>;
+  }
 
   if (!group || (isPremium && isLoading)) {
     return <SafeAreaView style={styles.safe}><View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><LoadingAnimation /></View></SafeAreaView>;

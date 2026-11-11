@@ -20,9 +20,11 @@ import { Feather } from '@expo/vector-icons';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { NotificationBell } from '@/components/NotificationBell';
 import { SkeletonList } from '@/components/Skeleton';
+import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
 import { tabScreenBottomPadding } from '@/utils/layout';
 import { promptForNotificationPermission } from '@/hooks/usePushNotifications';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { useUnreadCounts } from '@/hooks/useUnreadCounts';
 import { formatListTime } from '@/utils/listTime';
@@ -68,10 +70,10 @@ const GroupScreen = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
   const colors = useThemeColors();
   const { promptNotifications } = useLocalSearchParams<{ promptNotifications?: string }>();
-  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [creatingSample, setCreatingSample] = useState(false);
 
   // M7: a ready-made group so someone brand new can poke around (RSVP, chat) before committing to their own.
@@ -100,7 +102,8 @@ const GroupScreen = () => {
     router.setParams({ promptNotifications: undefined });
   }, [promptNotifications]);
 
-  const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups, dataUpdatedAt: groupsUpdatedAt } = useGetGroups();
+  const groupsQuery = useGetGroups();
+  const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups, dataUpdatedAt: groupsUpdatedAt } = groupsQuery;
 
   const { data: currentUser, refetch: refetchUser, isLoading: isLoadingUser } = useQuery<User, Error>({
     queryKey: ['currentUser'],
@@ -130,14 +133,8 @@ const GroupScreen = () => {
     }, [refetchGroups, refetchUser, groupsUpdatedAt])
   );
 
-  const handlePullRefresh = useCallback(async () => {
-    setIsPullRefreshing(true);
-    try {
-      await Promise.all([refetchGroups(), refetchUser()]);
-    } finally {
-      setIsPullRefreshing(false);
-    }
-  }, [refetchGroups, refetchUser]);
+  // Offline, this says so and stops instead of spinning until the connection is back.
+  const { refreshing: isPullRefreshing, refresh: handlePullRefresh } = useRefreshOrToast([() => refetchGroups(), () => refetchUser()]);
 
   // Groups the existing check (lastMessage newer than lastReadAt, not sent by me) marks unread —
   // only those are asked for a real count.
@@ -308,6 +305,8 @@ const GroupScreen = () => {
 
       {showSkeleton ? (
         <View style={{ flex: 1, paddingHorizontal: 16 }}><SkeletonList kind="group" count={5} /></View>
+      ) : isOfflineEmpty(groupsQuery) ? (
+        <OfflineEmptyState message="Connect to the internet to load your groups." onRetry={handlePullRefresh} />
       ) : isErrorGroups && !groups ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
           <Text style={{ color: colors.textMuted, fontSize: 16, marginBottom: 16 }}>Couldn't load your groups.</Text>

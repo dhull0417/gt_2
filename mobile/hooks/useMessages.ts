@@ -1,10 +1,11 @@
 import { useEffect, useCallback, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { useAuth } from '@clerk/expo';
-import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
+import { onlineManager, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
+import { queueMutation } from '@/utils/queuedMutations';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabaseClient, refreshRealtimeAuth, takeFreshChannel } from '@/utils/supabase';
-import { SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
+import { SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables, type ToggleReactionVariables } from '@/utils/chatMutations';
 import type { ChatMessage, PendingImage, ReactionResult } from '@/types/chat';
 import { useIsOnline } from '@/hooks/useIsOnline';
 import { mergeLatestPage, mergeOlderPage, upsertMessage } from '@/utils/chatCache';
@@ -56,11 +57,14 @@ export function useMessages(groupId: string) {
     return mergeLatestPage(queryClient.getQueryData<ChatMessage[]>(queryKey), page, MESSAGE_PAGE_SIZE);
   }, [groupId, queryClient, queryKey]);
 
-  const { data: messages = [], isLoading: loading, error, refetch } = useQuery<ChatMessage[], Error>({
+  const { data: cachedMessages, isLoading: loading, error, refetch, fetchStatus } = useQuery<ChatMessage[], Error>({
     queryKey,
     queryFn: fetchMessages,
     enabled: !!groupId,
   });
+  const messages = useMemo(() => cachedMessages ?? [], [cachedMessages]);
+  // Opened offline with nothing saved for this chat: waiting for a connection, not "empty".
+  const offlineNoMessages = fetchStatus === 'paused' && cachedMessages === undefined;
 
   // Loads the page of messages just before the oldest one we have. Keyset on (created_at, id)
   // so messages sharing a timestamp are never skipped or repeated.
@@ -68,6 +72,8 @@ export function useMessages(groupId: string) {
   // didn't run (already loading, or the start of the chat is already loaded).
   const fetchOlder = useCallback(async (): Promise<number | null> => {
     if (loadingOlderRef.current || reachedStartRef.current) return null;
+    // Offline: don't hammer a request on every scroll; the screen shows a one-line note instead.
+    if (!onlineManager.isOnline()) return null;
     const oldest = queryClient.getQueryData<ChatMessage[]>(queryKey)?.[0];
     if (!oldest) return null;
     loadingOlderRef.current = true;
@@ -103,10 +109,11 @@ export function useMessages(groupId: string) {
   // mutationFn lives in the shared registry (utils/chatMutations.ts), not here,
   // so a send that's paused for being offline can be resumed after an app
   // restart even before this screen (or any component) has remounted.
-  const sendMessageMutation = useMutation<ChatMessage, Error, SendMessageVariables>({
-    mutationKey: SEND_MESSAGE_MUTATION_KEY,
-  });
-  const mutateSendMessage = sendMessageMutation.mutateAsync;
+  // queueMutation gives every send to this chat the same scope, so they go out in order.
+  const mutateSendMessage = useCallback(
+    (vars: SendMessageVariables) => queueMutation<ChatMessage>(queryClient, 'sendMessage', vars),
+    [queryClient]
+  );
 
   const sendMessage = useCallback(
     (
@@ -159,7 +166,8 @@ export function useMessages(groupId: string) {
       reply_to_id: v.replyTo?.id ?? null,
       reply_to_content: v.replyTo?.content ?? null,
       reply_to_sender: v.replyTo?.senderName ?? null,
-      image_url: v.image?.url ?? null,
+      // A photo queued offline has only its local file until it's sent.
+      image_url: v.image?.url ?? v.image?.localUri ?? null,
       image_width: v.image?.width ?? null,
       image_height: v.image?.height ?? null,
       mentions: v.mentions ?? null,
@@ -226,73 +234,14 @@ export function useMessages(groupId: string) {
     [queryClient]
   );
 
+  // Queued (works offline): the bubble updates at once; the server call, the push to the author and
+  // undo-on-failure all live in the registered default (utils/chatMutations.ts).
   const addReaction = useCallback(
-    async (messageId: string, emoji: string, userId: string): Promise<ReactionResult> => {
-      const token = await getTokenRef.current({ template: 'supabase' });
-      if (!token) throw new Error('No auth token');
-
-      const current = queryClient.getQueryData<ChatMessage[]>(queryKey)?.find((m) => m.id === messageId);
-      const existing = current?.reactions ?? {};
-
-      let previousEmoji: string | undefined;
-      for (const [e, users] of Object.entries(existing)) {
-        if (users.includes(userId)) { previousEmoji = e; break; }
-      }
-
-      const newReactions = { ...existing };
-      if (previousEmoji) {
-        const filtered = (newReactions[previousEmoji] ?? []).filter((id) => id !== userId);
-        if (filtered.length === 0) delete newReactions[previousEmoji];
-        else newReactions[previousEmoji] = filtered;
-      }
-
-      let action: ReactionResult['action'];
-      if (previousEmoji === emoji) {
-        action = 'removed';
-      } else {
-        action = previousEmoji ? 'changed' : 'added';
-        newReactions[emoji] = [...(newReactions[emoji] ?? []), userId];
-      }
-
-      queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) =>
-        prev?.map((m) => (m.id === messageId ? { ...m, reactions: newReactions } : m))
-      );
-
-      const supabase = getSupabaseClient(token);
-      // toggle_reaction locks the row and applies this one change on the server, so two people
-      // reacting at the same moment can no longer overwrite each other's reaction.
-      const { data: saved, error: rpcError } = await supabase.rpc('toggle_reaction', {
-        p_message_id: messageId,
-        p_emoji: emoji,
-      });
-      let sbError = rpcError;
-      if (rpcError && (rpcError.code === 'PGRST202' || rpcError.code === '42883')) {
-        // Database predates toggle_reaction: fall back to the old whole-object write.
-        const legacy = await supabase.from('messages').update({ reactions: newReactions }).eq('id', messageId);
-        sbError = legacy.error;
-      } else if (!rpcError && saved) {
-        queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) =>
-          prev ? upsertMessage(prev, saved as ChatMessage) : prev
-        );
-      }
-
-      if (sbError) {
-        queryClient.setQueryData<ChatMessage[]>(queryKey, (prev) =>
-          prev?.map((m) => (m.id === messageId ? { ...m, reactions: existing } : m))
-        );
-        throw sbError;
-      }
-
-      return {
-        action,
-        emoji: action === 'removed' ? previousEmoji! : emoji,
-        previousEmoji: action === 'changed' ? previousEmoji : undefined,
-        messageId,
-        senderId: current?.sender_id ?? '',
-        senderName: current?.sender_name ?? '',
-      };
+    (messageId: string, emoji: string, userId: string, senderName: string) => {
+      const vars: ToggleReactionVariables = { messageId, groupId, emoji, userId, senderName };
+      queueMutation(queryClient, 'toggleReaction', vars).catch(() => { /* toast + undo are global */ });
     },
-    [groupId, queryClient, queryKey]
+    [groupId, queryClient]
   );
 
   const deleteMessage = useCallback(async (messageId: string) => {
@@ -424,6 +373,7 @@ export function useMessages(groupId: string) {
   return {
     messages: messagesWithPending,
     loading,
+    offlineNoMessages,
     error,
     sendMessage,
     retrySend,

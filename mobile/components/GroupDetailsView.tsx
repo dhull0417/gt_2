@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { requireOnline } from '@/utils/offlineState';
 import {
     Modal,
     View,
@@ -120,6 +121,7 @@ export const GroupDetailsView = ({
     };
 
     const handleLeaveGroup = () => {
+        if (!requireOnline('leave this group')) return;
         Alert.alert(
             "Leave Group",
             `Are you sure you want to leave "${groupDetails.name}"?`,

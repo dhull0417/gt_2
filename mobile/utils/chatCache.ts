@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage, ReactionResult } from '@/types/chat';
 
 // Pure helpers for keeping the ['messages', groupId] cache correct when the same
 // message can reach it from several places: the fetch, the realtime INSERT event,
@@ -62,4 +62,55 @@ export function mergeOlderPage(prev: ChatMessage[] | undefined, older: ChatMessa
   const byId = new Map(older.map((m) => [m.id, m] as const));
   for (const m of prev) byId.set(m.id, m);
   return sortByTime([...byId.values()]);
+}
+
+/**
+ * My reaction tap applied to the thread: add, change (one reaction per person) or remove.
+ * Returns the new list (untouched messages keep their identity) and what happened, for the push.
+ */
+export function applyReactionToggle(
+  messages: ChatMessage[],
+  messageId: string,
+  emoji: string,
+  userId: string,
+): { messages: ChatMessage[]; result: ReactionResult } {
+  const target = messages.find((m) => m.id === messageId);
+  const existing = target?.reactions ?? {};
+  let previousEmoji: string | undefined;
+  for (const [e, users] of Object.entries(existing)) {
+    if (users.includes(userId)) { previousEmoji = e; break; }
+  }
+  const next: Record<string, string[]> = { ...existing };
+  if (previousEmoji) {
+    const left = (next[previousEmoji] ?? []).filter((id) => id !== userId);
+    if (left.length === 0) delete next[previousEmoji];
+    else next[previousEmoji] = left;
+  }
+  let action: ReactionResult['action'];
+  if (previousEmoji === emoji) {
+    action = 'removed';
+  } else {
+    action = previousEmoji ? 'changed' : 'added';
+    next[emoji] = [...(next[emoji] ?? []), userId];
+  }
+  return {
+    messages: messages.map((m) => (m.id === messageId ? { ...m, reactions: next } : m)),
+    result: {
+      action,
+      emoji: action === 'removed' ? previousEmoji! : emoji,
+      previousEmoji: action === 'changed' ? previousEmoji : undefined,
+      messageId,
+      senderId: target?.sender_id ?? '',
+      senderName: target?.sender_name ?? '',
+    },
+  };
+}
+
+/**
+ * Takes back just my change (when the server refuses it), leaving any reactions from other people
+ * that arrived in the meantime. Restoring a whole earlier snapshot would wipe those out.
+ */
+export function undoReactionToggle(messages: ChatMessage[], result: ReactionResult, userId: string): ChatMessage[] {
+  const emojiToTap = result.action === 'changed' ? result.previousEmoji! : result.emoji;
+  return applyReactionToggle(messages, result.messageId, emojiToTap, userId).messages;
 }

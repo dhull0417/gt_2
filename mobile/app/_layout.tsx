@@ -1,4 +1,5 @@
 import { AppState, View, Text, ActivityIndicator } from 'react-native';
+import { WindowInsetsProvider } from '@/contexts/WindowInsetsContext';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -23,15 +24,23 @@ import { syncPermissionsIfChanged } from '@/utils/permissions';
 import { PENDING_INVITE_KEY } from '@/app/join/[token]';
 import { ImageCropperHost } from '@/components/ImageCropperHost';
 import { OfflineBanner } from '@/components/OfflineBanner';
-import { OfflineBannerHeightProvider } from '@/contexts/OfflineBannerContext';
+import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsOnline } from '@/hooks/useIsOnline';
 import { WelcomeModal } from '@/components/WelcomeModal';
 import { UpdateNameModal } from '@/components/UpdateNameModal';
 import { setClerkTokenGetter, getClerkToken } from '@/utils/authToken';
 import { registerChatMutationDefaults, SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
 import { upsertMessage } from '@/utils/chatCache';
 import type { ChatMessage } from '@/types/chat';
-import { registerOfflineMutationDefaults, RSVP_MUTATION_KEY, ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
-import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
+import { registerOfflineMutationDefaults, RSVP_MUTATION_KEY, ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY, VOTE_POLL_MUTATION_KEY, type VotePollVariables } from '@/utils/offlineMutations';
+import { isQueuedKey, queuedErrorMessage, queuedErrorRefreshKey } from '@/utils/queuedMutations';
+import { currentUserGate } from '@/utils/offlineState';
+import { shouldPersistQuery, trimForPersist } from '@/utils/persistence';
+import { isGroupThatReachable } from '@/utils/networkError';
+import { useResumeQueuedMutations } from '@/hooks/useResumeQueuedMutations';
+import { toast } from '@/contexts/ToastContext';
+import { QUERY_CLIENT_DEFAULT_OPTIONS, ONE_DAY_MS } from '@/utils/queryClientOptions';
+import { broadcastMeetupUpdate, broadcastPollUpdate } from '@/utils/groupRealtime';
 import type { Meetup } from '@/utils/api';
 import { ToastProvider } from '@/contexts/ToastContext';
 import { AppearanceProvider, useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
@@ -50,27 +59,22 @@ console.warn = (...args: unknown[]) => {
   originalWarn(...args);
 };
 
-const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-// Mutations queued/replayed offline (persisted to disk and resumed on reconnect
-// or app restart) — everything else still just fails fast with an alert offline.
-const QUEUED_MUTATION_KEYS: readonly string[] = [
-  'sendMessage',
-  RSVP_MUTATION_KEY[0],
-  ACCEPT_INVITE_MUTATION_KEY[0],
-  DECLINE_INVITE_MUTATION_KEY[0],
-];
 
 const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Avoids refetching on every tab-switch/nav-back focus
-      staleTime: 5 * 60 * 1000,
-      // Keeps cached data around as a useful offline fallback for days, not minutes
-      gcTime: ONE_WEEK_MS,
-    },
-  },
+  defaultOptions: QUERY_CLIENT_DEFAULT_OPTIONS,
   mutationCache: new MutationCache({
+    // A queued action (sent after reconnecting, maybe with no screen open) that the server refused
+    // or that ran out of retries: say so once, and put the screen back to what the server has.
+    onError: (error, _variables, _context, mutation) => {
+      const key = mutation.options.mutationKey?.[0];
+      if (!isQueuedKey(key)) return;
+      const message = queuedErrorMessage(key, error);
+      if (message) toast.error(message);
+      const refreshKey = queuedErrorRefreshKey(key, _variables as object | string | undefined);
+      if (refreshKey) queryClient.invalidateQueries({ queryKey: refreshKey });
+      // Only a message keeps its failed state (its bubble offers Retry / Discard).
+      if (key !== 'sendMessage') queryClient.getMutationCache().remove(mutation);
+    },
     // Runs for every mutation of these kinds regardless of whether a screen is
     // still mounted to see it — unlike a callback passed to useMutation(), this
     // still fires for one resumed in the background after the user has
@@ -113,6 +117,12 @@ const queryClient = new QueryClient({
         case DECLINE_INVITE_MUTATION_KEY[0]:
           queryClient.invalidateQueries({ queryKey: ['notifications'] });
           break;
+        case VOTE_POLL_MUTATION_KEY[0]: {
+          const { groupId } = variables as VotePollVariables;
+          queryClient.invalidateQueries({ queryKey: ['polls', groupId] });
+          broadcastPollUpdate(getClerkToken, groupId);
+          break;
+        }
       }
     },
   }),
@@ -121,6 +131,17 @@ const queryClient = new QueryClient({
 const asyncStoragePersister = createAsyncStoragePersister({
   storage: AsyncStorage,
   key: 'GT2_QUERY_CACHE',
+  // Chat threads are saved as their newest page only (see utils/persistence.ts).
+  serialize: (client) => JSON.stringify({
+    ...client,
+    clientState: {
+      ...client.clientState,
+      queries: client.clientState.queries.map((q) => ({
+        ...q,
+        state: { ...q.state, data: trimForPersist(q.queryKey, q.state.data) },
+      })),
+    },
+  }),
 });
 
 // Lets a chat send, RSVP, or invite response survive being offline: the
@@ -129,6 +150,22 @@ const asyncStoragePersister = createAsyncStoragePersister({
 // queued before an app kill can still be resumed on the next launch.
 registerChatMutationDefaults(queryClient);
 registerOfflineMutationDefaults(queryClient);
+
+// "Online" means "can reach GroupThat", not "can reach Google": NetInfo's default check fetches a
+// Google URL, which some networks block (so the app sat "offline" while our server was reachable).
+// Must run before the listener below is added.
+if (process.env.EXPO_PUBLIC_API_URL) {
+  NetInfo.configure({
+    reachabilityUrl: `${process.env.EXPO_PUBLIC_API_URL}/api/health`,
+    // GET, not NetInfo's default HEAD: the older-backend fallback below needs the response body.
+    reachabilityMethod: 'GET',
+    reachabilityTest: async (response) =>
+      isGroupThatReachable(response.status, response.status === 404 ? await response.text().catch(() => '') : ''),
+    reachabilityShortTimeout: 5 * 1000,
+    reachabilityLongTimeout: 60 * 1000,
+    reachabilityRequestTimeout: 10 * 1000,
+  });
+}
 
 // Drives React Query's online state off real connectivity so queries pause offline instead of failing
 onlineManager.setEventListener((setOnline) => {
@@ -166,31 +203,21 @@ export default function RootLayout() {
             client={queryClient}
             persistOptions={{
               persister: asyncStoragePersister,
-              maxAge: ONE_WEEK_MS,
+              // How long saved data is trusted after the app was last used. Past it the whole saved
+              // cache is dropped, so keep it generous: a month away still opens to your groups.
+              maxAge: 30 * ONE_DAY_MS,
               dehydrateOptions: {
+                // Only what screens need to open offline (utils/persistence.ts).
+                shouldDehydrateQuery: shouldPersistQuery,
                 // Persist the ones that haven't finished: paused offline, mid-flight when the app was
                 // killed, or failed and waiting on Retry/Discard. Completed ones have nothing to resume.
-                shouldDehydrateMutation: (mutation) =>
-                  mutation.state.status !== 'success' &&
-                  QUEUED_MUTATION_KEYS.includes(mutation.options.mutationKey?.[0] as string),
+                shouldDehydrateMutation: (mutation) => {
+                  const key = mutation.options.mutationKey?.[0];
+                  if (!isQueuedKey(key) || mutation.state.status === 'success') return false;
+                  // Failed ones only matter for messages (their bubble offers Retry / Discard).
+                  return mutation.state.status !== 'error' || key === 'sendMessage';
+                },
               },
-            }}
-            // Resumes any send that was still paused-offline when the app was last
-            // closed, once the persisted cache (and this mutation) is back in memory.
-            onSuccess={() => {
-              // A send that was mid-flight when the app was killed comes back "pending" but not
-              // paused, so resumePausedMutations() skips it and its placeholder would sit on
-              // "Sending..." forever. Sends are idempotent (client_id), so just run it again.
-              for (const m of queryClient.getMutationCache().getAll()) {
-                if (
-                  m.options.mutationKey?.[0] === SEND_MESSAGE_MUTATION_KEY[0] &&
-                  m.state.status === 'pending' &&
-                  !m.state.isPaused
-                ) {
-                  m.continue().catch(() => {});
-                }
-              }
-              queryClient.resumePausedMutations();
             }}
           >
             <AuthLayout />
@@ -212,6 +239,8 @@ const AuthLayout = () => {
   const queryClient = useQueryClient();
   const { scheme } = useAppearance();
   const colors = useThemeColors();
+  const isOnline = useIsOnline();
+  const insets = useSafeAreaInsets();
 
   const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
   const inTabsGroup = segments[0] === '(tabs)';
@@ -225,6 +254,9 @@ const AuthLayout = () => {
     setClerkTokenGetter(isSignedIn ? getToken : null);
     return () => setClerkTokenGetter(null);
   }, [isSignedIn, getToken]);
+
+  // Queued offline work goes out only once sign-in is ready (see the hook for why).
+  useResumeQueuedMutations(!!isLoaded && !!isSignedIn);
 
   // Coming back to the app after a while: Android suspends the realtime socket in the background,
   // so updates broadcast meanwhile were missed and the lists stayed stale until a tab switch.
@@ -247,19 +279,11 @@ const AuthLayout = () => {
     return () => sub.remove();
   }, [isSignedIn, queryClient]);
 
-  // Mutations created in this session auto-resume on reconnect, but a send
-  // restored from disk needs an explicit kick once connectivity is confirmed.
-  useEffect(() => {
-    return onlineManager.subscribe((isOnline) => {
-      if (isOnline) queryClient.resumePausedMutations();
-    });
-  }, [queryClient]);
-
   useEffect(() => {
     if (!isSignedIn) setNameModalDismissed(false);
   }, [isSignedIn]);
 
-  const { data: currentUser, isSuccess, isError: isCurrentUserError, error: currentUserError, refetch: refetchCurrentUser, isRefetching: isRefetchingCurrentUser } = useQuery<User, Error>({
+  const { data: currentUser, isSuccess, isError: isCurrentUserError, error: currentUserError, refetch: refetchCurrentUser, isRefetching: isRefetchingCurrentUser, fetchStatus: currentUserFetchStatus } = useQuery<User, Error>({
     queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
     enabled: isSignedIn,
@@ -267,10 +291,22 @@ const AuthLayout = () => {
 
   // Only a 404 means "Clerk session but no Mongo user yet (new sign-up)". Anything else
   // (no network, server error) must NOT be mistaken for a brand-new user and sent to profile setup.
-  const noBackendUser = isCurrentUserError && (currentUserError as any)?.response?.status === 404;
-  // Signed-in only: after sign-out a still-mounted screen's ['currentUser'] query can fail with
-  // no token (401), which used to cover the sign-in screen with this message and block routing.
-  const currentUserLoadFailed = !!isSignedIn && isCurrentUserError && !noBackendUser && !currentUser;
+  const userGate = currentUserGate({
+    isSignedIn,
+    hasUser: !!currentUser,
+    isError: isCurrentUserError,
+    errorStatus: (currentUserError as any)?.response?.status,
+    fetchStatus: currentUserFetchStatus,
+  });
+  const noBackendUser = userGate === 'new-user';
+  // Signed-in only (the gate is 'signed-out' otherwise): after sign-out a still-mounted screen's
+  // ['currentUser'] query can fail with no token (401), which used to cover the sign-in screen.
+  // 'offline' = waiting for a connection with nothing saved (fresh install, or a long time away).
+  const currentUserLoadFailed = userGate === 'failed' || userGate === 'offline';
+  const retryCurrentUser = () => {
+    if (!onlineManager.isOnline()) { toast.info("You're still offline."); return; }
+    refetchCurrentUser();
+  };
 
   // Drop the signed-out user's record (and any error from fetching it without a token).
   useEffect(() => {
@@ -394,18 +430,27 @@ const AuthLayout = () => {
   }, [isSignedIn, currentUser?._id]);
 
   return (
-    <OfflineBannerHeightProvider>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-        <OfflineBanner />
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      {!isOnline && <OfflineBanner segment={segments[0]} />}
+      {/* While the banner shows it already covers the status-bar area, so everything below gets a
+          top inset of 0 (screens that pad by the inset don't double up). Native SafeAreaViews adjust
+          by themselves, since they measure their own position. */}
+      <WindowInsetsProvider value={insets}>
+      <SafeAreaInsetsContext.Provider value={isOnline ? insets : { ...insets, top: 0 }}>
+      <View style={{ flex: 1 }}>
         {currentUserLoadFailed && (
           <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 50, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: 8, textAlign: 'center' }}>Can't reach GroupThat</Text>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: 8, textAlign: 'center' }}>
+              {userGate === 'offline' ? "You're offline" : "Can't reach GroupThat"}
+            </Text>
             <Text style={{ fontSize: 15, color: colors.textMuted, textAlign: 'center', lineHeight: 22, marginBottom: 24 }}>
-              Check your connection and try again. Your groups and meetups are safe.
+              {userGate === 'offline'
+                ? 'Connect to the internet to load your groups. Your groups and meetups are safe.'
+                : 'Check your connection and try again. Your groups and meetups are safe.'}
             </Text>
             <PressableOpacity
-              onPress={() => refetchCurrentUser()}
+              onPress={retryCurrentUser}
               disabled={isRefetchingCurrentUser}
               style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 32, minWidth: 140, alignItems: 'center' }}
             >
@@ -466,6 +511,8 @@ const AuthLayout = () => {
         </Stack>
         </ThemeProvider>
       </View>
-    </OfflineBannerHeightProvider>
+      </SafeAreaInsetsContext.Provider>
+      </WindowInsetsProvider>
+    </View>
   );
 };

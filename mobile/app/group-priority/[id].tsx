@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
 import {
   View, Text, TextInput, StyleSheet, Alert, Switch, ActivityIndicator, Image,
 } from 'react-native';
@@ -57,7 +59,8 @@ export default function GroupPriorityScreen() {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const { getToken } = useAuth();
-  const { data: group, isLoading } = useGetGroupDetails(id);
+  const groupQuery = useGetGroupDetails(id);
+  const { data: group, isLoading } = groupQuery;
 
   const { data: allMeetups } = useGetMeetups();
 
@@ -219,6 +222,10 @@ export default function GroupPriorityScreen() {
       setSaving(false);
     }
   };
+
+  if (isOfflineEmpty(groupQuery)) {
+    return <SafeAreaView style={styles.safe}><OfflineEmptyState onBack={() => router.back()} /></SafeAreaView>;
+  }
 
   if (isLoading || !group || !schedule) {
     return (

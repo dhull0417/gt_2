@@ -1,5 +1,8 @@
 export interface PendingImage {
-  url: string;
+  /** Set once uploaded. Older queued sends (app <= 1.4.2) always have it. */
+  url?: string;
+  /** The photo on this phone. A photo picked offline is queued with only this and uploaded when sent. */
+  localUri?: string;
   width?: number;
   height?: number;
 }

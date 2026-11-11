@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from 'react';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
 import { shareTextFile } from '@/utils/shareFile';
 import { View, Text, StyleSheet, ScrollView, Image, Alert, ActivityIndicator } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
@@ -29,7 +31,8 @@ export default function GroupStatsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const api = useApiClient();
-  const { data: group, isLoading: loadingGroup } = useGetGroupDetails(id);
+  const groupQuery = useGetGroupDetails(id);
+  const { data: group, isLoading: loadingGroup } = groupQuery;
   const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
   const [exporting, setExporting] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -45,11 +48,12 @@ export default function GroupStatsScreen() {
     return ownerId === me || (group.moderators ?? []).some((m: any) => (m?._id ?? m) === me);
   }, [group, currentUser]);
 
-  const { data: stats, isLoading, error, refetch } = useQuery<GroupStats, any>({
+  const statsQuery = useQuery<GroupStats, any>({
     queryKey: ['groupStats', id],
     queryFn: () => groupApi.getGroupStats(api, id!),
     enabled: !!id && isPremium,
   });
+  const { data: stats, isLoading, error, refetch } = statsQuery;
 
   // "Reveal to the group" for the Hall of Shame: flip it right away, roll back on failure.
   const reveal = useMutation({
@@ -98,6 +102,10 @@ export default function GroupStatsScreen() {
     </View>
   );
 
+  if (isOfflineEmpty(groupQuery)) {
+    return <SafeAreaView style={styles.safe}><OfflineEmptyState onBack={() => router.back()} /></SafeAreaView>;
+  }
+
   if (loadingGroup || !group) {
     return <SafeAreaView style={styles.safe}><View style={styles.center}><LoadingAnimation /></View></SafeAreaView>;
   }
@@ -116,6 +124,10 @@ export default function GroupStatsScreen() {
         </View>
       </SafeAreaView>
     );
+  }
+
+  if (isOfflineEmpty(statsQuery)) {
+    return <SafeAreaView style={styles.safe}>{header}<OfflineEmptyState message="Connect to the internet to load the stats." /></SafeAreaView>;
   }
 
   if (isLoading) {

@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { meetupApi, notificationApi, type Meetup, type User } from '@/utils/api';
+import { meetupApi, notificationApi, pollApi, type Meetup, type User } from '@/utils/api';
 import { authedApi } from '@/utils/authedApi';
+import { queuedRetry, queuedRetryDelay } from '@/utils/queuedMutations';
 
 // Same pattern as chatMutations.ts: the mutationFn is registered here, keyed
 // by mutationKey, rather than passed to each useMutation call — so an RSVP or
@@ -10,6 +11,13 @@ import { authedApi } from '@/utils/authedApi';
 export const RSVP_MUTATION_KEY = ['rsvp'] as const;
 export const ACCEPT_INVITE_MUTATION_KEY = ['acceptInvite'] as const;
 export const DECLINE_INVITE_MUTATION_KEY = ['declineInvite'] as const;
+export const VOTE_POLL_MUTATION_KEY = ['votePoll'] as const;
+
+export interface VotePollVariables {
+  pollId: string;
+  optionIds: string[];
+  groupId: string;
+}
 
 export interface RsvpVariables {
   meetupId: string;
@@ -53,6 +61,10 @@ export function applyOptimisticRsvp(m: Meetup, me: string, status: 'in' | 'out')
 
 export function registerOfflineMutationDefaults(queryClient: QueryClient) {
   queryClient.setMutationDefaults(RSVP_MUTATION_KEY, {
+    networkMode: 'online',
+    // A few quick retries so a blip (or a request that raced the sign-in on a cold start) isn't lost.
+    retry: queuedRetry,
+    retryDelay: queuedRetryDelay,
     mutationFn: (variables: RsvpVariables) => meetupApi.handleRsvp(authedApi, variables),
     // Optimistic: flip the card immediately, roll just that meetup back if the server says no.
     onMutate: async (variables: RsvpVariables): Promise<{ previous?: Meetup }> => {
@@ -74,9 +86,23 @@ export function registerOfflineMutationDefaults(queryClient: QueryClient) {
     },
   });
   queryClient.setMutationDefaults(ACCEPT_INVITE_MUTATION_KEY, {
+    networkMode: 'online',
+    // A few quick retries so a blip (or a request that raced the sign-in on a cold start) isn't lost.
+    retry: queuedRetry,
+    retryDelay: queuedRetryDelay,
     mutationFn: (notificationId: string) => notificationApi.acceptInvite(authedApi, notificationId),
   });
   queryClient.setMutationDefaults(DECLINE_INVITE_MUTATION_KEY, {
+    networkMode: 'online',
+    // A few quick retries so a blip (or a request that raced the sign-in on a cold start) isn't lost.
+    retry: queuedRetry,
+    retryDelay: queuedRetryDelay,
     mutationFn: (notificationId: string) => notificationApi.declineInvite(authedApi, notificationId),
+  });
+  queryClient.setMutationDefaults(VOTE_POLL_MUTATION_KEY, {
+    networkMode: 'online',
+    retry: queuedRetry,
+    retryDelay: queuedRetryDelay,
+    mutationFn: ({ pollId, optionIds }: VotePollVariables) => pollApi.votePoll(authedApi, { pollId, optionIds }),
   });
 }

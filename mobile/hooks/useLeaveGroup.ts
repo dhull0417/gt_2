@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getErrorMessage } from "../utils/networkError";
 import { useAuth } from "@clerk/expo";
 import { useApiClient, groupApi } from "../utils/api";
 import { broadcastGroupUpdate } from "../utils/groupRealtime";
@@ -26,7 +27,7 @@ export const useLeaveGroup = () => {
       broadcastGroupUpdate(getToken, variables.groupId);
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Could not leave group.";
+      const errorMessage = getErrorMessage(error, "Could not leave group.");
       Alert.alert("Error", errorMessage);
     },
   });

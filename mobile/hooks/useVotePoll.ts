@@ -1,33 +1,32 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@clerk/expo";
-import { useApiClient, pollApi } from "../utils/api";
-import { Alert } from "react-native";
-import { broadcastPollUpdate } from "../utils/groupRealtime";
+import { useCallback } from "react";
+import { onlineManager, useMutationState, useQueryClient } from "@tanstack/react-query";
+import { VOTE_POLL_MUTATION_KEY, type VotePollVariables } from "../utils/offlineMutations";
+import { queueMutation } from "../utils/queuedMutations";
 import { toast } from '@/contexts/ToastContext';
 
-interface VotePollVariables {
-  pollId: string;
-  optionIds: string[];
-  groupId: string;
-}
-
+// Votes are queued: cast offline, they're saved and sent when the connection is back (the latest
+// choice per poll wins). The list refresh, the realtime ping and the error toast are global
+// (app/_layout.tsx), so they still happen if this screen has closed by then.
 export const useVotePoll = () => {
-  const api = useApiClient();
   const queryClient = useQueryClient();
-  const { getToken } = useAuth();
-
-  return useMutation({
-    mutationFn: ({ pollId, optionIds }: VotePollVariables) =>
-      pollApi.votePoll(api, { pollId, optionIds }),
-
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['polls', variables.groupId] });
-      broadcastPollUpdate(getToken, variables.groupId);
-      toast.success("Vote recorded.");
-    },
-    onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to submit vote.";
-      Alert.alert("Error", errorMessage);
-    },
+  const pending = useMutationState({
+    filters: { mutationKey: VOTE_POLL_MUTATION_KEY, status: 'pending' },
+    select: (m) => ({ pollId: (m.state.variables as VotePollVariables)?.pollId, paused: m.state.isPaused }),
   });
+
+  const vote = useCallback((variables: VotePollVariables): Promise<unknown> => {
+    const offline = !onlineManager.isOnline();
+    if (offline) toast.info("Vote saved. It'll send when you're back online.");
+    const sent = queueMutation(queryClient, 'votePoll', variables);
+    sent.then(() => toast.success("Vote recorded."), () => {});
+    return sent;
+  }, [queryClient]);
+
+  return {
+    vote,
+    /** Being sent right now. */
+    isBusyFor: (pollId: string) => pending.some((p) => p.pollId === pollId && !p.paused),
+    /** Saved offline, sends when the connection is back. */
+    isQueuedFor: (pollId: string) => pending.some((p) => p.pollId === pollId && p.paused),
+  };
 };

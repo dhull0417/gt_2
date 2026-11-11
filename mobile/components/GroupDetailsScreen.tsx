@@ -13,8 +13,11 @@ import {
 } from 'react-native';
 import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty, requireOnline } from '@/utils/offlineState';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
@@ -60,7 +63,20 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
   const { data: groups } = useGetGroups();
   const fallbackGroup = useMemo(() => groups?.find(g => g._id === id), [groups, id]);
 
-  const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails, refetch: refetchDetails, isRefetching: isRefetchingDetails } = useGetGroupDetails(id ?? null);
+  const detailsQuery = useGetGroupDetails(id ?? null);
+  const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails, refetch: refetchDetails } = detailsQuery;
+  const detailsOffline = isOfflineEmpty(detailsQuery);
+  // If the details never arrive (a request that hangs), stop the loader after 8 seconds and offer
+  // Retry instead of spinning forever. Same limit as the chat screen.
+  const [detailsTimedOut, setDetailsTimedOut] = useState(false);
+  // Only counts while a request is actually running (not while offline and waiting).
+  const detailsFetching = detailsQuery.fetchStatus === 'fetching';
+  useEffect(() => {
+    setDetailsTimedOut(false);
+    if (groupDetails || !detailsFetching) return;
+    const t = setTimeout(() => setDetailsTimedOut(true), 8000);
+    return () => clearTimeout(t);
+  }, [groupDetails, detailsFetching, id]);
 
   const { data: currentUser } = useQuery<User, Error>({
     queryKey: ['currentUser'],
@@ -78,6 +94,8 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
 
   const isDM = groupDetails?.isDM ?? fallbackGroup?.isDM ?? false;
 
+  // Offline, this says so and stops instead of spinning until the connection is back.
+  const { refreshing: isPullRefreshing, refresh: handlePullRefresh } = useRefreshOrToast([() => refetchDetails()]);
   const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
 
   const [dmTargetMember, setDmTargetMember] = useState<User | null>(null);
@@ -104,6 +122,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
 
   const handleRemoveMember = (memberIdToRemove: string) => {
     if (!id) return;
+    if (!requireOnline('remove a member')) return;
     Alert.alert("Remove Member", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
       { text: "Remove", style: "destructive", onPress: () => {
@@ -186,14 +205,16 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
         style={{ backgroundColor: colors.backgroundAlt }}
         className="flex-1"
         keyboardShouldPersistTaps="handled"
-        refreshControl={<RefreshControl refreshing={isRefetchingDetails} onRefresh={refetchDetails} tintColor={colors.brand} colors={[colors.brand]} />}
+        refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
         contentContainerStyle={{ flexGrow: 1, paddingBottom: showsTabBarBeneath ? tabScreenBottomPadding(insets.bottom) : 0 }}
       >
         <View className="p-6" style={{ flex: 1 }}>
-          {isErrorDetails && !groupDetails ? (
+          {detailsOffline ? (
+              <OfflineEmptyState message="Connect to the internet to load this group." onRetry={handlePullRefresh} />
+          ) : (isErrorDetails || detailsTimedOut) && !groupDetails ? (
               <View style={{ alignItems: 'center', marginTop: 48 }}>
                 <Text style={{ color: colors.textMuted, fontSize: 16, textAlign: 'center', marginBottom: 16 }}>Couldn't load this group.</Text>
-                <PressableOpacity onPress={() => refetchDetails()} style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}>
+                <PressableOpacity onPress={() => { setDetailsTimedOut(false); handlePullRefresh(); }} style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}>
                   <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Try again</Text>
                 </PressableOpacity>
               </View>
