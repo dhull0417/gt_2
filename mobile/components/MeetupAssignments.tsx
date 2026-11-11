@@ -6,6 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useApiClient, meetupApi, Meetup } from '@/utils/api';
 import { assignmentsActive, summarizeAssignments, memberName } from '@/utils/assignments';
+import RideCars from '@/components/RideCars';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
 
@@ -22,9 +23,13 @@ interface Props {
   onStale?: () => void;
   /** Called whenever the assignments sheet closes (saved or dismissed). */
   onSheetClosed?: () => void;
+  /** Owner or moderator: can auto-assign and move anyone's ride. */
+  canManage?: boolean;
+  /** Past or cancelled meetup. */
+  readOnly?: boolean;
 }
 
-export default function MeetupAssignments({ meetup, currentUserId, isIn, openSignal = 0, onUpdated, onStale, onSheetClosed }: Props) {
+export default function MeetupAssignments({ meetup, currentUserId, isIn, openSignal = 0, onUpdated, onStale, onSheetClosed, canManage = false, readOnly = false }: Props) {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -109,14 +114,14 @@ export default function MeetupAssignments({ meetup, currentUserId, isIn, openSig
                   : `${-summary.seatBalance} more seat${summary.seatBalance === -1 ? '' : 's'} needed`}
             </Text>
           </View>
-          {summary.drivers.map((d) => (
-            <Text key={d.userId} style={styles.rideLine}>
-              {d.userId === currentUserId ? 'You' : memberName(meetup, d.userId)} · driving · {d.seats} seat{d.seats === 1 ? '' : 's'}
-            </Text>
-          ))}
-          {summary.passengers.length > 0 && (
-            <Text style={styles.rideLine}>Needs a ride: {names(summary.passengers)}</Text>
-          )}
+          <RideCars
+            meetup={meetup}
+            currentUserId={currentUserId}
+            canManage={canManage}
+            readOnly={readOnly}
+            onUpdated={onUpdated}
+            onStale={onStale}
+          />
         </Animated.View>
       )}
 

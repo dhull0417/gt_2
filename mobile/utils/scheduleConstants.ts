@@ -52,7 +52,8 @@ export const TZ_ABBR: Record<string, string> = {
 
 export const FREQ_LABELS: Record<string, string> = {
     daily: "Daily", weekly: "Weekly", biweekly: "Bi-Weekly",
-    monthly: "Monthly", custom: "Multiple Rules",
+    monthly: "Monthly", quarterly: "Quarterly", semiannual: "Semi-annually",
+    yearly: "Yearly", custom: "Multiple Rules",
 };
 
 export const uid = () => Math.random().toString(36).slice(2);

@@ -9,8 +9,8 @@ import { BlurView } from "expo-blur";
 
 // Biweekly "Start Date" as a focused overlay instead of an inline calendar expanding the page
 
-export const CalendarPickerModal = ({ visible, value, minDate, maxDate, onChange, onCancel }: {
-    visible: boolean; value: string; minDate?: string; maxDate?: string; onChange: (iso: string) => void; onCancel: () => void;
+export const CalendarPickerModal = ({ visible, value, minDate, maxDate, onChange, onCancel, title = "Start Date" }: {
+    visible: boolean; value: string; minDate?: string; maxDate?: string; onChange: (iso: string) => void; onCancel: () => void; title?: string;
 }) => {
     const colors = useThemeColors();
     const s = useMemo(() => makeStyles(colors), [colors]);
@@ -20,7 +20,7 @@ export const CalendarPickerModal = ({ visible, value, minDate, maxDate, onChange
         <View style={s.dayPickerPopupWrap}>
             <View style={s.calendarPopupCard}>
                 <View style={s.dayPickerPopupHeader}>
-                    <Text style={s.dayPickerPopupTitle}>Start Date</Text>
+                    <Text style={s.dayPickerPopupTitle}>{title}</Text>
                     <PressableOpacity onPress={onCancel} style={{ padding: 4 }} activeOpacity={0.7}>
                         <Feather name="x" size={20} color={colors.textFaint} />
                     </PressableOpacity>

@@ -10,7 +10,6 @@ import {
     ActivityIndicator,
     LayoutAnimation,
     UIManager,
-    Switch,
     KeyboardAvoidingView,
 } from "react-native";
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
@@ -19,7 +18,7 @@ import { DAYS_OF_WEEK, DAY_COLORS_LIGHT, ORDINAL_OCCURRENCES, FREQ_LABELS, uid, 
 import { timezoneOptions, tzAbbr } from '@/utils/timezones';
 import { toast } from '@/contexts/ToastContext';
 import { haptic } from '@/utils/haptics';
-import { getMinAttendeesError, WeekdayRow, MonthlyDateEntry, OrdinalEntry, BuiltRoutine, newBringItemKey, getBringItemsError, ScheduleData, defaultSchedule, buildLabel, buildSchedulePayload, scheduleFromNamedSchedule, scheduleEndTimeError } from '@/utils/editScheduleDraft';
+import { getMinAttendeesError, WeekdayRow, MonthlyDateEntry, OrdinalEntry, BuiltRoutine, getBringItemsError, ScheduleData, defaultSchedule, buildLabel, buildSchedulePayload, scheduleFromNamedSchedule, scheduleEndTimeError } from '@/utils/editScheduleDraft';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
@@ -33,12 +32,15 @@ import { LoadingAnimation } from "@/components/LoadingAnimation";
 import NativeTimePicker from "../../components/NativeTimePicker";
 import EndTimeField from "../../components/EndTimeField";
 import { formatTimeRange } from "@/utils/timeString";
+import { LongIntervalOptions } from "@/components/create-group/LongIntervalOptions";
+import { buildLongRoutine, emptyLongDraft, isLongDraftValid, isLongFrequency, longRoutineLabel, LONG_FREQUENCIES, type LongDraft } from "@/utils/longInterval";
 import OptionPickerModal from "../../components/OptionPickerModal";
 import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
 import InfoBubble from "@/components/InfoBubble";
 import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
-import { UpgradeButton } from '@/components/UpgradeButton';
+import { MinimumToMeetField } from '@/components/schedule/MinimumToMeetField';
+import { PremiumFeaturesCard } from '@/components/schedule/PremiumFeaturesCard';
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -208,6 +210,7 @@ const EditScheduleScreen = () => {
             monthlyMode: null,
             monthlyDates: [],
             ordinalEntries: [],
+            ...emptyLongDraft(),
             builtRoutines: [],
             customBuilding: false,
             customFreq: null,
@@ -284,6 +287,12 @@ const EditScheduleScreen = () => {
     const buildRoutineFromState = (): BuiltRoutine | null => {
         const freq = d.customFreq;
         if (!freq) return null;
+        if (isLongFrequency(freq)) {
+            if (!isLongDraftValid(d)) return null;
+            const r = buildLongRoutine(freq, d);
+            const long: LongDraft = { longFirstDate: d.longFirstDate, longRepeatBy: d.longRepeatBy, longTime: d.longTime, longEndTime: d.longEndTime };
+            return { id: uid(), frequency: freq, label: longRoutineLabel(r), dayTimes: r.dayTimes, rules: r.rules, repeatBy: r.repeatBy, editing: false, snapshot: long };
+        }
         let dayTimes: DayTime[] = [];
         let rules: any[] | undefined;
         let finalFreq: Frequency = freq;
@@ -331,6 +340,7 @@ const EditScheduleScreen = () => {
             builtRoutines: [...prev.builtRoutines, routine],
             customBuilding: false, customFreq: null, customShowFreqPicker: false,
             weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, dailySharedEndTime: null,
+            ...emptyLongDraft(),
         }));
     };
 
@@ -351,6 +361,10 @@ const EditScheduleScreen = () => {
                 monthlyMode: r.snapshot.monthlyMode ?? null,
                 monthlyDates: r.snapshot.monthlyDates ?? [],
                 ordinalEntries: (r.snapshot.ordinalEntries ?? []).map(e => ({ ...e, expanded: true })),
+                longFirstDate: r.snapshot.longFirstDate ?? null,
+                longRepeatBy: r.snapshot.longRepeatBy ?? null,
+                longTime: r.snapshot.longTime ?? "05:00 PM",
+                longEndTime: r.snapshot.longEndTime ?? null,
                 builtRoutines: prev.builtRoutines.map(br => br.id === routineId ? { ...br, editing: true } : br),
             };
         });
@@ -365,6 +379,7 @@ const EditScheduleScreen = () => {
             builtRoutines: prev.builtRoutines.map(r => r.id === editingId ? { ...routine, id: editingId } : r),
             customBuilding: false, customFreq: null,
             weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, dailySharedEndTime: null,
+            ...emptyLongDraft(),
         }));
     };
 
@@ -391,6 +406,7 @@ const EditScheduleScreen = () => {
             if (d.monthlyMode === "date") return d.monthlyDates.length > 0;
             return d.ordinalEntries.length > 0;
         }
+        if (isLongFrequency(d.frequency)) return isLongDraftValid(d);
         if (d.frequency === "custom") return d.builtRoutines.length > 0;
         return false;
     };
@@ -827,9 +843,9 @@ const EditScheduleScreen = () => {
             </PressableOpacity>
             {d.customShowFreqPicker && (
                 <View style={[s.inlineDayPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    {(["daily", "weekly", "biweekly", "monthly"] as Frequency[]).map(f => (
+                    {(["daily", "weekly", "biweekly", "monthly", ...LONG_FREQUENCIES] as Frequency[]).map(f => (
                         <PressableOpacity key={f} style={[s.dayOption, { borderBottomColor: colors.border }, d.customFreq === f && { backgroundColor: colors.brandSoft }]}
-                            onPress={() => { animate(); setD(prev => ({ ...prev, customFreq: f, customShowFreqPicker: false, weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null })); }}>
+                            onPress={() => { animate(); setD(prev => ({ ...prev, customFreq: f, customShowFreqPicker: false, weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, ...emptyLongDraft() })); }}>
                             <Text style={[s.dayOptionText, { color: colors.textSecondary }, d.customFreq === f && { color: colors.brand }]}>{FREQ_LABELS[f]}</Text>
                         </PressableOpacity>
                     ))}
@@ -839,6 +855,7 @@ const EditScheduleScreen = () => {
             {d.customFreq === "weekly" && renderWeekdayRows(false)}
             {d.customFreq === "biweekly" && renderWeekdayRows(true)}
             {d.customFreq === "monthly" && renderMonthlyOptions()}
+            {isLongFrequency(d.customFreq) && <LongIntervalOptions frequency={d.customFreq} value={d} onChange={upd} />}
             <View style={[s.boolRow, { marginTop: 14 }]}>
                 <PressableOpacity style={s.skipBtn}
                     onPress={() => { animate(); upd({ customBuilding: false, customFreq: null, builtRoutines: d.builtRoutines.map(r => ({ ...r, editing: false })) }); }}>
@@ -936,7 +953,7 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* Name */}
-                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#6366F1", backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
                             <View style={[s.sectionIconChip, { backgroundColor: chipIndigoBg, borderColor: chipIndigoBorder }]}>
                                 <Feather name="tag" size={16} color="#6366F1" />
@@ -972,10 +989,10 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* Where */}
-                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: colors.danger, backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
                             <View style={[s.sectionIconChip, { backgroundColor: chipBlueBg, borderColor: chipBlueBorder }]}>
-                                <Feather name="map-pin" size={16} color={colors.brand} />
+                                <Feather name="map-pin" size={16} color={colors.danger} />
                             </View>
                             <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Where</Text>
                         </View>
@@ -990,7 +1007,7 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* When */}
-                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: colors.warning, backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
                             <View style={[s.sectionIconChip, { backgroundColor: chipAmberBg, borderColor: chipAmberBorder }]}>
                                 <Feather name="calendar" size={16} color="#F59E0B" />
@@ -1009,7 +1026,7 @@ const EditScheduleScreen = () => {
                         </PressableOpacity>
                         {d.showFreqPicker && (
                             <View style={[s.inlineDayPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                {(["daily", "weekly", "biweekly", "monthly", "custom"] as Frequency[]).map(f => (
+                                {(["daily", "weekly", "biweekly", "monthly", ...LONG_FREQUENCIES, "custom"] as Frequency[]).map(f => (
                                     <PressableOpacity key={f} style={[s.dayOption, { borderBottomColor: colors.border }, d.frequency === f && { backgroundColor: colors.brandSoft }]}
                                         onPress={() => selectFreq(f)}>
                                         <Text style={[s.dayOptionText, { color: colors.textSecondary }, d.frequency === f && { color: colors.brand }]}>{FREQ_LABELS[f]}</Text>
@@ -1022,10 +1039,12 @@ const EditScheduleScreen = () => {
                         {d.frequency === "weekly" && renderWeekdayRows(false)}
                         {d.frequency === "biweekly" && renderWeekdayRows(true)}
                         {d.frequency === "monthly" && renderMonthlyOptions()}
+                        {isLongFrequency(d.frequency) && <LongIntervalOptions frequency={d.frequency} value={d} onChange={upd} />}
                         {d.frequency === "custom" && renderCustomOptions()}
 
-                        {/* Start Date — hidden for biweekly, where each day already asks for its own start date */}
-                        {d.frequency !== "biweekly" && (
+                        {/* Start Date — hidden for biweekly (each day asks for its own start date) and for
+                            quarterly/semiannual/yearly (the first date is the start) */}
+                        {d.frequency !== "biweekly" && !isLongFrequency(d.frequency) && (
                             <>
                                 <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Start date</Text>
                                 <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -1044,7 +1063,7 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* RSVP Rules */}
-                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#7C3AED", backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
                             <View style={[s.sectionIconChip, { backgroundColor: chipPurpleBg, borderColor: chipPurpleBorder }]}>
                                 <Feather name="bell" size={16} color="#7C3AED" />
@@ -1187,12 +1206,21 @@ const EditScheduleScreen = () => {
                                             onClose={() => upd({ showDeadlineTimePicker: false })} />
                                     )}
                                 </View>
+
+                                <MinimumToMeetField
+                                    isPremium={group?.isPremium === true}
+                                    owner={group?.owner}
+                                    deadlineOn={d.deadlineEnabled}
+                                    value={d.minAttendeesInput}
+                                    onChange={v => upd({ minAttendeesInput: v })}
+                                    error={getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput)}
+                                />
                             </View>
                         )}
                     </View>
 
                     {/* Capacity */}
-                    <View style={[s.sectionCard, { marginBottom: 18, backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#0D9488", marginBottom: 18, backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
                             <View style={[s.sectionIconChip, { backgroundColor: chipTealBg, borderColor: chipTealBorder }]}>
                                 <Feather name="users" size={16} color="#0D9488" />
@@ -1238,185 +1266,34 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* Premium features */}
-                    <View style={[s.sectionCard, { marginBottom: 8, backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, { backgroundColor: chipPurpleBg, borderColor: chipPurpleBorder }]}>
-                                <Feather name="star" size={16} color="#7C3AED" />
-                            </View>
-                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Premium</Text>
-                        </View>
-
-                        {/* Minimum headcount (Premium) */}
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Minimum to Play</Text>
-                        {group?.isPremium !== true ? (
-                            <View style={s.premiumLockRow}>
-                                <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
-                                <View style={{ flex: 1 }}>
-                                    <Text style={s.premiumLockTitle}>Premium</Text>
-                                    <Text style={s.premiumLockText}>
-                                        Cancel a meetup automatically if too few people are in by the RSVP deadline. Requires the group owner to have Premium.
-                                    </Text>
-                                    <UpgradeButton owner={group?.owner} />
-                                </View>
-                            </View>
-                        ) : !(d.rsvpRestricted && d.deadlineEnabled) ? (
-                            <Text style={s.premiumLockText}>
-                                Turn on "Limit RSVPs" and set an RSVP deadline above to use a minimum headcount.
-                            </Text>
-                        ) : (() => {
-                            const minAttendeesError = getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput);
-                            return (
-                                <View>
-                                    <View style={[s.inputRow, { marginBottom: 0 }, minAttendeesError && s.inputRowError]}>
-                                        <Feather name="flag" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
-                                        <TextInput
-                                            style={s.inlineInput}
-                                            placeholder="No minimum"
-                                            placeholderTextColor="#C4C9D4"
-                                            keyboardType="number-pad"
-                                            value={d.minAttendeesInput}
-                                            onChangeText={v => upd({ minAttendeesInput: v })}
-                                        />
-                                    </View>
-                                    {minAttendeesError
-                                        ? <Text style={s.errorText}>{minAttendeesError}</Text>
-                                        : <Text style={s.premiumLockText}>
-                                            If fewer than this many people (counting guests) are in when RSVPs close, the meetup is cancelled and everyone is told.
-                                          </Text>}
-                                </View>
-                            );
-                        })()}
-
-                        {/* Meetup assignments (Premium) */}
-                        <Text style={s.fieldLabel}>Meetup Assignments</Text>
-                        {group?.isPremium !== true ? (
-                            <View style={s.premiumLockRow}>
-                                <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
-                                <View style={{ flex: 1 }}>
-                                    <Text style={s.premiumLockTitle}>Premium</Text>
-                                    <Text style={s.premiumLockText}>
-                                        Ask people what they're bringing and coordinate rides. Requires the group owner to have Premium.
-                                    </Text>
-                                    <UpgradeButton owner={group?.owner} />
-                                </View>
-                            </View>
-                        ) : (
-                            <View>
-                                <Text style={[s.premiumLockText, { marginBottom: 10 }]}>
-                                    People who RSVP "I'm In" are asked what they're bringing. Add a number to limit how many people can bring an item.
-                                </Text>
-                                {d.bringItems.map(item => (
-                                    <View key={item.key} style={[s.inputRow, { marginBottom: 8, paddingVertical: 8 }]}>
-                                        <TextInput
-                                            style={[s.inlineInput, { flex: 1 }]}
-                                            placeholder="Item (e.g. Chips)"
-                                            placeholderTextColor="#C4C9D4"
-                                            maxLength={40}
-                                            value={item.name}
-                                            onChangeText={v => upd({ bringItems: d.bringItems.map(i => i.key === item.key ? { ...i, name: v } : i) })}
-                                        />
-                                        <TextInput
-                                            style={[s.inlineInput, { flex: 0, width: 74, textAlign: "center", borderLeftWidth: 1, borderLeftColor: "#E5E7EB" }]}
-                                            placeholder="No limit"
-                                            placeholderTextColor="#C4C9D4"
-                                            keyboardType="number-pad"
-                                            maxLength={2}
-                                            value={item.max}
-                                            onChangeText={v => upd({ bringItems: d.bringItems.map(i => i.key === item.key ? { ...i, max: v.replace(/[^0-9]/g, "") } : i) })}
-                                        />
-                                        <PressableOpacity
-                                            onPress={() => upd({ bringItems: d.bringItems.filter(i => i.key !== item.key) })}
-                                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                            style={{ marginLeft: 10 }}
-                                        >
-                                            <Feather name="trash-2" size={16} color="#9CA3AF" />
-                                        </PressableOpacity>
-                                    </View>
-                                ))}
-                                {getBringItemsError(d.bringItems) && <Text style={s.errorText}>{getBringItemsError(d.bringItems)}</Text>}
-                                {d.bringItems.length < 20 && (
-                                    <PressableOpacity
-                                        onPress={() => upd({ bringItems: [...d.bringItems, { key: newBringItemKey(), name: "", max: "" }] })}
-                                        style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8 }}
-                                    >
-                                        <Feather name="plus-circle" size={16} color="#4A90E2" />
-                                        <Text style={{ color: "#4A90E2", fontWeight: "700", fontSize: 14 }}>Add item to bring</Text>
-                                    </PressableOpacity>
-                                )}
-
-                                <View style={[s.inputRow, { marginTop: 8, marginBottom: 0, justifyContent: "space-between" }]}>
-                                    <View style={{ flex: 1, paddingRight: 12 }}>
-                                        <Text style={{ fontSize: 15, fontWeight: "600", color: "#374151" }}>Coordinate rides</Text>
-                                        <Text style={s.premiumLockText}>Ask who's driving (and how many seats) and who needs a ride.</Text>
-                                    </View>
-                                    <Switch value={d.ridesEnabled} onValueChange={v => upd({ ridesEnabled: v })} trackColor={{ true: "#4FD1C5" }} />
-                                </View>
-                            </View>
-                        )}
-
-                        {/* Priority RSVP (Premium) — saved series only, since it ranks members and edits open meetups in place */}
-                        {!isNew && (
-                            <>
-                                <Text style={s.fieldLabel}>Priority RSVP</Text>
-                                {group?.isPremium !== true ? (
-                                    <View style={s.premiumLockRow}>
-                                        <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={s.premiumLockTitle}>Premium</Text>
-                                            <Text style={s.premiumLockText}>
-                                                Let your longest-standing members RSVP first, in groups you set. Requires the group owner to have Premium.
-                                            </Text>
-                                            <UpgradeButton owner={group?.owner} />
-                                        </View>
-                                    </View>
-                                ) : (
-                                    <PressableOpacity
-                                        style={[s.inputRow, { marginBottom: 0, justifyContent: "space-between" }]}
-                                        onPress={() => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId! } })}
-                                        activeOpacity={0.7}
-                                    >
-                                        <View style={{ flex: 1, paddingRight: 12 }}>
-                                            <Text style={{ fontSize: 15, fontWeight: "600", color: "#374151" }}>
-                                                {targetSchedule?.priorityEnabled ? "On — manage groups and order" : "Set up priority groups"}
-                                            </Text>
-                                            <Text style={s.premiumLockText}>Rank members and give each group an RSVP head start.</Text>
-                                        </View>
-                                        <Feather name="chevron-right" size={20} color="#9CA3AF" />
-                                    </PressableOpacity>
-                                )}
-
-                                <Text style={s.fieldLabel}>RSVP Questions</Text>
-                                {group?.isPremium !== true ? (
-                                    <View style={s.premiumLockRow}>
-                                        <Feather name="lock" size={16} color="#9CA3AF" style={{ marginTop: 1 }} />
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={s.premiumLockTitle}>Premium</Text>
-                                            <Text style={s.premiumLockText}>
-                                                Ask members your own questions when they RSVP. Requires the group owner to have Premium.
-                                            </Text>
-                                            <UpgradeButton owner={group?.owner} />
-                                        </View>
-                                    </View>
-                                ) : (
-                                    <PressableOpacity
-                                        style={[s.inputRow, { marginBottom: 0, justifyContent: "space-between" }]}
-                                        onPress={() => router.push({ pathname: "/group-questions/[id]", params: { id: id!, scheduleId: scheduleId! } })}
-                                        activeOpacity={0.7}
-                                    >
-                                        <View style={{ flex: 1, paddingRight: 12 }}>
-                                            <Text style={{ fontSize: 15, fontWeight: "600", color: "#374151" }}>
-                                                {(targetSchedule?.defaultQuestions?.length ?? 0) > 0
-                                                    ? `${targetSchedule!.defaultQuestions!.length} question${targetSchedule!.defaultQuestions!.length === 1 ? "" : "s"} — manage`
-                                                    : "Add questions"}
-                                            </Text>
-                                            <Text style={s.premiumLockText}>Collect answers like dietary needs or skill level.</Text>
-                                        </View>
-                                        <Feather name="chevron-right" size={20} color="#9CA3AF" />
-                                    </PressableOpacity>
-                                )}
-                            </>
-                        )}
-                    </View>
+                    <PremiumFeaturesCard
+                        style={{ marginBottom: 8 }}
+                        isPremium={group?.isPremium === true}
+                        owner={group?.owner}
+                        lockedNote="Requires the group owner to have Premium."
+                        bringItems={d.bringItems}
+                        ridesEnabled={d.ridesEnabled}
+                        onChange={patch => upd(patch)}
+                        // Priority RSVP and questions rank members and edit open meetups, so they need a saved series.
+                        links={isNew ? [] : [
+                            {
+                                key: "priority",
+                                icon: "award",
+                                title: "Priority RSVP",
+                                subtitle: targetSchedule?.priorityEnabled ? "On. Manage groups and order." : "Let chosen members RSVP first.",
+                                onPress: () => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId! } }),
+                            },
+                            {
+                                key: "questions",
+                                icon: "help-circle",
+                                title: "RSVP Questions",
+                                subtitle: (targetSchedule?.defaultQuestions?.length ?? 0) > 0
+                                    ? `${targetSchedule!.defaultQuestions!.length} question${targetSchedule!.defaultQuestions!.length === 1 ? "" : "s"}. Tap to manage.`
+                                    : "Collect answers like dietary needs or skill level.",
+                                onPress: () => router.push({ pathname: "/group-questions/[id]", params: { id: id!, scheduleId: scheduleId! } }),
+                            },
+                        ]}
+                    />
                 </ScrollView>
                 </KeyboardAvoidingView>
 
@@ -1509,9 +1386,6 @@ const s = StyleSheet.create({
     descriptionInputRow: { alignItems: "flex-start", height: 90 },
     descriptionInput: { height: "100%" },
     errorText: { fontSize: 12, fontWeight: "600", color: "#EF4444", marginTop: 6, marginLeft: 2 },
-    premiumLockRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: "#F9FAFB", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 12 },
-    premiumLockTitle: { fontSize: 13, fontWeight: "800", color: "#6B7280", marginBottom: 2 },
-    premiumLockText: { fontSize: 12, color: "#6B7280", lineHeight: 17, marginTop: 6 },
     primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
     primaryBtnDisabled: { backgroundColor: "#93C5FD" },
     primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },

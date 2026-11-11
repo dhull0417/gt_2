@@ -32,6 +32,8 @@ import type { Meetup } from '@/utils/api';
 import { addGroupToCalendar } from '@/utils/calendarFeed';
 import { getGroupImage } from '@/utils/groupDisplay';
 import { runBackInterceptor } from '@/utils/backInterceptors';
+import { FREQ_LABELS } from '@/utils/scheduleConstants';
+import { isLongFrequency, repeatChoiceLabels } from '@/utils/longInterval';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -139,7 +141,7 @@ export const GroupDetailsView = ({
     // `rules` is the specific routine's own ordinal rules — must be indexed by
     // this dayTime's position, not always rules[0], since dayTimes/rules are
     // parallel arrays for ordinal routines (dayTimes[1] pairs with rules[1], etc).
-    const renderScheduleLines = (frequency: string, dayTimes: any[], rules?: any[]) => {
+    const renderScheduleLines = (frequency: string, dayTimes: any[], rules?: any[], repeatBy?: 'date' | 'weekday') => {
         const groupTimezoneAbbr = getTZAbbreviation(groupDetails.timezone);
         const timeEntries = dayTimes && dayTimes.length > 0 ? dayTimes : [{ time: "Time TBD" }];
 
@@ -160,7 +162,11 @@ export const GroupDetailsView = ({
 
         return timeEntries.map((dt, dtIdx) => {
             let dayLabel = "";
-            if (frequency === 'ordinal' && rules?.[dtIdx]) {
+            const longLabels = isLongFrequency(frequency) ? repeatChoiceLabels(frequency, dt.startDate ?? null) : null;
+            if (longLabels) {
+                const what = repeatBy === 'weekday' ? longLabels.weekday : longLabels.date;
+                dayLabel = what.charAt(0).toUpperCase() + what.slice(1);
+            } else if (frequency === 'ordinal' && rules?.[dtIdx]) {
                 const ruleDay = rules[dtIdx].day;
                 const dayName = typeof ruleDay === 'number' ? daysOfWeekFull[ruleDay] : "";
                 dayLabel = `${rules[dtIdx].occurrence} ${dayName}`;
@@ -278,9 +284,9 @@ export const GroupDetailsView = ({
                                             {(sch.routines ?? []).map((routine, rIdx) => (
                                                 <View key={rIdx} style={styles.routineBlock}>
                                                     <Text style={[styles.frequencyLabel, { color: colors.brand }]}>
-                                                        {routine.frequency === 'biweekly' ? 'Every 2 Weeks' : routine.frequency.charAt(0).toUpperCase() + routine.frequency.slice(1)}
+                                                        {routine.frequency === 'biweekly' ? 'Every 2 Weeks' : isLongFrequency(routine.frequency) ? FREQ_LABELS[routine.frequency] : routine.frequency.charAt(0).toUpperCase() + routine.frequency.slice(1)}
                                                     </Text>
-                                                    {renderScheduleLines(routine.frequency, routine.dayTimes, routine.rules)}
+                                                    {renderScheduleLines(routine.frequency, routine.dayTimes, routine.rules, routine.repeatBy)}
                                                 </View>
                                             ))}
                                         </View>

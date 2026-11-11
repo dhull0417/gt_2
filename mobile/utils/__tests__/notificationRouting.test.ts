@@ -8,6 +8,8 @@ describe('resolveNotificationTarget', () => {
 
   it('prefers the meetup for anything about a meetup', () => {
     expect(resolveNotificationTarget({ type: 'meetup-updated', groupId: 'g1', meetupId: 'm1' })).toEqual({ kind: 'meetup', meetupId: 'm1' });
+    expect(resolveNotificationTarget({ type: 'ride-assigned', groupId: 'g1', meetupId: 'm1' })).toEqual({ kind: 'meetup', meetupId: 'm1' });
+    expect(resolveNotificationTarget({ type: 'ride-removed', groupId: 'g1', meetupId: 'm1' })).toEqual({ kind: 'meetup', meetupId: 'm1' });
   });
 
   it('opens group details for group events', () => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -9,16 +9,13 @@ import { useThemeColors } from '@/contexts/AppearanceContext';
 import { usePremium } from '@/hooks/usePremium';
 import { useRefreshPremium } from '@/hooks/usePurchases';
 import { purchasesAvailable } from '@/utils/purchases';
-
-const MANAGE_URL = Platform.OS === 'ios'
-  ? 'https://apps.apple.com/account/subscriptions'
-  : 'https://play.google.com/store/account/subscriptions';
+import { PremiumActiveView } from '@/components/premium/PremiumActiveView';
 
 /**
  * Premium paywall. The paywall UI itself is designed and published in the RevenueCat dashboard
  * (Paywalls -> the one attached to the current offering), so copy, layout and prices change there
  * without an app release. This screen only wraps it: purchase/restore callbacks ask OUR server to
- * re-check RevenueCat so Premium unlocks immediately, and an already-Premium owner sees a thank-you.
+ * re-check RevenueCat so Premium unlocks immediately, and an already-Premium owner sees what Premium unlocks (PremiumActiveView).
  */
 export default function PaywallScreen() {
   const colors = useThemeColors();
@@ -37,21 +34,7 @@ export default function PaywallScreen() {
     Alert.alert(title, message, [{ text: 'Done', onPress: close }]);
   };
 
-  if (isPremium) {
-    return (
-      <SafeAreaView style={[styles.center, { backgroundColor: colors.background }]}>
-        <Feather name="check-circle" size={40} color={colors.success} />
-        <Text style={[styles.title, { color: colors.textPrimary }]}>You're Premium</Text>
-        <Text style={[styles.text, { color: colors.textMuted }]}>Thanks for supporting GroupThat.</Text>
-        <PressableOpacity onPress={() => Linking.openURL(MANAGE_URL).catch(() => {})} style={{ marginTop: 16 }}>
-          <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 15 }}>Manage subscription</Text>
-        </PressableOpacity>
-        <PressableOpacity onPress={close} style={{ marginTop: 18 }}>
-          <Text style={{ color: colors.textMuted, fontSize: 14 }}>Close</Text>
-        </PressableOpacity>
-      </SafeAreaView>
-    );
-  }
+  if (isPremium) return <PremiumActiveView onClose={close} />;
 
   if (!purchasesAvailable()) {
     return (
@@ -82,6 +65,5 @@ export default function PaywallScreen() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  title: { fontSize: 20, fontWeight: '800', marginTop: 12 },
   text: { fontSize: 14, textAlign: 'center', marginTop: 6, lineHeight: 20 },
 });

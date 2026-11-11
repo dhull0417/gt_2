@@ -10,6 +10,7 @@ import { ScheduleData, UserStub } from "@/utils/createGroupDraft";
 import { getUserDisplayName } from "@/utils/groupDisplay";
 import { DAYS_OF_WEEK, FREQ_LABELS, ordSfx } from "@/utils/scheduleConstants";
 import { timezoneLabel } from "@/utils/timezones";
+import { buildLongRoutine, describeLongRoutine, isLongDraftValid, isLongFrequency } from "@/utils/longInterval";
 import { Feather } from "@expo/vector-icons";
 import { DateTime } from "luxon";
 
@@ -73,7 +74,7 @@ export const ReviewScreen = ({ groupName, groupImage, members, schedules, timezo
                                                 <Text style={s.reviewInlineText}>{schedule.location}</Text>
                                             </View>
                                         ) : null}
-                                        {schedule.frequency !== "biweekly" && (
+                                        {schedule.frequency !== "biweekly" && !isLongFrequency(schedule.frequency) && (
                                             <View style={s.reviewInlineRow}>
                                                 <Feather name="clock" size={13} color={colors.textFaint} />
                                                 <Text style={s.reviewInlineText}>Starts {DateTime.fromISO(schedule.startDate).toLocaleString(DateTime.DATE_MED)}</Text>
@@ -102,7 +103,25 @@ export const ReviewScreen = ({ groupName, groupImage, members, schedules, timezo
                                                         <Text style={s.reviewInlineText}>Latest time to RSVP: {schedule.deadlineDays} days before at {schedule.deadlineTime}</Text>
                                                     </View>
                                                 )}
+                                                {schedule.deadlineEnabled && schedule.minAttendeesInput !== "" && (
+                                                    <View style={s.reviewInlineRow}>
+                                                        <Feather name="flag" size={13} color={colors.textFaint} />
+                                                        <Text style={s.reviewInlineText}>Minimum to meet: {schedule.minAttendeesInput}</Text>
+                                                    </View>
+                                                )}
                                             </>
+                                        )}
+                                        {schedule.bringItems.length > 0 && (
+                                            <View style={s.reviewInlineRow}>
+                                                <Feather name="shopping-bag" size={13} color={colors.textFaint} />
+                                                <Text style={s.reviewInlineText}>Things to bring: {schedule.bringItems.map(i => i.name.trim()).join(", ")}</Text>
+                                            </View>
+                                        )}
+                                        {schedule.ridesEnabled && (
+                                            <View style={s.reviewInlineRow}>
+                                                <Feather name="truck" size={13} color={colors.textFaint} />
+                                                <Text style={s.reviewInlineText}>Rides: on</Text>
+                                            </View>
                                         )}
                                     </View>
 
@@ -125,6 +144,12 @@ export const ReviewScreen = ({ groupName, groupImage, members, schedules, timezo
                                         {schedule.frequency === "monthly" && schedule.monthlyMode === "ordinal" && schedule.ordinalEntries.map(e => (
                                             <Text key={e.id} style={s.reviewMutedBullet}>• {e.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === e.day)?.label} @ {formatTimeRange(e.time, e.endTime)}</Text>
                                         ))}
+                                        {isLongFrequency(schedule.frequency) && isLongDraftValid(schedule) && (
+                                            <Text style={s.reviewMutedBullet}>
+                                                • {describeLongRoutine(buildLongRoutine(schedule.frequency, schedule))} @ {formatTimeRange(schedule.longTime, schedule.longEndTime)}
+                                                {` (from ${DateTime.fromISO(schedule.longFirstDate!).toLocaleString(DateTime.DATE_MED)})`}
+                                            </Text>
+                                        )}
                                         {schedule.frequency === "custom" && (
                                             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                                                 {schedule.builtRoutines.map(r => (

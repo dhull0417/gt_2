@@ -140,3 +140,12 @@ test('schedule: turning the minimum off says Off', () => {
   const c = scheduleChanges({ ...sched(), defaultMinAttendees: 4 }, sched(), { now: NOW });
   assert.deepEqual(c.map((x) => [x.label, x.value]), [['Minimum', 'Off']]);
 });
+
+test('schedule: quarterly / semiannual / yearly wording', () => {
+  const mk = (routine) => { const a = sched(); a.routines = [routine]; return scheduleChanges(sched(), a, { now: NOW })[0].value; };
+  const start = (iso) => new Date(`${iso}T00:00:00Z`);
+  assert.equal(mk({ frequency: 'quarterly', repeatBy: 'date', dayTimes: [{ startDate: start('2027-01-15'), date: 15, time: '06:00 PM' }], rules: [] }), 'Every 3 months on the 15th at 6:00 PM');
+  assert.equal(mk({ frequency: 'semiannual', repeatBy: 'weekday', dayTimes: [{ startDate: start('2027-01-21'), day: 4, time: '06:00 PM' }], rules: [{ type: 'byDay', occurrence: '3rd', day: 4 }] }), 'Every 6 months on the 3rd Thursday at 6:00 PM');
+  assert.equal(mk({ frequency: 'yearly', repeatBy: 'date', dayTimes: [{ startDate: start('2027-03-15'), date: 15, time: '06:00 PM' }], rules: [] }), 'Yearly on March 15 at 6:00 PM');
+  assert.equal(mk({ frequency: 'yearly', repeatBy: 'weekday', dayTimes: [{ startDate: start('2026-11-26'), day: 4, time: '06:00 PM' }], rules: [{ type: 'byDay', occurrence: '4th', day: 4 }] }), 'Yearly on the 4th Thursday of November at 6:00 PM');
+});

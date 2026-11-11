@@ -8,11 +8,17 @@ import EndTimeField from "@/components/EndTimeField";
 import { formatTimeRange } from "@/utils/timeString";
 import OptionPickerModal from "@/components/OptionPickerModal";
 import { CalendarPickerModal } from "@/components/create-group/CalendarPickerModal";
+import { LongIntervalOptions } from "@/components/create-group/LongIntervalOptions";
+import { buildLongRoutine, emptyLongDraft, isLongDraftValid, isLongFrequency, longRoutineLabel, LONG_FREQUENCIES, type LongDraft } from "@/utils/longInterval";
 import { StepDots } from "@/components/create-group/StepDots";
 import { animate, getDayColors } from "@/components/create-group/shared";
 import { makeStyles } from "@/components/create-group/styles";
 import { PressableOpacity } from "@/components/ui/PressableOpacity";
 import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
+import { MinimumToMeetField } from "@/components/schedule/MinimumToMeetField";
+import { PremiumFeaturesCard } from "@/components/schedule/PremiumFeaturesCard";
+import { usePremium } from "@/hooks/usePremium";
+import { getMinAttendeesError } from "@/utils/editScheduleDraft";
 import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
 import { DayTime, Frequency } from "@/utils/api";
 import { BuiltRoutine, defaultSchedule, isScheduleTabValid, MonthlyDateEntry, OrdinalEntry, ScheduleData, WeekdayRow } from "@/utils/createGroupDraft";
@@ -30,6 +36,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
     onSkip: () => void;
 }) => {
     const colors = useThemeColors();
+    const { isPremium, userId } = usePremium();
     const { scheme } = useAppearance();
     const isDark = scheme === 'dark';
     const s = useMemo(() => makeStyles(colors), [colors]);
@@ -78,6 +85,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
             monthlyMode: null,
             monthlyDates: [],
             ordinalEntries: [],
+            ...emptyLongDraft(),
             builtRoutines: [],
             customBuilding: false,
             customFreq: null,
@@ -168,6 +176,12 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
     const buildRoutineFromState = (): BuiltRoutine | null => {
         const freq = d.customFreq;
         if (!freq) return null;
+        if (isLongFrequency(freq)) {
+            if (!isLongDraftValid(d)) return null;
+            const r = buildLongRoutine(freq, d);
+            const long: LongDraft = { longFirstDate: d.longFirstDate, longRepeatBy: d.longRepeatBy, longTime: d.longTime, longEndTime: d.longEndTime };
+            return { id: uid(), frequency: freq, label: longRoutineLabel(r), dayTimes: r.dayTimes, rules: r.rules, repeatBy: r.repeatBy, editing: false, snapshot: long };
+        }
         let dayTimes: DayTime[] = [];
         let rules: any[] | undefined;
         let finalFreq: Frequency = freq;
@@ -215,6 +229,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
             builtRoutines: [...prev.builtRoutines, routine],
             customBuilding: false, customFreq: null, customShowFreqPicker: false,
             weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, dailySharedEndTime: null,
+            ...emptyLongDraft(),
         }));
     };
 
@@ -235,6 +250,10 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                 monthlyMode: r.snapshot.monthlyMode ?? null,
                 monthlyDates: r.snapshot.monthlyDates ?? [],
                 ordinalEntries: (r.snapshot.ordinalEntries ?? []).map(e => ({ ...e, expanded: true })),
+                longFirstDate: r.snapshot.longFirstDate ?? null,
+                longRepeatBy: r.snapshot.longRepeatBy ?? null,
+                longTime: r.snapshot.longTime ?? "05:00 PM",
+                longEndTime: r.snapshot.longEndTime ?? null,
                 builtRoutines: prev.builtRoutines.map(br => br.id === id ? { ...br, editing: true } : br),
             };
         });
@@ -249,6 +268,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
             builtRoutines: prev.builtRoutines.map(r => r.id === editingId ? { ...routine, id: editingId } : r),
             customBuilding: false, customFreq: null,
             weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, dailySharedEndTime: null,
+            ...emptyLongDraft(),
         }));
     };
 
@@ -624,9 +644,9 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
             </PressableOpacity>
             {d.customShowFreqPicker && (
                 <View style={s.inlineDayPicker}>
-                    {(["daily", "weekly", "biweekly", "monthly"] as Frequency[]).map(f => (
+                    {(["daily", "weekly", "biweekly", "monthly", ...LONG_FREQUENCIES] as Frequency[]).map(f => (
                         <PressableOpacity key={f} style={[s.dayOption, d.customFreq === f && s.dayOptionActive]}
-                            onPress={() => { animate(); setD(prev => ({ ...prev, customFreq: f, customShowFreqPicker: false, weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null })); }}>
+                            onPress={() => { animate(); setD(prev => ({ ...prev, customFreq: f, customShowFreqPicker: false, weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, ...emptyLongDraft() })); }}>
                             <Text style={[s.dayOptionText, d.customFreq === f && s.dayOptionTextActive]}>{FREQ_LABELS[f]}</Text>
                         </PressableOpacity>
                     ))}
@@ -637,6 +657,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
             {d.customFreq === "weekly" && renderWeekdayRows(false)}
             {d.customFreq === "biweekly" && renderWeekdayRows(true)}
             {d.customFreq === "monthly" && renderMonthlyOptions()}
+            {isLongFrequency(d.customFreq) && <LongIntervalOptions frequency={d.customFreq} value={d} onChange={upd} />}
 
             <View style={[s.boolRow, { marginTop: 14 }]}>
                 <PressableOpacity style={s.skipBtn}
@@ -768,7 +789,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                     </PressableOpacity>
                     {d.showFreqPicker && (
                         <OptionPickerModal title="How often?"
-                            options={(["daily", "weekly", "biweekly", "monthly", "custom"] as Frequency[]).map(f => ({ key: f, label: FREQ_LABELS[f] }))}
+                            options={(["daily", "weekly", "biweekly", "monthly", ...LONG_FREQUENCIES, "custom"] as Frequency[]).map(f => ({ key: f, label: FREQ_LABELS[f] }))}
                             selectedKey={d.frequency ?? ""}
                             onSelect={key => selectFreq(key as Frequency)}
                             onClose={() => upd({ showFreqPicker: false })} />
@@ -778,10 +799,12 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                     {d.frequency === "weekly" && renderWeekdayRows(false)}
                     {d.frequency === "biweekly" && renderWeekdayRows(true)}
                     {d.frequency === "monthly" && renderMonthlyOptions()}
+                    {isLongFrequency(d.frequency) && <LongIntervalOptions frequency={d.frequency} value={d} onChange={upd} />}
                     {d.frequency === "custom" && renderCustomOptions()}
 
-                    {/* Start Date — hidden for biweekly, where each day already asks for its own start date */}
-                    {d.frequency !== "biweekly" && (
+                    {/* Start Date — hidden for biweekly (each day asks for its own start date) and for
+                        quarterly/semiannual/yearly (the first date is the start) */}
+                    {d.frequency !== "biweekly" && !isLongFrequency(d.frequency) && (
                         <>
                             <Text style={s.fieldLabel}>Start date</Text>
                             <PressableOpacity style={s.dateFieldRow}
@@ -961,6 +984,15 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                                         onClose={() => upd({ showDeadlineTimePicker: false })} />
                                 )}
                             </View>
+
+                            <MinimumToMeetField
+                                isPremium={isPremium}
+                                owner={userId}
+                                deadlineOn={d.deadlineEnabled}
+                                value={d.minAttendeesInput}
+                                onChange={v => upd({ minAttendeesInput: v })}
+                                error={getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput)}
+                            />
                         </View>
                     )}
                 </View>
@@ -1009,6 +1041,23 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                         );
                     })()}
                 </View>
+
+                {/* Premium (starts collapsed; tap to open). Keyed by tab so each schedule starts closed. */}
+                <PremiumFeaturesCard
+                    key={`premium-${activeIndex}`}
+                    collapsible
+                    style={{ marginTop: 10, marginBottom: 8 }}
+                    isPremium={isPremium}
+                    owner={userId}
+                    lockedNote="Get Premium to turn these on for your group."
+                    bringItems={d.bringItems}
+                    ridesEnabled={d.ridesEnabled}
+                    onChange={patch => setD(prev => ({ ...prev, ...patch }))}
+                    links={[
+                        { key: "priority", icon: "award", title: "Priority RSVP", subtitle: "Set up after the group is created." },
+                        { key: "questions", icon: "help-circle", title: "RSVP Questions", subtitle: "Set up after the group is created." },
+                    ]}
+                />
                 </>
                 )}
             </ScrollView>

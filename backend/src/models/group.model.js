@@ -11,9 +11,9 @@ const dayTimeSchema = new mongoose.Schema({
   time: { type: String, required: true },   // e.g., "06:00 PM"
   // Optional end time ("09:00 PM"); earlier than `time` means the next day.
   endTime: { type: String, default: null },
-  // Biweekly-only: the chosen first occurrence for this specific day, so two
-  // days in the same routine can be phase-offset from each other (e.g.
-  // Tuesdays starting one week, Fridays starting the next).
+  // Biweekly: the chosen first occurrence for this specific day, so two days in the
+  // same routine can be phase-offset (Tuesdays starting one week, Fridays the next).
+  // Quarterly/semiannual/yearly: the series' first date (required).
   startDate: { type: Date, required: false },
 }, { _id: false });
 
@@ -24,9 +24,11 @@ const dayTimeSchema = new mongoose.Schema({
 const routineSchema = new mongoose.Schema({
   frequency: {
     type: String,
-    enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal'],
+    enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal', 'quarterly', 'semiannual', 'yearly'],
     required: true
   },
+  // quarterly/semiannual/yearly only: repeat on the first date's day-of-month or its Nth weekday.
+  repeatBy: { type: String, enum: ['date', 'weekday'], required: false },
   dayTimes: [dayTimeSchema],
   rules: [{
     type: { type: String },

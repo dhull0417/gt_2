@@ -55,6 +55,8 @@ const hashGroupColor = (groupId: string): string => {
 // How far out each recurring series shows in "Upcoming Meetups"; one-off meetups are never capped
 const TAB_CAP_DAYS: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
   daily: 7, weekly: 15, biweekly: 15, monthly: 35, ordinal: 35,
+  // Long enough that each series' next meetup is always on Home.
+  quarterly: 100, semiannual: 200, yearly: 380,
 };
 
 // Buckets by (group, frequency) so each series gets its own cap, then merges back sorted by date

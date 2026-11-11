@@ -7,6 +7,8 @@ import {
     getMeetups,
     rsvpMeetup,
   setAssignments,
+  assignRide,
+  autoAssignRides,
   setAnswers,
   setTeams,
     remindUndecided
@@ -19,6 +21,8 @@ import Group from "../models/group.model.js";
 import mongoose from "mongoose";
 import { canEditGuestsOf, guestRoom, loadClerkIds, promoteWaitlist } from "../utils/waitlist.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
+import { guestCountFn, guestIncreaseBlocked, normalizeRides } from "../utils/rides.js";
+import { notifyRideChanges } from "../utils/rideNotify.js";
 
 const router = express.Router();
 
@@ -28,6 +32,8 @@ router.get("/", protectRoute, getMeetups);
 // --- Actions ---
 router.post("/:meetupId/rsvp", protectRoute, rsvpMeetup);
 router.put("/:meetupId/assignments", protectRoute, setAssignments);
+router.patch("/:meetupId/rides/assignment", protectRoute, assignRide);
+router.post("/:meetupId/rides/auto-assign", protectRoute, autoAssignRides);
 router.put("/:meetupId/answers", protectRoute, setAnswers);
 router.put("/:meetupId/teams", protectRoute, setTeams);
 router.post("/:meetupId/remind", protectRoute, remindUndecided);
@@ -62,6 +68,11 @@ router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
         const existingIdx = meetup.guests.findIndex(g => g.userId === clerkId);
         const previousCount = existingIdx >= 0 ? (meetup.guests[existingIdx].count || 0) : 0;
 
+        // A rider whose party is in a car takes everyone out before adding guests (utils/rides.js).
+        if (count > previousCount && guestIncreaseBlocked(meetup.rides, guestUser._id)) {
+            return res.status(409).json({ error: 'leave_ride_first', message: LEAVE_RIDE_FIRST });
+        }
+
         // Guests take spots like everyone else: refuse more than there is room for, whether or not
         // the host is In yet (otherwise guests added while Out would over-fill the meetup on "I'm In").
         if (count > previousCount && meetup.capacity > 0) {
@@ -85,7 +96,9 @@ router.patch("/:meetupId/guests", protectRoute, async (req, res) => {
             meetup.guests.push({ userId: clerkId, count });
         }
         meetup.markModified('guests');
+        const rideReleased = await settleRides(meetup);
         await meetup.save();
+        if (rideReleased.length) await notifyRideChanges(meetup, rideReleased, guestUser._id);
 
         // Fewer guests frees spots for people waiting.
         if (count < previousCount) {
@@ -135,6 +148,9 @@ router.patch("/:meetupId/guests/:hostClerkId", protectRoute, async (req, res) =>
             return res.status(400).json({ message: "You can only remove another member's guests" });
         }
         if (count === previousCount) return res.json({ meetup: await populatedMeetup(meetup._id) });
+        if (count > previousCount && guestIncreaseBlocked(meetup.rides, host._id)) {
+            return res.status(409).json({ error: 'leave_ride_first', message: LEAVE_RIDE_FIRST });
+        }
         if (count > previousCount && meetup.capacity > 0) {
             const clerkIds = await loadClerkIds(meetup.in);
             const { ok, room } = guestRoom(meetup, clerkIds, { hostId: host._id, hostClerkId, nextCount: count });
@@ -144,7 +160,9 @@ router.patch("/:meetupId/guests/:hostClerkId", protectRoute, async (req, res) =>
         meetup.guests = (meetup.guests || []).filter(g => g.userId !== hostClerkId);
         if (count > 0) meetup.guests.push({ userId: hostClerkId, count });
         meetup.markModified('guests');
+        const rideReleased = await settleRides(meetup);
         await meetup.save();
+        if (rideReleased.length) await notifyRideChanges(meetup, rideReleased, requester._id);
 
         if (count < previousCount) {
             try { await promoteWaitlist(meetup._id); } catch (e) { console.error('Waitlist promotion failed:', e); }
@@ -171,6 +189,17 @@ router.patch("/:meetupId/guests/:hostClerkId", protectRoute, async (req, res) =>
         res.status(500).json({ message: 'Internal server error' });
     }
 });
+
+const LEAVE_RIDE_FIRST = "Take yourself and your guests out of your car before adding guests.";
+
+// After a guest change: trims guest seats above the new count and keeps cars consistent.
+// Returns what was released (to notify).
+async function settleRides(meetup) {
+    if (!meetup.rides?.length) return [];
+    const normalized = normalizeRides(meetup.rides, meetup.in, guestCountFn(meetup, await loadClerkIds(meetup.in)));
+    meetup.rides = normalized.rides;
+    return normalized.released;
+}
 
 const populatedMeetup = (id) => Meetup.findById(id)
     .populate('group', 'name owner moderators timezone defaultLocation')

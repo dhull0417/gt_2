@@ -10,6 +10,7 @@ import {
   apiRoutineToBuiltRoutine,
   scheduleFromNamedSchedule,
 } from '../editScheduleDraft';
+import { premiumSectionSummary } from '../premiumSection';
 
 const draft = (over: Partial<RoutineDraft> = {}): RoutineDraft => ({
   frequency: null,
@@ -172,6 +173,56 @@ describe('create-group draft', () => {
   });
 });
 
+describe('create-group draft: Premium settings', () => {
+  const ready = () => ({ ...createDefault('Pickup'), frequency: 'daily' as const, dailySameTime: true });
+  const withDeadline = () => ({ ...ready(), rsvpRestricted: true, deadlineEnabled: true, deadlineDays: 1 });
+
+  it('defaults to no minimum, no items and no rides', () => {
+    const d = createDefault('Pickup');
+    expect(d.minAttendeesInput).toBe('');
+    expect(d.bringItems).toEqual([]);
+    expect(d.ridesEnabled).toBe(false);
+  });
+
+  it('payload sends the minimum only when an RSVP deadline is set', () => {
+    expect(createPayload({ ...withDeadline(), minAttendeesInput: '4' })!.defaultMinAttendees).toBe(4);
+    expect(createPayload({ ...ready(), minAttendeesInput: '4' })!.defaultMinAttendees).toBe(0);
+    expect(createPayload({ ...withDeadline(), deadlineEnabled: false, minAttendeesInput: '4' })!.defaultMinAttendees).toBe(0);
+    expect(createPayload({ ...withDeadline(), minAttendeesInput: '' })!.defaultMinAttendees).toBe(0);
+  });
+
+  it('payload carries items to bring (trimmed, blank max = no limit) and rides', () => {
+    const p = createPayload({
+      ...ready(), ridesEnabled: true,
+      bringItems: [{ key: 'a', name: ' Chips ', max: '' }, { key: 'b', name: 'Drinks', max: '3' }],
+    })!;
+    expect(p.defaultBringItems).toEqual([{ name: 'Chips', max: null }, { name: 'Drinks', max: 3 }]);
+    expect(p.defaultRidesEnabled).toBe(true);
+  });
+
+  it('a bad minimum blocks the tab only when it applies', () => {
+    expect(isScheduleTabValid({ ...withDeadline(), minAttendeesInput: '0' })).toBe(false);
+    expect(isScheduleTabValid({ ...withDeadline(), maxAttendeesMode: 'limited', maxAttendeesInput: '5', minAttendeesInput: '6' })).toBe(false);
+    expect(isScheduleTabValid({ ...withDeadline(), minAttendeesInput: '3' })).toBe(true);
+    expect(isScheduleTabValid({ ...ready(), minAttendeesInput: '0' })).toBe(true);
+  });
+
+  it('an unnamed or duplicate item blocks the tab', () => {
+    expect(isScheduleTabValid({ ...ready(), bringItems: [{ key: 'a', name: '', max: '' }] })).toBe(false);
+    expect(isScheduleTabValid({ ...ready(), bringItems: [{ key: 'a', name: 'Ball', max: '' }, { key: 'b', name: 'ball', max: '' }] })).toBe(false);
+    expect(isScheduleTabValid({ ...ready(), bringItems: [{ key: 'a', name: 'Ball', max: '2' }] })).toBe(true);
+  });
+});
+
+describe('premiumSectionSummary', () => {
+  it('describes what is set up, for the collapsed header', () => {
+    expect(premiumSectionSummary([], false)).toBe('Things to bring, rides and more');
+    expect(premiumSectionSummary([{ key: 'a', name: 'Chips', max: '' }], false)).toBe('1 item to bring');
+    expect(premiumSectionSummary([{ key: 'a', name: 'Chips', max: '' }, { key: 'b', name: 'Ice', max: '' }], true)).toBe('2 items to bring · Rides on');
+    expect(premiumSectionSummary([], true)).toBe('Rides on');
+  });
+});
+
 describe('edit-schedule draft', () => {
   it('getMinAttendeesError', () => {
     expect(getMinAttendeesError('', 'limited', '10')).toBeNull();
@@ -285,5 +336,48 @@ describe('edit-schedule draft', () => {
     expect(restored.frequency).toBe('weekly');
     expect(restored.weekdayRows.map(r => [r.day, r.time])).toEqual([[1, '07:00 PM']]);
     expect(buildRoutines(restored)).toEqual(buildRoutines(original));
+  });
+});
+
+describe('quarterly / semiannual / yearly drafts', () => {
+  const long = { longFirstDate: '2027-01-21', longRepeatBy: 'weekday' as const, longTime: '06:00 PM', longEndTime: null };
+  const expected = {
+    frequency: 'semiannual', repeatBy: 'weekday', rules: [{ type: 'byDay', occurrence: '3rd', day: 4 }],
+    dayTimes: [{ startDate: '2027-01-21', day: 4, time: '06:00 PM' }],
+  };
+
+  it('buildRoutines builds the routine only once a date and mode are set', () => {
+    expect(buildRoutines(draft({ frequency: 'semiannual', ...long }))).toEqual([expected]);
+    expect(buildRoutines(draft({ frequency: 'semiannual', ...long, longRepeatBy: null }))).toEqual([]);
+  });
+
+  it('Multiple Rules keep repeatBy', () => {
+    const built = { frequency: 'semiannual' as const, dayTimes: expected.dayTimes, rules: expected.rules, repeatBy: 'weekday' as const };
+    expect(buildRoutines(draft({ frequency: 'custom', builtRoutines: [built] }))).toEqual([expected]);
+  });
+
+  it('create-group: valid only with a date and mode; payload starts on the first date', () => {
+    const base = { ...createDefault('Board'), frequency: 'semiannual' as const };
+    expect(isScheduleTabValid(base)).toBe(false);
+    expect(isScheduleTabValid({ ...base, longFirstDate: '2027-01-21' })).toBe(false);
+    const full = { ...base, ...long };
+    expect(isScheduleTabValid(full)).toBe(true);
+    const payload = createPayload(full)!;
+    expect(payload.routines).toEqual([expected]);
+    expect(payload.startDate).toBe('2027-01-21');
+  });
+
+  it('edit-schedule: a stored long routine restores its draft, and Multiple Rules label it', () => {
+    const group: any = { timezone: 'America/Chicago' };
+    const stored = { ...expected, dayTimes: [{ ...expected.dayTimes[0], startDate: '2027-01-21T00:00:00.000Z' }] };
+    const d = scheduleFromNamedSchedule(group, { name: 'Board', startDate: '2027-01-21T00:00:00.000Z', routines: [stored] } as any);
+    expect(d.frequency).toBe('semiannual');
+    expect({ longFirstDate: d.longFirstDate, longRepeatBy: d.longRepeatBy, longTime: d.longTime, longEndTime: d.longEndTime }).toEqual(long);
+    expect(editPayload(d)!.routines).toEqual([expected]);
+
+    const built = apiRoutineToBuiltRoutine(stored as any);
+    expect(built.repeatBy).toBe('weekday');
+    expect(built.label).toBe('Semi-annually · the 3rd Thursday @ 06:00 PM');
+    expect(built.snapshot).toMatchObject(long);
   });
 });

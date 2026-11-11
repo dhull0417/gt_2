@@ -4,6 +4,8 @@ import { DateTime } from "luxon";
 import type { Frequency, DayTime } from "./api";
 import { DAYS_OF_WEEK, uid, getMaxAttendeesError } from "./scheduleConstants";
 import { buildRoutines, scheduleEndTimeError } from "./scheduleRoutines";
+import { getBringItemsError, getMinAttendeesError, type BringItemDraft } from "./editScheduleDraft";
+import { isLongFrequency, isLongDraftValid, emptyLongDraft, type LongDraft } from "./longInterval";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,11 +53,12 @@ export interface BuiltRoutine {
     label: string;
     dayTimes: DayTime[];
     rules?: any[];
+    repeatBy?: 'date' | 'weekday';
     editing: boolean;
     snapshot: Partial<ScheduleData>;
 }
 
-export interface ScheduleData {
+export interface ScheduleData extends LongDraft {
     name: string;
     location: string;
     description: string;
@@ -88,6 +91,12 @@ export interface ScheduleData {
     customShowFreqPicker: boolean;
     maxAttendeesMode: "unlimited" | "limited";
     maxAttendeesInput: string;
+    /** Premium minimum headcount; "" = none. Only sent when an RSVP deadline is set. */
+    minAttendeesInput: string;
+    /** Premium: things to bring. */
+    bringItems: BringItemDraft[];
+    /** Premium: carpool coordination. */
+    ridesEnabled: boolean;
 }
 
 
@@ -100,6 +109,8 @@ export const isScheduleTabValid = (sch: ScheduleData): boolean => {
     if (!sch.name.trim()) return false;
     if (scheduleEndTimeError(sch)) return false;
     if (sch.maxAttendeesMode === "limited" && (sch.maxAttendeesInput === "" || getMaxAttendeesError(sch.maxAttendeesMode, sch.maxAttendeesInput))) return false;
+    if (sch.rsvpRestricted && sch.deadlineEnabled && getMinAttendeesError(sch.minAttendeesInput, sch.maxAttendeesMode, sch.maxAttendeesInput)) return false;
+    if (getBringItemsError(sch.bringItems)) return false;
     if (sch.frequency === "daily") return sch.dailySameTime !== null;
     if (sch.frequency === "weekly" || sch.frequency === "biweekly")
         return sch.weekdayRows.length > 0 && sch.weekdayRows.every(r => r.day !== null);
@@ -108,6 +119,7 @@ export const isScheduleTabValid = (sch: ScheduleData): boolean => {
         if (sch.monthlyMode === "date") return sch.monthlyDates.length > 0;
         return sch.ordinalEntries.length > 0;
     }
+    if (isLongFrequency(sch.frequency)) return isLongDraftValid(sch);
     if (sch.frequency === "custom") return sch.builtRoutines.length > 0;
     return false;
 };
@@ -147,6 +159,10 @@ export const defaultSchedule = (name = ""): ScheduleData => ({
     customShowFreqPicker: false,
     maxAttendeesMode: "unlimited",
     maxAttendeesInput: "",
+    minAttendeesInput: "",
+    bringItems: [],
+    ridesEnabled: false,
+    ...emptyLongDraft(),
 });
 
 // ─── Build payload ────────────────────────────────────────────────────────────
@@ -159,11 +175,19 @@ export const buildSchedulePayload = (d: ScheduleData) => {
     if (!routines.length) return null;
 
     return {
-        startDate: d.startDate,
+        // A quarterly/semiannual/yearly series starts on its own first date.
+        startDate: isLongFrequency(d.frequency) && d.longFirstDate ? d.longFirstDate : d.startDate,
         routines,
         defaultLocation: d.location,
         defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
         defaultDescription: d.description,
+        // The minimum is checked at the RSVP deadline, so without one it's sent as off.
+        defaultMinAttendees: d.rsvpRestricted && d.deadlineEnabled && d.minAttendeesInput !== "" ? parseInt(d.minAttendeesInput, 10) : 0,
+        defaultBringItems: d.bringItems.map(i => ({
+            name: i.name.trim(),
+            max: i.max === "" ? null : parseInt(i.max, 10),
+        })),
+        defaultRidesEnabled: d.ridesEnabled,
         generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
         generationLeadTime: d.leadTime,
         generationDeadlineDays: d.rsvpRestricted && d.deadlineEnabled ? d.deadlineDays : null,

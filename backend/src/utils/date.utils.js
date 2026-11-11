@@ -9,6 +9,9 @@ export const getGenerationWindowDays = (frequency) => {
     case 'biweekly': return 364;  // same 1-year horizon as weekly -> ~26 occurrences
     case 'monthly':  return 730;  // ~2 years
     case 'ordinal':  return 730;  // same as monthly
+    case 'quarterly':  return 730;   // ~8 occurrences
+    case 'semiannual': return 1095;  // ~6 occurrences
+    case 'yearly':     return 1095;  // 3 occurrences
     default:         return 30;
   }
 };
@@ -22,6 +25,69 @@ export const RSVP_REMINDER_STAGES = {
   biweekly: [{ key: '7d', offsetHours: 168 }, { key: '3d', offsetHours: 72 }, { key: '24h', offsetHours: 24 }, { key: '6h', offsetHours: 6 }],
   monthly:  [{ key: '14d', offsetHours: 336 }, { key: '7d', offsetHours: 168 }, { key: '3d', offsetHours: 72 }, { key: '24h', offsetHours: 24 }, { key: '6h', offsetHours: 6 }],
   ordinal:  [{ key: '14d', offsetHours: 336 }, { key: '7d', offsetHours: 168 }, { key: '3d', offsetHours: 72 }, { key: '24h', offsetHours: 24 }, { key: '6h', offsetHours: 6 }],
+};
+RSVP_REMINDER_STAGES.quarterly = RSVP_REMINDER_STAGES.monthly;
+RSVP_REMINDER_STAGES.semiannual = [{ key: '30d', offsetHours: 720 }, ...RSVP_REMINDER_STAGES.monthly];
+RSVP_REMINDER_STAGES.yearly = RSVP_REMINDER_STAGES.semiannual;
+
+// Quarterly / semiannual / yearly: anchored on the routine's first date (dayTimes[0].startDate)
+// and repeating every N months, either on the same date or the same "Nth weekday".
+export const INTERVAL_MONTHS = { quarterly: 3, semiannual: 6, yearly: 12 };
+export const LONG_INTERVAL_FREQUENCIES = Object.keys(INTERVAL_MONTHS);
+export const isLongInterval = (frequency) => LONG_INTERVAL_FREQUENCIES.includes(frequency);
+
+const OCCURRENCE_NUMBER = { '1st': 1, '2nd': 2, '3rd': 3, '4th': 4, '5th': 5 };
+
+// The day (midnight-ish, same zone as monthStart) of the Nth / last given weekday (0=Sun..6=Sat)
+// in monthStart's month. May spill into the next month for a "5th" that doesn't exist.
+const nthWeekdayOfMonth = (monthPointer, occurrence, day) => {
+  const luxonTarget = day === 0 ? 7 : day;
+  let candidate;
+  if (occurrence === 'Last') {
+    candidate = monthPointer.endOf('month');
+    while (candidate.weekday !== luxonTarget) candidate = candidate.minus({ days: 1 });
+  } else {
+    candidate = monthPointer.startOf('month');
+    while (candidate.weekday !== luxonTarget) candidate = candidate.plus({ days: 1 });
+    candidate = candidate.plus({ weeks: OCCURRENCE_NUMBER[occurrence] - 1 });
+  }
+  return candidate;
+};
+
+/** Weekday rule for a picked date: days 1-28 give 1st-4th, 29-31 give "Last" (a 5th is never used). */
+export const deriveWeekdayRule = (dt) => ({
+  occurrence: dt.day >= 29 ? 'Last' : ['1st', '2nd', '3rd', '4th'][Math.ceil(dt.day / 7) - 1],
+  day: dt.weekday % 7,
+});
+
+/**
+ * Next occurrence of a quarterly/semiannual/yearly routine strictly after `after`
+ * (or the first occurrence when `after` is null). Every candidate is computed from the
+ * anchor month, never from the previous occurrence, so month-end clamping can't drift
+ * (Jan 31 -> Apr 30 -> Jul 31).
+ */
+export const nextLongIntervalDate = (routine, dtEntry, timezone, after = null) => {
+  const interval = INTERVAL_MONTHS[routine.frequency];
+  if (!interval || !dtEntry?.startDate) return null;
+  const { hours, minutes } = parseTimeString(dtEntry.time);
+  const anchor = DateTime.fromJSDate(new Date(dtEntry.startDate), { zone: 'utc' })
+    .setZone(timezone, { keepLocalTime: true })
+    .startOf('day');
+  const anchorMonth = anchor.startOf('month');
+  const byWeekday = routine.repeatBy === 'weekday';
+  const rule = byWeekday ? (routine.rules?.[0]?.occurrence ? routine.rules[0] : deriveWeekdayRule(anchor)) : null;
+  const afterDT = after ? DateTime.fromJSDate(after).setZone(timezone) : null;
+
+  for (let k = 0; k < 1000; k++) {
+    const month = anchorMonth.plus({ months: k * interval });
+    const day = byWeekday
+      ? nthWeekdayOfMonth(month, rule.occurrence, rule.day)
+      : month.set({ day: Math.min(anchor.day, month.daysInMonth) });
+    if (!day.hasSame(month, 'month')) continue; // a "5th" weekday this month doesn't have
+    const candidate = day.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
+    if (!afterDT || candidate > afterDT) return candidate.toJSDate();
+  }
+  return null;
 };
 
 export const parseTimeString = (timeStr) => {
@@ -39,7 +105,9 @@ export const computeNextGenerationAt = (schedule, timezone, lastAnchorDate, rout
   const { hours: leadH, minutes: leadM } = parseTimeString(schedule.generationLeadTime || "09:00 AM");
   const anchor = lastAnchorDate || new Date();
 
-  const nextOccurrence = calculateNextMeetupDate(
+  const nextOccurrence = isLongInterval(routine.frequency)
+    ? nextLongIntervalDate(routine, dtEntry, timezone, anchor)
+    : calculateNextMeetupDate(
     routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
     dtEntry.time,
     timezone,
@@ -123,24 +191,13 @@ export const calculateNextMeetupDate = (dayOrRule, time, timezone, frequency, fr
     if (!config || config.day === undefined) return new Date();
     
     const targetDay = config.day; 
-    const luxonTarget = targetDay === 0 ? 7 : targetDay;
-    const occurrenceMap = { '1st': 1, '2nd': 2, '3rd': 3, '4th': 4, '5th': 5 };
     
     let monthPointer = now; // 'now' is already 1 second after the anchor
     let safetyCounter = 0;
     
     while (safetyCounter < 24) {
         safetyCounter++;
-        let candidate = monthPointer.startOf('month');
-        
-        if (config.occurrence === 'Last') {
-            candidate = monthPointer.endOf('month');
-            while (candidate.weekday !== luxonTarget) candidate = candidate.minus({ days: 1 });
-        } else {
-            while (candidate.weekday !== luxonTarget) candidate = candidate.plus({ days: 1 });
-            const weeksToAdd = occurrenceMap[config.occurrence] - 1;
-            candidate = candidate.plus({ weeks: weeksToAdd });
-        }
+        let candidate = nthWeekdayOfMonth(monthPointer, config.occurrence, targetDay);
 
         candidate = candidate.set({ hour: hours, minute: minutes, second: 0, millisecond: 0 });
 

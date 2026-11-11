@@ -74,6 +74,25 @@ export const meetupChanges = (before, after, { now = new Date() } = {}) => {
   return out;
 };
 
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// "Every 3 months on the 15th", "Every 6 months on the 3rd Thursday",
+// "Yearly on March 15", "Yearly on the 4th Thursday of November".
+const longIntervalWhen = (routine, dt) => {
+  const start = dt.startDate ? new Date(dt.startDate) : null; // stored as a date-only UTC midnight
+  const month = start && !Number.isNaN(start.getTime()) ? MONTHS[start.getUTCMonth()] : null;
+  const dayOfMonth = Number(dt.date) || (start ? start.getUTCDate() : null);
+  const rule = routine.rules?.[0];
+  const byWeekday = routine.repeatBy === 'weekday' && rule;
+  if (routine.frequency === 'yearly') {
+    if (byWeekday) return `Yearly on the ${rule.occurrence} ${DAYS[rule.day] ?? 'day'}${month ? ` of ${month}` : ''}`;
+    return month ? `Yearly on ${month} ${dayOfMonth}` : 'Yearly';
+  }
+  const every = routine.frequency === 'quarterly' ? 'Every 3 months' : 'Every 6 months';
+  if (byWeekday) return `${every} on the ${rule.occurrence} ${DAYS[rule.day] ?? 'day'}`;
+  return dayOfMonth ? `${every} on the ${ordinalDay(dayOfMonth)}` : every;
+};
+
 const routineLines = (routine) => {
   const dayTimes = routine?.dayTimes || [];
   return dayTimes.map((dt, i) => {
@@ -82,6 +101,9 @@ const routineLines = (routine) => {
       case 'daily': return `Every day at ${at}`;
       case 'biweekly': return `Every other ${DAYS[dt.day] ?? 'day'} at ${at}`;
       case 'monthly': return `Monthly on the ${ordinalDay(Number(dt.date))} at ${at}`;
+      case 'quarterly':
+      case 'semiannual':
+      case 'yearly': return `${longIntervalWhen(routine, dt)} at ${at}`;
       case 'ordinal': {
         const rule = routine.rules?.[i] || routine.ordinalConfig || {};
         return `${rule.occurrence || ''} ${DAYS[rule.day ?? dt.day] ?? 'day'} of the month at ${at}`.trim();

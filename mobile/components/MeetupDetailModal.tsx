@@ -323,8 +323,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
         } catch (e: any) {
             const prev = meetup.guests?.find(g => g.userId === currentUser.clerkId)?.count ?? 0;
             setLocalGuestCount(prev);
-            // 409: not enough open spots (guests never take a spot that isn't free).
-            if (e?.response?.status === 409 && e.response.data?.message) Alert.alert('Not enough room', e.response.data.message);
+            // 409: not enough open spots (guests never take a spot that isn't free), or the rider's
+            // party is in a car and has to leave it before adding guests.
+            if (e?.response?.status === 409 && e.response.data?.message) {
+                Alert.alert(e.response.data.error === 'leave_ride_first' ? 'Leave your car first' : 'Not enough room', e.response.data.message);
+            }
             else Alert.alert('Error', 'Could not update your guests. Please try again.');
         } finally {
             setIsSettingGuests(false);
@@ -1151,6 +1154,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     currentUserId={currentUser._id}
                     isIn={isIn && !isReadOnly}
                     openSignal={assignmentsSignal}
+                    canManage={canManage}
+                    readOnly={isReadOnly}
                     onUpdated={(m) => {
                         setMeetup(m);
                         queryClient.invalidateQueries({ queryKey: ['meetups'] });

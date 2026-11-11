@@ -1,6 +1,7 @@
 // Run with: npm test (from backend/)
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { DateTime } from "luxon";
 
 const D = await import("./date.utils.js");
 
@@ -141,4 +142,64 @@ test("computeNextGenerationAt: defaults to 1 day before at 9:00 AM; monthly read
   assert.equal(iso(weekly), "2026-10-06T15:00:00.000Z"); // Tue Oct 6 09:00 MDT
   const monthly = D.computeNextGenerationAt({}, TZ, at("2026-10-10T12:00:00Z"), { frequency: "monthly" }, { date: 15, time: "6:00 PM" });
   assert.equal(iso(monthly), "2026-10-14T15:00:00.000Z"); // Oct 14 09:00 MDT
+});
+
+// ---- Quarterly / semiannual / yearly ----
+const long = (frequency, repeatBy, startISO, rule = null) => ({
+  routine: { frequency, repeatBy, rules: rule ? [rule] : [], dayTimes: [{ startDate: new Date(startISO + "T00:00:00Z"), date: Number(startISO.slice(8, 10)), time: "06:00 PM" }] },
+});
+const localDates = (routine, n) => {
+  const out = []; let after = null;
+  for (let i = 0; i < n; i++) {
+    after = D.nextLongIntervalDate(routine, routine.dayTimes[0], TZ, after);
+    out.push(DateTime.fromJSDate(after).setZone(TZ).toFormat("yyyy-MM-dd HH:mm"));
+  }
+  return out;
+};
+
+test("quarterly by date clamps short months but always computes from the anchor", () => {
+  const { routine } = long("quarterly", "date", "2026-01-31");
+  assert.deepEqual(localDates(routine, 4), ["2026-01-31 18:00", "2026-04-30 18:00", "2026-07-31 18:00", "2026-10-31 18:00"]);
+});
+
+test("yearly by date from Feb 29 lands on Feb 28 in a non-leap year", () => {
+  const { routine } = long("yearly", "date", "2028-02-29");
+  assert.deepEqual(localDates(routine, 2), ["2028-02-29 18:00", "2029-02-28 18:00"]);
+});
+
+test("semiannual 'Last' Saturday from Jan 31 2026", () => {
+  const { routine } = long("semiannual", "weekday", "2026-01-31", { type: "byDay", occurrence: "Last", day: 6 });
+  assert.deepEqual(localDates(routine, 2), ["2026-01-31 18:00", "2026-07-25 18:00"]);
+});
+
+test("yearly 4th Thursday (Thanksgiving)", () => {
+  const { routine } = long("yearly", "weekday", "2026-11-26", { type: "byDay", occurrence: "4th", day: 4 });
+  assert.deepEqual(localDates(routine, 2), ["2026-11-26 18:00", "2027-11-25 18:00"]);
+});
+
+test("yearly 'Last' Friday", () => {
+  const { routine } = long("yearly", "weekday", "2026-10-30", { type: "byDay", occurrence: "Last", day: 5 });
+  assert.deepEqual(localDates(routine, 2), ["2026-10-30 18:00", "2027-10-29 18:00"]);
+});
+
+test("deriveWeekdayRule: 1-28 is 1st-4th, 29-31 is Last", () => {
+  assert.deepEqual(D.deriveWeekdayRule(DateTime.fromISO("2026-11-26")), { occurrence: "4th", day: 4 });
+  assert.deepEqual(D.deriveWeekdayRule(DateTime.fromISO("2026-02-28")), { occurrence: "4th", day: 6 });
+  assert.deepEqual(D.deriveWeekdayRule(DateTime.fromISO("2026-01-29")), { occurrence: "Last", day: 4 });
+  assert.deepEqual(D.deriveWeekdayRule(DateTime.fromISO("2026-03-01")), { occurrence: "1st", day: 0 });
+});
+
+test("long-interval windows, reminder stages and next trigger", () => {
+  assert.equal(D.getGenerationWindowDays("quarterly"), 730);
+  assert.equal(D.getGenerationWindowDays("semiannual"), 1095);
+  assert.equal(D.getGenerationWindowDays("yearly"), 1095);
+  assert.deepEqual(D.RSVP_REMINDER_STAGES.quarterly, D.RSVP_REMINDER_STAGES.monthly);
+  for (const f of ["semiannual", "yearly"]) {
+    assert.deepEqual(D.RSVP_REMINDER_STAGES[f][0], { key: "30d", offsetHours: 720 });
+    assert.deepEqual(D.RSVP_REMINDER_STAGES[f].slice(1), D.RSVP_REMINDER_STAGES.monthly);
+  }
+  const { routine } = long("quarterly", "date", "2026-01-31");
+  const last = new Date("2026-05-01T00:30:00Z"); // Apr 30 18:30 MDT, after the Apr 30 meetup
+  const trigger = D.computeNextGenerationAt({ generationLeadDays: 1, generationLeadTime: "09:00 AM" }, TZ, last, routine, routine.dayTimes[0]);
+  assert.equal(DateTime.fromJSDate(trigger).setZone(TZ).toFormat("yyyy-MM-dd HH:mm"), "2026-07-30 09:00");
 });

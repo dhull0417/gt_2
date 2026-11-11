@@ -68,3 +68,10 @@ describe('formatSchedule', () => {
     expect(formatSchedule({ frequency: 'monthly', days: [1] } as any)).toBe('Monthly on the 1st');
   });
 });
+
+describe('formatSchedule long-interval', () => {
+  it('uses the long-interval wording', () => {
+    expect(formatSchedule(sched([{ frequency: 'quarterly', repeatBy: 'date', rules: [], dayTimes: [{ startDate: '2027-01-15T00:00:00.000Z', date: 15, time: '06:00 PM' }] } as any]))).toBe('Every 3 months on the 15th');
+    expect(formatSchedule(sched([{ frequency: 'yearly', repeatBy: 'weekday', rules: [{ type: 'byDay', occurrence: '4th', day: 4 }], dayTimes: [{ startDate: '2026-11-26', day: 4, time: '06:00 PM' }] } as any]))).toBe('Yearly on the 4th Thursday of November');
+  });
+});

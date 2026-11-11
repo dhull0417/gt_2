@@ -35,3 +35,14 @@ describe('buildFrequencyDetail', () => {
     expect(Object.keys(DAY_ABBR)).toHaveLength(7);
   });
 });
+
+describe('long-interval frequencies', () => {
+  it('have labels and show the meetup date as the detail', () => {
+    expect(FREQUENCY_LABELS.quarterly).toBe('Quarterly');
+    expect(FREQUENCY_LABELS.semiannual).toBe('Semi-annually');
+    expect(FREQUENCY_LABELS.yearly).toBe('Yearly');
+    // 2027-03-16T01:00Z is Mar 15, 7 PM in Denver
+    expect(buildFrequencyDetail(m('yearly', '2027-03-16T01:00:00Z'))).toBe('Mar 15');
+    expect(buildFrequencyDetail(m('quarterly', '2027-01-21T18:00:00Z'))).toBe('Jan 21');
+  });
+});

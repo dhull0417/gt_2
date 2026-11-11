@@ -72,6 +72,14 @@ const meetupSchema = new mongoose.Schema({
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     role: { type: String, enum: ['driver', 'passenger'] },
     seats: { type: Number, default: 0, min: 0 },
+    // Ride assignments (passengers only): the car the rider sits in (null = needs a ride) and
+    // where their guests sit. Guests not covered by guestRides still need a ride. See utils/rides.js.
+    driver: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    guestRides: [{
+      driver: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      count: { type: Number, min: 1 },
+      _id: false,
+    }],
     _id: false,
   }],
   // Premium priority RSVP snapshot: groups of members and when each group's window
@@ -85,7 +93,7 @@ const meetupSchema = new mongoose.Schema({
   priorityOpened: { type: [Number], default: [] },
   // generating routine's frequency (null for one-off); drives RSVP-reminder
   // stages and the display cap.
-  frequency: { type: String, enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal'], default: null },
+  frequency: { type: String, enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal', 'quarterly', 'semiannual', 'yearly'], default: null },
   rsvpOpenDate: { type: Date },
   rsvpCloseDate: { type: Date },
   rsvpNotified: { type: Boolean, default: false },

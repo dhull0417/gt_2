@@ -12,7 +12,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 export const APP_VERSION: string = Constants.expoConfig?.version ?? "0.0.0";
 
 // Central Frequency type to resolve mismatches across the app
-export type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'ordinal' | 'custom' | 'once';
+export type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'ordinal' | 'quarterly' | 'semiannual' | 'yearly' | 'custom' | 'once';
 
 export interface CustomRule {
   type: 'byDay' | 'byDate';
@@ -28,7 +28,7 @@ export interface DayTime {
   time: string;
   /** Optional end time ("08:00 PM"); earlier than `time` means the next day. */
   endTime?: string | null;
-  startDate?: string; // Biweekly-only: chosen first occurrence for this specific day
+  startDate?: string; // Biweekly: first occurrence for this day. Quarterly/semiannual/yearly: the series' first date
 }
 
 // A single scheduling pattern; groups can have up to 5 for "Multiple Rules"
@@ -36,6 +36,8 @@ export interface Routine {
   frequency: Frequency;
   dayTimes: DayTime[];
   rules?: CustomRule[]; // Used specifically for Ordinal patterns
+  /** Quarterly/semiannual/yearly only: repeat on the first date's day-of-month or its Nth weekday. */
+  repeatBy?: 'date' | 'weekday';
 }
 
 export interface Schedule {
@@ -197,6 +199,24 @@ export interface GroupRsvpResponse {
   emoji: string;
 }
 
+export interface RideEntry {
+  user: string;
+  role: 'driver' | 'passenger';
+  seats: number;
+  driver?: string | null;
+  guestRides?: { driver: string; count: number }[];
+}
+
+/** Moves a rider and/or some of their guests into a car (driverId) or out of one (driverId null). */
+export interface RideAssignmentBody {
+  riderId: string;
+  driverId: string | null;
+  rider: boolean;
+  guests: number;
+  /** The car the guests come from (required when taking guests out). */
+  fromDriverId?: string | null;
+}
+
 export interface Meetup {
   _id: string;
   group: {
@@ -241,7 +261,7 @@ export interface Meetup {
   in: (User | string)[];
   out: (User | string)[];
   waitlist: (User | string)[];
-  frequency?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'ordinal' | null;
+  frequency?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'ordinal' | 'quarterly' | 'semiannual' | 'yearly' | null;
   rsvpOpenDate?: string;
   rsvpCloseDate?: string;
   guests?: { userId: string; count: number }[];
@@ -255,7 +275,8 @@ export interface Meetup {
   bringItems?: BringItem[];
   ridesEnabled?: boolean;
   bringClaims?: { user: string; item: string }[];
-  rides?: { user: string; role: 'driver' | 'passenger'; seats: number }[];
+  /** Rides. A passenger's `driver` is the car they sit in (null = needs a ride); `guestRides` is where their guests sit. */
+  rides?: RideEntry[];
   updatedAt: string;
 }
 
@@ -290,7 +311,7 @@ export interface Poll {
 
 export type NotificationType =
   | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-member-joined' | 'group-removed' | 'group-updated' | 'ownership-transferred'
-  | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion' | 'priority-bumped' | 'guests-removed'
+  | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion' | 'priority-bumped' | 'guests-removed' | 'ride-assigned' | 'ride-removed'
   | 'meetup-rsvp-admin-in' | 'meetup-rsvp-admin-out'
   | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled' | 'meetup-restored'
   | 'meetup-rsvp-reminder' | 'meetup-rsvp-open' | 'meetup-starting-soon'
@@ -319,6 +340,12 @@ export interface Notification {
     /** meetup-cancelled by minimum headcount: how many were needed / how many signed up. */
     needed?: number;
     count?: number;
+    /** ride-assigned / ride-removed: who this is for, the other person's name, and who moved. */
+    role?: 'rider' | 'driver';
+    otherName?: string;
+    otherId?: string;
+    self?: boolean;
+    guests?: number;
   };
   createdAt: string;
 }
@@ -742,6 +769,14 @@ export const meetupApi = {
     body: { bring?: string[]; ride?: null | { role: 'driver'; seats: number } | { role: 'passenger' }; targetUserId?: string },
   ): Promise<{ meetup: Meetup }> => {
     const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}/assignments`, body);
+    return response.data;
+  },
+  assignRide: async (api: AxiosInstance, meetupId: string, body: RideAssignmentBody): Promise<{ meetup: Meetup }> => {
+    const response = await api.patch<{ meetup: Meetup }>(`/api/meetups/${meetupId}/rides/assignment`, body);
+    return response.data;
+  },
+  autoAssignRides: async (api: AxiosInstance, meetupId: string): Promise<{ meetup: Meetup; placed: number; unplaced: number }> => {
+    const response = await api.post<{ meetup: Meetup; placed: number; unplaced: number }>(`/api/meetups/${meetupId}/rides/auto-assign`);
     return response.data;
   },
   setAnswers: async (

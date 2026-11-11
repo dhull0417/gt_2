@@ -1,6 +1,8 @@
 import Meetup from "../models/meetup.model.js";
 import Group from "../models/group.model.js";
-import { promoteWaitlist } from "./waitlist.js";
+import { loadClerkIds, promoteWaitlist } from "./waitlist.js";
+import { guestCountFn, normalizeRides } from "./rides.js";
+import { notifyRideChanges } from "./rideNotify.js";
 
 /**
  * Removes a person's footprint from a group's upcoming meetups: their RSVP and
@@ -15,6 +17,22 @@ export const scrubMemberFromUpcomingMeetups = async ({ userId, clerkId, groupId 
 
   // Remember where they held a spot so those meetups can be offered to the waitlist afterwards.
   const heldSpot = await Meetup.find({ ...scope, in: userId, 'waitlist.0': { $exists: true } }).select('_id').lean();
+
+  // Rides first, one meetup at a time, so the people who rode with them (or drove them) are told.
+  const withRide = await Meetup.find({ ...scope, 'rides.user': userId }).select('_id').lean();
+  for (const { _id } of withRide) {
+    try {
+      const meetup = await Meetup.findById(_id);
+      if (!meetup?.rides?.length) continue;
+      const stillIn = meetup.in.filter((id) => String(id) !== String(userId));
+      const { rides, released } = normalizeRides(meetup.rides, stillIn, guestCountFn(meetup, await loadClerkIds(stillIn)));
+      meetup.rides = rides;
+      await meetup.save();
+      await notifyRideChanges(meetup, released, userId);
+    } catch (err) {
+      console.error('Releasing rides after member removal failed:', err);
+    }
+  }
 
   await Meetup.updateMany(scope, {
     $pull: {

@@ -26,6 +26,7 @@ import { onGroupCreated, onInviteRedeemed } from "../utils/email/lifecycle.js";
 import { postSystemMessage } from "../utils/systemMessage.js";
 import { isLegacyClient } from "../middleware/clientInfo.middleware.js";
 import { validateRoutineEndTimes, preserveLegacyEndTimes, validateEndTime, computeEndsAt } from "../utils/meetupEndTime.js";
+import { validateLongIntervalRoutines, keepLongIntervalRoutinesForLegacy } from "../utils/longIntervalValidation.js";
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(String(id)) && String(new mongoose.Types.ObjectId(String(id))) === String(id);
 
@@ -287,7 +288,7 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
 
   for (const s of initialSchedules) {
-      const endTimeError = validateRoutineEndTimes(s.routines);
+      const endTimeError = validateRoutineEndTimes(s.routines) || validateLongIntervalRoutines(s.routines);
       if (endTimeError) return res.status(400).json({ error: endTimeError });
   }
 
@@ -454,7 +455,9 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     } else if (target && schedule) {
         target.startDate = schedule.startDate || target.startDate;
         // Legacy (pre-multi-schedule) path: those builds never send end times, so keep existing ones.
-        target.routines = schedule.routines ? preserveLegacyEndTimes(schedule.routines, target.routines) : target.routines;
+        target.routines = schedule.routines
+            ? keepLongIntervalRoutinesForLegacy(preserveLegacyEndTimes(schedule.routines, target.routines), target.routines)
+            : target.routines;
         if (defaultLocation !== undefined) target.defaultLocation = defaultLocation;
         if (defaultCapacity !== undefined) target.defaultCapacity = Number(defaultCapacity);
     }
@@ -531,7 +534,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (!name || !String(name).trim()) {
         return res.status(400).json({ error: "Schedule name is required." });
     }
-    const endTimeError = validateRoutineEndTimes(routines);
+    const endTimeError = validateRoutineEndTimes(routines) || validateLongIntervalRoutines(routines);
     if (endTimeError) return res.status(400).json({ error: endTimeError });
 
     // Guards against a double-fired create (a mistimed double-tap, or a
@@ -638,7 +641,7 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         return res.status(403).json(ASSIGNMENTS_PREMIUM_REQUIRED);
     }
 
-    const endTimeError = validateRoutineEndTimes(routines);
+    const endTimeError = validateRoutineEndTimes(routines) || validateLongIntervalRoutines(routines);
     if (endTimeError) return res.status(400).json({ error: endTimeError });
 
     const previousTimezone = group.timezone;
@@ -656,7 +659,12 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     }
     if (startDate !== undefined) target.startDate = startDate;
     // Old app builds don't send end times; keep the ones already on unchanged rows.
-    if (routines !== undefined) target.routines = isLegacyClient(req) ? preserveLegacyEndTimes(routines, target.routines) : routines;
+    // Old app builds: never let them drop or mangle a quarterly/semiannual/yearly routine.
+    if (routines !== undefined) {
+        target.routines = isLegacyClient(req)
+            ? keepLongIntervalRoutinesForLegacy(preserveLegacyEndTimes(routines, target.routines), target.routines)
+            : routines;
+    }
     if (defaultCapacity !== undefined) target.defaultCapacity = Number(defaultCapacity);
     if (defaultMinAttendees !== undefined) target.defaultMinAttendees = newMin;
     if (newBringItems) target.defaultBringItems = newBringItems;

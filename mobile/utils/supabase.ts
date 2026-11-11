@@ -38,3 +38,33 @@ export function getSupabaseClient(clerkToken: string) {
 export function refreshRealtimeAuth(client: SupabaseClient, freshToken: string) {
   try { client.realtime.setAuth(freshToken); } catch { /* ignore */ }
 }
+
+/**
+ * Returns a brand-new channel for `name`, never a reused one.
+ *
+ * supabase-js hands back any channel already registered under the same topic, and removeChannel()
+ * only unregisters it when the server acknowledges the leave with "ok". After a timeout or error
+ * (fast remount, reconnect, dropped socket) the old, already-subscribed channel stays registered,
+ * and calling .on() on it throws "cannot add `postgres_changes` callbacks ... after `subscribe()`".
+ * So: try a clean removal, and if the channel is still registered afterwards, tear it down locally.
+ */
+export async function takeFreshChannel(
+  client: SupabaseClient,
+  name: string,
+  params?: Parameters<SupabaseClient['channel']>[1],
+) {
+  const topic = `realtime:${name}`;
+  const findStale = () => client.getChannels().find((c) => c.topic === topic);
+  const stale = findStale();
+  if (stale) {
+    try { await client.removeChannel(stale); } catch { /* fall through to the forced removal */ }
+    const still = findStale();
+    if (still) {
+      try { still.teardown(); } catch { /* ignore */ }
+      const realtime = client.realtime as unknown as { _remove?: (c: unknown) => void; channels?: unknown[] };
+      if (typeof realtime._remove === 'function') realtime._remove(still);
+      else if (Array.isArray(realtime.channels)) realtime.channels = realtime.channels.filter((c) => c !== still);
+    }
+  }
+  return client.channel(name, params);
+}

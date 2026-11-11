@@ -18,6 +18,9 @@ import { evaluateMinimumHeadcount, evaluateDueMeetups } from "../utils/minimumHe
 import { meetupChanges, pushBody } from "../utils/changeSummary.js";
 import { applyEndTimeEdit, isMeetupOver } from "../utils/meetupEndTime.js";
 import { pruneAnswers, MAX_ANSWER_LENGTH } from "../utils/rsvpQuestions.js";
+import { guestCountFn, normalizeRides, applyAssignment, setRideRole, autoAssign, guestIncreaseBlocked } from "../utils/rides.js";
+import { notifyRideChanges } from "../utils/rideNotify.js";
+import { coordsForZip } from "../utils/zipDistance.js";
 import { canRsvpNow, userOpensAt, userTierIndex, chooseBumpVictim, pickWaitlistIndex, notifyOpenTiers, resolveRsvpOpen } from "../utils/priorityRsvp.js";
 
 /**
@@ -151,6 +154,7 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     };
     const getWaitlistEnabled = async () => (flags.premiumWaitlist() ? getGroupPremium() : true);
 
+    let rideReleased = [];
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         meetup = await Meetup.findById(meetupId);
         if (!meetup) return res.status(404).json({ error: "Meetup not found." });
@@ -216,7 +220,6 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             meetup.out.push(user._id);
             // Leaving frees up whatever they'd signed up to bring and their ride seat.
             if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter(c => !c.user.equals(user._id));
-            if (meetup.rides?.length) meetup.rides = meetup.rides.filter(r => !r.user.equals(user._id));
             if (meetup.answers?.length) meetup.answers = meetup.answers.filter(a => !a.user.equals(user._id));
             for (const t of meetup.teams || []) t.members.pull(user._id);
 
@@ -246,7 +249,6 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
                     meetup.in.pull(victimId);
                     meetup.waitlist.unshift(victimId);
                     if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter(c => !c.user.equals(victimId));
-                    if (meetup.rides?.length) meetup.rides = meetup.rides.filter(r => !r.user.equals(victimId));
                     if (meetup.answers?.length) meetup.answers = meetup.answers.filter(a => !a.user.equals(victimId));
                     for (const t of meetup.teams || []) t.members.pull(victimId);
                     bumpedUserId = victimId;
@@ -264,6 +266,14 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             } else {
                 meetup.in.push(user._id);
             }
+        }
+
+        // Anyone no longer In gives up their car, and riders of a driver who left need a new ride.
+        rideReleased = [];
+        if (meetup.rides?.length) {
+            const normalized = normalizeRides(meetup.rides, meetup.in, guestCountFn(meetup, clerkIds));
+            meetup.rides = normalized.rides;
+            rideReleased = normalized.released;
         }
 
         try {
@@ -397,6 +407,8 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
     const updatedMeetup = await Meetup.findById(meetupId)
         .populate('group', 'name owner moderators timezone defaultLocation')
         .populate('members', 'firstName lastName profilePicture clerkId');
+
+    if (rideReleased.length) await notifyRideChanges(meetup, rideReleased, requester._id);
 
     res.status(200).json({ message: "RSVP updated successfully.", meetup: await withGroupPremium(updatedMeetup) });
 });
@@ -843,7 +855,9 @@ export const setAssignments = asyncHandler(async (req, res) => {
 
     const MAX_RETRIES = 3;
     let meetup;
+    let rideChanges = [];
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        rideChanges = [];
         meetup = await Meetup.findById(meetupId);
         if (!meetup) return res.status(404).json({ error: "Meetup not found." });
         if (meetup.status !== 'scheduled') {
@@ -898,14 +912,20 @@ export const setAssignments = asyncHandler(async (req, res) => {
             if (!meetup.ridesEnabled) {
                 return res.status(400).json({ error: "Rides aren't set up for this meetup." });
             }
-            meetup.rides = meetup.rides.filter(r => !r.user.equals(user._id));
-            if (ride !== null) {
-                meetup.rides.push({
-                    user: user._id,
-                    role: ride.role,
-                    seats: ride.role === 'driver' ? Number(ride.seats) : 0,
+            // Keeps a rider's car when they stay a rider; a driver can't drop below the people
+            // already in their car; switching role gives up their seats (see utils/rides.js).
+            const roleResult = setRideRole(meetup.rides, user._id, ride);
+            if (!roleResult.ok) {
+                return res.status(409).json({
+                    error: 'seats_in_use',
+                    load: roleResult.load,
+                    message: `${roleResult.load} ${roleResult.load === 1 ? 'person is' : 'people are'} riding with ${actingAdmin ? 'them' : 'you'}. Take someone out first.`,
                 });
             }
+            const guestsOf = guestCountFn(meetup, await loadClerkIds(meetup.in));
+            const normalized = normalizeRides(roleResult.rides, meetup.in, guestsOf);
+            meetup.rides = normalized.rides;
+            rideChanges = [...roleResult.changes, ...normalized.released];
         }
 
         // Forces a version check so two people grabbing the last of an item can't both win.
@@ -919,11 +939,156 @@ export const setAssignments = asyncHandler(async (req, res) => {
         }
     }
 
+    if (rideChanges.length) await notifyRideChanges(meetup, rideChanges, requester._id);
+
     const updatedMeetup = await Meetup.findById(meetupId)
         .populate('group', 'name owner moderators timezone defaultLocation')
         .populate('members', 'firstName lastName profilePicture clerkId');
 
     res.status(200).json({ message: "Assignments updated.", meetup: await withGroupPremium(updatedMeetup) });
+});
+
+
+const RIDE_ERRORS = {
+    forbidden: [403, "You can't change that ride."],
+    not_rider: [409, "That person isn't looking for a ride anymore."],
+    not_driver: [409, "That person isn't driving anymore."],
+    already_assigned: [409, "They're already in another car."],
+    not_enough_guests: [409, "Those guests have already moved."],
+    not_in_car: [409, "They aren't in a car."],
+    nothing_to_move: [400, "Choose who to move."],
+};
+
+const populatedForRides = (meetupId) => Meetup.findById(meetupId)
+    .populate('group', 'name owner moderators timezone defaultLocation')
+    .populate('members', 'firstName lastName profilePicture clerkId');
+
+// Loads the meetup and checks it's open for ride changes. Returns { meetup, group } or { status, body }.
+const loadRideMeetup = async (meetupId, requester, attempt) => {
+    const meetup = await Meetup.findById(meetupId);
+    if (!meetup) return { status: 404, body: { error: "Meetup not found." } };
+    if (meetup.status !== 'scheduled') return { status: 400, body: { error: "This meetup is closed for changes." } };
+    if (!meetup.ridesEnabled) return { status: 400, body: { error: "Rides aren't set up for this meetup." } };
+    if (!meetup.members.some(id => id.equals(requester._id))) return { status: 403, body: { error: "Not a member of this meetup." } };
+    const group = await Group.findById(meetup.group).select('owner moderators').lean();
+    if (attempt === 1 && !(await groupHasPremium(group))) {
+        return { status: 403, body: { error: "premium_required", message: "Ride assignments require GroupThat Premium." } };
+    }
+    return { meetup, group };
+};
+
+/**
+ * @desc    Put a rider and/or some of their guests in a car, move them, or take them out (Premium).
+ *          Owners/moderators: anyone. Drivers: people who aren't in a car into their own car, and out
+ *          of their own car. Riders: their own party. See utils/rides.js.
+ * @route   PATCH /api/meetups/:meetupId/rides/assignment
+ * @body    { riderId, driverId: string|null, rider: boolean, guests: number, fromDriverId?: string|null }
+ */
+export const assignRide = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { meetupId } = req.params;
+    const { riderId, driverId = null, rider = false, guests = 0, fromDriverId = null } = req.body || {};
+
+    const validId = (v) => v == null || mongoose.isValidObjectId(v);
+    if (!mongoose.isValidObjectId(riderId) || !validId(driverId) || !validId(fromDriverId)
+        || typeof rider !== 'boolean' || !Number.isInteger(guests) || guests < 0 || guests > 20) {
+        return res.status(400).json({ error: "Invalid ride change." });
+    }
+
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!requester) return res.status(404).json({ error: "User not found." });
+
+    const MAX_RETRIES = 3;
+    let meetup;
+    let changes = [];
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        const loaded = await loadRideMeetup(meetupId, requester, attempt);
+        if (loaded.status) return res.status(loaded.status).json(loaded.body);
+        meetup = loaded.meetup;
+
+        const guestsOf = guestCountFn(meetup, await loadClerkIds(meetup.in));
+        const result = applyAssignment(meetup.rides, {
+            actorId: requester._id,
+            isManager: canManageGroup(requester._id, loaded.group),
+            riderId, driverId, rider, guests, fromDriverId,
+        }, guestsOf);
+        if (!result.ok) {
+            if (result.error === 'car_full') {
+                return res.status(409).json({
+                    error: 'car_full',
+                    room: result.room,
+                    message: result.room === 0 ? "That car is full." : `That car only has room for ${result.room}.`,
+                });
+            }
+            const [status, message] = RIDE_ERRORS[result.error] || [400, "Couldn't change that ride."];
+            return res.status(status).json({ error: result.error, message });
+        }
+        const normalized = normalizeRides(result.rides, meetup.in, guestsOf);
+        meetup.rides = normalized.rides;
+        changes = [...result.changes, ...normalized.released];
+
+        meetup.increment();
+        try {
+            await meetup.save();
+            break;
+        } catch (err) {
+            if (err instanceof mongoose.Error.VersionError && attempt < MAX_RETRIES) continue;
+            throw err;
+        }
+    }
+
+    await notifyRideChanges(meetup, changes, requester._id);
+    res.status(200).json({ meetup: await withGroupPremium(await populatedForRides(meetupId)) });
+});
+
+/**
+ * @desc    Seat everyone who isn't in a car yet, nearest driver first (by zip code), without moving
+ *          anyone already placed. Owners/moderators only (Premium).
+ * @route   POST /api/meetups/:meetupId/rides/auto-assign
+ */
+export const autoAssignRides = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { meetupId } = req.params;
+
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!requester) return res.status(404).json({ error: "User not found." });
+
+    const MAX_RETRIES = 3;
+    let meetup;
+    let result;
+    let released = [];
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        const loaded = await loadRideMeetup(meetupId, requester, attempt);
+        if (loaded.status) return res.status(loaded.status).json(loaded.body);
+        if (!canManageGroup(requester._id, loaded.group)) {
+            return res.status(403).json({ error: "forbidden", message: "Only owners and moderators can auto-assign rides." });
+        }
+        meetup = loaded.meetup;
+
+        const guestsOf = guestCountFn(meetup, await loadClerkIds(meetup.in));
+        const normalized = normalizeRides(meetup.rides, meetup.in, guestsOf);
+        released = normalized.released;
+        const people = await User.find({ _id: { $in: normalized.rides.map(r => r.user) } }).select('zipCode').lean();
+        const zips = new Map(people.map(u => [String(u._id), coordsForZip(u.zipCode)]));
+        result = autoAssign(normalized.rides, guestsOf, (id) => zips.get(String(id)) ?? null);
+        meetup.rides = result.rides;
+
+        meetup.increment();
+        try {
+            await meetup.save();
+            break;
+        } catch (err) {
+            if (err instanceof mongoose.Error.VersionError && attempt < MAX_RETRIES) continue;
+            throw err;
+        }
+    }
+
+    await notifyRideChanges(meetup, [...released, ...result.changes], requester._id);
+    res.status(200).json({
+        meetup: await withGroupPremium(await populatedForRides(meetupId)),
+        placed: result.placed,
+        unplaced: result.unplaced,
+    });
 });
 
 

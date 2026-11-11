@@ -18,6 +18,7 @@ import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { useAppearance, useThemeColors, type ThemePreference } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
 import { unregisterPushToken } from '@/hooks/usePushNotifications';
+import { PremiumRainbowLabel } from '@/components/schedule/PremiumRainbowLabel';
 
 const CALENDAR_OPTIONS = [
   {
@@ -306,10 +307,16 @@ const HomeScreen = () => {
                     activeOpacity={0.7}
                     style={[styles.card, styles.row, index < ACTIONS.length - 1 && { marginBottom: 12 }]}
                   >
-                    <View style={[styles.rowIcon, { backgroundColor: action.color + '18' }]}>
-                      <Feather name={action.icon} size={18} color={action.color} />
-                    </View>
-                    <Text style={styles.rowLabel}>{action.label}</Text>
+                    {action.id === 'premium' ? (
+                      <PremiumRainbowLabel label={action.label} />
+                    ) : (
+                      <>
+                        <View style={[styles.rowIcon, { backgroundColor: action.color + '18' }]}>
+                          <Feather name={action.icon} size={18} color={action.color} />
+                        </View>
+                        <Text style={styles.rowLabel}>{action.label}</Text>
+                      </>
+                    )}
                     {action.loading
                       ? <ActivityIndicator size="small" color={colors.textFaint} />
                       : <Feather name="chevron-right" size={18} color={colors.textFaint} />}

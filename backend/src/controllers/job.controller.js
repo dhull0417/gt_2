@@ -249,12 +249,20 @@ const MONTHLY_REMINDER_COPY = {
   '24h': (name) => `Tomorrow's the day — RSVP for "${name}".`,
   '6h':  (name) => `"${name}" starts in a few hours — RSVP if you can make it!`,
 };
+// Semiannual and yearly get one extra, earlier reminder a month out.
+const LONG_INTERVAL_REMINDER_COPY = {
+  '30d': (name) => `"${name}" is a month away — RSVP whenever you know.`,
+  ...MONTHLY_REMINDER_COPY,
+};
 const RSVP_REMINDER_COPY = {
   daily: DAILY_REMINDER_COPY,
   weekly: WEEKLY_REMINDER_COPY,
   biweekly: WEEKLY_REMINDER_COPY,
   monthly: MONTHLY_REMINDER_COPY,
   ordinal: MONTHLY_REMINDER_COPY,
+  quarterly: MONTHLY_REMINDER_COPY,
+  semiannual: LONG_INTERVAL_REMINDER_COPY,
+  yearly: LONG_INTERVAL_REMINDER_COPY,
 };
 
 /**

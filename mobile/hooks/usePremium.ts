@@ -16,5 +16,5 @@ export const usePremium = () => {
     enabled: !!isSignedIn,
   });
 
-  return { isPremium: data?.isPremium === true, isLoading };
+  return { isPremium: data?.isPremium === true, isLoading, userId: data?._id };
 };

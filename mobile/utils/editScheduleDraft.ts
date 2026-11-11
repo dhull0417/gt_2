@@ -5,6 +5,7 @@ import type { GroupDetails, NamedSchedule, Frequency, DayTime, Routine } from ".
 import { DAYS_OF_WEEK, FREQ_LABELS, uid, ordSfx } from "./scheduleConstants";
 import { buildRoutines } from "./scheduleRoutines";
 import { formatTimeRange } from "./timeString";
+import { isLongFrequency, emptyLongDraft, longDraftFromRoutine, longRoutineLabel, type LongDraft } from "./longInterval";
 
 export { scheduleEndTimeError } from "./scheduleRoutines";
 
@@ -65,6 +66,7 @@ export interface BuiltRoutine {
     label: string;
     dayTimes: DayTime[];
     rules?: any[];
+    repeatBy?: 'date' | 'weekday';
     editing: boolean;
     snapshot: Partial<ScheduleData>;
 }
@@ -92,7 +94,7 @@ export const getBringItemsError = (items: BringItemDraft[]): string | null => {
     return null;
 };
 
-export interface ScheduleData {
+export interface ScheduleData extends LongDraft {
     name: string;
     location: string;
     description: string;
@@ -172,6 +174,7 @@ export const defaultSchedule = (): ScheduleData => ({
     customBuilding: false,
     customFreq: null,
     customShowFreqPicker: false,
+    ...emptyLongDraft(),
 });
 
 // ─── Build label (for custom routine chips) ───────────────────────────────────
@@ -199,7 +202,8 @@ export const buildSchedulePayload = (d: ScheduleData) => {
     const routines = buildRoutines(d);
     return {
         name: d.name.trim(),
-        startDate: d.startDate,
+        // A quarterly/semiannual/yearly series starts on its own first date.
+        startDate: isLongFrequency(d.frequency) && d.longFirstDate ? d.longFirstDate : d.startDate,
         routines,
         defaultLocation: d.location.trim(),
         defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
@@ -252,6 +256,8 @@ export const apiRoutineToBuiltRoutine = (r: Routine): BuiltRoutine => {
                 id: uid(), date: dt.date ?? 1, time: dt.time, endTime: dt.endTime ?? null, expanded: false, showTimePicker: false,
             })),
         };
+    } else if (isLongFrequency(r.frequency)) {
+        snapshot = longDraftFromRoutine(r);
     } else if (r.frequency === "ordinal") {
         snapshot = {
             monthlyMode: "ordinal",
@@ -270,9 +276,10 @@ export const apiRoutineToBuiltRoutine = (r: Routine): BuiltRoutine => {
     return {
         id: uid(),
         frequency: r.frequency,
-        label: buildLabel(r.frequency, r.dayTimes, ordEntriesForLabel),
+        label: isLongFrequency(r.frequency) ? longRoutineLabel(r) : buildLabel(r.frequency, r.dayTimes, ordEntriesForLabel),
         dayTimes: r.dayTimes,
         rules: r.rules,
+        ...(r.repeatBy ? { repeatBy: r.repeatBy } : {}),
         editing: false,
         snapshot,
     };
@@ -325,6 +332,10 @@ export const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSched
             frequency: "custom",
             builtRoutines: routines.map(apiRoutineToBuiltRoutine),
         };
+    }
+
+    if (isLongFrequency(inferredFreq) && routines[0]) {
+        return { ...base, ...common, timezone: tz, startDate, frequency: inferredFreq, ...longDraftFromRoutine(routines[0]) };
     }
 
     if (inferredFreq === "daily" && routines[0]) {

@@ -3,11 +3,12 @@
 import type { Frequency, DayTime } from "./api";
 import { DAYS_OF_WEEK } from "./scheduleConstants";
 import { endTimeError } from "./timeString";
+import { isLongFrequency, isLongDraftValid, buildLongRoutine, type LongDraft } from "./longInterval";
 
 /** The slice of a screen's draft state that determines the routines. */
-export interface RoutineDraft {
+export interface RoutineDraft extends Partial<LongDraft> {
     frequency: Frequency | null;
-    builtRoutines: { frequency: Frequency; dayTimes: DayTime[]; rules?: any[] }[];
+    builtRoutines: { frequency: Frequency; dayTimes: DayTime[]; rules?: any[]; repeatBy?: 'date' | 'weekday' }[];
     dailySameTime: boolean | null;
     dailySharedTime: string;
     /** Optional end time shared by every day when dailySameTime is on. */
@@ -26,7 +27,10 @@ export const buildRoutines = (d: RoutineDraft): any[] => {
     let routines: any[] = [];
 
     if (d.frequency === "custom") {
-        routines = d.builtRoutines.map(r => ({ frequency: r.frequency, dayTimes: r.dayTimes, rules: r.rules }));
+        routines = d.builtRoutines.map(r => ({ frequency: r.frequency, dayTimes: r.dayTimes, rules: r.rules, ...(r.repeatBy ? { repeatBy: r.repeatBy } : {}) }));
+    } else if (isLongFrequency(d.frequency)) {
+        const long: LongDraft = { longFirstDate: d.longFirstDate ?? null, longRepeatBy: d.longRepeatBy ?? null, longTime: d.longTime ?? "05:00 PM", longEndTime: d.longEndTime ?? null };
+        routines = isLongDraftValid(long) ? [buildLongRoutine(d.frequency, long)] : [];
     } else if (d.frequency === "daily") {
         const dayTimes = d.dailySameTime
             ? DAYS_OF_WEEK.map(dw => ({ day: dw.value, time: d.dailySharedTime, ...withEnd(d.dailySharedEndTime) }))

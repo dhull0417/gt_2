@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import { useAuth } from '@clerk/expo';
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { getSupabaseClient, refreshRealtimeAuth } from '@/utils/supabase';
+import { getSupabaseClient, refreshRealtimeAuth, takeFreshChannel } from '@/utils/supabase';
 import { SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
 import type { ChatMessage, PendingImage, ReactionResult } from '@/types/chat';
 import { useIsOnline } from '@/hooks/useIsOnline';
@@ -351,19 +351,13 @@ export function useMessages(groupId: string) {
       const supabase = getSupabaseClient(token);
       realtimeClientRef.current = supabase;
 
-      // The client is shared/cached by token, and supabase-js reuses an
-      // existing channel object for a topic that's still registered rather
-      // than creating a new one. On a fast remount the previous mount's
-      // async removeChannel() may not have finished yet, so without this
-      // we'd get handed back the old, already-subscribed channel and
-      // .on() would throw ("cannot add callbacks after subscribe()").
-      const topic = `realtime:messages-${groupId}`;
-      const stale = supabase.getChannels().find((c) => c.topic === topic);
-      if (stale) await supabase.removeChannel(stale);
-      if (!active) return;
+      // The client is shared/cached by token, and supabase-js reuses an existing channel for a
+      // topic that's still registered. takeFreshChannel makes sure we never get the old,
+      // already-subscribed one back (that made .on() throw "cannot add callbacks after subscribe()").
+      const fresh = await takeFreshChannel(supabase, `messages-${groupId}`);
+      if (!active) { supabase.removeChannel(fresh); return; }
 
-      const channel = supabase
-        .channel(`messages-${groupId}`)
+      const channel = fresh
         .on('postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'messages', filter: `group_id=eq.${groupId}` },
           (payload) => {
@@ -397,7 +391,7 @@ export function useMessages(groupId: string) {
         });
       channelRef.current = channel;
     };
-    setupRealtime();
+    setupRealtime().catch((e) => console.warn('[chat] realtime setup failed', e));
 
     // Keep the socket's credentials fresh: the token it joined with expires within about a minute.
     const authTimer = setInterval(async () => {

@@ -4,6 +4,8 @@ import User from "../models/user.model.js";
 import { notifyAndPersist } from "./push.notifications.js";
 import { parseTimeString } from "./date.utils.js";
 import { groupHasPremium } from "./premium.js";
+import { guestCountFn, normalizeRides } from "./rides.js";
+import { notifyRideChanges } from "./rideNotify.js";
 
 /**
  * Priority RSVP (Premium): a series can give some members a head start. Members are
@@ -214,9 +216,15 @@ export const rebalanceMeetup = async (meetupId) => {
     const bumped = [...before].filter((id) => !after.has(id));
     if (promoted.length === 0 && bumped.length === 0) return null;
 
+    // Bumped people give up their car; a bumped driver's riders need a new ride.
+    let rideReleased = [];
+    if (bumped.length && meetup.rides?.length) {
+      const normalized = normalizeRides(meetup.rides, meetup.in, guestCountFn(meetup, clerkIds));
+      meetup.rides = normalized.rides;
+      rideReleased = normalized.released;
+    }
     if (bumped.length) {
       if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter((c) => !bumped.includes(idStr(c.user)));
-      if (meetup.rides?.length) meetup.rides = meetup.rides.filter((r) => !bumped.includes(idStr(r.user)));
       if (meetup.answers?.length) meetup.answers = meetup.answers.filter((a) => !bumped.includes(idStr(a.user)));
       for (const t of meetup.teams || []) t.members = t.members.filter((id) => !bumped.includes(idStr(id)));
     }
@@ -248,6 +256,7 @@ export const rebalanceMeetup = async (meetupId) => {
         group: meetup.group,
       });
     }
+    if (rideReleased.length) await notifyRideChanges(meetup, rideReleased, null);
     return { promoted, bumped };
   }
   return null;

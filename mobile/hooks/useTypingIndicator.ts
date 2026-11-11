@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/expo';
-import { getSupabaseClient } from '@/utils/supabase';
+import { getSupabaseClient, takeFreshChannel } from '@/utils/supabase';
 
 // "Someone is typing…" over Supabase Realtime *Broadcast*: one tiny event per few seconds while a
 // person types. (The previous version used Presence, which re-synced every member's full state to
@@ -52,14 +52,9 @@ export function useTypingIndicator(groupId: string, userId: string, userName: st
       const supabase = getSupabaseClient(token);
       realtimeClientRef.current = supabase;
 
-      // See useMessages.ts: the client is shared by token, and supabase-js would otherwise hand
-      // back a stale, already-subscribed channel for this topic on a fast remount.
-      const topic = `realtime:typing:${groupId}`;
-      const stale = supabase.getChannels().find((c) => c.topic === topic);
-      if (stale) await supabase.removeChannel(stale);
-      if (!active) return;
-
-      const channel = supabase.channel(`typing:${groupId}`, { config: { broadcast: { self: false } } });
+      // See takeFreshChannel (utils/supabase.ts): never reuse a stale, already-subscribed channel.
+      const channel = await takeFreshChannel(supabase, `typing:${groupId}`, { config: { broadcast: { self: false } } });
+      if (!active) { supabase.removeChannel(channel); return; }
       channel
         .on('broadcast', { event: 'typing' }, ({ payload }: { payload: TypingPayload }) => {
           if (!active || !payload?.userId || payload.userId === userId) return;
@@ -73,7 +68,7 @@ export function useTypingIndicator(groupId: string, userId: string, userName: st
         });
       channelRef.current = channel;
     };
-    setup();
+    setup().catch((e) => console.warn('[chat] typing setup failed', e));
 
     return () => {
       active = false;

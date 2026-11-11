@@ -3,7 +3,7 @@ import Meetup from "../models/meetup.model.js";
 import { resolveRsvpOpen } from "./priorityRsvp.js";
 import { groupHasPremium } from "./premium.js";
 import { slotEndFields, buildEndTimeUpdates } from "./meetupEndTime.js";
-import { calculateNextMeetupDate, computeNextGenerationAt, getGenerationWindowDays, parseTimeString } from "./date.utils.js";
+import { calculateNextMeetupDate, computeNextGenerationAt, getGenerationWindowDays, parseTimeString, isLongInterval, nextLongIntervalDate } from "./date.utils.js";
 
 const existenceKey = (date, time) => `${new Date(date).toISOString()}|${time}`;
 
@@ -63,14 +63,19 @@ export const computeScheduleCandidates = (group, schedule) => {
       while (fillingWindow && safetyCounter < 100) {
         safetyCounter++;
 
-        const nextDate = calculateNextMeetupDate(
-          routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
-          dtEntry.time,
-          timezone,
-          routine.frequency,
-          currentAnchor,
-          ordinalRule
-        );
+        const nextDate = isLongInterval(routine.frequency)
+          // No previous slot yet: start from now, like the other frequencies, so a first
+          // date earlier today (time already past) isn't generated in the past.
+          ? nextLongIntervalDate(routine, dtEntry, timezone, currentAnchor ?? new Date())
+          : calculateNextMeetupDate(
+              routine.frequency === 'monthly' ? dtEntry.date : dtEntry.day,
+              dtEntry.time,
+              timezone,
+              routine.frequency,
+              currentAnchor,
+              ordinalRule
+            );
+        if (!nextDate) break; // routine missing its first date
 
         if (nextDate < kickoffDate) {
           currentAnchor = nextDate;

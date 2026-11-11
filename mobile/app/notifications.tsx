@@ -10,6 +10,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { useMarkNotificationsAsRead } from '@/hooks/useMarkNotificationsAsRead';
+import { rideNoticeLead } from '@/utils/rides';
 import { Notification, User, useApiClient, userApi, notificationApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { getChangeLines, type ChangeLine } from '@/utils/changeLines';
@@ -131,6 +132,9 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDe
                 return notification.meta?.count
                     ? <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> changed your guests for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text> to {notification.meta.count}.</Text>
                     : <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> removed your guests from <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'ride-assigned':
+            case 'ride-removed':
+                return <Text style={styles.messageText}>{rideNoticeLead(notification.type, notification.meta)} <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-created':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> scheduled a new meetup{groupName ? <> for <Text style={styles.bold}>{groupName}</Text></> : null}.</Text>;
             case 'meetup-updated': {

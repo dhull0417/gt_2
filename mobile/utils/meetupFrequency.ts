@@ -9,6 +9,9 @@ export const FREQUENCY_LABELS: Record<string, string> = {
     biweekly: 'Bi-Weekly',
     monthly: 'Monthly',
     ordinal: 'Monthly',
+    quarterly: 'Quarterly',
+    semiannual: 'Semi-annually',
+    yearly: 'Yearly',
 };
 
 export const DAY_ABBR: Record<number, string> = { 0: 'Su', 1: 'M', 2: 'T', 3: 'W', 4: 'Th', 5: 'F', 6: 'Sa' };
@@ -27,6 +30,11 @@ export const buildFrequencyDetail = (meetup: Meetup): string | null => {
     }
     if (meetup.frequency === 'monthly') {
         return `${dt.day}${ordSfx(dt.day)} day`;
+    }
+    // Quarterly/semiannual/yearly: the meetup doesn't record whether its series repeats by
+    // date or by weekday, so show the plain date rather than guess.
+    if (meetup.frequency === 'quarterly' || meetup.frequency === 'semiannual' || meetup.frequency === 'yearly') {
+        return dt.toFormat('MMM d');
     }
     if (meetup.frequency === 'ordinal') {
         const isLast = dt.day + 7 > dt.daysInMonth;
