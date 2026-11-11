@@ -10,7 +10,6 @@ import {
   assignRide,
   autoAssignRides,
   setAnswers,
-  setTeams,
     remindUndecided
 } from "../controllers/meetup.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
@@ -35,7 +34,6 @@ router.put("/:meetupId/assignments", protectRoute, setAssignments);
 router.patch("/:meetupId/rides/assignment", protectRoute, assignRide);
 router.post("/:meetupId/rides/auto-assign", protectRoute, autoAssignRides);
 router.put("/:meetupId/answers", protectRoute, setAnswers);
-router.put("/:meetupId/teams", protectRoute, setTeams);
 router.post("/:meetupId/remind", protectRoute, remindUndecided);
 
 router.patch("/:meetupId/guests", protectRoute, async (req, res) => {

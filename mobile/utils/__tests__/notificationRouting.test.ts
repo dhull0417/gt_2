@@ -32,6 +32,18 @@ describe('resolveNotificationTarget', () => {
   });
 });
 
+describe('tournament notifications', () => {
+  it('open the event when its id is known, else the meetup', () => {
+    for (const type of ['tournament-set', 'tournament-match-ready', 'tournament-finished']) {
+      expect(resolveNotificationTarget({ type, groupId: 'g1', meetupId: 'm1', tournamentId: 't1' })).toEqual({ kind: 'tournament', tournamentId: 't1' });
+      expect(resolveNotificationTarget({ type, groupId: 'g1', meetupId: 'm1' })).toEqual({ kind: 'meetup', meetupId: 'm1' });
+    }
+  });
+  it('reads the event id from a push', () => {
+    expect(routeInputFromPush({ pushType: 'tournament-finished', tournamentId: 't1', meetupId: 'm1' }).tournamentId).toBe('t1');
+  });
+});
+
 describe('routeInputFromPush', () => {
   it('maps a push payload onto the same input', () => {
     expect(routeInputFromPush({ type: 'chat', groupId: 'g1', pushType: undefined })).toMatchObject({ legacyType: 'chat', groupId: 'g1' });

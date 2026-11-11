@@ -31,6 +31,7 @@ import notificationRoutes from "./routes/notification.route.js";
 import placesRoutes from "./routes/places.route.js";
 import chatRoutes from "./routes/chat.route.js";
 import linkPreviewRoutes from "./routes/linkPreview.route.js";
+import tournamentRoutes from "./routes/tournament.route.js";
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
@@ -75,6 +76,7 @@ app.use("/api/revenuecat", revenuecatRoutes);
 app.use("/api/email", emailRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/link-preview", linkPreviewRoutes);
+app.use("/api/tournaments", tournamentRoutes);
 app.get("/go/:dest", goPage);
 app.get("/go/:dest/:id", goPage);
 

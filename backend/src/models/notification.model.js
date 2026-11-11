@@ -21,6 +21,7 @@ const notificationSchema = new mongoose.Schema({
             'meetup-created', 'meetup-updated', 'meetup-cancelled', 'meetup-restored', 'schedule-updated',
             'meetup-rsvp-reminder', 'meetup-rsvp-open', 'meetup-starting-soon',
             'poll-created', 'poll-closed',
+            'tournament-set', 'tournament-match-ready', 'tournament-finished',
         ],
     },
     group: {

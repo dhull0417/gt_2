@@ -157,5 +157,8 @@ Layout per spec: tiles → Your stats → Awards (2-column grid, public) → Hal
 - RSVP In → Out → In on an upcoming meetup, let it finish, check Weathervane/Quick Draw later.
 - Dark mode; small phone; VoiceOver/TalkBack reads award cards.
 
-## Status
-_Not started._
+## Status (2026-11-10, built; not on a device yet)
+- Tasks 1–12 done. Backend `npm test` 413/413 (local copy; the OneDrive mount is too slow). `statsFormat` jest 6/6. Mobile `tsc --noEmit` clean.
+- Fresh review done; fixes applied (see the spec's "Changes after review").
+- Plan deviations: `ARCHIVE_FIELDS` shared with the cleanup job (`job.controller.js`); account-deletion cleanup in `removeUserStatsData` (unit-tested).
+- Remaining: the device checklist above; run the Supabase migration; review and commit. Nothing committed.

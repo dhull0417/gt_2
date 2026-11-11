@@ -1,4 +1,5 @@
 import { syncPremiumForUser } from "../utils/revenuecat.js";
+import { removeUserStatsData } from "../utils/groupStats.js";
 import { applyMuteChange, muteEntryFor } from '../utils/groupMute.js';
 import asyncHandler from "express-async-handler";
 import User from "../models/user.model.js";
@@ -16,6 +17,7 @@ import InviteToken from "../models/inviteToken.model.js";
 import AttendanceRecord from "../models/attendanceRecord.model.js";
 import EmailLog from "../models/emailLog.model.js";
 import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
+import { deleteTournamentsForGroup } from "../utils/tournament/cleanup.js";
 import { postSystemMessage } from "../utils/systemMessage.js";
 import { purgeGroupChat, removeAllChatMembers, scrubUserChat, removeChatMemberEverywhere } from "../utils/supabaseAdmin.js";
 
@@ -491,6 +493,7 @@ export const deleteAccount = asyncHandler(async (req, res) => {
       await Poll.deleteMany({ group: group._id });
       await InviteToken.deleteMany({ groupId: group._id });
       await AttendanceRecord.deleteMany({ group: group._id });
+      await deleteTournamentsForGroup(group._id);
       await Notification.deleteMany({ group: group._id });
       await Group.findByIdAndDelete(group._id);
       await purgeGroupChat(group._id);
@@ -551,6 +554,9 @@ export const deleteAccount = asyncHandler(async (req, res) => {
   // Their votes in polls, and polls they made that are still running.
   await Poll.updateMany({ 'options.voters': userId }, { $pull: { 'options.$[].voters': userId } });
   await Poll.updateMany({ creator: userId, status: 'active' }, { $set: { status: 'cancelled' } });
+
+  // Their RSVP times and per-person history kept for Stats awards.
+  await removeUserStatsData(userId);
 
   // Their chat photos and messages, and their entry in the chat membership copy.
   await scrubUserChat(user.clerkId);

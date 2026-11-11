@@ -61,3 +61,30 @@ test('failures are logged, never thrown', async () => {
     console.error = origError;
   }
 });
+
+// ---- chat message counts (stats awards) ----
+import { chatMessageCounts } from './supabaseAdmin.js';
+
+test('chatMessageCounts returns null when not configured', async () => {
+  let called = false;
+  assert.equal(await chatMessageCounts('g1', { env: {}, fetchImpl: async () => { called = true; } }), null);
+  assert.equal(called, false);
+});
+
+test('chatMessageCounts maps rows to counts', async () => {
+  let seen;
+  const fetchImpl = async (url, init) => {
+    seen = { url, init };
+    return { ok: true, json: async () => [{ sender_id: 'c-a', messages: 40 }, { sender_id: 'c-b', messages: '7' }] };
+  };
+  const counts = await chatMessageCounts('g1', { env, fetchImpl });
+  assert.equal(seen.url, 'https://x.supabase.co/rest/v1/rpc/chat_message_counts');
+  assert.equal(seen.init.method, 'POST');
+  assert.deepEqual(JSON.parse(seen.init.body), { p_group_id: 'g1' });
+  assert.deepEqual([...counts], [['c-a', 40], ['c-b', 7]]);
+});
+
+test('chatMessageCounts returns null on HTTP error', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 404, text: async () => 'missing function' });
+  assert.equal(await chatMessageCounts('g1', { env, fetchImpl }), null);
+});

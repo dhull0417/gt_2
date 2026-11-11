@@ -181,13 +181,36 @@ export interface RsvpQuestion {
   required: boolean;
 }
 
+export type AwardKey =
+  | 'reliable' | 'streak' | 'responder' | 'quickDraw' | 'plusOne' | 'chauffeur' | 'snackCaptain'
+  | 'chatty' | 'voice' | 'decliner' | 'ghost' | 'buzzer' | 'weathervane';
+
+export interface StatsPerson {
+  _id: string; firstName?: string; lastName?: string; profilePicture?: string | null;
+  /** null when the number is hidden from this viewer (Always Answers while the Hall of Shame is hidden). */
+  value: number | null; rank: number;
+}
+
+export interface StatsAward {
+  key: AwardKey; title: string; emoji: string; joke: boolean; lowerIsBetter: boolean;
+  /** Everyone ranked first (ties share the award). */
+  winners: StatsPerson[];
+  /** Top 5. */
+  leaderboard: StatsPerson[];
+}
+
 export interface GroupStats {
   summary: { totalMeetups: number; averageHeadcount: number; averageFill: number | null };
   members: {
     _id: string; firstName?: string; lastName?: string; profilePicture?: string;
-    eligible: number; attended: number; declined: number; noResponse: number; rate: number; streak: number;
+    eligible: number; attended: number; rate: number; streak: number; bestStreak?: number;
+    /** null for other members when the viewer can't see the joke awards. */
+    declined: number | null; noResponse: number | null;
   }[];
   meetups: { id: string; name: string; date: string; in: number; out: number; guests: number; capacity: number }[];
+  awards?: StatsAward[];
+  me?: { _id: string; categories: { key: AwardKey; value: number | null; rank: number | null; of: number }[] };
+  viewer?: { isOrganizer: boolean; jokesVisible: boolean; revealJokes: boolean };
 }
 
 export interface RsvpAnswer { user: string; question: string; value: string }
@@ -270,8 +293,6 @@ export interface Meetup {
   priorityTiers?: { members: string[]; opensAt: string }[];
   questions?: RsvpQuestion[];
   answers?: RsvpAnswer[];
-  /** Premium team split. */
-  teams?: { _id: string; name: string; members: string[] }[];
   bringItems?: BringItem[];
   ridesEnabled?: boolean;
   bringClaims?: { user: string; item: string }[];
@@ -316,7 +337,8 @@ export type NotificationType =
   | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled' | 'meetup-restored'
   | 'meetup-rsvp-reminder' | 'meetup-rsvp-open' | 'meetup-starting-soon'
   | 'poll-created' | 'poll-closed'
-  | 'group-deleted' | 'schedule-removed' | 'schedule-updated';
+  | 'group-deleted' | 'schedule-removed' | 'schedule-updated'
+  | 'tournament-set' | 'tournament-match-ready' | 'tournament-finished';
 
 export interface Notification {
   _id: string;
@@ -346,6 +368,8 @@ export interface Notification {
     otherId?: string;
     self?: boolean;
     guests?: number;
+    /** tournament-*: the event to open. */
+    tournamentId?: string;
   };
   createdAt: string;
 }
@@ -690,6 +714,10 @@ export const groupApi = {
     const response = await api.put<{ message: string; group: Group }>(`/api/groups/${groupId}/rsvp-responses`, { responses });
     return response.data;
   },
+  updateStatsSettings: async (api: AxiosInstance, groupId: string, revealJokes: boolean): Promise<{ revealJokes: boolean }> => {
+    const response = await api.patch<{ revealJokes: boolean }>(`/api/groups/${groupId}/stats-settings`, { revealJokes });
+    return response.data;
+  },
   getGroupStats: async (api: AxiosInstance, groupId: string, scheduleId?: string): Promise<GroupStats> => {
     const response = await api.get<GroupStats>(`/api/groups/${groupId}/stats`, { params: scheduleId ? { scheduleId } : undefined });
     return response.data;
@@ -785,14 +813,6 @@ export const meetupApi = {
     answers: { question: string; value: string }[],
   ): Promise<{ meetup: Meetup }> => {
     const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}/answers`, { answers });
-    return response.data;
-  },
-  setTeams: async (
-    api: AxiosInstance,
-    meetupId: string,
-    body: { shuffle: { count: number } } | { teams: { name: string; members: string[] }[] } | { clear: true },
-  ): Promise<{ meetup: Meetup }> => {
-    const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}/teams`, body);
     return response.data;
   },
   sendReminder: async (api: AxiosInstance, meetupId: string, userId?: string): Promise<{ message: string }> => {

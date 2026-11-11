@@ -337,6 +337,9 @@ const AuthLayout = () => {
       'account',
       'group-edit-schedule',
       'group-priority',
+      'group-rankings',
+      'tournament',
+      'tournament-setup',
       'group-questions',
       'group-stats',
       'group-rsvp-responses',
@@ -435,6 +438,9 @@ const AuthLayout = () => {
           <Stack.Screen name="paywall" options={{ presentation: 'modal', headerShown: false }} />
           <Stack.Screen name="group-edit-schedule" options={{ headerShown: false }} />
           <Stack.Screen name="group-priority" options={{ headerShown: false }} />
+          <Stack.Screen name="group-rankings" options={{ headerShown: false }} />
+          <Stack.Screen name="tournament" options={{ headerShown: false }} />
+          <Stack.Screen name="tournament-setup" options={{ headerShown: false }} />
           <Stack.Screen name="group-questions" options={{ headerShown: false }} />
           <Stack.Screen name="group-stats" options={{ headerShown: false }} />
           <Stack.Screen name="group-rsvp-responses" options={{ headerShown: false }} />

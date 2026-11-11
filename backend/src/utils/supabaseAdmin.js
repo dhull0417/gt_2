@@ -155,3 +155,24 @@ export const removeChatMemberEverywhere = (clerkId, { env = process.env, fetchIm
     })
   );
 };
+
+/**
+ * Chat messages per sender in a group, for the Stats "Chatty Cathy" award:
+ * Map<clerkId, count>. Counts user messages that weren't deleted (SQL function
+ * chat_message_counts, migration 20261110000000). Resolves to null when Supabase isn't
+ * configured or the call fails, so the award is simply left out.
+ */
+export const chatMessageCounts = async (groupId, { env = process.env, fetchImpl = fetch } = {}) => {
+  if (!groupId || !isConfigured(env)) return null;
+  try {
+    const res = await call(env, fetchImpl, '/rest/v1/rpc/chat_message_counts', {
+      method: 'POST',
+      body: JSON.stringify({ p_group_id: String(groupId) }),
+    });
+    const rows = await res.json();
+    return new Map(rows.map((r) => [r.sender_id, Number(r.messages) || 0]));
+  } catch (err) {
+    console.error('[supabaseAdmin] chatMessageCounts failed:', err?.message || err);
+    return null;
+  }
+};

@@ -135,6 +135,12 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDe
             case 'ride-assigned':
             case 'ride-removed':
                 return <Text style={styles.messageText}>{rideNoticeLead(notification.type, notification.meta)} <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'tournament-set':
+                return <Text style={styles.messageText}>Teams and matches are set for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'tournament-match-ready':
+                return <Text style={styles.messageText}>Your next match is up at <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'tournament-finished':
+                return <Text style={styles.messageText}>We have a champion at <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>. See the results.</Text>;
             case 'meetup-created':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> scheduled a new meetup{groupName ? <> for <Text style={styles.bold}>{groupName}</Text></> : null}.</Text>;
             case 'meetup-updated': {
@@ -190,6 +196,7 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDe
             groupId: notification.group?._id,
             meetupId: notification.meetup?._id,
             pollId: notification.poll?._id,
+            tournamentId: notification.meta?.tournamentId,
         }));
     };
 

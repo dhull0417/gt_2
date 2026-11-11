@@ -5,13 +5,20 @@ import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useApiClient, groupApi, userApi, GroupStats, User } from '@/utils/api';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
 import { UpgradeButton } from '@/components/UpgradeButton';
+import { useToast } from '@/contexts/ToastContext';
+import { AwardCard } from '@/components/stats/AwardCard';
+import { AwardSheet } from '@/components/stats/AwardSheet';
+import { YourStatsCard } from '@/components/stats/YourStatsCard';
+import { HallOfShame } from '@/components/stats/HallOfShame';
+import TournamentStatsSection from '@/components/tournament/TournamentStatsSection';
+import type { StatsAward } from '@/utils/api';
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 const nameOf = (m: { firstName?: string; lastName?: string }) => `${m.firstName ?? ''} ${m.lastName ?? ''}`.trim() || 'Member';
@@ -26,6 +33,9 @@ export default function GroupStatsScreen() {
   const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
   const [exporting, setExporting] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [openAward, setOpenAward] = useState<StatsAward | null>(null);
+  const queryClient = useQueryClient();
+  const toast = useToast();
 
   const isPremium = group?.isPremium === true;
   const canExport = useMemo(() => {
@@ -39,6 +49,25 @@ export default function GroupStatsScreen() {
     queryKey: ['groupStats', id],
     queryFn: () => groupApi.getGroupStats(api, id!),
     enabled: !!id && isPremium,
+  });
+
+  // "Reveal to the group" for the Hall of Shame: flip it right away, roll back on failure.
+  const reveal = useMutation({
+    mutationFn: (next: boolean) => groupApi.updateStatsSettings(api, id!, next),
+    onMutate: async (next: boolean) => {
+      await queryClient.cancelQueries({ queryKey: ['groupStats', id] });
+      const before = queryClient.getQueryData<GroupStats>(['groupStats', id]);
+      if (before?.viewer) {
+        queryClient.setQueryData<GroupStats>(['groupStats', id], { ...before, viewer: { ...before.viewer, revealJokes: next } });
+      }
+      return { before };
+    },
+    onError: (_e, _next, ctx) => {
+      if (ctx?.before) queryClient.setQueryData(['groupStats', id], ctx.before);
+      toast.error("Couldn't change that. Please try again.");
+    },
+    onSuccess: (res) => toast.success(res.revealJokes ? 'Hall of Shame revealed to the group' : 'Hall of Shame hidden from members'),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['groupStats', id] }),
   });
 
   const exportCsv = async () => {
@@ -107,6 +136,16 @@ export default function GroupStatsScreen() {
 
   const { summary, members, meetups } = stats;
   const ranked = members.filter((m) => m.eligible > 0);
+  const awards = stats.awards ?? [];
+  const publicAwards = awards.filter((a) => !a.joke);
+  const jokeAwards = awards.filter((a) => a.joke);
+  const myRow = stats.me ? members.find((m) => m._id === stats.me!._id) : undefined;
+  const memberLine = (m: GroupStats['members'][number]) => [
+    `${m.attended} of ${m.eligible}`,
+    m.declined !== null ? `${m.declined} out` : null,
+    m.noResponse !== null ? `${m.noResponse} no reply` : null,
+    m.streak >= 2 ? `${m.streak} in a row` : null,
+  ].filter(Boolean).join(' · ');
   const visibleMeetups = showAll ? meetups : meetups.slice(0, 8);
 
   return (
@@ -114,7 +153,7 @@ export default function GroupStatsScreen() {
       {header}
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}>
         <Text style={styles.sub}>
-          Attendance counts "I'm In" on meetups that have happened. History for {group.name} builds up from when stats were turned on.
+          Attendance counts "I'm In" on meetups that have happened. Awards are all-time; you need 3 meetups to qualify.
         </Text>
 
         {summary.totalMeetups === 0 ? (
@@ -134,6 +173,33 @@ export default function GroupStatsScreen() {
               </View>
             </View>
 
+            {stats.me && (
+              <>
+                <Text style={styles.sectionLabel}>Your stats</Text>
+                <YourStatsCard me={stats.me} member={myRow} awards={awards} />
+              </>
+            )}
+
+            {publicAwards.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>Awards</Text>
+                <View style={styles.awardGrid}>
+                  {publicAwards.map((a) => <AwardCard key={a.key} award={a} onPress={() => setOpenAward(a)} />)}
+                </View>
+              </>
+            )}
+
+            {stats.viewer && (
+              <HallOfShame
+                awards={jokeAwards}
+                viewer={stats.viewer}
+                saving={reveal.isPending}
+                onToggleReveal={(next) => reveal.mutate(next)}
+                onOpen={setOpenAward}
+                labelStyle={styles.sectionLabel}
+              />
+            )}
+
             <Text style={styles.sectionLabel}>Members</Text>
             <View style={styles.card}>
               {ranked.map((m, i) => (
@@ -144,10 +210,7 @@ export default function GroupStatsScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.memberName} numberOfLines={1}>{nameOf(m)}</Text>
                     <View style={styles.bar}><View style={[styles.barFill, { width: `${Math.round(m.rate * 100)}%` }]} /></View>
-                    <Text style={styles.memberSub}>
-                      {m.attended} of {m.eligible} · {m.declined} out · {m.noResponse} no reply
-                      {m.streak >= 2 ? ` · ${m.streak} in a row` : ''}
-                    </Text>
+                    <Text style={styles.memberSub}>{memberLine(m)}</Text>
                   </View>
                   <Text style={styles.rate}>{pct(m.rate)}</Text>
                 </View>
@@ -174,6 +237,8 @@ export default function GroupStatsScreen() {
               )}
             </View>
 
+            <TournamentStatsSection groupId={id!} />
+
             {canExport && (
               <PressableOpacity onPress={exportCsv} disabled={exporting} style={styles.exportBtn}>
                 {exporting ? <ActivityIndicator color={colors.brand} /> : (<><Feather name="download" size={18} color={colors.brand} /><Text style={styles.exportText}>Export attendance (CSV)</Text></>)}
@@ -182,6 +247,7 @@ export default function GroupStatsScreen() {
           </>
         )}
       </ScrollView>
+      <AwardSheet award={openAward} onClose={() => setOpenAward(null)} />
     </SafeAreaView>
   );
 }
@@ -196,6 +262,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   sectionLabel: { fontSize: 11, fontWeight: '800', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 22, marginBottom: 8 },
   card: { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14 },
   tiles: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  awardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   tile: { flex: 1, backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingVertical: 14, alignItems: 'center' },
   tileValue: { fontSize: 24, fontWeight: '900', color: colors.textPrimary },
   tileLabel: { fontSize: 11, fontWeight: '700', color: colors.textFaint, marginTop: 2 },

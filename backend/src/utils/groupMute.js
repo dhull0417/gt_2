@@ -27,6 +27,9 @@ const KIND_FOR_TYPE = {
   'poll-closed': 'polls',
   'group-updated': 'groupUpdates',
   'group-member-joined': 'groupUpdates',
+  'tournament-set': 'changes',
+  'tournament-match-ready': 'changes',
+  'tournament-finished': 'changes',
 };
 
 // Kinds that a 1.3.x mute always silenced (they were filtered in the database query).

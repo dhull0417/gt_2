@@ -117,3 +117,11 @@ Backend before the app (new fields are additive; the old 1.4 build ignores them)
 
 ## Left to the builder
 Exact copy for award descriptions, card styling details, sheet component choice (reuse existing modal-sheet pattern).
+
+## Changes after review (2026-11-10)
+- People still on the waitlist when a meetup ends count as having answered (not "no reply"); the archive now keeps `waitlist`. Always Answers counts In + Out + waitlisted.
+- Always Answers is rank-only (no numbers) for members while the Hall of Shame is hidden, because its number next to "N of M" would reveal Outs and no-replies by subtraction.
+- A meetup whose log started after people had already answered (e.g. RSVPs made before this shipped) is marked `rsvpLogPartial` and its log is ignored.
+- The 200-entry log cap drops the oldest entry that isn't someone's first answer.
+- The reveal switch saves with `updateOne` instead of saving the whole group.
+- Accepted: Quick Draw times from the *scheduled* tier opening (an early-opened tier can score 0 minutes); a slow Supabase can delay the stats screen by up to 8 s (Chatty Cathy is then left out).

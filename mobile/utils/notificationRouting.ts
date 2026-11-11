@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
  * in the in-app notification list always agree, and nothing is a dead end.
  *
  *  - chat / poll events     -> the group's chat (polls are posted there)
+ *  - teams & tournament events -> that event's results (else the meetup)
  *  - anything about a meetup -> that meetup's detail
  *  - group events            -> the group's details
  *  - group gone / removed    -> the Groups tab
@@ -14,6 +15,7 @@ import { Platform } from 'react-native';
 export type NotificationTarget =
   | { kind: 'chat'; groupId: string }
   | { kind: 'meetup'; meetupId: string }
+  | { kind: 'tournament'; tournamentId: string }
   | { kind: 'group'; groupId: string }
   | { kind: 'groups' }
   | { kind: 'notifications' };
@@ -26,6 +28,7 @@ export interface NotificationRouteInput {
   groupId?: string | null;
   meetupId?: string | null;
   pollId?: string | null;
+  tournamentId?: string | null;
 }
 
 const GROUP_GONE = new Set(['group-removed', 'group-deleted']);
@@ -40,6 +43,7 @@ export function resolveNotificationTarget(input: NotificationRouteInput): Notifi
   if (type === 'group-invite') return { kind: 'notifications' };
 
   if ((CHAT_TYPES.has(type) || input.legacyType === 'chat') && groupId) return { kind: 'chat', groupId };
+  if (type.startsWith('tournament-') && input.tournamentId) return { kind: 'tournament', tournamentId: String(input.tournamentId) };
   if (meetupId) return { kind: 'meetup', meetupId };
   if (groupId) return { kind: 'group', groupId };
   return { kind: 'notifications' };
@@ -53,6 +57,7 @@ export function routeInputFromPush(data: Record<string, any> | undefined | null)
     groupId: data?.groupId,
     meetupId: data?.meetupId,
     pollId: data?.pollId,
+    tournamentId: data?.tournamentId,
   };
 }
 
@@ -68,6 +73,9 @@ export function goToTarget(router: RouterLike, target: NotificationTarget) {
       return;
     case 'meetup':
       router.push({ pathname: '/(tabs)', params: { openMeetupId: target.meetupId } });
+      return;
+    case 'tournament':
+      router.push({ pathname: '/tournament/[id]', params: { id: target.tournamentId } });
       return;
     case 'group':
       // iOS uses its own root-level copy of Group Details; Android lands on the

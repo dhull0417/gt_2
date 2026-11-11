@@ -15,10 +15,12 @@ import { resolveZone } from "../utils/email/lifecycle.js";
 import { generateMeetupsForGroup, generateMeetupsForSchedule, reconcileScheduleMeetups } from "../utils/meetupGeneration.js";
 import { promoteWaitlist } from "../utils/waitlist.js";
 import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
+import { deleteTournamentsForGroup, deleteUnfinishedTournaments } from "../utils/tournament/cleanup.js";
 import { addChatMembers, removeChatMember, removeAllChatMembers, purgeGroupChat } from "../utils/supabaseAdmin.js";
 import { scheduleChanges, scheduleSnapshot, pushBody } from "../utils/changeSummary.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { buildGroupStats, buildAttendanceCsv } from "../utils/groupStats.js";
+import { shapeStatsForViewer } from "../utils/statsVisibility.js";
 import { parseQuestions, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
 import { refreshPriorityTiers, MAX_PRIORITY_TIERS, MAX_WINDOW_MINUTES } from "../utils/priorityRsvp.js";
 import { hasPremium, groupHasPremium } from "../utils/premium.js";
@@ -786,6 +788,7 @@ export const deleteSchedule = asyncHandler(async (req, res) => {
 
     if (futureMeetups.length > 0) {
         await Meetup.deleteMany({ _id: { $in: futureMeetups.map(m => m._id) } });
+        await deleteUnfinishedTournaments(futureMeetups.map(m => m._id));
 
         const membersToNotify = await User.find({ _id: { $in: group.members } });
         if (membersToNotify.length > 0) {
@@ -1303,6 +1306,7 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     await Poll.deleteMany({ group: groupId });
     await InviteToken.deleteMany({ groupId });
     await AttendanceRecord.deleteMany({ group: groupId });
+    await deleteTournamentsForGroup(groupId);
     await Notification.deleteMany({ group: groupId });
     await User.updateMany(
         { _id: { $in: group.members } },
@@ -1568,7 +1572,8 @@ const STATS_PREMIUM_REQUIRED = {
 };
 
 /**
- * @desc    Attendance stats and history for a group (Premium). Any member can view.
+ * @desc    Attendance stats, awards and history for a group (Premium). Any member can view;
+ *          joke awards are shaped per viewer (utils/statsVisibility.js).
  * @route   GET /api/groups/:groupId/stats?scheduleId=
  */
 export const getGroupStats = asyncHandler(async (req, res) => {
@@ -1578,7 +1583,28 @@ export const getGroupStats = asyncHandler(async (req, res) => {
     if (!group.members.some(m => m.equals(user._id))) return res.status(403).json({ error: "Permission denied." });
     if (!(await groupHasPremium(group))) return res.status(403).json(STATS_PREMIUM_REQUIRED);
 
-    res.status(200).json(await buildGroupStats(group, { scheduleId: req.query.scheduleId || undefined }));
+    const full = await buildGroupStats(group, { scheduleId: req.query.scheduleId || undefined });
+    res.status(200).json(shapeStatsForViewer(full, {
+        viewerId: user._id,
+        isOrganizer: canManageGroup(user._id, group),
+        revealJokes: group.statsRevealJokes === true,
+    }));
+});
+
+/**
+ * @desc    Stats settings: whether the joke awards are shown to every member. Owner and moderators.
+ * @route   PATCH /api/groups/:groupId/stats-settings   body { revealJokes: boolean }
+ */
+export const updateStatsSettings = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { revealJokes } = req.body || {};
+    const [group, user] = await Promise.all([Group.findById(req.params.groupId), User.findOne({ clerkId })]);
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+    if (typeof revealJokes !== "boolean") return res.status(400).json({ error: "revealJokes must be true or false." });
+
+    await Group.updateOne({ _id: group._id }, { $set: { statsRevealJokes: revealJokes } });
+    res.status(200).json({ revealJokes });
 });
 
 /**

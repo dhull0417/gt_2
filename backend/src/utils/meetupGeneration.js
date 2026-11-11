@@ -3,6 +3,7 @@ import Meetup from "../models/meetup.model.js";
 import { resolveRsvpOpen } from "./priorityRsvp.js";
 import { groupHasPremium } from "./premium.js";
 import { slotEndFields, buildEndTimeUpdates } from "./meetupEndTime.js";
+import { deleteUnfinishedTournaments } from "./tournament/cleanup.js";
 import { calculateNextMeetupDate, computeNextGenerationAt, getGenerationWindowDays, parseTimeString, isLongInterval, nextLongIntervalDate } from "./date.utils.js";
 
 const existenceKey = (date, time) => `${new Date(date).toISOString()}|${time}`;
@@ -410,7 +411,10 @@ export const reconcileScheduleMeetups = async (group, schedule, { resetAll = fal
   const staleIds = upcoming
     .filter((m) => resetAll || !wanted.has(existenceKey(m.date, m.time)))
     .map((m) => m._id);
-  if (staleIds.length > 0) await Meetup.deleteMany({ _id: { $in: staleIds } });
+  if (staleIds.length > 0) {
+    await Meetup.deleteMany({ _id: { $in: staleIds } });
+    await deleteUnfinishedTournaments(staleIds);
+  }
 
   const kept = upcoming.length - staleIds.length;
   if (kept > 0) {

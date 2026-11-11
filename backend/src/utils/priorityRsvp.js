@@ -226,7 +226,6 @@ export const rebalanceMeetup = async (meetupId) => {
     if (bumped.length) {
       if (meetup.bringClaims?.length) meetup.bringClaims = meetup.bringClaims.filter((c) => !bumped.includes(idStr(c.user)));
       if (meetup.answers?.length) meetup.answers = meetup.answers.filter((a) => !bumped.includes(idStr(a.user)));
-      for (const t of meetup.teams || []) t.members = t.members.filter((id) => !bumped.includes(idStr(id)));
     }
     try {
       await meetup.save();

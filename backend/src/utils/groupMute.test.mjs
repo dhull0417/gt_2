@@ -19,6 +19,7 @@ test('kindOf maps every notification type to its kind', () => {
     'meetup-rsvp-reminder': 'reminders', 'meetup-rsvp-open': 'reminders', 'meetup-starting-soon': 'reminders',
     'poll-created': 'polls', 'poll-closed': 'polls',
     'group-updated': 'groupUpdates', 'group-member-joined': 'groupUpdates',
+    'tournament-set': 'changes', 'tournament-match-ready': 'changes', 'tournament-finished': 'changes',
   };
   for (const [type, kind] of Object.entries(table)) assert.equal(kindOf(type), kind, type);
 });

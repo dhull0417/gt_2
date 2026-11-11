@@ -42,11 +42,6 @@ const meetupSchema = new mongoose.Schema({
     max: { type: Number, default: null },
   }],
   ridesEnabled: { type: Boolean, default: false },
-  // Premium team split: named teams of people who are In.
-  teams: [{
-    name: { type: String, required: true },
-    members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  }],
   // Premium custom RSVP questions (copied from the series; _ids match the series')
   // and the answers people gave.
   questions: [{
@@ -94,6 +89,15 @@ const meetupSchema = new mongoose.Schema({
   // generating routine's frequency (null for one-off); drives RSVP-reminder
   // stages and the display cap.
   frequency: { type: String, enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal', 'quarterly', 'semiannual', 'yearly'], default: null },
+  // Members' own RSVP answers with times, for the Stats timing awards (utils/rsvpLog.js).
+  rsvpLog: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    status: { type: String, enum: ['in', 'out', 'waitlist'] },
+    at: { type: Date },
+    _id: false,
+  }],
+  // True when the log started after people had already answered (their answers weren't logged).
+  rsvpLogPartial: { type: Boolean },
   rsvpOpenDate: { type: Date },
   rsvpCloseDate: { type: Date },
   rsvpNotified: { type: Boolean, default: false },

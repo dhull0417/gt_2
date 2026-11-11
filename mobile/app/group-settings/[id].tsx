@@ -156,6 +156,7 @@ const GroupSettings = () => {
     { id: 'schedules', label: 'Edit Meetup Schedules', icon: 'calendar', color: '#6366F1', bg: chipIndigo },
     { id: 'reactions', label: 'RSVP Reactions', icon: 'smile', color: '#EC4899', bg: chipPink },
     { id: 'stats', label: 'Stats & Attendance', icon: 'bar-chart-2', color: '#10B981', bg: chipGreen },
+    { id: 'rankings', label: 'Strength Rankings', icon: 'list', color: '#F59E0B', bg: chipOrange },
     { id: 'terminate', label: isUserOwner ? 'Delete Group' : 'Leave Group', icon: isUserOwner ? 'trash-2' : 'log-out', color: colors.danger, bg: chipRed, destructive: true },
   ];
 
@@ -174,6 +175,9 @@ const GroupSettings = () => {
         break;
       case 'stats':
         router.push({ pathname: '/group-stats/[id]', params: { id } });
+        break;
+      case 'rankings':
+        router.push({ pathname: '/group-rankings/[id]', params: { id } });
         break;
       case 'image':
         handleOpenImageModal();

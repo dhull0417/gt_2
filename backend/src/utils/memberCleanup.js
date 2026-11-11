@@ -7,7 +7,7 @@ import { notifyRideChanges } from "./rideNotify.js";
 /**
  * Removes a person's footprint from a group's upcoming meetups: their RSVP and
  * everything hanging off it (guests, things they signed up to bring, ride, answers,
- * team spot, priority spot). Spots they free up go to the waitlist.
+ * priority spot, saved tournament rankings). Spots they free up go to the waitlist.
  *
  * Pass `groupId` to scope it to one group (leaving / being removed); omit it to
  * clean every upcoming meetup the person is a member of (account deletion).
@@ -51,12 +51,14 @@ export const scrubMemberFromUpcomingMeetups = async ({ userId, clerkId, groupId 
   // Nested arrays are cleaned in separate steps that only touch documents where the
   // person actually appears (array updates fail on documents missing the array).
   await Meetup.updateMany(
-    { ...scope, 'teams.members': userId },
-    { $pull: { 'teams.$[].members': userId } }
-  );
-  await Meetup.updateMany(
     { ...scope, 'priorityTiers.members': userId },
     { $pull: { 'priorityTiers.$[].members': userId } }
+  );
+
+  // Saved tournament rankings live on the group.
+  await Group.updateMany(
+    { ...(groupId ? { _id: groupId } : {}), 'rankingLists.order': userId },
+    { $pull: { 'rankingLists.$[].order': userId } }
   );
 
   // Priority rankings live on each series.

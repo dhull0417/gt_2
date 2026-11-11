@@ -72,7 +72,7 @@ leftover `teams` field on existing meetups is simply ignored).
 
 ### Teams
 - Teams mode: organizer sets **team size** or **number of teams**. Leftover players are spread so
-  team sizes differ by at most one *(my call)*; the organizer can drag people between teams and
+  team sizes differ by at most one *(my call)*; the organizer can move people between teams (tap a player, pick the team) and
   rename teams (≤24 chars, as today) before starting.
 - With a ranking and **Balance teams**: snake draft by rank. Guests and anyone not on the list
   rank at the bottom in random order.
@@ -106,6 +106,8 @@ leftover `teams` field on existing meetups is simply ignored).
 - **Points:** each team's score. Highest wins. Equal = tie (round robin only; brackets need a
   winner and reject a tie).
 - **Win/loss:** pick the winner (round robin also allows "Tie").
+  Not offered for single elimination with 4 per match (two teams advance, so second place
+  must be known) — use points or places there (owner-approved 2026-11-10).
 - **Places:** order the teams 1st…kth.
 - Who: a player on any team in that match, or an owner/moderator. Latest entry stands.
 - A bracket result whose winner has already played a later match can only be changed by an
@@ -125,6 +127,11 @@ leftover `teams` field on existing meetups is simply ignored).
 - Survives meetup cleanup. Deleted with its group, and when its meetup is deleted while the
   event is unfinished *(my call)*. Account deletion keeps past results; the name shows as
   "Former member".
+
+### API note
+Editing an existing event (settings, players, ranking or hand-set teams) is one call,
+`PUT /api/tournaments/:id`, which regenerates with the same results-exist confirmation as Update
+(owner-approved 2026-11-10).
 
 ### Permissions & Premium
 - Create, Update, Randomize, edit teams, ranking lists: owners/moderators, group has Premium.

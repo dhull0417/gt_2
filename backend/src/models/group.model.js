@@ -144,6 +144,8 @@ const groupSchema = new mongoose.Schema({
     createdAt: { type: Date },
   },
   isDM: { type: Boolean, default: false },
+  // Stats: show the joke awards (Hall of Shame) to every member, not just organizers.
+  statsRevealJokes: { type: Boolean, default: false },
   // A sample group created for new people to explore (see createDemoGroup). Safe to delete.
   isDemo: { type: Boolean, default: false },
   dmParticipants: [{
@@ -151,6 +153,13 @@ const groupSchema = new mongoose.Schema({
     name: { type: String },
     profilePicture: { type: String },
     _id: false,
+  }],
+  // Premium teams & tournaments: saved strength rankings (strongest first), at most 10.
+  // Only owners and moderators see them. See utils/tournament/.
+  rankingLists: [{
+    name: { type: String, required: true, maxlength: 30 },
+    order: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    updatedAt: { type: Date, default: Date.now },
   }],
 }, { timestamps: true });
 

@@ -50,7 +50,7 @@ import { useRsvp } from '@/hooks/useRsvp';
 import MeetupAssignments, { AssignmentsSheet } from '@/components/MeetupAssignments';
 import { assignmentsActive, summarizeAssignments } from '@/utils/assignments';
 import MeetupQuestions from '@/components/MeetupQuestions';
-import MeetupTeams from '@/components/MeetupTeams';
+import MeetupTournamentCard from '@/components/MeetupTournamentCard';
 import { questionsActive, hasAnsweredAny } from '@/utils/questions';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
@@ -1170,14 +1170,13 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose }: MeetupDetailModal
                     }}
                 />
 
-                <MeetupTeams
+                <MeetupTournamentCard
                     meetup={meetup}
                     currentUserId={currentUser._id}
                     canManage={canManage}
-                    onUpdated={(m) => {
-                        setMeetup(m);
-                        queryClient.invalidateQueries({ queryKey: ['meetups'] });
-                        broadcastMeetupUpdate(getToken, meetupGroupId);
+                    onOpen={(href) => {
+                        onClose();
+                        router.push(href as any);
                     }}
                 />
 
