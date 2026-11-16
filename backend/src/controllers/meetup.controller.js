@@ -192,10 +192,10 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             return res.status(400).json({ error: "The RSVP deadline has passed." });
         }
 
-        // Spots are counted the way the app shows them: everyone who is In plus the guests they bring.
+        // Spots are counted the way the app shows them: everyone who is In plus every guest.
+        // Guests already hold their spots (utils/waitlist.js headcountOf), so going In needs one.
         const clerkIds = await loadClerkIds([...meetup.in, ...meetup.waitlist, user._id]);
-        const guestsByClerk = new Map((meetup.guests || []).map(g => [g.userId, g.count || 0]));
-        const myNeed = 1 + (guestsByClerk.get(user.clerkId) || 0);
+        const myNeed = 1;
         const spotsUsed = () => headcountOf(meetup, clerkIds);
 
         // Skip re-notifying on a repeat tap; "in" covers both in and waitlist.
@@ -241,12 +241,12 @@ export const rsvpMeetup = asyncHandler(async (req, res) => {
             // Push to waitlist if at capacity (Premium), otherwise 'in'
             if (meetup.capacity > 0 && spotsUsed() + myNeed > meetup.capacity) {
                 // Priority RSVP: a member of a higher group takes a spot from the
-                // lowest-priority person who's in (they go to the front of the waitlist),
-                // but only when that makes room for the member and all their guests.
+                // lowest-priority person who's in (they go to the front of the waitlist).
+                // The bumped person's guests keep their spots; only an owner/moderator removes guests.
                 let victimId = null;
                 if ((meetup.priorityTiers?.length ?? 0) > 0 && userTierIndex(meetup, user._id) >= 0 && await getGroupPremium()) {
                     victimId = chooseBumpVictim(meetup, user._id, {
-                        need: myNeed, used: spotsUsed(), capacity: meetup.capacity, clerkIdByUserId: clerkIds,
+                        need: myNeed, used: spotsUsed(), capacity: meetup.capacity,
                     });
                 }
                 if (victimId) {

@@ -24,6 +24,7 @@ import { getUserDisplayName } from '@/utils/groupDisplay';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
 import { formatMeetupDate, formatMeetupTime } from '@/utils/meetupTime';
+import { timeoutNoticeLength } from '@/utils/chatTimeout';
 
 const timeAgo = (date: string) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
@@ -97,6 +98,9 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDe
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> added you to <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'group-member-joined':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> has been added to <Text style={styles.bold}>{groupName}</Text>!</Text>;
+            case 'chat-timeout':
+                // Never names the moderator.
+                return <Text style={styles.messageText}>You've been timed out of the chat in <Text style={styles.bold}>{groupName}</Text> {timeoutNoticeLength(notification.meta?.duration)}.</Text>;
             case 'group-removed':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> removed you from <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'ownership-transferred': {

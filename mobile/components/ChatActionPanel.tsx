@@ -32,6 +32,10 @@ interface Props {
   onEdit: () => void;
   showDelete: boolean;
   onDelete: () => void;
+  // Owner/moderator: "Time out Sam". Omit to hide.
+  showTimeOut?: boolean;
+  timeOutLabel?: string;
+  onTimeOut?: () => void;
   onClose: () => void;
 }
 
@@ -70,6 +74,9 @@ export function ChatActionPanel({
   onEdit,
   showDelete,
   onDelete,
+  showTimeOut,
+  timeOutLabel,
+  onTimeOut,
   onClose,
 }: Props) {
   const colors = useThemeColors();
@@ -145,7 +152,7 @@ export function ChatActionPanel({
           </>
         )}
 
-        {(showEdit || showDelete) && (
+        {(showEdit || showDelete || showTimeOut) && (
           <>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             {showEdit && (
@@ -158,6 +165,12 @@ export function ChatActionPanel({
               <PressableOpacity style={styles.actionRow} onPress={onDelete}>
                 <Feather name="trash-2" size={16} color={colors.danger} />
                 <Text style={[styles.actionLabel, { color: colors.danger }]}>Delete</Text>
+              </PressableOpacity>
+            )}
+            {showTimeOut && (
+              <PressableOpacity style={styles.actionRow} onPress={onTimeOut}>
+                <Feather name="clock" size={16} color={colors.danger} />
+                <Text style={[styles.actionLabel, { color: colors.danger }]} numberOfLines={1}>{timeOutLabel ?? 'Time out'}</Text>
               </PressableOpacity>
             )}
           </>

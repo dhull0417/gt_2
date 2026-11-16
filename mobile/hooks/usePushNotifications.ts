@@ -164,6 +164,10 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
         queryClient.invalidateQueries({ queryKey: ['currentUser'] });
         queryClient.invalidateQueries({ queryKey: ['unreadCounts'] });
       }
+      // Timed out of a group's chat: reload that group so its chat input locks right away.
+      if (type === 'chat-timeout' && pushData?.groupId) {
+        queryClient.invalidateQueries({ queryKey: ['groupDetails', String(pushData.groupId)] });
+      }
     });
 
     // 3. Listen for notification taps while app is in background/foreground

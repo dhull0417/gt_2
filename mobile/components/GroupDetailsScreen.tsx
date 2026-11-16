@@ -33,6 +33,9 @@ import { GroupCalendarButton } from '@/components/GroupCalendarButton';
 import { tabScreenBottomPadding } from '@/utils/layout';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { getGroupImage } from '@/utils/groupDisplay';
+import { ChatTimeoutSheet } from '@/components/ChatTimeoutSheet';
+import { useChatModeration } from '@/hooks/useChatModeration';
+import { canTimeOut, formatTimeoutEnd, isTimeoutActive } from '@/utils/chatTimeout';
 
 const styles = StyleSheet.create({
   settingsButton: {
@@ -103,6 +106,23 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
 
   const handleMemberPress = (member: User) => {
     setDmTargetMember(member);
+  };
+
+  // Chat timeouts: owners/moderators can time a member out (or end it) from the member sheet.
+  const moderation = useChatModeration(id ?? '');
+  const [timeoutMember, setTimeoutMember] = useState<User | null>(null);
+  const timeoutOf = (member: User | null) => {
+    const t = member ? groupDetails?.chatTimeouts?.find((x) => x.userId === member._id) : undefined;
+    return t && isTimeoutActive(t, Date.now()) ? t : null;
+  };
+  const dmTargetTimeout = timeoutOf(dmTargetMember);
+  const canTimeOutDmTarget = !!dmTargetMember && canTimeOut(currentUser?._id, dmTargetMember._id, groupDetails as any);
+  const openTimeoutSheet = () => {
+    const member = dmTargetMember;
+    if (!member || !requireOnline('time someone out')) return;
+    setDmTargetMember(null);
+    // Two React Native modals can't be open at once; let the member sheet finish closing first.
+    setTimeout(() => setTimeoutMember(member), 350);
   };
 
   const handleSendDM = async () => {
@@ -249,9 +269,14 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
                   source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C/png?text=${getUserInitial(dmTargetMember)}` }}
                   style={[dmStyles.avatar, { backgroundColor: colors.backgroundAlt }]}
                 />
-                <Text style={[dmStyles.name, { color: colors.textPrimary }]}>
+                <Text style={[dmStyles.name, { color: colors.textPrimary }, canTimeOutDmTarget && dmTargetTimeout && { marginBottom: 6 }]}>
                   {getUserDisplayName(dmTargetMember)}
                 </Text>
+                {canTimeOutDmTarget && dmTargetTimeout && (
+                  <Text style={[dmStyles.timeoutCaption, { color: colors.danger }]}>
+                    Timed out · {formatTimeoutEnd(dmTargetTimeout.until, new Date())}
+                  </Text>
+                )}
                 <PressableOpacity
                   style={[dmStyles.dmBtn, { backgroundColor: colors.brand }]}
                   onPress={handleSendDM}
@@ -263,11 +288,31 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
                     : <Text style={dmStyles.dmBtnText}>Send DM</Text>
                   }
                 </PressableOpacity>
+                {canTimeOutDmTarget && (
+                  <PressableOpacity
+                    style={[dmStyles.timeoutBtn, { backgroundColor: colors.backgroundAlt }]}
+                    onPress={openTimeoutSheet}
+                    disabled={moderation.busy}
+                    activeOpacity={0.8}
+                  >
+                    <Feather name="clock" size={16} color={colors.danger} />
+                    <Text style={[dmStyles.timeoutBtnText, { color: colors.danger }]}>Chat timeout</Text>
+                  </PressableOpacity>
+                )}
               </>
             )}
           </Pressable>
         </Pressable>
       </Modal>
+
+      <ChatTimeoutSheet
+        visible={!!timeoutMember}
+        name={timeoutMember ? (timeoutMember.firstName || getUserDisplayName(timeoutMember)) : ''}
+        current={timeoutOf(timeoutMember)}
+        onPick={(key) => { if (timeoutMember) moderation.timeOut(timeoutMember._id, key); setTimeoutMember(null); }}
+        onEnd={() => { if (timeoutMember) moderation.endTimeout(timeoutMember._id); setTimeoutMember(null); }}
+        onClose={() => setTimeoutMember(null)}
+      />
     </SafeAreaView>
   );
 };
@@ -280,6 +325,9 @@ const dmStyles = StyleSheet.create({
   name: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 28 },
   dmBtn: { backgroundColor: '#4A90E2', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
   dmBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  timeoutCaption: { fontSize: 13, fontWeight: '700', marginBottom: 22 },
+  timeoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12, paddingHorizontal: 32, paddingVertical: 12, borderRadius: 16, minWidth: 160 },
+  timeoutBtnText: { fontWeight: '700', fontSize: 15 },
 });
 
 export default GroupDetailsScreen;

@@ -33,7 +33,7 @@ import { registerChatMutationDefaults, SEND_MESSAGE_MUTATION_KEY, type SendMessa
 import { upsertMessage } from '@/utils/chatCache';
 import type { ChatMessage } from '@/types/chat';
 import { registerOfflineMutationDefaults, RSVP_MUTATION_KEY, ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY, VOTE_POLL_MUTATION_KEY, type VotePollVariables } from '@/utils/offlineMutations';
-import { isQueuedKey, queuedErrorMessage, queuedErrorRefreshKey } from '@/utils/queuedMutations';
+import { isQueuedKey, queuedErrorMessage, queuedErrorRefreshKey, timedOutRefreshKey } from '@/utils/queuedMutations';
 import { currentUserGate } from '@/utils/offlineState';
 import { shouldPersistQuery, trimForPersist } from '@/utils/persistence';
 import { isGroupThatReachable } from '@/utils/networkError';
@@ -72,6 +72,9 @@ const queryClient = new QueryClient({
       if (message) toast.error(message);
       const refreshKey = queuedErrorRefreshKey(key, _variables as object | string | undefined);
       if (refreshKey) queryClient.invalidateQueries({ queryKey: refreshKey });
+      // Timed out of that chat: reload the group so the red timed-out input appears.
+      const timedOutKey = timedOutRefreshKey(key, _variables as object | string | undefined, error);
+      if (timedOutKey) queryClient.invalidateQueries({ queryKey: timedOutKey });
       // Only a message keeps its failed state (its bubble offers Retry / Discard).
       if (key !== 'sendMessage') queryClient.getMutationCache().remove(mutation);
     },

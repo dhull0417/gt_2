@@ -8,18 +8,13 @@ import { notifyAndPersist } from "./push.notifications.js";
 import { canManageMember } from "../controllers/group.controller.js";
 
 /**
- * Spots taken: everyone who is In plus the guests they're bringing. Guests are
- * stored by Clerk id, so the caller supplies a Map(userId -> clerkId) for the
- * people who are In (see loadClerkIds).
+ * Spots taken: everyone who is In plus every guest on the meetup. A guest keeps their
+ * spot whatever their host does (Out with "Keep Guests", waitlisted, bumped) until the
+ * host or an owner/moderator removes them. The second argument is no longer needed and
+ * is kept so existing callers don't change.
  */
-export const headcountOf = (meetup, clerkIdByUserId) => {
-  const guestsByClerk = new Map((meetup.guests || []).map((g) => [g.userId, g.count || 0]));
-  let total = 0;
-  for (const id of meetup.in || []) {
-    total += 1 + (guestsByClerk.get(clerkIdByUserId.get(String(id))) || 0);
-  }
-  return total;
-};
+export const headcountOf = (meetup, _clerkIdByUserId) =>
+  (meetup.in || []).length + (meetup.guests || []).reduce((sum, g) => sum + (g.count || 0), 0);
 
 export const loadClerkIds = async (userIds) => {
   if (!userIds?.length) return new Map();
@@ -37,9 +32,9 @@ export const guestRoom = (meetup, clerkIdByUserId, { hostId, hostClerkId, nextCo
   if (!(meetup.capacity > 0)) return { ok: true, room: Infinity };
   const hostIsIn = (meetup.in || []).some((id) => String(id) === String(hostId));
   const currentGuests = (meetup.guests || []).find((g) => g.userId === hostClerkId)?.count || 0;
-  let used = headcountOf(meetup, clerkIdByUserId);
-  if (hostIsIn) used -= currentGuests; // the host's guests are being replaced
-  else used += 1; // the host's own spot, once they go In
+  // The host's current guests are being replaced; if the host isn't In, keep their own spot free too.
+  let used = headcountOf(meetup, clerkIdByUserId) - currentGuests;
+  if (!hostIsIn) used += 1;
   const room = Math.max(0, meetup.capacity - used);
   return { ok: nextCount <= room, room };
 };
@@ -72,20 +67,16 @@ export const promoteWaitlist = async (meetupId, { silent = false } = {}) => {
     const groupDoc = await Group.findById(meetup.group).select("owner").lean();
     if (!(await groupHasWaitlist(groupDoc))) return [];
 
-    const clerkIds = await loadClerkIds([...meetup.in, ...meetup.waitlist]);
-    const guestsByClerk = new Map((meetup.guests || []).map((g) => [g.userId, g.count || 0]));
-    let used = headcountOf(meetup, clerkIds);
+    // Guests already hold their spots (see headcountOf), so each promotion takes exactly one.
+    let used = headcountOf(meetup);
 
     while (meetup.waitlist.length > 0) {
       if (meetup.capacity > 0 && used >= meetup.capacity) break;
       const idx = pickWaitlistIndex(meetup, (meetup.priorityTiers?.length ?? 0) > 0);
       const id = meetup.waitlist[idx];
-      const need = 1 + (guestsByClerk.get(clerkIds.get(String(id))) || 0);
-      // The next person in line (with their guests) doesn't fit: stop rather than skip ahead.
-      if (meetup.capacity > 0 && used + need > meetup.capacity) break;
       meetup.waitlist.splice(idx, 1);
       meetup.in.push(id);
-      used += need;
+      used += 1;
       promoted.push(id);
     }
 

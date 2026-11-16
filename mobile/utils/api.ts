@@ -3,6 +3,7 @@ import { useAuth } from "@clerk/expo";
 import { useMemo } from "react";
 import Constants from "expo-constants";
 import type { GroupMute, MuteKind, MuteRequest } from './groupMute';
+import type { ChatTimeoutInfo, TimeoutKey } from './chatTimeout';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -171,6 +172,10 @@ export interface GroupDetails extends Group {
   defaultCapacity: number;
   /** Computed by the server: true while the group's owner has Premium. */
   isPremium?: boolean;
+  /** My own chat timeout in this group, or null. Missing on older servers. */
+  myChatTimeout?: ChatTimeoutInfo | null;
+  /** Every active chat timeout; only sent to the owner and moderators. */
+  chatTimeouts?: (ChatTimeoutInfo & { userId: string })[];
 }
 
 export interface RsvpQuestion {
@@ -331,7 +336,7 @@ export interface Poll {
 }
 
 export type NotificationType =
-  | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-member-joined' | 'group-removed' | 'group-updated' | 'ownership-transferred'
+  | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-member-joined' | 'group-removed' | 'group-updated' | 'ownership-transferred' | 'chat-timeout'
   | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion' | 'priority-bumped' | 'guests-removed' | 'ride-assigned' | 'ride-removed'
   | 'meetup-rsvp-admin-in' | 'meetup-rsvp-admin-out'
   | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled' | 'meetup-restored'
@@ -357,6 +362,8 @@ export interface Notification {
     /** ownership-transferred: the group's Premium features paused with the change of owner. */
     premiumPaused?: boolean;
     reason?: string;
+    /** chat-timeout: the length picked ('1h', 'indefinite', ...). */
+    duration?: string;
     groupName?: string;
     scheduleName?: string;
     /** meetup-cancelled by minimum headcount: how many were needed / how many signed up. */
@@ -617,6 +624,19 @@ export const placesApi = {
 };
 
 export const groupApi = {
+  // Chat moderation (owner/moderators). See docs/specs/2026-11-16-chat-moderation-design.md.
+  modDeleteMessage: async (api: AxiosInstance, groupId: string, messageId: string): Promise<{ message: string }> => {
+    const response = await api.delete(`/api/chat/${groupId}/messages/${encodeURIComponent(messageId)}`);
+    return response.data;
+  },
+  setChatTimeout: async (api: AxiosInstance, groupId: string, userId: string, duration: TimeoutKey): Promise<{ userId: string; until: string | null }> => {
+    const response = await api.put(`/api/chat/${groupId}/timeouts/${userId}`, { duration });
+    return response.data;
+  },
+  clearChatTimeout: async (api: AxiosInstance, groupId: string, userId: string): Promise<{ userId: string; until: null }> => {
+    const response = await api.delete(`/api/chat/${groupId}/timeouts/${userId}`);
+    return response.data;
+  },
   /** A sample group (with a sample meetup) so a new person can look around before making their own. */
   createDemoGroup: async (api: AxiosInstance): Promise<{ group: Group; meetupId?: string; alreadyExisted?: boolean }> => {
     const response = await api.post<{ group: Group; meetupId?: string; alreadyExisted?: boolean }>("/api/groups/demo");

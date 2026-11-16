@@ -7,6 +7,7 @@ import { authedApi } from '@/utils/authedApi';
 import { NoTokenError, queuedRetry, queuedRetryDelay } from '@/utils/queuedMutations';
 import { userApi } from '@/utils/api';
 import { applyReactionToggle, undoReactionToggle, upsertMessage } from '@/utils/chatCache';
+import { isTimedOutError } from '@/utils/chatTimeout';
 
 // Shared by every group's chat screen — variables carry groupId, so one
 // registration covers all of them. Registering the mutationFn on the
@@ -49,6 +50,12 @@ export interface SendMessageVariables {
 const MAX_SEND_RETRIES = 6;
 const RETRY_DELAY_MS = (attemptIndex: number) => Math.min(2000 * 2 ** attemptIndex, 15000);
 
+/** Retries network trouble; never a send the database refused because I'm timed out of the chat. */
+export function sendRetry(failureCount: number, error: unknown): boolean {
+  if (isTimedOutError(error)) return false;
+  return failureCount < MAX_SEND_RETRIES;
+}
+
 export function chatPhotoPath(groupId: string, clientId: string): string {
   return `chat/${groupId}/${clientId}.jpg`;
 }
@@ -85,7 +92,7 @@ export function registerChatMutationDefaults(queryClient: QueryClient) {
     // Kept until sent or discarded: a failed message's red bubble (Retry / Discard) must not be
     // garbage-collected after React Query's default 5 minutes.
     gcTime: Infinity,
-    retry: MAX_SEND_RETRIES,
+    retry: sendRetry,
     retryDelay: RETRY_DELAY_MS,
     // Goes through the send_message() database function, which is idempotent on
     // (sender, client_id): if an earlier attempt actually reached the database but its

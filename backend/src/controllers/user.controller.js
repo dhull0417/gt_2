@@ -19,7 +19,7 @@ import EmailLog from "../models/emailLog.model.js";
 import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
 import { deleteTournamentsForGroup } from "../utils/tournament/cleanup.js";
 import { postSystemMessage } from "../utils/systemMessage.js";
-import { purgeGroupChat, removeAllChatMembers, scrubUserChat, removeChatMemberEverywhere } from "../utils/supabaseAdmin.js";
+import { purgeGroupChat, removeAllChatMembers, scrubUserChat, removeChatMemberEverywhere, deleteGroupChatTimeouts, deleteUserChatTimeouts, clearOwnerChatTimeout } from "../utils/supabaseAdmin.js";
 
 const MAX_PUSH_TOKENS = 5;
 
@@ -498,6 +498,7 @@ export const deleteAccount = asyncHandler(async (req, res) => {
       await Group.findByIdAndDelete(group._id);
       await purgeGroupChat(group._id);
       await removeAllChatMembers(group._id);
+      await deleteGroupChatTimeouts(group._id);
     } else {
       // prefer moderators over members; tiebreak by oldest account (no join dates stored)
       const otherModerators = group.moderators.filter(id => id.toString() !== userId.toString());
@@ -512,10 +513,12 @@ export const deleteAccount = asyncHandler(async (req, res) => {
       }
       const newOwnerId = newOwnerUser._id;
 
+      // Becoming owner ends any chat timeout (nobody could lift a timed-out owner's).
       await Group.findByIdAndUpdate(group._id, {
         owner: newOwnerId,
-        $pull: { members: userId, moderators: userId },
+        $pull: { members: userId, moderators: userId, chatTimeouts: { user: { $in: [userId, newOwnerId] } } },
       });
+      await clearOwnerChatTimeout(String(group._id), newOwnerUser.clerkId);
 
       // Premium is tied to the owner's subscription and doesn't follow the
       // group. If the leaving owner was covering it and the new owner isn't
@@ -544,7 +547,7 @@ export const deleteAccount = asyncHandler(async (req, res) => {
   // remove user from non-owned groups
   await Group.updateMany(
     { members: userId },
-    { $pull: { members: userId, moderators: userId } }
+    { $pull: { members: userId, moderators: userId, chatTimeouts: { user: userId } } }
   );
 
   // Remove their RSVPs and everything attached to them (guests, items, rides, answers, teams,
@@ -561,6 +564,7 @@ export const deleteAccount = asyncHandler(async (req, res) => {
   // Their chat photos and messages, and their entry in the chat membership copy.
   await scrubUserChat(user.clerkId);
   await removeChatMemberEverywhere(user.clerkId);
+  await deleteUserChatTimeouts(user.clerkId);
 
   // delete notifications involving the user
   await Notification.deleteMany({ $or: [{ recipient: userId }, { sender: userId }] });

@@ -176,3 +176,105 @@ export const chatMessageCounts = async (groupId, { env = process.env, fetchImpl 
     return null;
   }
 };
+
+// --- chat moderation (docs/specs/2026-11-16-chat-moderation-design.md) -------
+// Mongo's Group.chatTimeouts is the source of truth; public.chat_timeouts is the copy the
+// database checks before letting someone send, react or pin. The single-row calls below THROW
+// on failure, because the route rolls its Mongo change back so the two never disagree.
+
+const notConfigured = (env) => !isConfigured(env);
+
+/** Creates or replaces one person's timeout in one group. `until` null = indefinite. */
+export const setChatTimeoutRow = async (groupId, clerkId, until, { env = process.env, fetchImpl = fetch } = {}) => {
+  if (!groupId || !clerkId || notConfigured(env)) return false;
+  await call(env, fetchImpl, '/rest/v1/chat_timeouts?on_conflict=group_id,clerk_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([{ group_id: String(groupId), clerk_id: clerkId, until: until ? new Date(until).toISOString() : null }]),
+  });
+  return true;
+};
+
+export const deleteChatTimeoutRow = async (groupId, clerkId, { env = process.env, fetchImpl = fetch } = {}) => {
+  if (!groupId || !clerkId || notConfigured(env)) return false;
+  await call(env, fetchImpl, `/rest/v1/chat_timeouts?group_id=${enc(`eq.${groupId}`)}&clerk_id=${enc(`eq.${clerkId}`)}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' },
+  });
+  return true;
+};
+
+/** Group deletion. */
+export const deleteGroupChatTimeouts = (groupId, { env = process.env, fetchImpl = fetch } = {}) => {
+  if (!groupId || notConfigured(env)) return Promise.resolve(false);
+  return safely('deleteGroupChatTimeouts', () =>
+    call(env, fetchImpl, `/rest/v1/chat_timeouts?group_id=${enc(`eq.${groupId}`)}`, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' },
+    })
+  );
+};
+
+/** Account deletion. */
+export const deleteUserChatTimeouts = (clerkId, { env = process.env, fetchImpl = fetch } = {}) => {
+  if (!clerkId || notConfigured(env)) return Promise.resolve(false);
+  return safely('deleteUserChatTimeouts', () =>
+    call(env, fetchImpl, `/rest/v1/chat_timeouts?clerk_id=${enc(`eq.${clerkId}`)}`, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' },
+    })
+  );
+};
+
+/** The fields a moderator delete needs, or null if there's no such message. Throws on failure. */
+export const getChatMessage = async (messageId, { env = process.env, fetchImpl = fetch } = {}) => {
+  if (!messageId || notConfigured(env)) return null;
+  const res = await call(env, fetchImpl, `/rest/v1/messages?select=id,group_id,sender_id,image_url,deleted_at,created_at&id=${enc(`eq.${messageId}`)}`);
+  const rows = await res.json();
+  return rows[0] ?? null;
+};
+
+/**
+ * A moderator delete: same result as the author deleting it (and the lockdown's scrub trigger),
+ * done with the service role. The photo is removed first; if that fails it's logged and the message
+ * is still blanked (its link is cleared, so nobody can open it from the chat). Throws if blanking fails.
+ */
+export const modDeleteChatMessage = async (message, { env = process.env, fetchImpl = fetch } = {}) => {
+  const path = storagePathFromUrl(message?.image_url, 'chat-images');
+  if (path) await safely('modDeleteChatMessage photo', () => removeObjects(env, fetchImpl, 'chat-images', [path]));
+  await call(env, fetchImpl, `/rest/v1/messages?id=${enc(`eq.${message.id}`)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      deleted_at: new Date().toISOString(),
+      content: '',
+      image_url: null,
+      reply_to_content: null,
+      mentions: [],
+    }),
+  });
+};
+
+/** Id of the newest ordinary message in a group (deleted or not), or null. Throws on failure. */
+export const latestChatMessageId = async (groupId, { env = process.env, fetchImpl = fetch } = {}) => {
+  if (!groupId || notConfigured(env)) return null;
+  const res = await call(env, fetchImpl, `/rest/v1/messages?select=id&group_id=${enc(`eq.${groupId}`)}&kind=eq.user&order=created_at.desc&limit=1`);
+  const rows = await res.json();
+  return rows[0]?.id ?? null;
+};
+
+/**
+ * Ownership moved to someone: their chat timeout must go (nobody could ever lift a timed-out
+ * owner's). Tried twice; a failure is logged loudly since the database would keep blocking them.
+ */
+export const clearOwnerChatTimeout = async (groupId, clerkId, opts = {}) => {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await deleteChatTimeoutRow(groupId, clerkId, opts);
+      return true;
+    } catch (err) {
+      console.error(`[supabaseAdmin] clearOwnerChatTimeout attempt ${attempt} failed for group ${groupId}:`, err?.message || err);
+    }
+  }
+  return false;
+};

@@ -35,3 +35,15 @@ describe('chatPhotoPath', () => {
     expect(chatPhotoPath('g1', 'c1')).toBe('chat/g1/c1.jpg');
   });
 });
+
+describe('sendRetry', () => {
+  const { sendRetry } = require('../chatMutations');
+  it('never retries a send the database refused because the sender is timed out', () => {
+    expect(sendRetry(0, { message: 'timed out' })).toBe(false);
+  });
+  it('still retries network trouble up to the limit', () => {
+    expect(sendRetry(0, new Error('Network request failed'))).toBe(true);
+    expect(sendRetry(5, new Error('Network request failed'))).toBe(true);
+    expect(sendRetry(6, new Error('Network request failed'))).toBe(false);
+  });
+});

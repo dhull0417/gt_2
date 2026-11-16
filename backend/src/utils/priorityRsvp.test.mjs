@@ -187,7 +187,7 @@ test("pickWaitlistIndex: empty list, and priority off => front of line", () => {
 
 // ---------- chooseBumpVictim ----------
 
-test("chooseBumpVictim: bumps only when the requester's whole party then fits", () => {
+test("chooseBumpVictim: bumps one person; their guests keep their spots", () => {
   // tier 0 = top, tier 1 = second; "low" is unranked
   const base = {
     priorityTiers: [{ members: ["top"] }, { members: ["mid"] }],
@@ -195,19 +195,20 @@ test("chooseBumpVictim: bumps only when the requester's whole party then fits", 
     guests: [],
   };
   const clerk = new Map([["a", "ca"], ["mid", "cmid"], ["low", "clow"], ["top", "ctop"]]);
-  const opts = (need, extra = {}) => ({ need, used: 3, capacity: 3, clerkIdByUserId: clerk, ...extra });
+  const opts = (extra = {}) => ({ need: 1, used: 3, capacity: 3, clerkIdByUserId: clerk, ...extra });
 
-  // (a) requester alone, meetup full: the lowest-priority person who's In (latest RSVP on ties) is bumped
-  assert.equal(P.chooseBumpVictim(base, "top", opts(1)), "low");
+  // (a) meetup full: the lowest-priority person who's In (latest RSVP on ties) is bumped
+  assert.equal(P.chooseBumpVictim(base, "top", opts()), "low");
 
-  // (b) requester brings 2 guests; bumping one person frees only 1 spot: no bump
-  assert.equal(P.chooseBumpVictim(base, "top", opts(3)), null);
-
-  // (c) the lowest-priority member brings 2 guests: bumping them frees 3 spots, enough for 1 + 2
+  // (b) the lowest-priority member brings 2 guests: bumping them frees just their own spot, which is enough
   const withGuests = { ...base, guests: [{ userId: "clow", count: 2 }] };
-  assert.equal(P.chooseBumpVictim(withGuests, "top", opts(3, { used: 5, capacity: 5 })), "low");
+  assert.equal(P.chooseBumpVictim(withGuests, "top", opts({ used: 5, capacity: 5 })), "low");
+
+  // (c) over the limit (e.g. capacity lowered): one bump doesn't make room, so no bump
+  assert.equal(P.chooseBumpVictim(withGuests, "top", opts({ used: 5, capacity: 4 })), null);
 
   // (d) nobody ranks below the requester: no bump (unranked requester can't bump anyone)
-  assert.equal(P.chooseBumpVictim(base, "low", opts(1)), null);
-  assert.equal(P.chooseBumpVictim({ ...base, in: ["top"] }, "mid", opts(1, { used: 1, capacity: 1 })), null);
+  assert.equal(P.chooseBumpVictim(base, "low", opts()), null);
+  assert.equal(P.chooseBumpVictim({ ...base, in: ["top"] }, "mid", opts({ used: 1, capacity: 1 })), null);
 });
+

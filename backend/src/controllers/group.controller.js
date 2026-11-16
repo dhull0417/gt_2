@@ -16,7 +16,8 @@ import { generateMeetupsForGroup, generateMeetupsForSchedule, reconcileScheduleM
 import { promoteWaitlist } from "../utils/waitlist.js";
 import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
 import { deleteTournamentsForGroup, deleteUnfinishedTournaments } from "../utils/tournament/cleanup.js";
-import { addChatMembers, removeChatMember, removeAllChatMembers, purgeGroupChat } from "../utils/supabaseAdmin.js";
+import { addChatMembers, removeChatMember, removeAllChatMembers, purgeGroupChat, deleteGroupChatTimeouts, clearOwnerChatTimeout } from "../utils/supabaseAdmin.js";
+import { activeTimeout, pruneExpired } from "../utils/chatTimeout.js";
 import { scheduleChanges, scheduleSnapshot, pushBody } from "../utils/changeSummary.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { buildGroupStats, buildAttendanceCsv } from "../utils/groupStats.js";
@@ -1000,10 +1001,13 @@ export const transferOwnership = asyncHandler(async (req, res) => {
     // against a concurrent transfer (e.g. a double-tap) racing this one
     const updated = await Group.findOneAndUpdate(
         { _id: groupId, owner: requester._id },
-        { $set: { owner: newOwner._id, moderators: newModerators } },
+        // A timed-out owner could never be un-timed-out (moderators can't act on the owner, nobody on
+        // themself), so becoming owner ends any chat timeout.
+        { $set: { owner: newOwner._id, moderators: newModerators }, $pull: { chatTimeouts: { user: newOwner._id } } },
         { new: true }
     );
     if (!updated) return res.status(409).json({ error: "Ownership already changed. Please refresh and try again." });
+    await clearOwnerChatTimeout(String(group._id), newOwner.clerkId);
     await touchGroupMeetups(group._id);
 
     // Premium belongs to the owner's subscription, so it does not follow the
@@ -1085,14 +1089,29 @@ export const getGroupDetails = asyncHandler(async (req, res) => {
         if (!invited) return res.status(403).json({ error: "You are not a member of this group." });
     }
 
-    const group = await Group.findById(groupId)
-        .populate("members", "firstName lastName _id profilePicture")
-        .populate("moderators", "firstName lastName profilePicture _id")
+    const found = await Group.findById(groupId)
+        .select("+chatTimeouts")
+        .populate("members", "firstName lastName _id profilePicture clerkId")
+        .populate("moderators", "firstName lastName profilePicture _id clerkId")
         .lean();
         
-    if (!group) return res.status(404).json({ error: "Group not found." });
+    if (!found) return res.status(404).json({ error: "Group not found." });
+    // Chat timeouts are private: each person learns only their own; owners/moderators see all
+    // active ones (to show and end them). See docs/specs/2026-11-16-chat-moderation-design.md.
+    const { chatTimeouts, ...group } = found;
+    const now = new Date();
+    const mine = activeTimeout(chatTimeouts, viewer._id, now);
+    const timeoutFields = { myChatTimeout: mine ? { until: mine.until ? new Date(mine.until).toISOString() : null } : null };
+    const viewerIsStaff = String(group.owner?._id ?? group.owner) === String(viewer._id)
+        || (group.moderators || []).some((m) => String(m?._id ?? m) === String(viewer._id));
+    if (viewerIsStaff) {
+        timeoutFields.chatTimeouts = pruneExpired(chatTimeouts, now).map((e) => ({
+            userId: String(e.user),
+            until: e.until ? new Date(e.until).toISOString() : null,
+        }));
+    }
     const [live] = await withLiveDmParticipants([group]);
-    res.status(200).json({ ...withLegacyScheduleMirror(live), isPremium: await groupHasPremium(group) });
+    res.status(200).json({ ...withLegacyScheduleMirror(live), ...timeoutFields, isPremium: await groupHasPremium(group) });
 });
 
 export const addMember = asyncHandler(async (req, res) => {
@@ -1317,6 +1336,7 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     // Chat messages, shared photos and the chat membership copy (no-ops until Supabase is configured on the server).
     await purgeGroupChat(groupId);
     await removeAllChatMembers(groupId);
+    await deleteGroupChatTimeouts(groupId);
 
     if (others.length > 0 && !group.isDM) {
         try {

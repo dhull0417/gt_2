@@ -35,6 +35,7 @@ import { getGroupImage } from '@/utils/groupDisplay';
 import { runBackInterceptor } from '@/utils/backInterceptors';
 import { FREQ_LABELS } from '@/utils/scheduleConstants';
 import { isLongFrequency, repeatChoiceLabels } from '@/utils/longInterval';
+import { isTimeoutActive } from '@/utils/chatTimeout';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -104,6 +105,10 @@ export const GroupDetailsView = ({
         typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id
     ) ?? false;
     const canManage = isOwner || isMod;
+    // Members currently timed out of the chat (sent to owners/moderators only).
+    const timedOutIds = new Set(
+        (groupDetails.chatTimeouts ?? []).filter((t) => isTimeoutActive(t, Date.now())).map((t) => t.userId)
+    );
 
     const handleInvitePress = async () => {
         const inviteLink = inviteLinkData?.link;
@@ -381,6 +386,12 @@ export const GroupDetailsView = ({
                                         <Feather name="shield" size={11} color="white" />
                                     </View>
                                 )}
+                                {timedOutIds.has(member._id) && (
+                                    // Only owners/moderators get timeout info from the server.
+                                    <View accessibilityLabel="Timed out of chat" style={[styles.timeoutBadge, { borderColor: colors.surface }]}>
+                                        <Feather name="clock" size={10} color="white" />
+                                    </View>
+                                )}
                                 {canRemove && (
                                     <PressableOpacity accessibilityLabel="Remove"
                                         style={[styles.removeBadge, { borderColor: colors.surface }]}
@@ -477,6 +488,7 @@ const styles = StyleSheet.create({
     roleBadge: { position: 'absolute', top: -6, left: -6, width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
     ownerRoleBadge: { backgroundColor: '#4F46E5' },
     modRoleBadge: { backgroundColor: '#6B7280' },
+    timeoutBadge: { position: 'absolute', bottom: -4, left: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
     removeBadge: { position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
     footerActionContainer: { paddingHorizontal: 20, paddingVertical: 24, borderTopWidth: 1, borderTopColor: '#F3F4F6', marginTop: 16 },
     leaveButton: { backgroundColor: '#EF4444', paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },

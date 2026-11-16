@@ -4,6 +4,8 @@ import Group from '../models/group.model.js';
 import User from '../models/user.model.js';
 import { notifyUsers } from '../utils/push.notifications.js';
 import { safeEqual, messagePreview, pickRecipients } from '../utils/chatPush.js';
+import { protectRoute } from '../middleware/auth.middleware.js';
+import { modDeleteMessage, setChatTimeout, clearChatTimeout } from '../controllers/chatModeration.controller.js';
 
 const router = express.Router();
 
@@ -74,5 +76,10 @@ router.post('/webhook/message', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+// Owner/moderator chat moderation (Clerk-authenticated). See controllers/chatModeration.controller.js.
+router.delete('/:groupId/messages/:messageId', protectRoute, modDeleteMessage);
+router.put('/:groupId/timeouts/:userId', protectRoute, setChatTimeout);
+router.delete('/:groupId/timeouts/:userId', protectRoute, clearChatTimeout);
 
 export default router;

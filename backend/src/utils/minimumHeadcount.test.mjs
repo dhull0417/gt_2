@@ -80,6 +80,12 @@ test("evaluateMinimumHeadcount: enough people (counting guests) keeps the meetup
   assert.equal(updates.length, 0);
 });
 
+test("evaluateMinimumHeadcount: guests of a member who went Out still count", async () => {
+  setup({ meetup: { guests: [{ userId: "c3", count: 1 }] } }); // u3 is Out but kept 1 guest: 2 + 1 = 3
+  assert.equal(await MH.evaluateMinimumHeadcount("m1"), "ok");
+  assert.equal(updates.length, 0);
+});
+
 test("evaluateMinimumHeadcount: too few people cancels and notifies members", async () => {
   assert.equal(await MH.evaluateMinimumHeadcount("m1"), "cancelled");
   assert.equal(updates.length, 1);

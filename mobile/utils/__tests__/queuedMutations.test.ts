@@ -13,6 +13,10 @@ const networkError = Object.assign(new Error('Network Error'), { code: 'ERR_NETW
 const settle = (p: Promise<unknown>, ms = 200) =>
   Promise.race([p.then(() => 'settled', () => 'settled'), new Promise((r) => setTimeout(() => r('hanging'), ms))]);
 
+// Loading chatMutations pulls in expo-notifications and friends, which on a cold start can take longer
+// than one test's 5 s limit. Load it once here, with room to spare; the tests below reuse the cached module.
+beforeAll(() => { require('../chatMutations'); }, 60_000);
+
 describe('mutation network modes', () => {
   beforeEach(() => onlineManager.setOnline(false));
   afterEach(() => onlineManager.setOnline(true));
@@ -234,5 +238,22 @@ describe('review fixes', () => {
     expect(queuedErrorRefreshKey('votePoll', { groupId: 'g1' })).toEqual(['polls', 'g1']);
     expect(queuedErrorRefreshKey('acceptInvite', 'n1')).toEqual(['notifications']);
     expect(queuedErrorRefreshKey('sendMessage', { groupId: 'g1' })).toBeNull();
+  });
+});
+
+describe('chat timeouts (database refuses with "timed out")', () => {
+  const { queuedErrorMessage, timedOutRefreshKey } = require('../queuedMutations');
+  const refused = { message: 'timed out', code: 'P0001' };
+  it('no toast: the chat input already says so', () => {
+    expect(queuedErrorMessage('toggleReaction', refused)).toBeNull();
+    expect(queuedErrorMessage('sendMessage', refused)).toBeNull();
+  });
+  it('reloads the group so the timed-out input appears', () => {
+    expect(timedOutRefreshKey('sendMessage', { groupId: 'g1' }, refused)).toEqual(['groupDetails', 'g1']);
+    expect(timedOutRefreshKey('toggleReaction', { groupId: 'g1' }, refused)).toEqual(['groupDetails', 'g1']);
+  });
+  it('only for that refusal and only for chat actions', () => {
+    expect(timedOutRefreshKey('sendMessage', { groupId: 'g1' }, new Error('Network request failed'))).toBeNull();
+    expect(timedOutRefreshKey('rsvp', { groupId: 'g1' }, refused)).toBeNull();
   });
 });

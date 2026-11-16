@@ -50,3 +50,12 @@ describe('routeInputFromPush', () => {
     expect(routeInputFromPush(null)).toEqual({ type: undefined, legacyType: undefined, groupId: undefined, meetupId: undefined, pollId: undefined });
   });
 });
+
+describe('chat timeout notification', () => {
+  const { resolveNotificationTarget, routeInputFromPush } = require('../notificationRouting');
+  it('opens the group chat (where the timed-out input shows how long is left)', () => {
+    expect(resolveNotificationTarget({ type: 'chat-timeout', groupId: 'g1' })).toEqual({ kind: 'chat', groupId: 'g1' });
+    expect(resolveNotificationTarget(routeInputFromPush({ pushType: 'chat-timeout', type: 'chat-timeout', groupId: 'g1' })))
+      .toEqual({ kind: 'chat', groupId: 'g1' });
+  });
+});

@@ -142,20 +142,14 @@ export const pickWaitlistIndex = (meetup, tiersActive = true) => {
   return best;
 };
 
-/** Spots a person takes: themself plus the guests they bring (guests are keyed by Clerk id). */
-const spotsFor = (meetup, userId, clerkIdByUserId) => {
-  const clerk = clerkIdByUserId.get(idStr(userId));
-  const g = (meetup.guests || []).find((x) => x.userId === clerk);
-  return 1 + (g?.count || 0);
-};
-
 /**
  * Who a priority member may bump to get into a full meetup: the lowest-priority person who's In
  * and ranks strictly below them (ties go to the most recent RSVP). Returns null when there's no
- * such person or when bumping them still wouldn't make room for the requester's whole party
- * (need = 1 + their guests); a bump must never over-fill the meetup.
+ * such person or when bumping them still wouldn't make room; a bump must never over-fill the meetup.
+ * Guests hold their own spots (waitlist.js headcountOf): the requester needs 1 spot and the bumped
+ * person frees 1, leaving their guests in place. `need` defaults to 1.
  */
-export const chooseBumpVictim = (meetup, requesterId, { need, used, capacity, clerkIdByUserId }) => {
+export const chooseBumpVictim = (meetup, requesterId, { need = 1, used, capacity }) => {
   const myTier = userTierIndex(meetup, requesterId);
   if (myTier < 0) return null;
   const me = idStr(requesterId);
@@ -170,8 +164,7 @@ export const chooseBumpVictim = (meetup, requesterId, { need, used, capacity, cl
     }
   }
   if (victim === null) return null;
-  const freed = spotsFor(meetup, victim, clerkIdByUserId);
-  return used - freed + need <= capacity ? victim : null;
+  return used - 1 + need <= capacity ? victim : null;
 };
 
 /**
@@ -187,28 +180,27 @@ export const rebalanceMeetup = async (meetupId) => {
     if ((meetup.priorityTiers?.length ?? 0) === 0 || (meetup.waitlist?.length ?? 0) === 0) return null;
 
     const before = new Set(meetup.in.map(idStr));
-    // Guests take spots too, so count people plus their guests, and only swap when the
-    // waitlisted person's whole party fits once the bumped person's party has left.
+    // Guests hold their own spots whatever their host does, so each person moved takes or frees one.
     const people = await User.find({ _id: { $in: [...meetup.in, ...meetup.waitlist] } }).select("clerkId").lean();
     const clerkIds = new Map(people.map((u) => [idStr(u._id), u.clerkId]));
-    let used = meetup.in.reduce((sum, id) => sum + spotsFor(meetup, id, clerkIds), 0);
+    let used = meetup.in.length + (meetup.guests || []).reduce((sum, g) => sum + (g.count || 0), 0);
     for (let guard = 0; guard < 500 && meetup.waitlist.length > 0; guard++) {
       const wi = pickWaitlistIndex(meetup, true);
       const w = meetup.waitlist[wi];
-      const need = spotsFor(meetup, w, clerkIds);
+      const need = 1;
       if (used + need <= meetup.capacity) {
         meetup.waitlist.splice(wi, 1);
         meetup.in.push(w);
         used += need;
         continue;
       }
-      const v = chooseBumpVictim(meetup, w, { need, used, capacity: meetup.capacity, clerkIdByUserId: clerkIds });
+      const v = chooseBumpVictim(meetup, w, { need, used, capacity: meetup.capacity });
       if (v === null) break;
       meetup.in.splice(meetup.in.findIndex((id) => idStr(id) === idStr(v)), 1);
       meetup.waitlist.splice(wi, 1);
       meetup.waitlist.unshift(v);
       meetup.in.push(w);
-      used += need - spotsFor(meetup, v, clerkIds);
+      // one in, one out: used is unchanged
     }
 
     const after = new Set(meetup.in.map(idStr));

@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
  * One place that decides where a notification leads, so a push tap and a tap
  * in the in-app notification list always agree, and nothing is a dead end.
  *
- *  - chat / poll events     -> the group's chat (polls are posted there)
+ *  - chat / poll events     -> the group's chat (polls are posted there; a chat timeout too)
  *  - teams & tournament events -> that event's results (else the meetup)
  *  - anything about a meetup -> that meetup's detail
  *  - group events            -> the group's details
@@ -32,7 +32,7 @@ export interface NotificationRouteInput {
 }
 
 const GROUP_GONE = new Set(['group-removed', 'group-deleted']);
-const CHAT_TYPES = new Set(['chat', 'poll-created', 'poll-closed']);
+const CHAT_TYPES = new Set(['chat', 'poll-created', 'poll-closed', 'chat-timeout']);
 
 export function resolveNotificationTarget(input: NotificationRouteInput): NotificationTarget {
   const type = input.type || '';

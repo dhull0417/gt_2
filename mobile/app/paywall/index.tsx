@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { usePremium } from '@/hooks/usePremium';
 import { useRefreshPremium } from '@/hooks/usePurchases';
 import { purchasesAvailable } from '@/utils/purchases';
 import { PremiumActiveView } from '@/components/premium/PremiumActiveView';
+import { createPaywallCloser } from '@/utils/paywallClose';
 
 /**
  * Premium paywall. The paywall UI itself is designed and published in the RevenueCat dashboard
@@ -23,7 +24,13 @@ export default function PaywallScreen() {
   const { isPremium } = usePremium();
   const refresh = useRefreshPremium();
 
-  const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
+  // One close per visit: RevenueCat calls onDismiss after a successful purchase AND the success alert
+  // closes too. Closing twice popped the screen underneath (e.g. the create-group flow) — see paywallClose.ts.
+  const closeRef = useRef<(() => void) | null>(null);
+  if (!closeRef.current) {
+    closeRef.current = createPaywallCloser(() => (router.canGoBack() ? router.back() : router.replace('/')));
+  }
+  const close = closeRef.current;
 
   const onDone = async (title: string, message: string) => {
     try {

@@ -69,6 +69,10 @@ import { GroupMuteSheet } from '@/components/GroupMuteSheet';
 import { muteStateFor } from '@/utils/groupMute';
 import { haptic } from '@/utils/haptics';
 import { runBackInterceptor } from '@/utils/backInterceptors';
+import { ChatTimeoutSheet } from '@/components/ChatTimeoutSheet';
+import { useChatModeration } from '@/hooks/useChatModeration';
+import { useNow } from '@/hooks/useNow';
+import { canTimeOut, formatTimeoutRemaining, isTimeoutActive } from '@/utils/chatTimeout';
 
 interface ChatDaySection {
   key: string;
@@ -153,6 +157,20 @@ const GroupChatScreen = () => {
   }, [effectiveGroup, currentUser]);
 
   const isDM = effectiveGroup?.isDM ?? false;
+
+  // Chat timeouts (docs/specs/2026-11-16-chat-moderation-design.md). Mine comes from group details;
+  // while it runs the input turns red and every chat action except copy is hidden. The clock only
+  // ticks while I'm timed out, so the label counts down and the input comes back by itself.
+  const myChatTimeout = groupDetails?.myChatTimeout ?? null;
+  const timeoutNow = useNow(30_000, !!myChatTimeout);
+  const timedOut = !isDM && isTimeoutActive(myChatTimeout, timeoutNow);
+  const timeoutLabel = timedOut ? formatTimeoutRemaining(myChatTimeout!.until, timeoutNow) : null;
+  const moderation = useChatModeration(id ?? '');
+  const [timeoutTarget, setTimeoutTarget] = useState<{ userId: string; name: string } | null>(null);
+  // Re-check on every visit, so a timeout set or ended while I was elsewhere shows right away.
+  useFocusEffect(useCallback(() => {
+    if (id) queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+  }, [id, queryClient]));
 
   // Only the group owner/moderators can create a one-off meetup.
   const canCreateEvent = !isDM && canManageGroup;
@@ -271,6 +289,14 @@ const GroupChatScreen = () => {
   const [selectedMessageLayout, setSelectedMessageLayout] = useState<BubbleLayout | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  // Timed out: drop a half-started reply or edit, and ignore swipe-to-reply (read in renderItem).
+  const timedOutRef = useRef(false);
+  timedOutRef.current = timedOut;
+  useEffect(() => {
+    if (!timedOut) return;
+    setReplyingTo(null);
+    setEditingMessage(null);
+  }, [timedOut]);
   const [editText, setEditText] = useState('');
   const [reactionDetailMessage, setReactionDetailMessage] = useState<ChatMessage | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<{ url: string; width?: number | null; height?: number | null } | null>(null);
@@ -503,6 +529,15 @@ const GroupChatScreen = () => {
 
   const isOwnSelected = selectedMessage?.sender_id === senderId;
   const isDeletedSelected = !!selectedMessage?.deleted_at;
+  // The member who wrote the selected message (messages carry Clerk ids; roles use member ids).
+  const selectedSender = useMemo(() => {
+    if (!selectedMessage || selectedMessage.kind === 'system') return null;
+    const members = ((groupDetails as any)?.members as User[] | undefined) ?? [];
+    return members.find((m) => m.clerkId === selectedMessage.sender_id) ?? null;
+  }, [selectedMessage, groupDetails]);
+  const canTimeOutSelected = !!selectedSender && canTimeOut(currentUser?._id, selectedSender._id, effectiveGroup as any);
+  // Someone else's message only (my own goes through the normal delete), and not while I'm timed out.
+  const canModDelete = !isDM && canManageGroup && !timedOut && !isOwnSelected && !isDeletedSelected && selectedMessage?.kind !== 'system';
 
   const handleSend = async (text: string, image?: PendingImage, mentions?: string[]) => {
     if (!id) return;
@@ -633,6 +668,14 @@ const GroupChatScreen = () => {
     if (!selectedMessage) return;
     const target = selectedMessage;
     closeActionPanel();
+    if (target.sender_id !== senderId) {
+      // Owner/moderator deleting someone else's message: goes through the server.
+      Alert.alert('Delete Message', 'Delete this message for everyone?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => moderation.modDelete(target.id) },
+      ]);
+      return;
+    }
     Alert.alert('Delete Message', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
@@ -786,7 +829,7 @@ const GroupChatScreen = () => {
                   onReactionLongPress={() => setReactionDetailMessage(item)}
                   onImagePress={(url, width, height) => setFullscreenImage({ url, width, height })}
                   onPendingPress={() => handlePendingPressRef.current(item)}
-                  onSwipeReply={() => setReplyingTo(item)}
+                  onSwipeReply={() => { if (!timedOutRef.current) setReplyingTo(item); }}
                   skipEntrance={initialMessageIdsRef.current?.has(item.id) ?? false}
                   flash={flashId === item.id}
                 />
@@ -928,6 +971,7 @@ const GroupChatScreen = () => {
             onTyping={handleTyping}
             onCreateEvent={canCreateEvent ? () => setMeetupWizardVisible(true) : undefined}
             onCreatePoll={!isDM ? () => setCreatePollVisible(true) : undefined}
+            timeoutLabel={timeoutLabel}
           />
         </KeyboardAvoidingView>
 
@@ -981,29 +1025,45 @@ const GroupChatScreen = () => {
         <ChatActionPanel
           anchor={selectedMessageLayout}
           isOwn={isOwnSelected}
-          showReactions={!isDeletedSelected}
+          showReactions={!isDeletedSelected && !timedOut}
           onReact={handleReact}
           onOpenEmojiPicker={() => setEmojiPickerVisible(true)}
-          showReply={!isDeletedSelected}
+          showReply={!isDeletedSelected && !timedOut}
           onReply={handleReplyOpen}
           showCopy={!isDeletedSelected && !!selectedMessage?.content?.trim()}
           onCopy={handleCopy}
-          showPin={canPin && !isDeletedSelected && selectedMessage?.kind !== 'system'}
+          showPin={canPin && !timedOut && !isDeletedSelected && selectedMessage?.kind !== 'system'}
           isPinned={!!selectedMessage?.pinned_at}
           onPin={handlePinToggle}
-          showEdit={isOwnSelected && !isDeletedSelected}
+          showEdit={isOwnSelected && !isDeletedSelected && !timedOut}
           onEdit={handleEditOpen}
-          showDelete={isOwnSelected}
+          showDelete={(isOwnSelected && !timedOut) || canModDelete}
           onDelete={handleDeleteConfirm}
+          showTimeOut={canTimeOutSelected}
+          timeOutLabel={selectedSender ? `Time out ${selectedSender.firstName || getUserDisplayName(selectedSender)}` : undefined}
+          onTimeOut={() => {
+            if (!selectedSender) return;
+            setTimeoutTarget({ userId: selectedSender._id, name: selectedSender.firstName || getUserDisplayName(selectedSender) });
+            closeActionPanel();
+          }}
           onClose={closeActionPanel}
         />
       </Modal>
+
+      <ChatTimeoutSheet
+        visible={!!timeoutTarget}
+        name={timeoutTarget?.name ?? ''}
+        current={groupDetails?.chatTimeouts?.find((t) => t.userId === timeoutTarget?.userId) ?? null}
+        onPick={(key) => { if (timeoutTarget) moderation.timeOut(timeoutTarget.userId, key); setTimeoutTarget(null); }}
+        onEnd={() => { if (timeoutTarget) moderation.endTimeout(timeoutTarget.userId); setTimeoutTarget(null); }}
+        onClose={() => setTimeoutTarget(null)}
+      />
 
       <ChatPinnedModal
         visible={pinnedModalVisible}
         pins={pins}
         onClose={() => setPinnedModalVisible(false)}
-        canUnpin={canPin}
+        canUnpin={canPin && !timedOut}
         onJump={(m) => {
           setPinnedModalVisible(false);
           startJump(m.id);

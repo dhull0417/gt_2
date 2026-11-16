@@ -18,6 +18,7 @@ const NOTIFICATION_ICONS: Record<NotificationType, NotificationIconSpec> = {
   'group-added': { name: 'users', color: '#6366F1' },
   'group-member-joined': { name: 'users', color: '#6366F1' },
   'group-removed': { name: 'user-minus', color: '#EF4444' },
+  'chat-timeout': { name: 'clock', color: '#EF4444' },
   'group-updated': { name: 'edit-2', color: '#6366F1' },
   'ownership-transferred': { name: 'repeat', color: '#8B5CF6' },
   'meetup-rsvp-in': { name: 'log-in', color: '#4FD1C5' },

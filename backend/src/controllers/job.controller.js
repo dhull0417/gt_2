@@ -87,7 +87,9 @@ export const expirePastMeetups = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Delete meetups that expired more than 10 days ago.
+ * @desc    Delete expired and cancelled meetups that started more than 10 days ago.
+ *          Only expired ones are archived for group stats; cancelled meetups
+ *          don't count toward attendance or member titles.
  * @route   POST /api/jobs/cleanup-meetups
  */
 export const cleanupExpiredMeetups = asyncHandler(async (req, res) => {
@@ -107,7 +109,7 @@ export const cleanupExpiredMeetups = asyncHandler(async (req, res) => {
   }
 
   const result = await Meetup.deleteMany({
-    status: 'expired',
+    status: { $in: ['expired', 'cancelled'] },
     startsAt: { $lte: cutoff }
   });
 

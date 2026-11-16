@@ -36,9 +36,13 @@ interface Props {
   onCreatePoll?: () => void;
   // Photos are stored under chat/<groupId>/ so access can be limited to the group's members.
   groupId: string;
+  // Set while I'm timed out of this chat ("You are timed out for 3 hours"): the field and send
+  // button are shown in red and can't be used, and photos can't be added. Polls/events stay.
+  timeoutLabel?: string | null;
 }
 
-export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll, mentionMembers, groupId }: Props) {
+export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll, mentionMembers, groupId, timeoutLabel }: Props) {
+  const timedOut = !!timeoutLabel;
   const colors = useThemeColors();
   const api = useApiClient();
   const [text, setText] = useState('');
@@ -166,7 +170,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
 
   return (
     <View>
-      {pendingImages.length > 0 && (
+      {pendingImages.length > 0 && !timedOut && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.previewRow}>
           {pendingImages.map((img) => (
             <View key={img.key} style={styles.previewContainer}>
@@ -184,7 +188,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
         </ScrollView>
       )}
 
-      {suggestions.length > 0 && (
+      {suggestions.length > 0 && !timedOut && (
         <View style={[styles.suggestions, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
           {suggestions.map((m) => (
             <PressableOpacity key={m.clerkId} style={styles.suggestionRow} onPress={() => pickMention(m)} activeOpacity={0.6}>
@@ -200,25 +204,29 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
       {attachMenuOpen && (
         <View style={[styles.tray, { backgroundColor: colors.surface }]}>
           <View style={styles.trayRow}>
-            <PressableOpacity
-              style={styles.trayItem}
-              onPress={() => { closeAttachMenu(); pickImage(); }}
-            >
-              <View style={[styles.trayIconWrap, { backgroundColor: colors.brand + '20' }]}>
-                <Feather name="image" size={20} color={colors.brand} />
-              </View>
-              <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Photos</Text>
-            </PressableOpacity>
+            {!timedOut && (
+              <PressableOpacity
+                style={styles.trayItem}
+                onPress={() => { closeAttachMenu(); pickImage(); }}
+              >
+                <View style={[styles.trayIconWrap, { backgroundColor: colors.brand + '20' }]}>
+                  <Feather name="image" size={20} color={colors.brand} />
+                </View>
+                <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Photos</Text>
+              </PressableOpacity>
+            )}
 
-            <PressableOpacity
-              style={styles.trayItem}
-              onPress={() => { closeAttachMenu(); takePhoto(); }}
-            >
-              <View style={[styles.trayIconWrap, { backgroundColor: '#F59E0B20' }]}>
-                <Feather name="camera" size={20} color="#F59E0B" />
-              </View>
-              <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Camera</Text>
-            </PressableOpacity>
+            {!timedOut && (
+              <PressableOpacity
+                style={styles.trayItem}
+                onPress={() => { closeAttachMenu(); takePhoto(); }}
+              >
+                <View style={[styles.trayIconWrap, { backgroundColor: '#F59E0B20' }]}>
+                  <Feather name="camera" size={20} color="#F59E0B" />
+                </View>
+                <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Camera</Text>
+              </PressableOpacity>
+            )}
 
             {onCreateEvent && (
               <PressableOpacity
@@ -261,24 +269,38 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
         <TextInput
           ref={inputRef}
           style={[styles.input, { backgroundColor: colors.backgroundAlt, color: colors.textPrimary }]}
-          value={text}
+          // Timed out: empty, red text in place of the placeholder, can't be focused or typed in.
+          editable={!timedOut}
+          accessibilityState={{ disabled: timedOut }}
+          value={timedOut ? '' : text}
           onChangeText={(val) => { setText(val); if (val) onTyping?.(); }}
           onSelectionChange={(e) => setCursor(e.nativeEvent.selection.start)}
           onFocus={closeAttachMenu}
-          placeholder="Message..."
-          placeholderTextColor={colors.placeholder}
+          placeholder={timeoutLabel || 'Message...'}
+          placeholderTextColor={timedOut ? colors.danger : colors.placeholder}
           multiline
           maxLength={2000}
           returnKeyType="default"
         />
 
-        <PressableOpacity
-          style={[styles.sendBtn, { backgroundColor: colors.brand }, !canSend && { backgroundColor: colors.borderStrong }]}
-          onPress={handleSend}
-          disabled={!canSend}
-        >
-          <Text style={styles.sendLabel}>Send</Text>
-        </PressableOpacity>
+        {timedOut ? (
+          <View
+            style={[styles.sendBtn, styles.sendBtnTimedOut, { backgroundColor: colors.danger }]}
+            accessibilityRole="button"
+            accessibilityLabel={timeoutLabel ?? undefined}
+            accessibilityState={{ disabled: true }}
+          >
+            <Feather name="x" size={18} color="#fff" />
+          </View>
+        ) : (
+          <PressableOpacity
+            style={[styles.sendBtn, { backgroundColor: colors.brand }, !canSend && { backgroundColor: colors.borderStrong }]}
+            onPress={handleSend}
+            disabled={!canSend}
+          >
+            <Text style={styles.sendLabel}>Send</Text>
+          </PressableOpacity>
+        )}
       </View>
     </View>
   );
@@ -350,6 +372,7 @@ const styles = StyleSheet.create({
     minWidth: 60,
   },
   sendBtnDisabled: { backgroundColor: '#B0C4E8' },
+  sendBtnTimedOut: { alignItems: 'center', justifyContent: 'center' },
   sendLabel: { color: '#fff', fontWeight: '600', fontSize: 15 },
   suggestions: {
     borderTopWidth: StyleSheet.hairlineWidth,

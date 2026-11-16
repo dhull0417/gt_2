@@ -31,6 +31,7 @@ import { tabScreenBottomPadding } from '@/utils/layout';
 import { MeetupCard } from '@/components/MeetupCard';
 import { DayHeader, splitByDay } from '@/components/MeetupDayGroups';
 import { getMeetupStatus } from '@/utils/meetupStatus';
+import { meetupEndInstant } from '@/utils/meetupTime';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import { toast } from '@/contexts/ToastContext';
 import { muteStateFor, restoreRequest } from '@/utils/groupMute';
@@ -53,6 +54,8 @@ const hashGroupColor = (groupId: string): string => {
   for (let i = 0; i < groupId.length; i++) hash = (hash + groupId.charCodeAt(i)) % GROUP_BORDER_COLORS.length;
   return GROUP_BORDER_COLORS[hash];
 };
+
+const PAST_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 // How far out each recurring series shows in "Upcoming Meetups"; one-off meetups are never capped
 const TAB_CAP_DAYS: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
@@ -254,12 +257,15 @@ const DashboardScreen = () => {
     if (!meetups) return groups;
 
     const upcomingCandidates: Meetup[] = [];
+    // The server keeps finished meetups for ~10 days before cleanup, so trim
+    // "Past Week" to meetups that actually ended within the last 7 days.
+    const pastCutoff = Date.now() - PAST_WEEK_MS;
 
     meetups.forEach(meetup => {
       if (hiddenGroupIds.has(meetup.group._id)) return;
       const { isExpired } = getMeetupStatus(meetup);
       if (isExpired) {
-        groups['Past Week'].push(meetup);
+        if (meetupEndInstant(meetup).getTime() >= pastCutoff) groups['Past Week'].push(meetup);
       } else {
         upcomingCandidates.push(meetup);
       }

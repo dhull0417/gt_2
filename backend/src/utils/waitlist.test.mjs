@@ -2,14 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { headcountOf } from './waitlist.js';
 
-test('headcountOf counts people who are In plus their guests', () => {
+test('headcountOf counts people who are In plus every guest, whatever their host did', () => {
   const meetup = {
     in: ['u1', 'u2', 'u3'],
-    guests: [{ userId: 'c1', count: 2 }, { userId: 'c9', count: 5 }], // c9 is not In, so doesn't count
+    // c9's host is Out (kept their guests) or waitlisted: those guests still hold their spots
+    guests: [{ userId: 'c1', count: 2 }, { userId: 'c9', count: 5 }, { userId: 'c0', count: 0 }],
   };
   const clerk = new Map([['u1', 'c1'], ['u2', 'c2'], ['u3', 'c3']]);
-  assert.equal(headcountOf(meetup, clerk), 5);
+  assert.equal(headcountOf(meetup, clerk), 10);
   assert.equal(headcountOf({ in: [], guests: [] }, new Map()), 0);
+  assert.equal(headcountOf({ in: ['u1'] }, new Map()), 1);
+});
+
+test('guestRoom: an Out host with kept guests is changing them, not adding to them', async () => {
+  const { guestRoom } = await import('./waitlist.js');
+  const clerk = new Map();
+  // capacity 6: 3 In + the Out host's 2 kept guests = 5 used
+  const meetup = { capacity: 6, in: ['u1', 'u2', 'u3'], guests: [{ userId: 'c-out', count: 2 }] };
+  // the host's own spot is reserved too: 6 - (5 - 2 + 1) = 2 room for guests
+  assert.deepEqual(guestRoom(meetup, clerk, { hostId: 'out', hostClerkId: 'c-out', nextCount: 2 }), { ok: true, room: 2 });
+  assert.deepEqual(guestRoom(meetup, clerk, { hostId: 'out', hostClerkId: 'c-out', nextCount: 3 }), { ok: false, room: 2 });
+  // someone else's guests: 6 - (5 + 1) = 0
+  assert.deepEqual(guestRoom(meetup, clerk, { hostId: 'x', hostClerkId: 'c-x', nextCount: 1 }), { ok: false, room: 0 });
 });
 
 test('guestRoom refuses guests beyond open spots whether or not the host is In', async () => {

@@ -1,4 +1,5 @@
 import type { MutationCache, QueryClient } from '@tanstack/react-query';
+import { isTimedOutError } from '@/utils/chatTimeout';
 
 // The actions that keep working with no connection. They are queued (paused by React Query),
 // persisted to disk, and sent in order once the connection is back - see utils/offlineMutations.ts
@@ -115,6 +116,8 @@ const FAILED: Record<QueuedKey, string | null> = {
 export function queuedErrorMessage(key: QueuedKey, error: unknown): string | null {
   const base = FAILED[key];
   if (!base) return null;
+  // Timed out of the chat: the chat input already says so in red; no toast on top.
+  if (isTimedOutError(error)) return null;
   const reason = (error as { response?: { data?: { error?: unknown; message?: unknown } } })?.response?.data;
   const text = typeof reason?.error === 'string' ? reason.error : typeof reason?.message === 'string' ? reason.message : '';
   return text ? `${base}: ${text}` : `${base}.`;
@@ -153,4 +156,14 @@ export function queuedErrorRefreshKey(key: QueuedKey, vars: AnyVars): readonly u
     case 'declineInvite': return ['notifications'];
     default: return null;
   }
+}
+
+/**
+ * A chat send or reaction the database refused because I'm timed out of that chat: reload the
+ * group so the chat screen shows the timed-out input (see utils/chatTimeout.ts).
+ */
+export function timedOutRefreshKey(key: QueuedKey, vars: AnyVars, error: unknown): readonly unknown[] | null {
+  if (!isTimedOutError(error)) return null;
+  if (key !== 'sendMessage' && key !== 'toggleReaction') return null;
+  return ['groupDetails', field(vars, 'groupId')];
 }

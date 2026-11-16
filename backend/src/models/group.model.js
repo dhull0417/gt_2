@@ -144,6 +144,20 @@ const groupSchema = new mongoose.Schema({
     createdAt: { type: Date },
   },
   isDM: { type: Boolean, default: false },
+  // People timed out of this group's chat by an owner/moderator (copied to Supabase chat_timeouts,
+  // which the database checks). until: null = until a moderator lifts it. Hidden by default
+  // (select: false) so it never leaks to members through group responses; ask for "+chatTimeouts".
+  chatTimeouts: {
+    type: [{
+      user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+      until: { type: Date, default: null },
+      by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      createdAt: { type: Date, default: Date.now },
+      _id: false,
+    }],
+    select: false,
+    default: [],
+  },
   // Stats: show the joke awards (Hall of Shame) to every member, not just organizers.
   statsRevealJokes: { type: Boolean, default: false },
   // A sample group created for new people to explore (see createDemoGroup). Safe to delete.

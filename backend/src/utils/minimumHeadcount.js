@@ -34,9 +34,8 @@ export const evaluateMinimumHeadcount = async (meetupId) => {
   const group = await Group.findById(meetup.group).select('owner').lean();
   if (!(await groupHasPremium(group))) return 'ok';
 
-  const inUsers = await User.find({ _id: { $in: meetup.in } }).select('clerkId').lean();
-  const guestsByClerkId = new Map((meetup.guests || []).map((g) => [g.userId, g.count || 0]));
-  const headcount = inUsers.reduce((sum, u) => sum + 1 + (guestsByClerkId.get(u.clerkId) || 0), 0);
+  // Same count as the limit: everyone In plus every guest (guests keep their spot whatever their host does).
+  const headcount = (meetup.in || []).length + (meetup.guests || []).reduce((sum, g) => sum + (g.count || 0), 0);
   if (headcount >= meetup.minAttendees) return 'ok';
 
   // Cancel first so the cancellation is the first state anyone sees.
