@@ -4,9 +4,9 @@ import { StepDots } from "@/components/create-group/StepDots";
 import { makeStyles } from "@/components/create-group/styles";
 import { PressableOpacity } from "@/components/ui/PressableOpacity";
 import { useThemeColors } from "@/contexts/AppearanceContext";
-import { groupApi, useApiClient } from "@/utils/api";
+import { groupApi, useApiClient, User } from "@/utils/api";
 import { Feather } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { buildInviteMessage } from '@/utils/inviteMessage';
 
 export const MembersScreen = ({ groupId, groupName, onDone }: {
@@ -15,6 +15,7 @@ export const MembersScreen = ({ groupId, groupName, onDone }: {
     const colors = useThemeColors();
     const s = useMemo(() => makeStyles(colors), [colors]);
     const api = useApiClient();
+    const queryClient = useQueryClient();
     const { data: inviteLinkData } = useQuery({
         queryKey: ['inviteLink', groupId],
         queryFn: () => groupApi.generateInviteLink(api, groupId),
@@ -30,7 +31,7 @@ export const MembersScreen = ({ groupId, groupName, onDone }: {
         }
         try {
             await Share.share({
-                message: buildInviteMessage({ groupName, link: inviteLink }),
+                message: buildInviteMessage({ groupName, link: inviteLink, referrerId: queryClient.getQueryData<User>(['currentUser'])?._id }),
             });
         } catch {}
     };

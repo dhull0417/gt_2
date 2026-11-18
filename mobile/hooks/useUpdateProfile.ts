@@ -3,8 +3,7 @@ import { useApiClient, userApi } from "../utils/api";
 import { getErrorMessage } from "../utils/networkError";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
-import * as SecureStore from 'expo-secure-store';
-import { PENDING_INVITE_KEY } from '@/app/join/[token]';
+import { openPendingInvite } from '@/utils/pendingInvite';
 import { toast } from '@/contexts/ToastContext';
 
 interface UpdateProfileVariables {
@@ -25,11 +24,7 @@ export const useUpdateProfile = () => {
     
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-      const pendingToken = await SecureStore.getItemAsync(PENDING_INVITE_KEY);
-      if (pendingToken) {
-        await SecureStore.deleteItemAsync(PENDING_INVITE_KEY);
-        router.replace({ pathname: '/join/[token]', params: { token: pendingToken } });
-      } else {
+      if (!(await openPendingInvite(router, 'replace'))) {
         toast.success("Profile updated.");
         router.replace('/(tabs)');
       }

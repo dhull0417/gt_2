@@ -90,6 +90,12 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDe
         switch (notification.type) {
             case 'group-invite':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> invited you to join <Text style={styles.bold}>{groupName}</Text>.</Text>;
+            case 'join-request':
+                if (notification.status === 'accepted') return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> was approved to join <Text style={styles.bold}>{groupName}</Text>.</Text>;
+                if (notification.status === 'declined') return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text>'s request to join <Text style={styles.bold}>{groupName}</Text> was declined.</Text>;
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> asked to join <Text style={styles.bold}>{groupName}</Text> with the invite link.</Text>;
+            case 'join-approved':
+                return <Text style={styles.messageText}>You're in! Your request to join <Text style={styles.bold}>{groupName}</Text> was approved.</Text>;
             case 'invite-accepted':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> accepted your invitation to <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'invite-declined':
@@ -209,7 +215,8 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDe
 
     const icon = getNotificationIcon(notification.type);
 
-    const canDelete = !(notification.type === 'group-invite' && notification.status === 'pending');
+    const needsAnswer = (notification.type === 'group-invite' || notification.type === 'join-request') && notification.status === 'pending';
+    const canDelete = !needsAnswer;
 
     const row = (
         <PressableOpacity style={[styles.itemContainer, highlight && { backgroundColor: unreadBg, borderLeftWidth: 3, borderLeftColor: colors.brand }]} onPress={handlePress} activeOpacity={0.7}>
@@ -219,7 +226,7 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDe
             <View style={styles.textContainer}>
                 {getMessage()}
                 <Text style={styles.timeText}>{timeAgo(notification.createdAt)}</Text>
-                {notification.type === 'group-invite' && notification.status === 'pending' && (
+                {needsAnswer && (
                     <View style={styles.actionContainer}>
                         <PressableOpacity
                             style={[styles.actionButton, styles.acceptButton, (isAccepting || isDeclining) && styles.actionButtonDisabled]}
@@ -309,7 +316,11 @@ const NotificationsScreen = () => {
     const replyToInvite = (key: 'acceptInvite' | 'declineInvite', id: string) => {
         if (!onlineManager.isOnline()) toast.info("Saved. It'll send when you're back online.");
         queueMutation(queryClientForInvites, key, id)
-            .then(() => { if (key === 'acceptInvite') toast.success('Invite accepted'); })
+            .then(() => {
+                if (key !== 'acceptInvite') return;
+                const isRequest = queryClient.getQueryData<Notification[]>(['notifications'])?.find(n => n._id === id)?.type === 'join-request';
+                toast.success(isRequest ? 'Request approved' : 'Invite accepted');
+            })
             .catch(() => { /* MutationCache.onError shows why */ });
     };
     const handleAccept = (id: string) => replyToInvite('acceptInvite', id);

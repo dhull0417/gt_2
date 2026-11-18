@@ -13,7 +13,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Linking } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useInviteUser } from '@/hooks/useInviteUser';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useContactMatching, ContactEntry } from '@/hooks/useContactMatching';
@@ -29,6 +29,7 @@ const AddMembersScreen = () => {
     const isDark = scheme === 'dark';
 
     const api = useApiClient();
+    const queryClient = useQueryClient();
     const { data: groupDetails } = useGetGroupDetails(groupId);
     const { mutate: inviteUser, isPending: isInviting } = useInviteUser();
     const { contacts, isLoading: isLoadingContacts, permissionDenied } = useContactMatching();
@@ -60,11 +61,18 @@ const AddMembersScreen = () => {
 
     const inviteLink = inviteLinkData?.link;
 
+    const referrerId = queryClient.getQueryData<User>(['currentUser'])?._id;
+
     const handleSmsInvite = async (contact: ContactEntry) => {
         if (!groupDetails || !inviteLink) return;
+        // Remember who was invited, so they get the invitation in the app if they sign up with
+        // this number/email even if the text gets lost. Best effort; never blocks sharing.
+        if (contact.phone || contact.email) {
+            groupApi.createContactInvite(api, groupDetails._id, { phone: contact.phone, email: contact.email }).catch(() => {});
+        }
         try {
             await Share.share({
-                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, recipientFirstName: contact.name.split(' ')[0] }),
+                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, referrerId, recipientFirstName: contact.name.split(' ')[0] }),
             });
         } catch (error) {
             console.error("Share error:", error);
@@ -75,7 +83,7 @@ const AddMembersScreen = () => {
         if (!groupDetails || !inviteLink) return;
         try {
             await Share.share({
-                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink }),
+                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, referrerId }),
             });
         } catch (error) {
             console.error("Share error:", error);

@@ -18,6 +18,7 @@ import { Poll, PollOption } from '@/utils/api';
 import { useGetPolls } from '@/hooks/useGetPolls';
 import { useVotePoll } from '@/hooks/useVotePoll';
 import { useCancelPoll } from '@/hooks/useCancelPoll';
+import { ToastPortal } from '@/contexts/ToastContext';
 import { useThemeColors, useAppearance } from '@/contexts/AppearanceContext';
 
 interface PollListModalProps {
@@ -295,6 +296,8 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
             <SafeAreaView style={[styles.modalContent, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
                 {selectedPoll ? renderDetail() : renderList()}
             </SafeAreaView>
+            {/* A Modal covers the app-level toast ("You're offline..."); draw it in here instead. */}
+            <ToastPortal />
         </Modal>
     );
 };

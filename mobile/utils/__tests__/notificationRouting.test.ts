@@ -24,6 +24,9 @@ describe('resolveNotificationTarget', () => {
 
   it('sends invites to the notifications list, where Accept and Decline live', () => {
     expect(resolveNotificationTarget({ type: 'group-invite', groupId: 'g1' })).toEqual({ kind: 'notifications' });
+    expect(resolveNotificationTarget({ type: 'join-request', groupId: 'g1' })).toEqual({ kind: 'notifications' });
+    expect(resolveNotificationTarget({ type: 'join-approved', groupId: 'g1' })).toEqual({ kind: 'group', groupId: 'g1' });
+    expect(resolveNotificationTarget({ type: 'join-approved', groupId: 'g1', meetupId: 'm1' })).toEqual({ kind: 'meetup', meetupId: 'm1' });
   });
 
   it('falls back to the notifications list instead of a dead end', () => {

@@ -123,13 +123,25 @@ export const priorityGroupNumber = (meetup: Meetup, userId: string | undefined):
 };
 
 /**
+ * Spots taken: everyone In plus every guest. A guest keeps their spot whatever their host
+ * does (Out with "Keep Guests", waitlisted, bumped) until the host or an owner/moderator
+ * removes them; same rule as the server (backend/src/utils/waitlist.js headcountOf).
+ */
+export const meetupHeadcount = (meetup: Meetup): number =>
+  (meetup.in?.length ?? 0) + (meetup.guests ?? []).reduce((n, g) => n + (g.count || 0), 0);
+
+/** True when a meetup with a limit has no spot left for one more person (capacity 0 = unlimited). */
+export const isMeetupFull = (meetup: Meetup): boolean =>
+  meetup.capacity > 0 && meetupHeadcount(meetup) >= meetup.capacity;
+
+/**
  * True when the meetup is full and tapping In would bump a lower-priority
  * person out to make room for this user (mirrors the server's victim rule:
  * someone In from a strictly lower group, unlisted members counting lowest).
  */
 export const canPriorityBump = (meetup: Meetup, userId: string | undefined): boolean => {
   if (!userId || !tiersActive(meetup)) return false;
-  if (!(meetup.capacity > 0 && meetup.in.length >= meetup.capacity)) return false;
+  if (!isMeetupFull(meetup)) return false;
   if (hasId(meetup.in, userId) || hasId(meetup.waitlist, userId)) return false;
   const k = tierIndexOf(meetup, userId);
   if (k < 0) return false;

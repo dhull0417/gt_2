@@ -74,3 +74,14 @@ export function requireOnline(
   notify(`You're offline. Connect to the internet to ${action}.`);
   return false;
 }
+
+/**
+ * How far from the top of the window a screen's content starts. Online that's the status bar.
+ * Offline the banner sits above the navigator and is taller than the status bar it covers, so
+ * screens see a top inset of 0 while actually starting bannerHeight down. Anything that needs the
+ * real position (a KeyboardAvoidingView's keyboardVerticalOffset) has to use this, or it comes up
+ * short by the banner's height (the chat composer ended up under the keyboard by exactly that).
+ */
+export function screenTopOffset(s: { isOnline: boolean; realTopInset: number; bannerHeight: number }): number {
+  return s.isOnline ? s.realTopInset : Math.max(s.bannerHeight, s.realTopInset);
+}

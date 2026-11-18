@@ -4,6 +4,8 @@ import User from "../models/user.model.js";
 import Meetup from "../models/meetup.model.js";
 import Notification from "../models/notification.model.js";
 import InviteToken from "../models/inviteToken.model.js";
+import PendingInvite from "../models/pendingInvite.model.js";
+import InviteEvent from "../models/inviteEvent.model.js";
 import Poll from "../models/poll.model.js";
 import AttendanceRecord from "../models/attendanceRecord.model.js";
 import { getAuth } from "@clerk/express";
@@ -1324,6 +1326,8 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     await Meetup.deleteMany({ group: groupId });
     await Poll.deleteMany({ group: groupId });
     await InviteToken.deleteMany({ groupId });
+    await PendingInvite.deleteMany({ groupId });
+    await InviteEvent.deleteMany({ groupId });
     await AttendanceRecord.deleteMany({ group: groupId });
     await deleteTournamentsForGroup(groupId);
     await Notification.deleteMany({ group: groupId });
@@ -1353,77 +1357,7 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     res.status(200).json({ message: "Deleted." });
 });
 
-export const generateInviteLink = asyncHandler(async (req, res) => {
-    const { userId: clerkId } = getAuth(req);
-    const { groupId } = req.params;
-
-    const [user, group] = await Promise.all([
-        User.findOne({ clerkId }),
-        Group.findById(groupId),
-    ]);
-    if (!user || !group) return res.status(404).json({ error: "Resource not found." });
-    if (!group.members.some(m => m.toString() === user._id.toString())) {
-        return res.status(403).json({ error: "You must be a group member to generate an invite link." });
-    }
-
-    // Reuse an existing unexpired token so the same link stays stable
-    let invite = await InviteToken.findOne({ groupId, expiresAt: { $gt: new Date() } });
-    if (!invite) {
-        const token = crypto.randomBytes(16).toString('hex');
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        invite = await InviteToken.create({ token, groupId, createdBy: user._id, expiresAt });
-    }
-
-    res.status(200).json({ link: `https://invite.groupthatapp.com/join/${invite.token}` });
-});
-
-export const redeemInviteToken = asyncHandler(async (req, res) => {
-    const { userId: clerkId } = getAuth(req);
-    const { token } = req.params;
-
-    const invite = await InviteToken.findOne({ token, expiresAt: { $gt: new Date() } });
-    if (!invite) return res.status(404).json({ error: "This invite link is invalid or has expired." });
-
-    const [user, group] = await Promise.all([
-        User.findOne({ clerkId }),
-        Group.findById(invite.groupId),
-    ]);
-    if (!user || !group) return res.status(404).json({ error: "Resource not found." });
-
-    if (group.members.some(m => m.toString() === user._id.toString())) {
-        return res.status(200).json({ groupId: group._id, groupName: group.name, alreadyMember: true });
-    }
-
-    await group.updateOne({ $addToSet: { members: user._id } });
-    await user.updateOne({ $addToSet: { groups: group._id } });
-    await addChatMembers(group._id, [user.clerkId]);
-    await onInviteRedeemed(user._id, group._id); // remembered for the welcome email
-
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    await Meetup.updateMany(
-        { group: group._id, date: { $gte: today } },
-        { $addToSet: { members: user._id, undecided: user._id } }
-    );
-
-    const owner = await User.findById(group.owner);
-    if (owner && owner._id.toString() !== user._id.toString()) {
-        try {
-            await notifyAndPersist([owner], {
-                title: "New Member",
-                body: `${user.firstName} joined "${group.name}" via invite link.`,
-                data: { groupId: group._id.toString(), type: 'group-member-joined' },
-                type: 'group-member-joined',
-                sender: user._id,
-                group: group._id,
-            });
-        } catch (err) { console.error(err); }
-    }
-
-    await postSystemMessage(group._id, `${user.firstName} joined the group`);
-
-    res.status(200).json({ groupId: group._id, groupName: group.name, alreadyMember: false });
-});
+// Invite links live in invite.controller.js.
 
 const TIME_RE = /^(0?[1-9]|1[0-2]):[0-5]\d (AM|PM)$/;
 

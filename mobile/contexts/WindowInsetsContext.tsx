@@ -13,3 +13,16 @@ export function useWindowInsets(): EdgeInsets {
   const fromContext = useSafeAreaInsets();
   return real ?? fromContext;
 }
+
+// How far down the window screens start: the status bar online, the offline banner's measured
+// height offline (see screenTopOffset in utils/offlineState.ts). Set in app/_layout.tsx.
+const ScreenTopOffsetContext = createContext<number | null>(null);
+
+export const ScreenTopOffsetProvider = ScreenTopOffsetContext.Provider;
+
+/** For keyboardVerticalOffset and anything else that needs a screen's real distance from the top. */
+export function useScreenTopOffset(): number {
+  const offset = useContext(ScreenTopOffsetContext);
+  const fallback = useSafeAreaInsets().top;
+  return offset ?? fallback;
+}

@@ -9,7 +9,7 @@ import { Platform } from 'react-native';
  *  - anything about a meetup -> that meetup's detail
  *  - group events            -> the group's details
  *  - group gone / removed    -> the Groups tab
- *  - invites                 -> the notifications list (that's where Accept/Decline live)
+ *  - invites, join requests  -> the notifications list (that's where Accept/Decline live)
  *  - anything unknown        -> the notifications list
  */
 export type NotificationTarget =
@@ -40,7 +40,7 @@ export function resolveNotificationTarget(input: NotificationRouteInput): Notifi
   const meetupId = input.meetupId ? String(input.meetupId) : undefined;
 
   if (GROUP_GONE.has(type)) return { kind: 'groups' };
-  if (type === 'group-invite') return { kind: 'notifications' };
+  if (type === 'group-invite' || type === 'join-request') return { kind: 'notifications' };
 
   if ((CHAT_TYPES.has(type) || input.legacyType === 'chat') && groupId) return { kind: 'chat', groupId };
   if (type.startsWith('tournament-') && input.tournamentId) return { kind: 'tournament', tournamentId: String(input.tournamentId) };

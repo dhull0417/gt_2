@@ -12,6 +12,7 @@ import {
   Pressable,
   Keyboard,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
@@ -22,7 +23,10 @@ import { useIsOnline } from '@/hooks/useIsOnline';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { nextJumpStep, takeJumpRequest } from '@/utils/chatJump';
 import { CHAT_LOAD_LIMIT_MS, chatLoadState } from '@/utils/chatLoadState';
-import { toast } from '@/contexts/ToastContext';
+import { toast, ToastPortal } from '@/contexts/ToastContext';
+import { useScreenTopOffset } from '@/contexts/WindowInsetsContext';
+import { getErrorMessage, OFFLINE_ERROR_MESSAGE } from '@/utils/networkError';
+import { requireOnline } from '@/utils/offlineState';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
@@ -92,6 +96,8 @@ const GroupChatScreen = () => {
 
   // Real top inset; 0 while the offline banner (above the navigator) already covers it.
   const contentTopInset = useSafeAreaInsets().top;
+  // Where this screen actually starts: below the status bar, or below the (taller) offline banner.
+  const screenTop = useScreenTopOffset();
   const isOnline = useIsOnline();
   const api = useApiClient();
   const router = useRouter();
@@ -617,7 +623,7 @@ const GroupChatScreen = () => {
       if (target.pinned_at) await unpinMessage(target, senderId);
       else await pinMessage(target, senderId);
     } catch (err: any) {
-      Alert.alert('Pin failed', err?.message ?? 'Could not update the pinned message.');
+      Alert.alert('Pin failed', getErrorMessage(err, 'Could not update the pinned message.'));
     }
   };
 
@@ -646,21 +652,30 @@ const GroupChatScreen = () => {
 
   const handleEditOpen = () => {
     if (!selectedMessage) return;
-    setEditText(selectedMessage.content);
-    setEditingMessage(selectedMessage);
+    const target = selectedMessage;
     closeActionPanel();
+    // Edits aren't queued (unlike sends and reactions), so say so before they type one.
+    if (!requireOnline('edit messages')) return;
+    setEditText(target.content);
+    setEditingMessage(target);
   };
 
+  // The editor stays open until the edit is saved, so a failed save (e.g. the connection dropped
+  // while typing) keeps what they wrote and says why, inside the editor, instead of losing it.
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const handleEditSave = async () => {
-    if (!editingMessage) return;
+    if (!editingMessage || isSavingEdit) return;
     const trimmed = editText.trim();
     if (!trimmed || trimmed === editingMessage.content) { setEditingMessage(null); return; }
-    const target = editingMessage;
-    setEditingMessage(null);
+    if (!isOnline) { toast.error(OFFLINE_ERROR_MESSAGE); return; }
+    setIsSavingEdit(true);
     try {
-      await editMessage(target.id, trimmed);
+      await editMessage(editingMessage.id, trimmed);
+      setEditingMessage(null);
     } catch (err: any) {
-      Alert.alert('Edit failed', err?.message ?? 'Failed to edit message.');
+      toast.error(getErrorMessage(err, "Couldn't save your edit. Please try again."));
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -680,7 +695,7 @@ const GroupChatScreen = () => {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try { await deleteMessage(target.id); }
-        catch (err: any) { Alert.alert('Error', err?.message ?? 'Failed to delete.'); }
+        catch (err: any) { Alert.alert('Error', getErrorMessage(err, "Couldn't delete the message. Please try again.")); }
       }},
     ]);
   };
@@ -806,7 +821,7 @@ const GroupChatScreen = () => {
           style={{ flex: 1, opacity: chatContentReady ? 1 : 0 }}
           pointerEvents={chatContentReady ? 'auto' : 'none'}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={contentTopInset + chatHeaderHeight + pinnedBannerHeight}
+          keyboardVerticalOffset={screenTop + chatHeaderHeight + pinnedBannerHeight}
         >
           <View style={{ flex: 1, position: 'relative' }}>
             <SectionList
@@ -1069,7 +1084,7 @@ const GroupChatScreen = () => {
           startJump(m.id);
         }}
         onUnpin={(m) => {
-          unpinMessage(m, senderId).catch((err: any) => Alert.alert('Unpin failed', err?.message ?? 'Could not unpin.'));
+          unpinMessage(m, senderId).catch((err: any) => Alert.alert('Unpin failed', getErrorMessage(err, 'Could not unpin.')));
         }}
       />
 
@@ -1127,13 +1142,17 @@ const GroupChatScreen = () => {
               <PressableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setEditingMessage(null)}>
                 <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600' }}>Cancel</Text>
               </PressableOpacity>
-              <PressableOpacity style={[chatStyles.saveBtn, { backgroundColor: colors.brand }]} onPress={handleEditSave}>
-                <Text style={{ fontSize: 15, color: '#fff', fontWeight: '600' }}>Save</Text>
+              <PressableOpacity style={[chatStyles.saveBtn, { backgroundColor: colors.brand }]} onPress={handleEditSave} disabled={isSavingEdit}>
+                {isSavingEdit
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={{ fontSize: 15, color: '#fff', fontWeight: '600' }}>Save</Text>}
               </PressableOpacity>
             </View>
           </Pressable>
         </Pressable>
         </KeyboardAvoidingView>
+        {/* This Modal covers the app-level toast; show "You're offline" etc. over the editor. */}
+        <ToastPortal />
       </Modal>
 
       <ChatImageViewer

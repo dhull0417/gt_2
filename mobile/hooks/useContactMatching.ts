@@ -26,7 +26,9 @@ export function useContactMatching() {
   const [isReading, setIsReading] = useState(true);
 
   // Asks for contacts access when the screen opens, then reads names, emails and phone numbers.
-  // Nothing is stored: the numbers/emails are only sent to the server to find which friends already use GroupThat.
+  // Matching stores nothing: the numbers/emails are only sent to find which friends already use GroupThat.
+  // (Texting a contact an invite from Add Members does save that one number/email with the invite, so the
+  // invitation can appear in the app if they sign up with it; see groupApi.createContactInvite.)
   useEffect(() => {
     let cancelled = false;
     (async () => {

@@ -7,6 +7,8 @@ import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import { postSystemMessage } from "../utils/systemMessage.js";
 import { addChatMembers } from "../utils/supabaseAdmin.js";
+import { notifyAndPersist } from "../utils/push.notifications.js";
+import { addMemberViaInvite } from "./invite.controller.js";
 
 // Get all notifications for the logged-in user
 export const getNotifications = asyncHandler(async (req, res) => {
@@ -34,7 +36,7 @@ export const getNotifications = asyncHandler(async (req, res) => {
     // client crashes. Sender is optional — system notifications have none.
     const validNotifications = notifications.filter(notification => {
         // 'group-removed' / 'group-deleted' are kept even if the group is gone: they have no destination to open but are still informative.
-        const groupRequiredTypes = ['group-invite', 'invite-accepted', 'invite-declined', 'group-added', 'group-member-joined', 'group-updated', 'ownership-transferred'];
+        const groupRequiredTypes = ['group-invite', 'join-request', 'join-approved', 'invite-accepted', 'invite-declined', 'group-added', 'group-member-joined', 'group-updated', 'ownership-transferred'];
         if (groupRequiredTypes.includes(notification.type) && !notification.group) {
             return false;
         }
@@ -54,6 +56,46 @@ export const getNotifications = asyncHandler(async (req, res) => {
     res.status(200).json(validNotifications);
 });
 
+const sameId = (a, b) => a != null && b != null && a.toString() === b.toString();
+
+/**
+ * Someone asked to join through the invite link and an owner/moderator answered.
+ * Every manager got the same request; answering closes all of them.
+ */
+const answerJoinRequest = async (notification, manager, approve, res) => {
+    const group = await Group.findById(notification.group);
+    if (!group) return res.status(404).json({ error: "Group not found." });
+    const managerCanManage = sameId(group.owner, manager._id) || (group.moderators || []).some((id) => sameId(id, manager._id));
+    if (!managerCanManage) return res.status(403).json({ error: "Only owners and moderators can answer join requests." });
+
+    const requester = notification.sender ? await User.findById(notification.sender) : null;
+    const closeAll = (status) => Notification.updateMany(
+        { type: 'join-request', group: group._id, sender: notification.sender, status: 'pending' },
+        { $set: { status } }
+    );
+
+    if (!approve || !requester) {
+        await closeAll('declined');
+        return res.status(200).json({ message: approve ? "That person no longer has an account." : "Request declined." });
+    }
+
+    await closeAll('accepted');
+    if (!(group.members || []).some((m) => sameId(m, requester._id))) {
+        await addMemberViaInvite(group, requester, { noticeBody: `${requester.firstName} joined "${group.name}" (approved by ${manager.firstName}).` });
+    }
+    try {
+        await notifyAndPersist([requester], {
+            title: group.name,
+            body: `You're in! Your request to join "${group.name}" was approved.`,
+            data: { groupId: group._id.toString(), type: 'join-approved', ...(notification.meta?.meetupId ? { meetupId: notification.meta.meetupId } : {}) },
+            type: 'join-approved',
+            sender: manager._id,
+            group: group._id,
+        });
+    } catch (err) { console.error(err); }
+    return res.status(200).json({ message: "Request approved. They have been added to the group." });
+};
+
 // Accept a group invitation
 export const acceptInvite = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
@@ -66,21 +108,25 @@ export const acceptInvite = asyncHandler(async (req, res) => {
     if (!notification || notification.recipient.toString() !== user._id.toString()) {
         return res.status(404).json({ error: "Invitation not found or you are not the recipient." });
     }
-    if (notification.type !== 'group-invite') {
+    if (notification.type !== 'group-invite' && notification.type !== 'join-request') {
         return res.status(400).json({ error: "This notification is not an invitation." });
     }
     if (notification.status !== 'pending') {
         return res.status(400).json({ error: "This invitation has already been responded to." });
     }
+    if (notification.type === 'join-request') return answerJoinRequest(notification, user, true, res);
     
     const group = await Group.findById(notification.group);
     if (!group) return res.status(404).json({ error: "Group not found." });
 
-    // Invitations only count if they came from someone who can still manage the group.
+    // Invitations only count if they came from someone who can still manage the group. An invite
+    // sent to a phone contact (meta.source 'contact') only needs the inviter to still be a member,
+    // like the invite link they would otherwise have shared.
     const inviterId = notification.sender?.toString();
     const inviterCanManage = inviterId && (
         group.owner.toString() === inviterId ||
-        (group.moderators || []).some(id => id.toString() === inviterId)
+        (group.moderators || []).some(id => id.toString() === inviterId) ||
+        (notification.meta?.source === 'contact' && (group.members || []).some(id => id.toString() === inviterId))
     );
     if (!inviterCanManage) {
         notification.status = 'declined';
@@ -128,12 +174,13 @@ export const declineInvite = asyncHandler(async (req, res) => {
     if (!notification || notification.recipient.toString() !== user._id.toString()) {
         return res.status(404).json({ error: "Invitation not found or you are not the recipient." });
     }
-    if (notification.type !== 'group-invite') {
+    if (notification.type !== 'group-invite' && notification.type !== 'join-request') {
         return res.status(400).json({ error: "This notification is not an invitation." });
     }
     if (notification.status !== 'pending') {
         return res.status(400).json({ error: "This invitation has already been responded to." });
     }
+    if (notification.type === 'join-request') return answerJoinRequest(notification, user, false, res);
     
     const group = await Group.findById(notification.group);
     if (!group) return res.status(404).json({ error: "Group not found." });

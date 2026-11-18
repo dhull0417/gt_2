@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { clerkErrorMessage } from '@/utils/clerkErrors';
 
 export default function PhoneLogin() {
   const { signIn } = useSignIn();
@@ -43,21 +44,21 @@ export default function PhoneLogin() {
       } else if ((error as any).errors?.[0]?.code === 'form_identifier_not_found') {
         const { error: signUpError } = await signUp.create({ phoneNumber });
         if (signUpError) {
-          Alert.alert("Error", (signUpError as any).errors?.[0]?.longMessage || signUpError.longMessage || signUpError.message || "Failed to create account.");
+          Alert.alert("Error", clerkErrorMessage(signUpError, "Failed to create account."));
           return;
         }
         const { error: sendError } = await signUp.verifications.sendPhoneCode();
         if (sendError) {
-          Alert.alert("Error", (sendError as any).errors?.[0]?.longMessage || sendError.longMessage || sendError.message || "Failed to send code.");
+          Alert.alert("Error", clerkErrorMessage(sendError, "Failed to send code."));
           return;
         }
         setIsSigningUp(true);
         setPendingVerification(true);
       } else {
-        Alert.alert("Error", (error as any).errors?.[0]?.longMessage || error.longMessage || error.message || "Something went wrong.");
+        Alert.alert("Error", clerkErrorMessage(error, "Something went wrong."));
       }
     } catch (err: any) {
-      Alert.alert("Error", err.errors?.[0]?.message || "Something went wrong.");
+      Alert.alert("Error", clerkErrorMessage(err, "Something went wrong."));
     } finally {
       setIsLoading(false);
     }
@@ -70,7 +71,7 @@ export default function PhoneLogin() {
       if (isSigningUp) {
         const { error } = await signUp.verifications.verifyPhoneCode({ code });
         if (error) {
-          Alert.alert("Error", error.longMessage || error.message || "Invalid code.");
+          Alert.alert("Error", clerkErrorMessage(error, "Invalid code."));
           return;
         }
         if (signUp.status === 'complete') {
@@ -81,7 +82,7 @@ export default function PhoneLogin() {
       } else {
         const { error } = await signIn.phoneCode.verifyCode({ code });
         if (error) {
-          Alert.alert("Error", error.longMessage || error.message || "Invalid code.");
+          Alert.alert("Error", clerkErrorMessage(error, "Invalid code."));
           return;
         }
         if (signIn.status === 'complete') {
@@ -91,7 +92,7 @@ export default function PhoneLogin() {
         }
       }
     } catch (err: any) {
-      Alert.alert("Error", err.errors?.[0]?.message || "Invalid code.");
+      Alert.alert("Error", clerkErrorMessage(err, "Invalid code."));
     } finally {
       setIsLoading(false);
     }

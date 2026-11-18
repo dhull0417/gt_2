@@ -13,6 +13,8 @@ const DEFAULT_ICON: NotificationIconSpec = { name: 'bell', color: '#6B7280' };
 
 const NOTIFICATION_ICONS: Record<NotificationType, NotificationIconSpec> = {
   'group-invite': { name: 'user-plus', color: '#3B82F6' },
+  'join-request': { name: 'user-plus', color: '#F59E0B' },
+  'join-approved': { name: 'user-check', color: '#10B981' },
   'invite-accepted': { name: 'check-circle', color: '#10B981' },
   'invite-declined': { name: 'x-circle', color: '#EF4444' },
   'group-added': { name: 'users', color: '#6366F1' },

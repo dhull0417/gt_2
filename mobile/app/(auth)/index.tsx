@@ -1,10 +1,11 @@
 import { useSocialAuth } from "@/hooks/useSocialAuth";
 import { useAppleAuth } from "@/hooks/useAppleAuth";
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { peekPendingInvite } from "@/utils/pendingInvite";
 import Reanimated, { interpolate, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Dimensions, Text, Image, View, ActivityIndicator, StyleSheet, Linking } from "react-native";
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from '@expo/vector-icons';
 import * as AppleAuthentication from "expo-apple-authentication";
@@ -19,6 +20,15 @@ export default function Index() {
   const router = useRouter();
   const colors = useThemeColors();
   const [showOtherOptions, setShowOtherOptions] = useState(false);
+  // An invite picked up from a link or from the install is waiting for sign-in.
+  const [hasInvite, setHasInvite] = useState(false);
+  useFocusEffect(useCallback(() => {
+    const check = () => peekPendingInvite().then((p) => setHasInvite(!!p)).catch(() => {});
+    check();
+    // A fresh install's invite (install referrer / clipboard) can arrive a moment after launch.
+    const t = setTimeout(check, 1500);
+    return () => clearTimeout(t);
+  }, []));
   const slide = useSharedValue(0);
 
   const toggleOtherOptions = () => {
@@ -131,6 +141,18 @@ export default function Index() {
 
           <View style={{ flex: 1 }} />
 
+          {hasInvite ? (
+            <View style={[styles.inviteBanner, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
+              <Feather name="check-circle" size={18} color={colors.success} style={{ marginRight: 8 }} />
+              <Text style={[styles.inviteBannerText, { color: colors.textPrimary }]}>Your invite is saved. Sign in or sign up to join the group.</Text>
+            </View>
+          ) : (
+            <Text style={[styles.inviteHint, { color: colors.textMuted }]}>
+              Invited to a group? Tap the invite link again after signing in, or{' '}
+              <Text style={{ color: colors.brand, fontWeight: '600' }} onPress={() => router.push('/join/code')}>enter an invite code</Text>.
+            </Text>
+          )}
+
           <View>
             <Text style={[styles.footerText, { color: colors.textMuted }]}>
               By signing up, you agree to our
@@ -240,6 +262,25 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontWeight: '600',
     fontSize: 14,
+  },
+  inviteBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  inviteBannerText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  inviteHint: {
+    textAlign: 'center',
+    fontSize: 13,
+    lineHeight: 18,
+    paddingHorizontal: 8,
   },
   footerText: {
     textAlign: 'center',

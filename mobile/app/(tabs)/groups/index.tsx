@@ -337,8 +337,16 @@ const GroupScreen = () => {
                   ? <ActivityIndicator color={colors.brand} />
                   : <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>or look around a sample group</Text>}
               </PressableOpacity>
+              <PressableOpacity onPress={() => router.push('/join/code')} style={{ marginTop: 6, padding: 8 }}>
+                <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>Have an invite code?</Text>
+              </PressableOpacity>
             </View>
           }
+          ListFooterComponent={(sortedGroups?.length ?? 0) > 0 ? (
+            <PressableOpacity onPress={() => router.push('/join/code')} style={{ alignSelf: 'center', marginTop: 16, padding: 8 }}>
+              <Text style={{ color: colors.textMuted, fontWeight: '600', fontSize: 13 }}>Have an invite code?</Text>
+            </PressableOpacity>
+          ) : null}
         />
       )}
       <GroupMuteSheet

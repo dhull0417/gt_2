@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { requireOnline } from '@/utils/offlineState';
+import { getErrorMessage } from '@/utils/networkError';
 import { DateTime } from 'luxon';
 import { meetupDayKey, meetupStartInstant, meetupEndInstant, dayKeyToLocalDate, localDateToDayKey, formatMeetupDate, formatMeetupTimeRange, viewerZone } from '@/utils/meetupTime';
 import { addHour, endTimeError } from '@/utils/timeString';
@@ -45,7 +46,7 @@ import Animated, {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
 import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/utils/api';
-import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor, canPriorityBump } from '@/utils/meetupStatus';
+import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor, canPriorityBump, isMeetupFull } from '@/utils/meetupStatus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import MeetupAssignments, { AssignmentsSheet } from '@/components/MeetupAssignments';
@@ -64,7 +65,7 @@ import EndTimeField from './EndTimeField';
 import LocationField from './LocationField';
 import LocationSearchModal from './LocationSearchModal';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { toast } from '@/contexts/ToastContext';
+import { toast, ToastPortal } from '@/contexts/ToastContext';
 import { formatAgo } from '@/utils/listTime';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import { PulsingWatermark } from '@/components/meetup-detail/PulsingWatermark';
@@ -247,7 +248,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
             )
         );
 
-    const isFull = meetup.capacity > 0 && (meetup.in?.length || 0) >= meetup.capacity;
+    const isFull = isMeetupFull(meetup); // guests count toward the limit
     const isWaitlisted = meetup.waitlist?.some(u => getUserId(u) === currentUser._id) || false;
     const isIn = meetup.in?.some(u => getUserId(u) === currentUser._id) || false;
     const isOut = meetup.out?.some(u => getUserId(u) === currentUser._id) || false;
@@ -468,7 +469,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
         try {
             const { link } = await groupApi.generateInviteLink(api, meetup.group._id);
             await Share.share({
-                message: buildInviteMessage({ meetupName: meetup.name, link }),
+                message: buildInviteMessage({ meetupName: meetup.name, link, meetupId: meetup._id, referrerId: currentUser?._id }),
             });
         } catch {
             Alert.alert('Error', 'Could not create invite link. Please try again.');
@@ -562,7 +563,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
             setIsEditModalVisible(false);
             toast.success("Meetup details updated.");
         } catch (error: any) {
-            Alert.alert("Update Failed", error.response?.data?.error || error.message);
+            Alert.alert("Update Failed", getErrorMessage(error, "Couldn't save the meetup. Please try again."));
         } finally {
             setIsUpdating(false);
         }
@@ -748,7 +749,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
             haptic.success();
             return true;
         } catch (e: any) {
-            Alert.alert("Error", e.response?.data?.error || e.message);
+            Alert.alert("Error", getErrorMessage(e, "Couldn't bring the meetup back. Please try again."));
             return false;
         }
     };
@@ -775,7 +776,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                 },
             });
         } catch (e: any) {
-            Alert.alert("Error", e.response?.data?.error || e.message);
+            Alert.alert("Error", getErrorMessage(e, "Couldn't cancel the meetup. Please try again."));
         } finally {
             setIsCancelling(false);
         }
@@ -1613,6 +1614,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                 onConfirm={confirmCancelWithReason}
             />
             <RsvpResponseOverlay />
+            {/* This sheet is a Modal, which covers the app-level toast ("You're offline..."). */}
+            <ToastPortal />
         </SafeAreaView>
     );
 };

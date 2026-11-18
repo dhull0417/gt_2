@@ -154,7 +154,7 @@ export const usePushNotifications = (isSignedIn: boolean = false, hasBackendUser
       if (type !== 'chat') {
         queryClient.invalidateQueries({ queryKey: ['notifications'] });
       }
-      if (pushType?.startsWith('group-') || pushType === 'ownership-transferred' || pushType === 'invite-accepted') {
+      if (pushType?.startsWith('group-') || pushType === 'ownership-transferred' || pushType === 'invite-accepted' || pushType === 'join-approved') {
         queryClient.invalidateQueries({ queryKey: ['groups'] });
       }
       // A new message in another chat: re-sort the Groups list and update its unread dot/count now,

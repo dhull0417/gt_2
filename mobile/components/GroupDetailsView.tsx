@@ -14,7 +14,7 @@ import {
     UIManager,
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import { GroupAvatar } from './GroupAvatar';
@@ -118,7 +118,7 @@ export const GroupDetailsView = ({
         }
         try {
             await Share.share({
-                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink }),
+                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, referrerId: currentUser._id }),
             });
         } catch (error: any) {
             Alert.alert('Error', 'Could not share invite link.');
@@ -237,10 +237,20 @@ export const GroupDetailsView = ({
 
             {/* Invite Friends — hidden for DMs */}
             {!isDM && (
-                <PressableOpacity onPress={handleInvitePress} style={[styles.inviteButton, chipTeal]} activeOpacity={0.7}>
-                    <Feather name="user-plus" size={16} color={colors.accentTeal} />
-                    <Text style={[styles.inviteButtonText, { color: colors.accentTeal }]}>Invite Friends</Text>
-                </PressableOpacity>
+                <View style={styles.inviteRow}>
+                    <PressableOpacity onPress={handleInvitePress} style={[styles.inviteButton, chipTeal, { flex: 1, marginBottom: 0 }]} activeOpacity={0.7}>
+                        <Feather name="user-plus" size={16} color={colors.accentTeal} />
+                        <Text style={[styles.inviteButtonText, { color: colors.accentTeal }]}>Invite Friends</Text>
+                    </PressableOpacity>
+                    <PressableOpacity
+                        onPress={() => router.push({ pathname: '/group-invite/[id]', params: { id: groupDetails._id } })}
+                        style={[styles.inviteButton, chipTeal, styles.qrButton]}
+                        activeOpacity={0.7}
+                        accessibilityLabel="QR code and invite link"
+                    >
+                        <MaterialCommunityIcons name="qrcode" size={20} color={colors.accentTeal} />
+                    </PressableOpacity>
+                </View>
             )}
 
             {/* Subscribe a calendar app to just this group's meetups */}
@@ -475,6 +485,8 @@ const styles = StyleSheet.create({
     iconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
     iconWrapSmall: { width: 26, height: 26, borderRadius: 9 },
     inviteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14, borderWidth: 1, backgroundColor: '#F0FDFA', borderColor: '#99F6E4', marginBottom: 12 },
+    inviteRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+    qrButton: { marginBottom: 0, paddingHorizontal: 18 },
     inviteButtonText: { marginLeft: 8, fontWeight: 'bold', fontSize: 14, color: '#0D9488' },
     sectionHeaderWrap: { marginBottom: 16 },
     sectionTitle: { fontSize: 15, fontWeight: '900', color: '#4A90E2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },

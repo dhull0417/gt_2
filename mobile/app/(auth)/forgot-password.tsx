@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { clerkErrorMessage } from '@/utils/clerkErrors';
 
 const ForgotPasswordScreen = () => {
   const router = useRouter();
@@ -19,17 +20,17 @@ const ForgotPasswordScreen = () => {
     try {
       const { error: createError } = await signIn.create({ identifier: email });
       if (createError) {
-        Alert.alert('Error', (createError as any).errors?.[0]?.longMessage || createError.longMessage || createError.message || 'An error occurred.');
+        Alert.alert('Error', clerkErrorMessage(createError, 'An error occurred.'));
         return;
       }
       const { error: sendError } = await signIn.resetPasswordEmailCode.sendCode();
       if (sendError) {
-        Alert.alert('Error', (sendError as any).errors?.[0]?.longMessage || sendError.longMessage || sendError.message || 'An error occurred.');
+        Alert.alert('Error', clerkErrorMessage(sendError, 'An error occurred.'));
         return;
       }
       router.push('/(auth)/reset-password');
     } catch (err: any) {
-      Alert.alert('Error', err.errors?.[0]?.longMessage || 'An error occurred.');
+      Alert.alert('Error', clerkErrorMessage(err, 'An error occurred.'));
     } finally {
       setIsLoading(false);
     }

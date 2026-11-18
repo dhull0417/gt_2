@@ -24,9 +24,16 @@ import {
   updateModerators,
   toggleModerator,
   transferOwnership,
-  generateInviteLink,
-  redeemInviteToken,
 } from "../controllers/group.controller.js";
+import {
+  generateInviteLink,
+  resetInviteLink,
+  updateInviteSettings,
+  getInvitePreview,
+  redeemInviteToken,
+  createContactInvite,
+} from "../controllers/invite.controller.js";
+import { rateLimit } from "../utils/rateLimit.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 import { getAuth } from "@clerk/express";
 import Group from "../models/group.model.js";
@@ -152,12 +159,16 @@ router.post("/:groupId/meetups", protectRoute, createOneOffMeetup);
 
 // --- Membership & Invites ---
 // join/:token must be registered before /:groupId to avoid route collision
-router.post("/join/:token", protectRoute, redeemInviteToken);
+router.post("/join/:token", rateLimit({ name: "invite-redeem", limit: 20 }), protectRoute, redeemInviteToken);
+router.get("/invite/:token", rateLimit({ name: "invite-preview", limit: 20 }), protectRoute, getInvitePreview);
 router.post("/:groupId/add-member", protectRoute, addMember);
 router.post("/:groupId/leave", protectRoute, leaveGroup);
 router.post("/:groupId/remove-member", protectRoute, removeMember);
 router.post("/:groupId/invite", protectRoute, inviteUser);
 router.post("/:groupId/invite-link", protectRoute, generateInviteLink);
+router.post("/:groupId/invite-link/reset", protectRoute, resetInviteLink);
+router.put("/:groupId/invite-settings", protectRoute, updateInviteSettings);
+router.post("/:groupId/contact-invite", protectRoute, createContactInvite);
 
 // updates lastMessage preview and notifies group members
 router.patch("/:id/last-message", protectRoute, async (req, res) => {

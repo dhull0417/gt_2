@@ -6,7 +6,7 @@ import ReanimatedAnimated from 'react-native-reanimated';
 import { Meetup, User } from '@/utils/api';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { RsvpBreather } from '@/components/RsvpBreather';
-import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor, canPriorityBump } from '@/utils/meetupStatus';
+import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor, canPriorityBump, isMeetupFull, meetupHeadcount } from '@/utils/meetupStatus';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
 import { formatMeetupTimeRange, viewerZone } from '@/utils/meetupTime';
@@ -26,8 +26,7 @@ const formatDate = (dateString: string, timezone: string) => {
 };
 
 const RsvpCounts = ({ meetup, colors }: { meetup: Meetup; colors: ThemeColors }) => {
-    const totalGuests = (meetup.guests || []).reduce((sum, g) => sum + (g.count || 0), 0);
-    const inCount = meetup.in.length + totalGuests;
+    const inCount = meetupHeadcount(meetup);
     const spotsLeft = meetup.capacity > 0 ? Math.max(meetup.capacity - inCount, 0) : null;
     const minAttendees = meetup.minAttendees ?? 0;
     return (
@@ -101,7 +100,7 @@ export const MeetupCard = ({
   const isRsvpLocked = isRsvpLockedFor(meetup, currentUser?._id);
   const isRsvpDeadlinePassed = isRsvpDeadlinePassedFn(meetup);
 
-  const isFull = meetup.capacity > 0 && meetup.in.length >= meetup.capacity;
+  const isFull = isMeetupFull(meetup); // guests count toward the limit
   const isWaitlisted = currentUser ? meetup.waitlist.some(u => getUserId(u) === currentUser._id) : false;
   const isIn = currentUser ? meetup.in.some(u => getUserId(u) === currentUser._id) : false;
   const isOut = currentUser ? meetup.out.some(u => getUserId(u) === currentUser._id) : false;

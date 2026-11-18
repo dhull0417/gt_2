@@ -335,8 +335,40 @@ export interface Poll {
   createdAt: string;
 }
 
+export interface InviteLinkInfo {
+  link: string;
+  token: string;
+  code: string | null;
+  requiresApproval: boolean;
+  maxUses: number | null;
+  uses: number;
+  canManage: boolean;
+  stats?: { days: number; views: number; joins: number; requests: number };
+}
+
+export interface InvitePreview {
+  token: string;
+  groupId: string;
+  groupName: string;
+  image: string | null;
+  memberCount: number;
+  requiresApproval: boolean;
+  alreadyMember: boolean;
+  pendingRequest: boolean;
+  inviterName: string | null;
+  meetup: { _id: string; name: string; date: string; time: string; timezone?: string } | null;
+}
+
+export interface RedeemInviteResult {
+  groupId: string;
+  groupName: string;
+  alreadyMember: boolean;
+  pending?: boolean;
+  meetupId: string | null;
+}
+
 export type NotificationType =
-  | 'group-invite' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-member-joined' | 'group-removed' | 'group-updated' | 'ownership-transferred' | 'chat-timeout'
+  | 'group-invite' | 'join-request' | 'join-approved' | 'invite-accepted' | 'invite-declined' | 'group-added' | 'group-member-joined' | 'group-removed' | 'group-updated' | 'ownership-transferred' | 'chat-timeout'
   | 'meetup-rsvp-in' | 'meetup-rsvp-out' | 'meetup-waitlist-join' | 'waitlist-promotion' | 'priority-bumped' | 'guests-removed' | 'ride-assigned' | 'ride-removed'
   | 'meetup-rsvp-admin-in' | 'meetup-rsvp-admin-out'
   | 'meetup-created' | 'meetup-updated' | 'meetup-cancelled' | 'meetup-restored'
@@ -757,12 +789,38 @@ export const groupApi = {
     const response = await api.post(`/api/groups/${groupId}/transfer-ownership`, { newOwnerId }, { timeout: 15000 });
     return response.data;
   },
-  generateInviteLink: async (api: AxiosInstance, groupId: string): Promise<{ link: string }> => {
-    const response = await api.post<{ link: string }>(`/api/groups/${groupId}/invite-link`);
+  generateInviteLink: async (api: AxiosInstance, groupId: string): Promise<InviteLinkInfo> => {
+    const response = await api.post<InviteLinkInfo>(`/api/groups/${groupId}/invite-link`);
     return response.data;
   },
-  redeemInviteToken: async (api: AxiosInstance, token: string): Promise<{ groupId: string; groupName: string; alreadyMember: boolean }> => {
-    const response = await api.post(`/api/groups/join/${token}`);
+  resetInviteLink: async (api: AxiosInstance, groupId: string): Promise<InviteLinkInfo> => {
+    const response = await api.post<InviteLinkInfo>(`/api/groups/${groupId}/invite-link/reset`);
+    return response.data;
+  },
+  updateInviteSettings: async (api: AxiosInstance, groupId: string, settings: { requiresApproval?: boolean; maxUses?: number | null }): Promise<InviteLinkInfo> => {
+    const response = await api.put<InviteLinkInfo>(`/api/groups/${groupId}/invite-settings`, settings);
+    return response.data;
+  },
+  /** `token` may also be a 6-character invite code. */
+  getInvitePreview: async (api: AxiosInstance, token: string, opts: { meetupId?: string | null; referrerId?: string | null } = {}): Promise<InvitePreview> => {
+    const params: Record<string, string> = {};
+    if (opts.meetupId) params.m = opts.meetupId;
+    if (opts.referrerId) params.r = opts.referrerId;
+    const response = await api.get<InvitePreview>(`/api/groups/invite/${encodeURIComponent(token)}`, { params });
+    return response.data;
+  },
+  /** `token` may also be a 6-character invite code. */
+  redeemInviteToken: async (api: AxiosInstance, token: string, opts: { meetupId?: string | null; source?: string } = {}): Promise<RedeemInviteResult> => {
+    const response = await api.post<RedeemInviteResult>(`/api/groups/join/${encodeURIComponent(token)}`, {
+      meetupId: opts.meetupId ?? undefined,
+      source: opts.source ?? 'link',
+      supportsApproval: true,
+    });
+    return response.data;
+  },
+  /** Remember that this contact was texted an invite, so they get it in the app if they sign up. */
+  createContactInvite: async (api: AxiosInstance, groupId: string, contact: { phone?: string; email?: string }): Promise<{ ok: boolean }> => {
+    const response = await api.post<{ ok: boolean }>(`/api/groups/${groupId}/contact-invite`, contact);
     return response.data;
   },
   createOrGetDM: async (api: AxiosInstance, targetUserId: string): Promise<{ group: Group; isNew: boolean }> => {

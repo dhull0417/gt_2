@@ -35,6 +35,7 @@ import { useThemeColors } from '@/contexts/AppearanceContext';
 import { getGroupImage } from '@/utils/groupDisplay';
 import { ChatTimeoutSheet } from '@/components/ChatTimeoutSheet';
 import { useChatModeration } from '@/hooks/useChatModeration';
+import { ToastPortal } from '@/contexts/ToastContext';
 import { canTimeOut, formatTimeoutEnd, isTimeoutActive } from '@/utils/chatTimeout';
 
 const styles = StyleSheet.create({
@@ -303,6 +304,8 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
             )}
           </Pressable>
         </Pressable>
+        {/* A Modal covers the app-level toast ("You're offline..."); draw it in here instead. */}
+        <ToastPortal />
       </Modal>
 
       <ChatTimeoutSheet

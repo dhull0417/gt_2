@@ -1,5 +1,5 @@
 import { AppState, View, Text, ActivityIndicator } from 'react-native';
-import { WindowInsetsProvider } from '@/contexts/WindowInsetsContext';
+import { ScreenTopOffsetProvider, WindowInsetsProvider } from '@/contexts/WindowInsetsContext';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -21,7 +21,8 @@ import { useEffect, useState } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useAppBadge } from '@/hooks/useAppBadge';
 import { syncPermissionsIfChanged } from '@/utils/permissions';
-import { PENDING_INVITE_KEY } from '@/app/join/[token]';
+import { openPendingInvite } from '@/utils/pendingInvite';
+import { checkDeferredInvite } from '@/utils/deferredInvite';
 import { ImageCropperHost } from '@/components/ImageCropperHost';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,7 +35,7 @@ import { upsertMessage } from '@/utils/chatCache';
 import type { ChatMessage } from '@/types/chat';
 import { registerOfflineMutationDefaults, RSVP_MUTATION_KEY, ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY, VOTE_POLL_MUTATION_KEY, type VotePollVariables } from '@/utils/offlineMutations';
 import { isQueuedKey, queuedErrorMessage, queuedErrorRefreshKey, timedOutRefreshKey } from '@/utils/queuedMutations';
-import { currentUserGate } from '@/utils/offlineState';
+import { currentUserGate, screenTopOffset } from '@/utils/offlineState';
 import { shouldPersistQuery, trimForPersist } from '@/utils/persistence';
 import { isGroupThatReachable } from '@/utils/networkError';
 import { useResumeQueuedMutations } from '@/hooks/useResumeQueuedMutations';
@@ -244,6 +245,8 @@ const AuthLayout = () => {
   const colors = useThemeColors();
   const isOnline = useIsOnline();
   const insets = useSafeAreaInsets();
+  // Measured: the banner is taller than the status bar it covers (see screenTopOffset).
+  const [offlineBannerHeight, setOfflineBannerHeight] = useState(0);
 
   const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
   const inTabsGroup = segments[0] === '(tabs)';
@@ -381,6 +384,7 @@ const AuthLayout = () => {
       'tournament-setup',
       'group-questions',
       'group-stats',
+      'group-invite',
       'group-rsvp-responses',
       'group-edit-jit',
       'group-settings',
@@ -407,7 +411,8 @@ const AuthLayout = () => {
       } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
         router.replace('/(tabs)');
       }
-    } else if (!isSignedIn && !inAuthGroup && !inSsoCallback) {
+    } else if (!isSignedIn && !inAuthGroup && !inSsoCallback && segments[0] !== 'join') {
+      // 'join' stays open signed out: the invite screen saves the invite and offers sign-in.
       router.replace('/(auth)');
     }
   }, [isLoaded, isSignedIn, currentUser, currentUserSettled, currentUserLoadFailed, segments, router, clerkUser]);
@@ -418,28 +423,34 @@ const AuthLayout = () => {
     }
   }, [isLoaded, isSignedIn, isSuccess, currentUserLoadFailed, noBackendUser]);
 
-  // Redeem a saved invite token after sign-in for users who tapped a link while signed out
+  // Fresh install from an invite link: pick the invite up from the Play install referrer (Android)
+  // or the clipboard the invite page filled (iOS). Once per install; see utils/deferredInvite.ts.
+  const [deferredChecked, setDeferredChecked] = useState(false);
   useEffect(() => {
-    if (!isSignedIn || !currentUser) return;
-    const profileIncomplete = !currentUser.firstName?.trim() || !currentUser.lastName?.trim();
-    if (profileIncomplete) return; // useUpdateProfile handles this case after setup
+    if (!isLoaded) return;
+    checkDeferredInvite().finally(() => setDeferredChecked(true));
+  }, [isLoaded]);
 
-    SecureStore.getItemAsync(PENDING_INVITE_KEY).then(pendingToken => {
-      if (pendingToken) {
-        SecureStore.deleteItemAsync(PENDING_INVITE_KEY);
-        router.push({ pathname: '/join/[token]', params: { token: pendingToken } });
-      }
-    }).catch(() => {});
-  }, [isSignedIn, currentUser?._id]);
+  // Open a saved invite after sign-in (they tapped a link while signed out, or it came from the install).
+  useEffect(() => {
+    if (!deferredChecked || !isSignedIn || !currentUser) return;
+    // Same test as the routing above: anyone it sends to profile setup gets the invite after saving there.
+    const profileIncomplete = (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()))
+      || !currentUser.zipCode?.trim();
+    if (profileIncomplete) return;
+
+    openPendingInvite(router, 'push').catch(() => {});
+  }, [deferredChecked, isSignedIn, currentUser?._id]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-      {!isOnline && <OfflineBanner segment={segments[0]} />}
+      {!isOnline && <OfflineBanner segment={segments[0]} onLayout={(e) => setOfflineBannerHeight(e.nativeEvent.layout.height)} />}
       {/* While the banner shows it already covers the status-bar area, so everything below gets a
           top inset of 0 (screens that pad by the inset don't double up). Native SafeAreaViews adjust
           by themselves, since they measure their own position. */}
       <WindowInsetsProvider value={insets}>
+      <ScreenTopOffsetProvider value={screenTopOffset({ isOnline, realTopInset: insets.top, bannerHeight: offlineBannerHeight })}>
       <SafeAreaInsetsContext.Provider value={isOnline ? insets : { ...insets, top: 0 }}>
       <View style={{ flex: 1 }}>
         {currentUserLoadFailed && (
@@ -491,6 +502,7 @@ const AuthLayout = () => {
           <Stack.Screen name="tournament-setup" options={{ headerShown: false }} />
           <Stack.Screen name="group-questions" options={{ headerShown: false }} />
           <Stack.Screen name="group-stats" options={{ headerShown: false }} />
+          <Stack.Screen name="group-invite" options={{ headerShown: false }} />
           <Stack.Screen name="group-rsvp-responses" options={{ headerShown: false }} />
           <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
           <Stack.Screen name="group-settings" options={{ headerShown: false }} />
@@ -515,6 +527,7 @@ const AuthLayout = () => {
         </ThemeProvider>
       </View>
       </SafeAreaInsetsContext.Provider>
+      </ScreenTopOffsetProvider>
       </WindowInsetsProvider>
     </View>
   );

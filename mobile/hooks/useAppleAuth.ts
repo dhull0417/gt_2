@@ -11,6 +11,7 @@ import { Alert } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
 import { useApiClient, userApi } from "@/utils/api";
+import { clerkErrorMessage } from "@/utils/clerkErrors";
 
 // Not using Clerk's own useSignInWithApple hook here: it requests Apple's FULL_NAME
 // scope but then discards credential.fullName, only forwarding the identityToken.
@@ -78,11 +79,7 @@ export const useAppleAuth = () => {
         } catch (err: any) {
             if (err.code === "ERR_REQUEST_CANCELED") return;
             console.warn("Apple sign-in failed:", err?.errors?.[0]?.code ?? err?.code ?? err?.message);
-            const message = err?.errors?.[0]?.longMessage
-                ?? err?.errors?.[0]?.message
-                ?? err?.message
-                ?? JSON.stringify(err);
-            Alert.alert("Apple Sign In Failed", message);
+            Alert.alert("Apple Sign In Failed", clerkErrorMessage(err, "Something went wrong. Please try again."));
         } finally {
             setIsLoading(false);
         }

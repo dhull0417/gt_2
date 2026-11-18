@@ -1,5 +1,6 @@
 // Teams & tournaments API (Premium). Server: backend/src/routes/tournament.route.js.
 import { AxiosInstance } from 'axios';
+import { getErrorMessage } from './networkError';
 
 export type TMode = 'singles' | 'teams';
 export type TFormat = 'none' | 'roundRobin' | 'single' | 'double';
@@ -115,5 +116,6 @@ export const tournamentApi = {
 /** The server's error code (e.g. 'results_exist') and readable message, if any. */
 export const apiError = (err: any): { code: string | null; message: string } => ({
   code: err?.response?.data?.error ?? null,
-  message: err?.response?.data?.message || err?.message || 'Something went wrong.',
+  // No raw "Network Error" / "Request failed with status code 500": the server's own message, else a plain one.
+  message: err?.response?.data?.message || (err?.response ? 'Something went wrong.' : getErrorMessage(err, 'Something went wrong.')),
 });

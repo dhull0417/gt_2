@@ -144,6 +144,8 @@ const groupSchema = new mongoose.Schema({
     createdAt: { type: Date },
   },
   isDM: { type: Boolean, default: false },
+  // Invite link: people who use the link ask to join and an owner/moderator approves them.
+  inviteRequiresApproval: { type: Boolean, default: false },
   // People timed out of this group's chat by an owner/moderator (copied to Supabase chat_timeouts,
   // which the database checks). until: null = until a moderator lifts it. Hidden by default
   // (select: false) so it never leaks to members through group responses; ask for "+chatTimeouts".

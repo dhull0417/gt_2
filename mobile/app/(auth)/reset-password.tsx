@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { clerkErrorMessage } from '@/utils/clerkErrors';
 
 const ResetPasswordScreen = () => {
   const router = useRouter();
@@ -27,12 +28,12 @@ const ResetPasswordScreen = () => {
     try {
       const { error: verifyError } = await signIn.resetPasswordEmailCode.verifyCode({ code });
       if (verifyError) {
-        Alert.alert('Error', (verifyError as any).errors?.[0]?.longMessage || verifyError.longMessage || verifyError.message || 'An error occurred.');
+        Alert.alert('Error', clerkErrorMessage(verifyError, 'An error occurred.'));
         return;
       }
       const { error: submitError } = await signIn.resetPasswordEmailCode.submitPassword({ password });
       if (submitError) {
-        Alert.alert('Error', (submitError as any).errors?.[0]?.longMessage || submitError.longMessage || submitError.message || 'An error occurred.');
+        Alert.alert('Error', clerkErrorMessage(submitError, 'An error occurred.'));
         return;
       }
       if (signIn.status === 'complete') {
@@ -41,7 +42,7 @@ const ResetPasswordScreen = () => {
         console.error(JSON.stringify(signIn, null, 2));
       }
     } catch (err: any) {
-      Alert.alert('Error', err.errors?.[0]?.longMessage || 'An error occurred.');
+      Alert.alert('Error', clerkErrorMessage(err, 'An error occurred.'));
     } finally {
       setIsLoading(false);
     }

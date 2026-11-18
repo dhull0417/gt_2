@@ -14,6 +14,10 @@ import { ENV } from "../config/env.js";
 import mongoose from "mongoose";
 import Poll from "../models/poll.model.js";
 import InviteToken from "../models/inviteToken.model.js";
+import PendingInvite from "../models/pendingInvite.model.js";
+import InviteEvent from "../models/inviteEvent.model.js";
+import { claimPendingInvites } from "../utils/pendingInvites.js";
+import { normalizePhone } from "../utils/phone.js";
 import AttendanceRecord from "../models/attendanceRecord.model.js";
 import EmailLog from "../models/emailLog.model.js";
 import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
@@ -200,16 +204,7 @@ export const updatePermissionStatus = asyncHandler(async (req, res) => {
   res.status(200).json({ permissions: user.permissions });
 });
 
-// Digits-only phone numbers become E.164 (+1 assumed for 10-digit US numbers), matching how Clerk stores them.
-export const normalizePhone = (raw) => {
-  const digits = String(raw || '').replace(/[^\d+]/g, '');
-  if (!digits) return null;
-  if (digits.startsWith('+')) return digits.length >= 8 ? digits : null;
-  const onlyDigits = digits.replace(/\D/g, '');
-  if (onlyDigits.length === 10) return `+1${onlyDigits}`;
-  if (onlyDigits.length === 11 && onlyDigits.startsWith('1')) return `+${onlyDigits}`;
-  return null;
-};
+export { normalizePhone } from "../utils/phone.js";
 
 const MAX_CONTACT_LOOKUPS = 500;
 
@@ -349,6 +344,10 @@ export const updateProfile = asyncHandler(async (req, res) => {
     throw err;
   }
   if (!user) return res.status(404).json({ error: "User not found" });
+  // A newly verified phone number or email may have group invitations waiting for it.
+  if (update.email !== undefined || update.phoneNumber !== undefined) {
+    try { await claimPendingInvites(user); } catch (err) { console.error(err); }
+  }
 
   res.status(200).json({ user: serializeUser(user) });
 });
@@ -436,6 +435,8 @@ export const syncUser = asyncHandler(async (req, res) => {
     }
     throw err;
   }
+  // Invitations a member sent to this phone number or email before they had an account.
+  try { await claimPendingInvites(user); } catch (err) { console.error(err); }
 
   res.status(201).json({ user: serializeUser(user), message: "User created successfully" });
 });
@@ -492,6 +493,8 @@ export const deleteAccount = asyncHandler(async (req, res) => {
       await Meetup.deleteMany({ group: group._id });
       await Poll.deleteMany({ group: group._id });
       await InviteToken.deleteMany({ groupId: group._id });
+      await PendingInvite.deleteMany({ groupId: group._id });
+      await InviteEvent.deleteMany({ groupId: group._id });
       await AttendanceRecord.deleteMany({ group: group._id });
       await deleteTournamentsForGroup(group._id);
       await Notification.deleteMany({ group: group._id });
@@ -571,6 +574,8 @@ export const deleteAccount = asyncHandler(async (req, res) => {
 
   // record of which lifecycle emails they were sent
   await EmailLog.deleteMany({ user: userId });
+  // Phone numbers/emails this person texted invites to.
+  await PendingInvite.deleteMany({ inviter: userId });
 
   // delete from Clerk first — if it fails, the Mongo record stays intact for retry
   await clerkClient.users.deleteUser(clerkId);

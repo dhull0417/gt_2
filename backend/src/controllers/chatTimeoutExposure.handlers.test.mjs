@@ -43,6 +43,8 @@ const { default: Meetup } = await import('../models/meetup.model.js');
 const { default: Poll } = await import('../models/poll.model.js');
 const { default: Notification } = await import('../models/notification.model.js');
 const { default: InviteToken } = await import('../models/inviteToken.model.js');
+const { default: PendingInvite } = await import('../models/pendingInvite.model.js');
+const { default: InviteEvent } = await import('../models/inviteEvent.model.js');
 const { default: AttendanceRecord } = await import('../models/attendanceRecord.model.js');
 const ctrl = await import('./group.controller.js');
 
@@ -77,7 +79,7 @@ beforeEach(() => {
   Group.findById = () => q(group);
   Group.findOneAndUpdate = async (f, u) => { updates.push(u); return { ...group }; };
   Group.findByIdAndDelete = async () => {};
-  for (const M of [Meetup, Poll, Notification, InviteToken, AttendanceRecord]) M.deleteMany = async () => {};
+  for (const M of [Meetup, Poll, Notification, InviteToken, PendingInvite, InviteEvent, AttendanceRecord]) M.deleteMany = async () => {};
   Meetup.updateMany = async () => {};
   Meetup.find = () => q([]);
 });

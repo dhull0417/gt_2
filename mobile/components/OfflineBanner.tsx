@@ -1,4 +1,4 @@
-import { Text, StyleSheet } from 'react-native';
+import { Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { offlineBannerText } from '@/utils/offlineState';
@@ -8,7 +8,7 @@ import { offlineBannerText } from '@/utils/offlineState';
  * below it is pushed down instead of having its header and back button covered. app/_layout.tsx
  * renders it above the navigator and zeroes the top inset for everything below while it shows.
  */
-export function OfflineBanner({ segment }: { segment: string | undefined }) {
+export function OfflineBanner({ segment, onLayout }: { segment: string | undefined; onLayout?: (e: LayoutChangeEvent) => void }) {
   const insets = useSafeAreaInsets();
   return (
     <Animated.View
@@ -16,6 +16,7 @@ export function OfflineBanner({ segment }: { segment: string | undefined }) {
       exiting={FadeOut.duration(150)}
       style={[styles.banner, { paddingTop: insets.top + 4 }]}
       accessibilityRole="alert"
+      onLayout={onLayout}
     >
       <Text style={styles.text}>{offlineBannerText(segment)}</Text>
     </Animated.View>

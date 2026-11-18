@@ -79,3 +79,16 @@ describe('requireOnline', () => {
     expect(notify).not.toHaveBeenCalled();
   });
 });
+
+describe('screenTopOffset', () => {
+  const { screenTopOffset } = require('../offlineState');
+  it('online: content starts below the status bar', () => {
+    expect(screenTopOffset({ isOnline: true, realTopInset: 47, bannerHeight: 0 })).toBe(47);
+  });
+  it('offline: content starts below the banner, which is taller than the status bar', () => {
+    expect(screenTopOffset({ isOnline: false, realTopInset: 47, bannerHeight: 73 })).toBe(73);
+  });
+  it('offline before the banner has been measured: at least the status bar', () => {
+    expect(screenTopOffset({ isOnline: false, realTopInset: 47, bannerHeight: 0 })).toBe(47);
+  });
+});

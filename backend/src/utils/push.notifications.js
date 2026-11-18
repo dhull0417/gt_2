@@ -25,6 +25,9 @@ const PREF_FOR_TYPE = {
   'poll-closed': 'polls',
 };
 
+// Only these wait for an answer (Accept / Decline); everything else is informational.
+const PENDING_TYPES = new Set(['group-invite', 'join-request']);
+
 // Delivered even during a member's quiet hours.
 const QUIET_HOURS_EXEMPT = new Set(['meetup-cancelled', 'meetup-starting-soon']);
 
@@ -225,7 +228,7 @@ export const notifyAndPersist = async (users, { title, body, data, type, sender,
     meetup,
     poll,
     meta,
-    status: type === 'group-invite' ? 'pending' : 'read',
+    status: PENDING_TYPES.has(type) ? 'pending' : 'read',
     read: false,
   }));
 

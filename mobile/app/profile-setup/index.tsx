@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as SecureStore from 'expo-secure-store';
 import { User, useApiClient, userApi } from '@/utils/api';
-import { PENDING_INVITE_KEY } from '@/app/join/[token]';
+import { openPendingInvite } from '@/utils/pendingInvite';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { haptic } from '@/utils/haptics';
 
@@ -80,11 +80,7 @@ const ProfileSetupScreen = () => {
                 queryClient.invalidateQueries({ queryKey: ['currentUser'] });
             }
 
-            const pendingToken = await SecureStore.getItemAsync(PENDING_INVITE_KEY);
-            if (pendingToken) {
-                await SecureStore.deleteItemAsync(PENDING_INVITE_KEY);
-                router.replace({ pathname: '/join/[token]', params: { token: pendingToken } });
-            } else {
+            if (!(await openPendingInvite(router, 'replace'))) {
                 router.replace('/(tabs)');
             }
         } catch (error: any) {

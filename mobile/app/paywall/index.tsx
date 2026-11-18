@@ -9,6 +9,7 @@ import { useThemeColors } from '@/contexts/AppearanceContext';
 import { usePremium } from '@/hooks/usePremium';
 import { useRefreshPremium } from '@/hooks/usePurchases';
 import { purchasesAvailable } from '@/utils/purchases';
+import { friendlyErrorText } from '@/utils/networkError';
 import { PremiumActiveView } from '@/components/premium/PremiumActiveView';
 import { createPaywallCloser } from '@/utils/paywallClose';
 
@@ -63,7 +64,7 @@ export default function PaywallScreen() {
         options={{ displayCloseButton: true }}
         onPurchaseCompleted={() => onDone('Welcome to Premium', 'Premium is now active on the groups you own.')}
         onRestoreCompleted={() => onDone('Purchases restored', 'Premium is active again if we found a subscription.')}
-        onPurchaseError={({ error }) => Alert.alert('Purchase failed', error?.message || 'You have not been charged.')}
+        onPurchaseError={({ error }) => Alert.alert('Purchase failed', friendlyErrorText(error?.message || 'You have not been charged.'))}
         onDismiss={close}
       />
     </View>
