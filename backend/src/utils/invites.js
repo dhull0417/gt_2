@@ -3,7 +3,19 @@ import crypto from "crypto";
 // Invite links: https://invite.groupthatapp.com/join/<token>. Each group has one active
 // token at a time, plus a short code people can type in the app.
 
-export const INVITE_BASE_URL = 'https://invite.groupthatapp.com';
+const PRODUCTION_INVITE_BASE_URL = 'https://invite.groupthatapp.com';
+
+/**
+ * Address put in invite links. Production uses invite.groupthatapp.com; another server (staging)
+ * sets INVITE_BASE_URL to its own address, so links from dev builds open that server's invite page
+ * (and iMessage/WhatsApp build the preview card from it). Only a plain https origin is accepted.
+ */
+export const inviteBaseUrl = (value) => {
+  const v = String(value ?? '').trim().replace(/\/+$/, '');
+  return /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(v) ? v : PRODUCTION_INVITE_BASE_URL;
+};
+
+export const INVITE_BASE_URL = inviteBaseUrl(process.env.INVITE_BASE_URL);
 export const APP_STORE_URL = 'https://apps.apple.com/app/groupthat/id6756112941';
 export const APP_STORE_ID = '6756112941';
 export const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.dallinhull.groupthat';

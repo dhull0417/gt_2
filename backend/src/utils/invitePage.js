@@ -8,12 +8,12 @@
 //   in-app browsers (Instagram, Messenger...) block automatic jumps, so they get buttons.
 import {
   APP_STORE_URL, APP_STORE_ID, PLAY_STORE_URL, ANDROID_PACKAGE, DEAD_INVITE_MESSAGES,
-  inviteLinkFor, playStoreUrl,
+  INVITE_BASE_URL, inviteLinkFor, playStoreUrl,
 } from "./invites.js";
 
 const IN_APP_BROWSER_RE = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|Snapchat|musical_ly|Bytedance|Line\/|LinkedInApp|GSA\//i;
 const BOT_RE = /bot|crawler|spider|facebookexternalhit|Facebot|WhatsApp|TelegramBot|Slackbot|Discordbot|LinkedInBot|Embedly|SkypeUriPreview|Google-PageRenderer|preview/i;
-const DEFAULT_OG_IMAGE = 'https://invite.groupthatapp.com/og-image.png';
+const DEFAULT_OG_IMAGE = `${INVITE_BASE_URL}/og-image.png`;
 export const IN_APP_HINT = 'Not opening? Tap the \u2022\u2022\u2022 menu and choose \u201cOpen in Safari\u201d or \u201cOpen in Chrome\u201d.';
 
 export const deviceInfo = (ua = '') => {
@@ -83,7 +83,7 @@ ${banner ? `  <meta name="apple-itunes-app" content="app-id=${APP_STORE_ID}, app
 const deadPage = ({ status, inviterName }, device) => {
   const message = DEAD_INVITE_MESSAGES[status] ?? DEAD_INVITE_MESSAGES.missing;
   const who = inviterName ? esc(inviterName) : 'the person who sent it';
-  return `${head({ title: 'This invite isn\u2019t active', description: message, image: DEFAULT_OG_IMAGE, url: 'https://invite.groupthatapp.com' })}
+  return `${head({ title: 'This invite isn\u2019t active', description: message, image: DEFAULT_OG_IMAGE, url: INVITE_BASE_URL })}
 <body>
   <div class="card">
     <img class="logo" src="/logo.png" alt="GroupThat">

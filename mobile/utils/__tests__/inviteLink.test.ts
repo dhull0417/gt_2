@@ -20,6 +20,13 @@ describe('parseInviteUrl', () => {
   it('accepts the app scheme too', () => {
     expect(parseInviteUrl(`groupthat://join/${TOKEN}`)?.token).toBe(TOKEN);
   });
+  it('also accepts links from an extra invite server (staging) when the build names one', () => {
+    const staging = 'https://gt-2-git-staging-x.vercel.app';
+    expect(parseInviteUrl(`${staging}/join/${TOKEN}?m=${MID}`, [staging])).toEqual({ token: TOKEN, meetupId: MID, referrerId: null });
+    expect(parseInviteUrl(`${staging}/join/${TOKEN}`)).toBeNull(); // not configured
+    expect(parseInviteUrl(`https://evil.example/join/${TOKEN}`, [staging])).toBeNull();
+    expect(parseInviteUrl(`https://invite.groupthatapp.com/join/${TOKEN}`, [staging])?.token).toBe(TOKEN);
+  });
   it('ignores anything that is not a GroupThat invite', () => {
     expect(parseInviteUrl('https://example.com/join/abc')).toBeNull();
     expect(parseInviteUrl('https://invite.groupthatapp.com.evil.com/join/abc')).toBeNull();

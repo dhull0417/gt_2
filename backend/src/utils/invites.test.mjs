@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   INVITE_CODE_ALPHABET, generateInviteCode, isInviteCode, normalizeInviteCode,
-  inviteStatus, playReferrer, playStoreUrl, PLAY_STORE_URL, DEAD_INVITE_MESSAGES,
+  inviteStatus, playReferrer, playStoreUrl, PLAY_STORE_URL, DEAD_INVITE_MESSAGES, inviteBaseUrl,
 } from './invites.js';
 
 test('generateInviteCode makes 6 characters from the unambiguous alphabet', () => {
@@ -48,4 +48,15 @@ test('playReferrer carries the token and the meetup; playStoreUrl encodes it', (
     `${PLAY_STORE_URL}&referrer=gt_invite%3Dabc%26gt_m%3Dm1`
   );
   assert.equal(playStoreUrl({}), PLAY_STORE_URL);
+});
+
+test('inviteBaseUrl: production address by default; a server can use its own (e.g. staging)', () => {
+  assert.equal(inviteBaseUrl(undefined), 'https://invite.groupthatapp.com');
+  assert.equal(inviteBaseUrl(''), 'https://invite.groupthatapp.com');
+  assert.equal(inviteBaseUrl('https://gt-2-git-staging-x.vercel.app/'), 'https://gt-2-git-staging-x.vercel.app');
+  assert.equal(inviteBaseUrl(' https://staging.example.com '), 'https://staging.example.com');
+  // Anything that isn't a plain https origin is ignored.
+  assert.equal(inviteBaseUrl('http://insecure.example.com'), 'https://invite.groupthatapp.com');
+  assert.equal(inviteBaseUrl('https://example.com/path'), 'https://invite.groupthatapp.com');
+  assert.equal(inviteBaseUrl('javascript:alert(1)'), 'https://invite.groupthatapp.com');
 });

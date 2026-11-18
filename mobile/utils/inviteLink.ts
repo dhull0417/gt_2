@@ -15,7 +15,20 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 // Same alphabet as the server (no 0/O, 1/I/L).
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
-const LINK_RE = /(?:https:\/\/invite\.groupthatapp\.com|groupthat:\/)\/join\/([A-Za-z0-9_-]{1,128})(\?[^\s#]*)?(?=$|[\s#"'<>)\]])/;
+const ORIGIN_RE = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/;
+const escapeRe = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// A dev/staging build can name its own invite server (EXPO_PUBLIC_INVITE_BASE_URL, same value as the
+// server's INVITE_BASE_URL) so links it shares are recognised too. Production builds leave it unset.
+const ENV_INVITE_HOSTS: string[] = (() => {
+  const v = String(process.env.EXPO_PUBLIC_INVITE_BASE_URL ?? '').trim().replace(/\/+$/, '');
+  return ORIGIN_RE.test(v) ? [v] : [];
+})();
+
+const linkRegex = (extraOrigins: string[]) => {
+  const origins = ['https://invite.groupthatapp.com', ...extraOrigins.filter((o) => ORIGIN_RE.test(o))].map(escapeRe);
+  return new RegExp(`(?:${origins.join('|')}|groupthat:\\/)\\/join\\/([A-Za-z0-9_-]{1,128})(\\?[^\\s#]*)?(?=$|[\\s#"'<>)\\]])`);
+};
 const SOURCES: InviteSource[] = ['link', 'install_referrer', 'clipboard', 'code', 'contact'];
 
 const queryParams = (query: string | undefined): Record<string, string> => {
@@ -29,9 +42,9 @@ const queryParams = (query: string | undefined): Record<string, string> => {
 };
 
 /** Finds a GroupThat invite link in some text (a link, or a whole copied message). */
-export function parseInviteUrl(text: string | null | undefined): InviteRef | null {
+export function parseInviteUrl(text: string | null | undefined, extraOrigins: string[] = ENV_INVITE_HOSTS): InviteRef | null {
   if (!text) return null;
-  const match = LINK_RE.exec(String(text));
+  const match = linkRegex(extraOrigins).exec(String(text));
   if (!match) return null;
   const q = queryParams(match[2]);
   return {
