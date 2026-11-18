@@ -389,6 +389,8 @@ const AuthLayout = () => {
       'group-edit-jit',
       'group-settings',
       'group-members',
+      'group-past-meetups',
+      'past-meetup',
       'paywall',
       'group-chat',
       'group-details',
@@ -508,6 +510,8 @@ const AuthLayout = () => {
           <Stack.Screen name="group-edit-jit" options={{ headerShown: false }} />
           <Stack.Screen name="group-settings" options={{ headerShown: false }} />
           <Stack.Screen name="group-members" options={{ headerShown: false }} />
+          <Stack.Screen name="group-past-meetups" options={{ headerShown: false }} />
+          <Stack.Screen name="past-meetup" options={{ headerShown: false }} />
           <Stack.Screen name="group-chat" options={{ headerShown: false }} />
           <Stack.Screen name="group-details" options={{ headerShown: false }} />
           <Stack.Screen name="add-members" options={{ headerShown: false, presentation: 'modal' }} />

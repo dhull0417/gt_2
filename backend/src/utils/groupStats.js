@@ -9,7 +9,8 @@ const str = (v) => v.toString();
 
 /** Meetup fields toRecord reads (used by loadEvents and the cleanup job). */
 export const ARCHIVE_FIELDS = "group schedule name startsAt date members in out capacity guests "
-  + "waitlist rsvpLog rsvpLogPartial rsvpOpenDate rsvpCloseDate priorityTiers bringClaims rides";
+  + "waitlist rsvpLog rsvpLogPartial rsvpOpenDate rsvpCloseDate priorityTiers bringClaims rides "
+  + "location bringItems";
 
 const countBy = (list, key) => {
   const counts = new Map();
@@ -18,6 +19,31 @@ const countBy = (list, key) => {
     counts.set(k, { user: x[key], count: (counts.get(k)?.count || 0) + 1 });
   }
   return [...counts.values()];
+};
+
+/** Item names with who brought each, in list order; unclaimed and removed items are left out. */
+const itemsWithBringers = (bringItems = [], bringClaims = []) => bringItems
+  .map((item) => ({
+    name: item.name,
+    by: bringClaims.filter((c) => c.item && str(c.item) === str(item._id)).map((c) => c.user),
+  }))
+  .filter((i) => i.by.length > 0);
+
+/** One entry per car (driver, seats, riders, guest seats) plus riders left without a car. */
+const carsAndRiders = (rides = []) => {
+  const drivers = rides.filter((r) => r.role === 'driver');
+  const driverIds = new Set(drivers.map((d) => str(d.user)));
+  const passengers = rides.filter((r) => r.role === 'passenger');
+  const cars = drivers.map((d) => ({
+    driver: d.user,
+    seats: d.seats || 0,
+    riders: passengers.filter((p) => p.driver && str(p.driver) === str(d.user)).map((p) => p.user),
+    guests: passengers.reduce((n, p) => n + (p.guestRides || [])
+      .filter((g) => g.driver && str(g.driver) === str(d.user))
+      .reduce((k, g) => k + (g.count || 0), 0), 0),
+  }));
+  const needsRide = passengers.filter((p) => !p.driver || !driverIds.has(str(p.driver))).map((p) => p.user);
+  return { cars, needsRide };
 };
 
 /**
@@ -47,10 +73,14 @@ export const toRecord = (m, clerkToUserId = new Map()) => ({
     .map((g) => ({ user: clerkToUserId.get(g.userId), count: g.count })),
   itemsBy: countBy(m.bringClaims || [], 'user'),
   seatsBy: (m.rides || []).filter((r) => r.role === 'driver' && r.seats > 0).map((r) => ({ user: r.user, seats: r.seats })),
+  // Past Meetups (2026-11-18): enough to show what happened, after the meetup itself is deleted.
+  location: m.location || '',
+  items: itemsWithBringers(m.bringItems, m.bringClaims),
+  ...carsAndRiders(m.rides),
 });
 
 /** clerkId -> user id for everyone who brought guests to these meetups. */
-const guestHostIds = async (meetups) => {
+export const guestHostIds = async (meetups) => {
   const clerkIds = [...new Set(meetups.flatMap((m) => (m.guests || []).map((g) => g.userId)).filter(Boolean))];
   if (clerkIds.length === 0) return new Map();
   const users = await User.find({ clerkId: { $in: clerkIds } }).select("_id clerkId").lean();

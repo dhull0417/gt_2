@@ -23,6 +23,14 @@ const attendanceRecordSchema = new mongoose.Schema({
   guestsBy: { type: [{ user: mongoose.Schema.Types.ObjectId, count: Number, _id: false }], default: undefined },
   itemsBy: { type: [{ user: mongoose.Schema.Types.ObjectId, count: Number, _id: false }], default: undefined },
   seatsBy: { type: [{ user: mongoose.Schema.Types.ObjectId, seats: Number, _id: false }], default: undefined },
+  // Past Meetups (2026-11-18). No defaults, so records archived before then read as "not recorded".
+  location: { type: String, default: undefined },
+  items: { type: [{ name: String, by: [mongoose.Schema.Types.ObjectId], _id: false }], default: undefined },
+  cars: {
+    type: [{ driver: mongoose.Schema.Types.ObjectId, seats: Number, riders: [mongoose.Schema.Types.ObjectId], guests: Number, _id: false }],
+    default: undefined,
+  },
+  needsRide: { type: [mongoose.Schema.Types.ObjectId], default: undefined },
 }, { timestamps: true });
 
 export default mongoose.model("AttendanceRecord", attendanceRecordSchema);

@@ -6,7 +6,7 @@ import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { GroupDetails, User } from '@/utils/api';
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { isTimeoutActive } from '@/utils/chatTimeout';
-import { isGroupManager, sortMembersByName } from '@/utils/groupDetailTiles';
+import { filterMembersByQuery, isGroupManager, sortMembersByName } from '@/utils/groupDetailTiles';
 
 interface Props {
     groupDetails: GroupDetails;
@@ -14,13 +14,15 @@ interface Props {
     isRemovingMember: boolean;
     onRemoveMember: (memberIdToRemove: string) => void;
     onMemberPress?: (member: User) => void;
+    /** Members page search; blank shows everyone. */
+    query?: string;
 }
 
 const idOf = (v: any): string | undefined => (typeof v === 'string' ? v : v?._id);
 
 // Member grid split into "Owner & Moderators" and "Members", each A to Z. Used by the Members page
 // and, inline, by DM details.
-export const GroupMembersList = ({ groupDetails, currentUser, isRemovingMember, onRemoveMember, onMemberPress }: Props) => {
+export const GroupMembersList = ({ groupDetails, currentUser, isRemovingMember, onRemoveMember, onMemberPress, query = '' }: Props) => {
     const colors = useThemeColors();
     const isDM = !!groupDetails.isDM;
     const ownerId = idOf(groupDetails.owner);
@@ -34,8 +36,9 @@ export const GroupMembersList = ({ groupDetails, currentUser, isRemovingMember, 
         (groupDetails.chatTimeouts ?? []).filter((t) => isTimeoutActive(t, Date.now())).map((t) => t.userId)
     );
 
-    const staffMembers = sortMembersByName(groupDetails.members.filter(isStaff));
-    const regularMembers = sortMembersByName(groupDetails.members.filter(m => !isStaff(m)));
+    const shown = filterMembersByQuery(groupDetails.members, query);
+    const staffMembers = sortMembersByName(shown.filter(isStaff));
+    const regularMembers = sortMembersByName(shown.filter(m => !isStaff(m)));
 
     const renderMemberTile = (member: User) => {
         const isMemberOwner = member._id === ownerId;
@@ -93,6 +96,9 @@ export const GroupMembersList = ({ groupDetails, currentUser, isRemovingMember, 
 
     return (
         <>
+            {shown.length === 0 && query.trim() !== '' && (
+                <Text style={[styles.noMatch, { color: colors.textMuted }]}>{`No members match "${query.trim()}"`}</Text>
+            )}
             {staffMembers.length > 0 && (
                 <View testID="staff-section" style={styles.section}>
                     <View style={styles.sectionHeaderWrap}>
@@ -122,6 +128,7 @@ export const GroupMembersList = ({ groupDetails, currentUser, isRemovingMember, 
 
 const styles = StyleSheet.create({
     section: { marginTop: 8, marginBottom: 24 },
+    noMatch: { textAlign: 'center', fontSize: 15, fontWeight: '600', marginTop: 32 },
     sectionHeaderWrap: { marginBottom: 16 },
     sectionTitle: { fontSize: 15, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
     sectionHeaderLine: { height: 3, borderRadius: 2, opacity: 0.85 },

@@ -83,6 +83,7 @@ export const GroupDetailsView = ({
         amber: tint('#FFFBEB', '#FDE68A', '#3A2E12', '#5C4A1E', '#D97706'),
         purple: tint('#F5F3FF', '#DDD6FE', '#241B3D', '#3B2E63', '#7C3AED'),
         gray: tint('#F3F4F6', '#E5E7EB', '#262A33', '#3A3F4B', colors.textSecondary),
+        slate: tint('#EEF2F7', '#CBD5E1', '#1E2633', '#334155', isDark ? '#94A3B8' : '#475569'),
     };
 
     const memberCount = groupDetails.members?.length ?? 0;
@@ -99,6 +100,10 @@ export const GroupDetailsView = ({
             icon: 'list', label: 'Upcoming Meetups', tint: tints.amber,
             subtitle: upcomingCount === 0 ? 'None scheduled' : `${upcomingCount} upcoming`,
             onPress: () => setMeetupsOpen(true),
+        },
+        past: {
+            icon: 'rotate-ccw', label: 'Past Meetups', tint: tints.slate,
+            onPress: () => router.push({ pathname: '/group-past-meetups/[id]', params: { id: groupDetails._id } }),
         },
         members: {
             icon: 'users', label: 'Group Members', tint: tints.purple,

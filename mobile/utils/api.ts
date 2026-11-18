@@ -655,6 +655,50 @@ export const placesApi = {
   },
 };
 
+// Past Meetups (GET /api/groups/:groupId/past-meetups). See docs/specs/2026-11-18-past-meetups-design.md.
+export interface PastMeetupRow {
+  id: string;
+  name: string;
+  date: string;
+  location: string | null;
+  inCount: number;
+  outCount: number;
+  undecidedCount: number;
+  hasTournament: boolean;
+}
+
+export interface PastMeetupPage {
+  meetups: PastMeetupRow[];
+  nextBefore: string | null;
+}
+
+/** A person on a past meetup; `former` = their account no longer exists. */
+export interface PastPerson {
+  _id: string;
+  firstName?: string;
+  lastName?: string;
+  profilePicture?: string;
+  former?: true;
+}
+
+export interface PastMeetupDetail {
+  id: string;
+  name: string;
+  date: string;
+  location: string | null;
+  in: PastPerson[];
+  out: PastPerson[];
+  undecided: PastPerson[];
+  waitlist: PastPerson[];
+  guestsBy: { userId: string; count: number }[];
+  /** null = archived before items were kept. */
+  items: { name: string; by: PastPerson[] }[] | null;
+  /** null = archived before rides were kept. */
+  cars: { driver: PastPerson; seats: number; riders: PastPerson[]; guests: number }[] | null;
+  needsRide: PastPerson[] | null;
+  tournament: { id: string; format: string; mode: string; status: string; champion: string | null } | null;
+}
+
 export const groupApi = {
   // Chat moderation (owner/moderators). See docs/specs/2026-11-16-chat-moderation-design.md.
   modDeleteMessage: async (api: AxiosInstance, groupId: string, messageId: string): Promise<{ message: string }> => {
@@ -766,6 +810,14 @@ export const groupApi = {
   },
   updateStatsSettings: async (api: AxiosInstance, groupId: string, revealJokes: boolean): Promise<{ revealJokes: boolean }> => {
     const response = await api.patch<{ revealJokes: boolean }>(`/api/groups/${groupId}/stats-settings`, { revealJokes });
+    return response.data;
+  },
+  getPastMeetups: async (api: AxiosInstance, groupId: string, before?: string | null): Promise<PastMeetupPage> => {
+    const response = await api.get<PastMeetupPage>(`/api/groups/${groupId}/past-meetups`, { params: before ? { before } : undefined });
+    return response.data;
+  },
+  getPastMeetup: async (api: AxiosInstance, groupId: string, meetupId: string): Promise<PastMeetupDetail> => {
+    const response = await api.get<PastMeetupDetail>(`/api/groups/${groupId}/past-meetups/${meetupId}`);
     return response.data;
   },
   getGroupStats: async (api: AxiosInstance, groupId: string, scheduleId?: string): Promise<GroupStats> => {

@@ -4,12 +4,12 @@ import { meetupStartInstant } from '@/utils/meetupTime';
 import { FREQ_LABELS } from '@/utils/scheduleConstants';
 
 // The squircle tiles on Group Details, in display order.
-export type DetailTileKey = 'invite' | 'calendar' | 'meetups' | 'members' | 'schedule' | 'settings';
+export type DetailTileKey = 'invite' | 'calendar' | 'meetups' | 'past' | 'members' | 'schedule' | 'settings';
 
 // DMs get no tiles (no invites, meetups or schedule). Settings is for owners and moderators only.
 export function buildDetailTiles({ isDM, canManage }: { isDM: boolean; canManage: boolean }): DetailTileKey[] {
   if (isDM) return [];
-  const tiles: DetailTileKey[] = ['invite', 'calendar', 'meetups', 'members', 'schedule'];
+  const tiles: DetailTileKey[] = ['invite', 'calendar', 'meetups', 'past', 'members', 'schedule'];
   if (canManage) tiles.push('settings');
   return tiles;
 }
@@ -29,6 +29,13 @@ export function sortMembersByName<T extends Pick<User, '_id' | 'firstName' | 'la
   return [...members].sort((a, b) =>
     getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, { sensitivity: 'base' })
     || a._id.localeCompare(b._id));
+}
+
+// Members page search: case-insensitive match on first, last or full display name.
+export function filterMembersByQuery<T extends Pick<User, 'firstName' | 'lastName'>>(members: T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return members;
+  return members.filter((m) => getUserDisplayName(m).toLowerCase().includes(q));
 }
 
 export function upcomingMeetupCount(meetups: Meetup[] | undefined, groupId: string, now: number): number {

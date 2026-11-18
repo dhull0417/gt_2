@@ -55,6 +55,51 @@ test('ARCHIVE_FIELDS selects everything toRecord reads', () => {
   }
 });
 
+// ---- past meetups: fuller archive (2026-11-18) ----
+test('ARCHIVE_FIELDS also selects location and the item list', () => {
+  for (const f of ['location', 'bringItems']) assert.ok(ARCHIVE_FIELDS.split(' ').includes(f), f);
+});
+
+test('toRecord keeps the location', () => {
+  assert.equal(toRecord(base({ location: 'Red Rocks' })).location, 'Red Rocks');
+  assert.equal(toRecord(base()).location, '');
+});
+
+test('toRecord keeps item names with who brought each, in list order, dropping unclaimed and removed items', () => {
+  const chips = id(); const salsa = id(); const ice = id(); const gone = id();
+  const rec = toRecord(base({
+    bringItems: [{ _id: chips, name: 'Chips' }, { _id: salsa, name: 'Salsa' }, { _id: ice, name: 'Ice' }],
+    bringClaims: [{ user: b, item: salsa }, { user: a, item: chips }, { user: c, item: chips }, { user: a, item: gone }],
+  }));
+  assert.deepEqual(rec.items.map((i) => [i.name, i.by.map(String)]), [
+    ['Chips', [String(a), String(c)]],
+    ['Salsa', [String(b)]],
+  ]);
+});
+
+test('toRecord keeps each car: driver, seats, riders and guest seats; riders without a valid car need a ride', () => {
+  const d = id();
+  const rec = toRecord(base({
+    rides: [
+      { user: a, role: 'driver', seats: 4 },
+      { user: b, role: 'passenger', driver: a, guestRides: [{ driver: a, count: 2 }] },
+      { user: c, role: 'passenger', driver: null },
+      { user: d, role: 'passenger', driver: id() }, // their driver dropped out
+    ],
+  }));
+  assert.equal(rec.cars.length, 1);
+  assert.equal(String(rec.cars[0].driver), String(a));
+  assert.equal(rec.cars[0].seats, 4);
+  assert.deepEqual(rec.cars[0].riders.map(String), [String(b)]);
+  assert.equal(rec.cars[0].guests, 2);
+  assert.deepEqual(rec.needsRide.map(String), [String(c), String(d)]);
+});
+
+test('toRecord gives empty items and cars for a meetup without them', () => {
+  const rec = toRecord(base());
+  assert.deepEqual([rec.items, rec.cars, rec.needsRide], [[], [], []]);
+});
+
 test('loadEvents maps missing fields to null', async () => {
   const g = id();
   const old = { meetupId: id(), group: g, name: 'Old', startsAt: new Date('2026-01-01'), members: [a], in: [a], out: [], capacity: 0, guests: 0 };

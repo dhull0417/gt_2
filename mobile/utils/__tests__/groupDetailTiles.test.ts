@@ -1,15 +1,15 @@
 import {
-  buildDetailTiles, isGroupManager, sortMembersByName, upcomingMeetupCount, scheduleSummary,
+  buildDetailTiles, isGroupManager, sortMembersByName, upcomingMeetupCount, scheduleSummary, filterMembersByQuery,
 } from '../groupDetailTiles';
 
 describe('buildDetailTiles', () => {
-  it('shows all six tiles, in order, to owners and moderators', () => {
+  it('shows all seven tiles, in order, to owners and moderators', () => {
     expect(buildDetailTiles({ isDM: false, canManage: true }))
-      .toEqual(['invite', 'calendar', 'meetups', 'members', 'schedule', 'settings']);
+      .toEqual(['invite', 'calendar', 'meetups', 'past', 'members', 'schedule', 'settings']);
   });
   it('hides Settings from regular members', () => {
     expect(buildDetailTiles({ isDM: false, canManage: false }))
-      .toEqual(['invite', 'calendar', 'meetups', 'members', 'schedule']);
+      .toEqual(['invite', 'calendar', 'meetups', 'past', 'members', 'schedule']);
   });
   it('shows no tiles for DMs', () => {
     expect(buildDetailTiles({ isDM: true, canManage: true })).toEqual([]);
@@ -84,5 +84,29 @@ describe('scheduleSummary', () => {
   });
   it('counts active schedules when there are several', () => {
     expect(scheduleSummary([sch(), sch({ _id: 't' }), sch({ _id: 'u', active: false })] as any)).toBe('2 schedules');
+  });
+});
+
+describe('filterMembersByQuery', () => {
+  const people = [
+    { _id: '1', firstName: 'Ava', lastName: 'Stone' },
+    { _id: '2', firstName: 'Bo', lastName: 'Davis' },
+    { _id: '3' },
+  ] as { _id: string; firstName?: string; lastName?: string }[];
+  const ids = (q: string) => filterMembersByQuery(people, q).map((m) => m._id);
+  it('returns everyone for an empty or blank query', () => {
+    expect(ids('')).toEqual(['1', '2', '3']);
+    expect(ids('   ')).toEqual(['1', '2', '3']);
+  });
+  it('matches first, last or full name, ignoring case and outer spaces', () => {
+    expect(ids('av')).toEqual(['1', '2']); // Ava, Davis
+    expect(ids('  STONE ')).toEqual(['1']);
+    expect(ids('bo dav')).toEqual(['2']);
+  });
+  it('matches the "New Member" fallback for nameless members', () => {
+    expect(ids('new')).toEqual(['3']);
+  });
+  it('returns nobody when nothing matches', () => {
+    expect(ids('zz')).toEqual([]);
   });
 });

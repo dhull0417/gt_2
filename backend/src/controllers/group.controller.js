@@ -23,6 +23,7 @@ import { activeTimeout, pruneExpired } from "../utils/chatTimeout.js";
 import { scheduleChanges, scheduleSnapshot, pushBody } from "../utils/changeSummary.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
 import { buildGroupStats, buildAttendanceCsv } from "../utils/groupStats.js";
+import { listPastMeetups, getPastMeetup } from "../utils/pastMeetups.js";
 import { shapeStatsForViewer } from "../utils/statsVisibility.js";
 import { parseQuestions, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
 import { refreshPriorityTiers, MAX_PRIORITY_TIERS, MAX_WINDOW_MINUTES } from "../utils/priorityRsvp.js";
@@ -1543,6 +1544,44 @@ export const getGroupStats = asyncHandler(async (req, res) => {
         isOrganizer: canManageGroup(user._id, group),
         revealJokes: group.statsRevealJokes === true,
     }));
+});
+
+/** The group and the signed-in user, or an error response already sent. Members only. */
+const loadGroupForMember = async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    if (!mongoose.isValidObjectId(req.params.groupId)) { res.status(404).json({ error: "Resource not found." }); return null; }
+    const [group, user] = await Promise.all([Group.findById(req.params.groupId), User.findOne({ clerkId })]);
+    if (!group || !user) { res.status(404).json({ error: "Resource not found." }); return null; }
+    if (!group.members.some(m => String(m) === String(user._id))) { res.status(403).json({ error: "Permission denied." }); return null; }
+    return { group, user };
+};
+
+/**
+ * @desc    A group's finished meetups, newest first. Members only; not premium-gated.
+ * @route   GET /api/groups/:groupId/past-meetups?before=<ISO>&limit=<n ≤ 50>
+ */
+export const getPastMeetups = asyncHandler(async (req, res) => {
+    const ctx = await loadGroupForMember(req, res);
+    if (!ctx) return;
+    let before;
+    if (req.query.before) {
+        before = new Date(req.query.before);
+        if (isNaN(before.getTime())) return res.status(400).json({ error: "Invalid 'before' date." });
+    }
+    res.status(200).json(await listPastMeetups(ctx.group._id, { before, limit: req.query.limit }));
+});
+
+/**
+ * @desc    Everything recorded about one past meetup (people, items, cars, tournament). Members only.
+ * @route   GET /api/groups/:groupId/past-meetups/:meetupId
+ */
+export const getPastMeetupDetail = asyncHandler(async (req, res) => {
+    const ctx = await loadGroupForMember(req, res);
+    if (!ctx) return;
+    if (!mongoose.isValidObjectId(req.params.meetupId)) return res.status(404).json({ error: "Meetup not found." });
+    const detail = await getPastMeetup(ctx.group._id, req.params.meetupId);
+    if (!detail) return res.status(404).json({ error: "Meetup not found." });
+    res.status(200).json(detail);
 });
 
 /**

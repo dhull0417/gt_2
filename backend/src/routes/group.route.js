@@ -20,6 +20,8 @@ import {
   updateStatsSettings,
   updateRsvpResponses,
   exportGroupAttendance,
+  getPastMeetups,
+  getPastMeetupDetail,
   deleteSchedule,
   updateModerators,
   toggleModerator,
@@ -154,6 +156,8 @@ router.get("/:groupId/stats", protectRoute, getGroupStats);
 router.patch("/:groupId/stats-settings", protectRoute, updateStatsSettings);
 router.put("/:groupId/rsvp-responses", protectRoute, updateRsvpResponses);
 router.get("/:groupId/stats/export", protectRoute, exportGroupAttendance);
+router.get("/:groupId/past-meetups", protectRoute, getPastMeetups);
+router.get("/:groupId/past-meetups/:meetupId", protectRoute, getPastMeetupDetail);
 router.delete("/:groupId/schedules/:scheduleId", protectRoute, deleteSchedule);
 router.post("/:groupId/meetups", protectRoute, createOneOffMeetup);
 

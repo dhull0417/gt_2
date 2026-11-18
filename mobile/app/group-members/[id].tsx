@@ -10,6 +10,7 @@ import {
   Modal,
   Pressable,
   Image,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -52,6 +53,7 @@ export default function GroupMembersScreen() {
   const { refreshing, refresh } = useRefreshOrToast([() => refetch()]);
   const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
 
+  const [search, setSearch] = useState('');
   const [dmTargetMember, setDmTargetMember] = useState<User | null>(null);
   const [isCreatingDM, setIsCreatingDM] = useState(false);
 
@@ -114,6 +116,8 @@ export default function GroupMembersScreen() {
       <ScrollView
         style={{ backgroundColor: colors.backgroundAlt }}
         contentContainerStyle={{ flexGrow: 1, padding: 24 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.brand} colors={[colors.brand]} />}
       >
         {offline ? (
@@ -128,13 +132,46 @@ export default function GroupMembersScreen() {
         ) : !groupDetails || !currentUser ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
         ) : (
-          <GroupMembersList
-            groupDetails={groupDetails}
-            currentUser={currentUser}
-            isRemovingMember={isRemovingMember}
-            onRemoveMember={handleRemoveMember}
-            onMemberPress={groupDetails.isDM ? undefined : setDmTargetMember}
-          />
+          <>
+            {/* Invite bar, then search — both scroll with the list */}
+            {!groupDetails.isDM && (
+              <PressableOpacity
+                onPress={() => router.push({ pathname: '/group-invite/[id]', params: { id: groupDetails._id } })}
+                activeOpacity={0.75}
+                style={[styles.inviteBar, { backgroundColor: colors.accentTeal }]}
+              >
+                <Feather name="user-plus" size={18} color="#fff" />
+                <Text style={styles.inviteText}>Invite Members</Text>
+              </PressableOpacity>
+            )}
+            <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Feather name="search" size={17} color={colors.textFaint} />
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search members"
+                placeholderTextColor={colors.textFaint}
+                style={[styles.searchInput, { color: colors.textPrimary }]}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                clearButtonMode="never"
+              />
+              {search.length > 0 && (
+                <PressableOpacity accessibilityLabel="Clear search" onPress={() => setSearch('')} hitSlop={8}>
+                  <Feather name="x-circle" size={17} color={colors.textFaint} />
+                </PressableOpacity>
+              )}
+            </View>
+            <GroupMembersList
+              groupDetails={groupDetails}
+              currentUser={currentUser}
+              isRemovingMember={isRemovingMember}
+              onRemoveMember={handleRemoveMember}
+              onMemberPress={groupDetails.isDM ? undefined : setDmTargetMember}
+              query={search}
+            />
+          </>
         )}
       </ScrollView>
 
@@ -207,6 +244,10 @@ export default function GroupMembersScreen() {
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   headerTitle: { fontSize: 18, fontWeight: '900' },
+  inviteBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 16, borderCurve: 'continuous', marginBottom: 12 },
+  inviteText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, height: 44, borderRadius: 14, borderWidth: 1, marginBottom: 16 },
+  searchInput: { flex: 1, fontSize: 16, paddingVertical: 0 },
 });
 
 const dmStyles = StyleSheet.create({
