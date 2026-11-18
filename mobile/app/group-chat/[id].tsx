@@ -22,6 +22,7 @@ import { queueMutation } from '@/utils/queuedMutations';
 import { useIsOnline } from '@/hooks/useIsOnline';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { nextJumpStep, takeJumpRequest, findMessageLocation, shouldLoadOlderOnScroll } from '@/utils/chatJump';
+import { floatingDayLabel } from '@/utils/chatFloatingDay';
 import { CHAT_LOAD_LIMIT_MS, chatLoadState } from '@/utils/chatLoadState';
 import { toast, ToastPortal } from '@/contexts/ToastContext';
 import { useScreenTopOffset } from '@/contexts/WindowInsetsContext';
@@ -355,6 +356,14 @@ const GroupChatScreen = () => {
     }
     return Array.from(byDay.values());
   }, [messages]);
+  // The floating date pill (stands in for sticky headers; see stickySectionHeadersEnabled below).
+  // The list requires these two props to stay the same object for its whole life, hence refs.
+  const [floatingDay, setFloatingDay] = useState<string | null>(null);
+  const onViewableItemsChangedRef = useRef(({ viewableItems }: { viewableItems: any[] }) => {
+    setFloatingDay(floatingDayLabel(viewableItems));
+  });
+  const viewabilityConfigRef = useRef({ itemVisiblePercentThreshold: 1 });
+
   // Latest sections for jump retries, which fire from timers after the list may have changed.
   const sectionsRef = useRef(sections);
   sectionsRef.current = sections;
@@ -868,7 +877,12 @@ const GroupChatScreen = () => {
               }
               // Keeps the message you were reading in place when an older page is added above it.
               maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-              stickySectionHeadersEnabled
+              // Not RN's sticky headers: they cache their positions and go stale when older pages are
+              // prepended (New Architecture), so date bubbles drifted below their day and search/pinned
+              // jumps landed far above the message. The floating pill below gives the sticky effect.
+              stickySectionHeadersEnabled={false}
+              onViewableItemsChanged={onViewableItemsChangedRef.current}
+              viewabilityConfig={viewabilityConfigRef.current}
               onScrollToIndexFailed={(info) => {
                 // The rows above the jump target haven't been measured yet: scroll near the
                 // estimate so they render, then try again (a few times at most).
@@ -900,6 +914,12 @@ const GroupChatScreen = () => {
               onScroll={handleListScroll}
               scrollEventThrottle={16}
             />
+            {contentReady && floatingDay ? (
+              <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+                {/* Keyed by day so the pill re-runs its entrance when the day changes. */}
+                <ChatDayBubble key={floatingDay} label={floatingDay} />
+              </View>
+            ) : null}
             <ChatScrollToBottomButton
               visible={showScrollToBottom}
               unreadCount={unreadCount}
