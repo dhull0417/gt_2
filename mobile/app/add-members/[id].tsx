@@ -72,7 +72,7 @@ const AddMembersScreen = () => {
         }
         try {
             await Share.share({
-                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, referrerId, recipientFirstName: contact.name.split(' ')[0] }),
+                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, code: inviteLinkData?.code, referrerId, recipientFirstName: contact.name.split(' ')[0] }),
             });
         } catch (error) {
             console.error("Share error:", error);
@@ -83,7 +83,7 @@ const AddMembersScreen = () => {
         if (!groupDetails || !inviteLink) return;
         try {
             await Share.share({
-                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, referrerId }),
+                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, code: inviteLinkData?.code, referrerId }),
             });
         } catch (error) {
             console.error("Share error:", error);

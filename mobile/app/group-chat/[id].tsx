@@ -38,7 +38,7 @@ import CreatePollModal from '@/components/CreatePollModal';
 import PollListModal from '@/components/PollListModal';
 import { getDMDisplayName, getUserDisplayName } from '@/utils/groupDisplay';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { GroupAvatar } from '@/components/GroupAvatar';
+import { GroupHeaderTitle } from '@/components/GroupHeaderTitle';
 import { useMessages } from '@/hooks/useMessages';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { ChatMessageBubble, type BubbleLayout } from '@/components/ChatMessageBubble';
@@ -163,6 +163,8 @@ const GroupChatScreen = () => {
   }, [effectiveGroup, currentUser]);
 
   const isDM = effectiveGroup?.isDM ?? false;
+  // Shown under the name in the header ("5 members · Tap for info"); 0 until the members load.
+  const headerMemberCount = (((groupDetails as any)?.members ?? (effectiveGroup as any)?.members) as unknown[] | undefined)?.length ?? 0;
 
   // Chat timeouts (docs/specs/2026-11-16-chat-moderation-design.md). Mine comes from group details;
   // while it runs the input turns red and every chat action except copy is hidden. The clock only
@@ -738,7 +740,6 @@ const GroupChatScreen = () => {
   const mutedChip = { backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2', borderColor: isDark ? '#5C2E2E' : '#FECACA' };
   const mutedUntilNextChip = { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB', borderColor: isDark ? '#5C4A1E' : '#FDE68A' };
   const activeChip = { backgroundColor: isDark ? '#132A1E' : '#F0FDF4', borderColor: isDark ? '#1F4A34' : '#BBF7D0' };
-  const detailsChip = { backgroundColor: isDark ? '#1E2340' : '#EEF2FF', borderColor: isDark ? '#333B6B' : '#C7D2FE' };
 
   return (
     <SafeAreaView
@@ -754,25 +755,20 @@ const GroupChatScreen = () => {
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
           </PressableOpacity>
           {/* Tapping the group's photo or name opens its details (this replaces the old menu button). */}
-          <PressableOpacity accessibilityLabel="Group details" onPress={handleOpenDetails} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-            <View style={{ marginRight: 10 }}>
-              <GroupAvatar name={headerName} imageUrl={getGroupImage(effectiveGroup as any, currentUser?.clerkId)} size={36} borderRadius={9} />
-            </View>
-            <Text className="text-lg font-black text-gray-900 dark:text-white flex-1" numberOfLines={1}>
-              {headerName}
-            </Text>
+          <PressableOpacity accessibilityLabel="Group details" onPress={handleOpenDetails} activeOpacity={0.7} style={{ flex: 1 }}>
+            {/* Same title component as the details screen, so the logo doesn't move between them. */}
+            <GroupHeaderTitle
+              name={headerName}
+              imageUrl={getGroupImage(effectiveGroup as any, currentUser?.clerkId)}
+              showChevron
+              subtitle={!isDM && headerMemberCount > 0
+                ? `${headerMemberCount} ${headerMemberCount === 1 ? 'member' : 'members'} · Tap for info`
+                : 'Tap for info'}
+            />
           </PressableOpacity>
         </View>
 
         <View className="flex-row items-center" style={{ gap: 8 }}>
-          <PressableOpacity
-            accessibilityLabel="Search chat"
-            onPress={() => id && router.push({ pathname: '/group-chat/search/[id]', params: { id } } as any)}
-            style={[styles.iconButton, detailsChip]}
-          >
-            <Feather name="search" size={18} color={colors.brand} />
-          </PressableOpacity>
-
           {id && currentUser && (
             <GroupCalendarButton groupId={id} isDM={isDM} />
           )}
@@ -987,6 +983,7 @@ const GroupChatScreen = () => {
             onCreateEvent={canCreateEvent ? () => setMeetupWizardVisible(true) : undefined}
             onCreatePoll={!isDM ? () => setCreatePollVisible(true) : undefined}
             timeoutLabel={timeoutLabel}
+            onSearch={() => id && router.push({ pathname: '/group-chat/search/[id]', params: { id } } as any)}
           />
         </KeyboardAvoidingView>
 

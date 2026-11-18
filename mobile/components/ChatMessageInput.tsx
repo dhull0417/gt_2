@@ -39,9 +39,12 @@ interface Props {
   // Set while I'm timed out of this chat ("You are timed out for 3 hours"): the field and send
   // button are shown in red and can't be used, and photos can't be added. Polls/events stay.
   timeoutLabel?: string | null;
+  // When set, the send button shows a magnifying glass while there's nothing to send and opens
+  // chat search when tapped; it morphs into "Send" as soon as the user types or attaches a photo.
+  onSearch?: () => void;
 }
 
-export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll, mentionMembers, groupId, timeoutLabel }: Props) {
+export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll, mentionMembers, groupId, timeoutLabel, onSearch }: Props) {
   const timedOut = !!timeoutLabel;
   const colors = useThemeColors();
   const api = useApiClient();
@@ -142,6 +145,29 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   };
 
   const canSend = !!text.trim() || pendingImages.length > 0;
+  const showSearch = !!onSearch && !canSend;
+
+  // 0 = magnifying glass (search), 1 = "Send". Springs between the two so the button morphs in place.
+  const sendMorph = useRef(new Animated.Value(canSend ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.spring(sendMorph, {
+      toValue: canSend ? 1 : 0,
+      useNativeDriver: true,
+      speed: 22,
+      bounciness: 6,
+    }).start();
+  }, [canSend, sendMorph]);
+  const sendLayerStyle = {
+    opacity: sendMorph,
+    transform: [{ scale: sendMorph.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }],
+  };
+  const searchLayerStyle = {
+    opacity: sendMorph.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+    transform: [
+      { scale: sendMorph.interpolate({ inputRange: [0, 1], outputRange: [1, 0.6] }) },
+      { rotate: sendMorph.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-90deg'] }) },
+    ],
+  };
 
   // Doesn't await onSend: a send can stay paused for a while offline (it's
   // queued, not lost — see useMessages/chatMutations), and this input
@@ -236,7 +262,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
                 <View style={[styles.trayIconWrap, { backgroundColor: '#10B98120' }]}>
                   <Feather name="calendar" size={20} color="#10B981" />
                 </View>
-                <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Event</Text>
+                <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Meetup</Text>
               </PressableOpacity>
             )}
 
@@ -292,6 +318,25 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
           >
             <Feather name="x" size={18} color="#fff" />
           </View>
+        ) : onSearch ? (
+          // One button in one spot: a magnifying glass (opens search) while the field is empty,
+          // morphing into "Send" once there's something to send.
+          <PressableOpacity
+            style={[styles.sendBtn, styles.morphBtn]}
+            onPress={showSearch ? onSearch : handleSend}
+            accessibilityRole="button"
+            accessibilityLabel={showSearch ? 'Search chat' : 'Send'}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          >
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.brand + '1F' }]} />
+            <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: colors.brand, opacity: sendMorph }]} />
+            <Animated.View style={[styles.morphLayer, searchLayerStyle]} pointerEvents="none">
+              <Feather name="search" size={19} color={colors.brand} />
+            </Animated.View>
+            <Animated.View style={[styles.morphLayer, sendLayerStyle]} pointerEvents="none">
+              <Text style={styles.sendLabel}>Send</Text>
+            </Animated.View>
+          </PressableOpacity>
         ) : (
           <PressableOpacity
             style={[styles.sendBtn, { backgroundColor: colors.brand }, !canSend && { backgroundColor: colors.borderStrong }]}
@@ -372,6 +417,9 @@ const styles = StyleSheet.create({
     minWidth: 60,
   },
   sendBtnDisabled: { backgroundColor: '#B0C4E8' },
+  // Fixed size so the search and Send layers can stack exactly on top of each other.
+  morphBtn: { width: 64, height: 40, minWidth: 0, paddingHorizontal: 0, paddingVertical: 0, overflow: 'hidden', backgroundColor: 'transparent' },
+  morphLayer: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   sendBtnTimedOut: { alignItems: 'center', justifyContent: 'center' },
   sendLabel: { color: '#fff', fontWeight: '600', fontSize: 15 },
   suggestions: {

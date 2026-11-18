@@ -12,11 +12,14 @@ export function buildInviteMessage(opts: {
   meetupId?: string | null;
   referrerId?: string | null;
   recipientFirstName?: string;
+  /** The 6-character code, for anyone whose link doesn't carry through the install. */
+  code?: string | null;
 }): string {
   const hello = opts.recipientFirstName ? `Hey ${opts.recipientFirstName}! ` : '';
-  const lead = opts.meetupName
-    ? `${hello}Join me for "${opts.meetupName}" on GroupThat 👉`
-    : `${hello}Join my group "${opts.groupName ?? ''}" on GroupThat 👉`;
+  const what = opts.meetupName
+    ? `${hello}Join me for "${opts.meetupName}" on GroupThat`
+    : `${hello}Join my group "${opts.groupName ?? ''}" on GroupThat`;
   const link = buildShareLink(opts.link, { meetupId: opts.meetupId, referrerId: opts.referrerId });
-  return `${lead}\n${link}`;
+  if (!opts.code) return `${what} 👉\n${link}`;
+  return `${what}!\n\nINVITE CODE:\n\n${opts.code}\n\n👉 ${link}`;
 }

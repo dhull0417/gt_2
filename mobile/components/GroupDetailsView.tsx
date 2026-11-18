@@ -4,126 +4,118 @@ import {
     Modal,
     View,
     Text,
-    Image,
     StyleSheet,
-    Share,
     ActivityIndicator,
     Alert,
-    Platform,
-    LayoutAnimation,
-    UIManager,
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { GroupDetails, User, useApiClient, groupApi } from '@/utils/api';
+import { SquircleTile, type SquircleTint } from '@/components/ui/SquircleTile';
+import { Feather } from '@expo/vector-icons';
+import { GroupDetails, User, useApiClient } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import { GroupAvatar } from './GroupAvatar';
-import { useQuery } from '@tanstack/react-query';
-import { getDMDisplayName, getUserDisplayName } from '@/utils/groupDisplay';
+import { getDMDisplayName } from '@/utils/groupDisplay';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
-import { buildInviteMessage } from '@/utils/inviteMessage';
-import { tzAbbr } from '@/utils/timezones';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
+import GroupMeetupsModal from '@/components/GroupMeetupsModal';
+import { ScheduleDetailsModal } from '@/components/ScheduleDetailsModal';
+import { GroupMembersList } from '@/components/GroupMembersList';
 import { formatMeetupDate, formatMeetupTimeRange, meetupStartInstant } from '@/utils/meetupTime';
-import { formatTimeRange } from '@/utils/timeString';
 import type { Meetup } from '@/utils/api';
 import { addGroupToCalendar } from '@/utils/calendarFeed';
 import { getGroupImage } from '@/utils/groupDisplay';
 import { runBackInterceptor } from '@/utils/backInterceptors';
-import { FREQ_LABELS } from '@/utils/scheduleConstants';
-import { isLongFrequency, repeatChoiceLabels } from '@/utils/longInterval';
-import { isTimeoutActive } from '@/utils/chatTimeout';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+import {
+    buildDetailTiles, isGroupManager, scheduleSummary, upcomingMeetupCount, type DetailTileKey,
+} from '@/utils/groupDetailTiles';
 
 interface GroupDetailsViewProps {
     groupDetails: GroupDetails;
     currentUser: User;
-    isRemovingMember: boolean;
-    onRemoveMember: (memberIdToRemove: string) => void;
     onLeaveSuccess: () => void;
-    onMemberPress?: (member: User) => void;
 }
 
-const daysOfWeekFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-const getTZAbbreviation = (timezone: string) => tzAbbr(timezone);
-
-// Displays schedule, member list, and invite tools for a group
+// Group photo + name, the next meetup, then a 2-wide grid of squircle tiles that each open
+// their own place (invite screen, members page, schedule modal, ...). DMs show their members instead.
 export const GroupDetailsView = ({
     groupDetails,
     currentUser,
-    isRemovingMember,
-    onRemoveMember,
     onLeaveSuccess,
-    onMemberPress,
 }: GroupDetailsViewProps) => {
 
     const colors = useThemeColors();
     const { scheme } = useAppearance();
     const isDark = scheme === 'dark';
-    const [detailsExpanded, setDetailsExpanded] = useState(false);
     const router = useRouter();
     const api = useApiClient();
     const { mutate: leaveGroup, isPending: isLeaving } = useLeaveGroup();
 
-    const { data: inviteLinkData } = useQuery({
-        queryKey: ['inviteLink', groupDetails._id],
-        queryFn: () => groupApi.generateInviteLink(api, groupDetails._id),
-        enabled: !groupDetails.isDM,
-        staleTime: 1000 * 60 * 5,
-    });
+    const isDM = !!groupDetails.isDM;
+    const canManage = isGroupManager(groupDetails as any, currentUser._id);
 
-    // The group's next scheduled meetup, from the same cached list the Home tab uses.
+    // The group's meetups, from the same cached list the Home tab uses.
     const { data: allMeetups } = useGetMeetups();
     const [openMeetup, setOpenMeetup] = useState<Meetup | null>(null);
+    const [meetupsOpen, setMeetupsOpen] = useState(false);
+    const [scheduleOpen, setScheduleOpen] = useState(false);
     const nextMeetup = useMemo(() => {
-        if (groupDetails.isDM) return null;
+        if (isDM) return null;
         const now = Date.now();
         return (allMeetups ?? [])
             .filter(m => m.group._id === groupDetails._id && m.status === 'scheduled' && meetupStartInstant(m).getTime() >= now)
             .sort((a, b) => meetupStartInstant(a).getTime() - meetupStartInstant(b).getTime())[0] ?? null;
-    }, [allMeetups, groupDetails._id, groupDetails.isDM]);
-
-    // Pastel icon-chip backgrounds adapt by scheme while keeping the same hue family
-    const chipBlue = { backgroundColor: isDark ? '#1A2A42' : '#EEF6FF', borderColor: isDark ? '#2C4870' : '#BFDBFE' };
-    const chipGreen = { backgroundColor: isDark ? '#132A1E' : '#F0FDF4', borderColor: isDark ? '#1F4A34' : '#BBF7D0' };
-    const chipPurple = { backgroundColor: isDark ? '#241B3D' : '#F5F3FF', borderColor: isDark ? '#3B2E63' : '#DDD6FE' };
-    const chipAmber = { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB', borderColor: isDark ? '#5C4A1E' : '#FDE68A' };
-    const chipTeal = { backgroundColor: isDark ? '#123330' : '#F0FDFA', borderColor: isDark ? '#1F5B54' : '#99F6E4' };
-
-    // --- Permissions ---
-    const isOwner = currentUser._id === groupDetails.owner;
-    const isMod = groupDetails.moderators?.some((m: User | string) =>
-        typeof m === 'string' ? m === currentUser._id : m._id === currentUser._id
-    ) ?? false;
-    const canManage = isOwner || isMod;
-    // Members currently timed out of the chat (sent to owners/moderators only).
-    const timedOutIds = new Set(
-        (groupDetails.chatTimeouts ?? []).filter((t) => isTimeoutActive(t, Date.now())).map((t) => t.userId)
+    }, [allMeetups, groupDetails._id, isDM]);
+    const upcomingCount = useMemo(
+        () => upcomingMeetupCount(allMeetups, groupDetails._id, Date.now()),
+        [allMeetups, groupDetails._id],
     );
 
-    const handleInvitePress = async () => {
-        const inviteLink = inviteLinkData?.link;
-        if (!inviteLink) {
-            Alert.alert('Not Ready', 'The invite link is still loading. Please try again in a moment.');
-            return;
-        }
-        try {
-            await Share.share({
-                message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, referrerId: currentUser._id }),
-            });
-        } catch (error: any) {
-            Alert.alert('Error', 'Could not share invite link.');
-        }
+    // Pastel icon-chip colours adapt by scheme while keeping the same hue family
+    const tint = (light: string, lightBorder: string, dark: string, darkBorder: string, fg: string): SquircleTint =>
+        ({ bg: isDark ? dark : light, border: isDark ? darkBorder : lightBorder, fg });
+    const chipBlue = { backgroundColor: isDark ? '#1A2A42' : '#EEF6FF', borderColor: isDark ? '#2C4870' : '#BFDBFE' };
+    const tints = {
+        teal: tint('#F0FDFA', '#99F6E4', '#123330', '#1F5B54', colors.accentTeal),
+        blue: tint('#EEF6FF', '#BFDBFE', '#1A2A42', '#2C4870', colors.brand),
+        amber: tint('#FFFBEB', '#FDE68A', '#3A2E12', '#5C4A1E', '#D97706'),
+        purple: tint('#F5F3FF', '#DDD6FE', '#241B3D', '#3B2E63', '#7C3AED'),
+        gray: tint('#F3F4F6', '#E5E7EB', '#262A33', '#3A3F4B', colors.textSecondary),
     };
+
+    const memberCount = groupDetails.members?.length ?? 0;
+    const tileProps: Record<DetailTileKey, React.ComponentProps<typeof SquircleTile>> = {
+        invite: {
+            icon: 'user-plus', label: 'Invite Friends', subtitle: 'QR & link', tint: tints.teal,
+            onPress: () => router.push({ pathname: '/group-invite/[id]', params: { id: groupDetails._id } }),
+        },
+        calendar: {
+            icon: 'calendar', label: 'Add to My Calendar', tint: tints.blue,
+            onPress: () => addGroupToCalendar(api, groupDetails._id, groupDetails.name),
+        },
+        meetups: {
+            icon: 'list', label: 'Upcoming Meetups', tint: tints.amber,
+            subtitle: upcomingCount === 0 ? 'None scheduled' : `${upcomingCount} upcoming`,
+            onPress: () => setMeetupsOpen(true),
+        },
+        members: {
+            icon: 'users', label: 'Group Members', tint: tints.purple,
+            subtitle: `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`,
+            onPress: () => router.push({ pathname: '/group-members/[id]', params: { id: groupDetails._id } }),
+        },
+        schedule: {
+            icon: 'clock', label: 'Schedule Details', tint: tints.blue,
+            subtitle: scheduleSummary(groupDetails.schedules),
+            onPress: () => setScheduleOpen(true),
+        },
+        settings: {
+            icon: 'settings', label: 'Group Settings', tint: tints.gray,
+            onPress: () => router.push({ pathname: '/group-settings/[id]', params: { id: groupDetails._id } }),
+        },
+    };
+    const tiles = buildDetailTiles({ isDM, canManage });
 
     const handleLeaveGroup = () => {
         if (!requireOnline('leave this group')) return;
@@ -145,69 +137,11 @@ export const GroupDetailsView = ({
         );
     };
 
-    // `rules` is the specific routine's own ordinal rules — must be indexed by
-    // this dayTime's position, not always rules[0], since dayTimes/rules are
-    // parallel arrays for ordinal routines (dayTimes[1] pairs with rules[1], etc).
-    const renderScheduleLines = (frequency: string, dayTimes: any[], rules?: any[], repeatBy?: 'date' | 'weekday') => {
-        const groupTimezoneAbbr = getTZAbbreviation(groupDetails.timezone);
-        const timeEntries = dayTimes && dayTimes.length > 0 ? dayTimes : [{ time: "Time TBD" }];
-
-        if (frequency === 'daily') {
-            return daysOfWeekFull.map((dayName, dayIdx) => {
-                let matches = timeEntries.filter(dt => dt.day === dayIdx);
-                if (matches.length === 0) {
-                    matches = timeEntries.filter(dt => dt.day === undefined || dt.day === null);
-                }
-
-                return matches.map((mt, mtIdx) => (
-                    <Text key={`daily-${dayIdx}-${mtIdx}`} style={[styles.scheduleDetailText, { color: colors.textSecondary }]}>
-                        • {dayName} @ {formatTimeRange(mt.time, mt.endTime)} {groupTimezoneAbbr}
-                    </Text>
-                ));
-            });
-        }
-
-        return timeEntries.map((dt, dtIdx) => {
-            let dayLabel = "";
-            const longLabels = isLongFrequency(frequency) ? repeatChoiceLabels(frequency, dt.startDate ?? null) : null;
-            if (longLabels) {
-                const what = repeatBy === 'weekday' ? longLabels.weekday : longLabels.date;
-                dayLabel = what.charAt(0).toUpperCase() + what.slice(1);
-            } else if (frequency === 'ordinal' && rules?.[dtIdx]) {
-                const ruleDay = rules[dtIdx].day;
-                const dayName = typeof ruleDay === 'number' ? daysOfWeekFull[ruleDay] : "";
-                dayLabel = `${rules[dtIdx].occurrence} ${dayName}`;
-            } else if (typeof dt.date === 'number') {
-                const d = dt.date;
-                const sfx = d === 1 || d === 21 || d === 31 ? 'st' :
-                            d === 2 || d === 22 ? 'nd' :
-                            d === 3 || d === 23 ? 'rd' : 'th';
-                dayLabel = `The ${d}${sfx}`;
-            } else if (typeof dt.day === 'number') {
-                dayLabel = daysOfWeekFull[dt.day];
-            } else {
-                dayLabel = "Meetup";
-            }
-
-            return (
-                <Text key={dtIdx} style={[styles.scheduleDetailText, { color: colors.textSecondary }]}>
-                    • {dayLabel} @ {formatTimeRange(dt.time, dt.endTime)} {groupTimezoneAbbr}
-                </Text>
-            );
-        });
-    };
-
-    const isDM = !!groupDetails.isDM;
     const headerName = isDM ? getDMDisplayName(groupDetails as any, currentUser.clerkId) : groupDetails.name;
-
-    const toggleDetails = () => {
-        animate();
-        setDetailsExpanded(v => !v);
-    };
 
     return (
         <View style={styles.container}>
-            {/* 0. Group Photo Header */}
+            {/* Group photo + name */}
             <View style={styles.groupHeader}>
                 <GroupAvatar name={headerName} imageUrl={getGroupImage(groupDetails as any, currentUser.clerkId)} size={140} borderRadius={32} />
                 <Text style={[styles.groupHeaderName, { color: colors.textPrimary }]}>{headerName}</Text>
@@ -235,219 +169,31 @@ export const GroupDetailsView = ({
                 </Modal>
             )}
 
-            {/* Invite Friends — hidden for DMs */}
-            {!isDM && (
-                <View style={styles.inviteRow}>
-                    <PressableOpacity onPress={handleInvitePress} style={[styles.inviteButton, chipTeal, { flex: 1, marginBottom: 0 }]} activeOpacity={0.7}>
-                        <Feather name="user-plus" size={16} color={colors.accentTeal} />
-                        <Text style={[styles.inviteButtonText, { color: colors.accentTeal }]}>Invite Friends</Text>
-                    </PressableOpacity>
-                    <PressableOpacity
-                        onPress={() => router.push({ pathname: '/group-invite/[id]', params: { id: groupDetails._id } })}
-                        style={[styles.inviteButton, chipTeal, styles.qrButton]}
-                        activeOpacity={0.7}
-                        accessibilityLabel="QR code and invite link"
-                    >
-                        <MaterialCommunityIcons name="qrcode" size={20} color={colors.accentTeal} />
-                    </PressableOpacity>
+            {/* Squircle grid, 2 wide */}
+            {tiles.length > 0 && (
+                <View style={styles.tileGrid}>
+                    {tiles.map((key) => (
+                        <SquircleTile key={key} testID={`tile-${key}`} style={styles.tile} {...tileProps[key]} />
+                    ))}
                 </View>
             )}
 
-            {/* Subscribe a calendar app to just this group's meetups */}
-            {!isDM && (
-                <PressableOpacity onPress={() => addGroupToCalendar(api, groupDetails._id, groupDetails.name)} style={[styles.inviteButton, chipBlue]} activeOpacity={0.7}>
-                    <Feather name="calendar" size={16} color={colors.brand} />
-                    <Text style={[styles.inviteButtonText, { color: colors.brand }]}>Add to My Calendar</Text>
-                </PressableOpacity>
+            {/* DMs have no tiles; show who's in the conversation */}
+            {isDM && (
+                <GroupMembersList
+                    groupDetails={groupDetails}
+                    currentUser={currentUser}
+                    isRemovingMember={false}
+                    onRemoveMember={() => {}}
+                />
             )}
 
-            {/* 1. Details — collapsible, hidden for DMs */}
-            {!isDM && <View style={[styles.card, { backgroundColor: colors.surface }]}>
-                <PressableOpacity style={styles.collapsibleHeader} onPress={toggleDetails} activeOpacity={0.7}>
-                    <View style={styles.collapsibleHeaderLeft}>
-                        <View style={[styles.iconWrap, styles.iconWrapSmall, chipBlue]}>
-                            <Feather name="info" size={14} color={colors.brand} />
-                        </View>
-                        <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Details</Text>
-                    </View>
-                    <Feather name={detailsExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textFaint} />
-                </PressableOpacity>
-
-                {detailsExpanded && (
-                    <View style={[styles.collapsibleBody, { borderTopColor: colors.border }]}>
-                        {(() => {
-                            const activeSchedules = (groupDetails.schedules ?? []).filter(sch => sch.active !== false);
-                            if (activeSchedules.length === 0) {
-                                return (
-                                    <View style={styles.infoRow}>
-                                        <View style={[styles.iconWrap, chipBlue]}>
-                                            <Feather name="calendar" size={16} color={colors.brand} />
-                                        </View>
-                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>No schedule defined</Text>
-                                    </View>
-                                );
-                            }
-
-                            return activeSchedules.map((sch, schIdx) => (
-                                <View key={sch._id} style={[styles.scheduleBlock, { borderBottomColor: colors.border }, schIdx === activeSchedules.length - 1 && { marginBottom: 0 }]}>
-                                    <Text style={[styles.scheduleNameLabel, { color: colors.textPrimary }]}>{sch.name}</Text>
-
-                                    {/* Routines */}
-                                    <View style={styles.infoRowTop}>
-                                        <View style={[styles.iconWrap, chipBlue]}>
-                                            <Feather name="calendar" size={16} color={colors.brand} />
-                                        </View>
-                                        <View style={styles.scheduleContent}>
-                                            {(sch.routines ?? []).map((routine, rIdx) => (
-                                                <View key={rIdx} style={styles.routineBlock}>
-                                                    <Text style={[styles.frequencyLabel, { color: colors.brand }]}>
-                                                        {routine.frequency === 'biweekly' ? 'Every 2 Weeks' : isLongFrequency(routine.frequency) ? FREQ_LABELS[routine.frequency] : routine.frequency.charAt(0).toUpperCase() + routine.frequency.slice(1)}
-                                                    </Text>
-                                                    {renderScheduleLines(routine.frequency, routine.dayTimes, routine.rules, routine.repeatBy)}
-                                                </View>
-                                            ))}
-                                        </View>
-                                    </View>
-
-                                    {/* Location */}
-                                    <View style={styles.infoRow}>
-                                        <View style={[styles.iconWrap, chipGreen]}>
-                                            <Feather name="map-pin" size={16} color="#16A34A" />
-                                        </View>
-                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                                            {sch.defaultLocation || "No location set"}
-                                        </Text>
-                                    </View>
-
-                                    {/* Capacity */}
-                                    <View style={styles.infoRow}>
-                                        <View style={[styles.iconWrap, chipPurple]}>
-                                            <Feather name="users" size={16} color="#7C3AED" />
-                                        </View>
-                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>{sch.defaultCapacity === 0 ? "Unlimited Attendees" : sch.defaultCapacity}</Text>
-                                    </View>
-
-                                    {/* RSVP window */}
-                                    <View style={[styles.infoRow, { marginBottom: 0 }]}>
-                                        <View style={[styles.iconWrap, chipAmber]}>
-                                            <Feather name="bell" size={16} color="#D97706" />
-                                        </View>
-                                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                                            {sch.generationLeadDays == null && sch.generationDeadlineDays == null
-                                                ? "RSVPs open anytime"
-                                                : [
-                                                    sch.generationLeadDays != null
-                                                        ? `Opens ${sch.generationLeadDays} day${sch.generationLeadDays !== 1 ? 's' : ''} before @ ${sch.generationLeadTime}`
-                                                        : null,
-                                                    sch.generationDeadlineDays != null
-                                                        ? `Deadline ${sch.generationDeadlineDays} day${sch.generationDeadlineDays !== 1 ? 's' : ''} before @ ${sch.generationDeadlineTime}`
-                                                        : null,
-                                                ].filter(Boolean).join(' · ')}
-                                        </Text>
-                                    </View>
-                                </View>
-                            ));
-                        })()}
-                    </View>
-                )}
-            </View>}
-
-            {/* 2. Member List — split into Owner/Moderators and Members, always expanded */}
-            {(() => {
-                const isStaff = (member: User) => {
-                    const isMemberOwner = member._id === groupDetails.owner;
-                    const isMemberMod = groupDetails.moderators?.some((m: User | string) =>
-                        typeof m === 'string' ? m === member._id : m._id === member._id
-                    ) ?? false;
-                    return isMemberOwner || isMemberMod;
-                };
-                const staffMembers = groupDetails.members.filter(isStaff);
-                const regularMembers = groupDetails.members.filter(m => !isStaff(m));
-
-                const renderMemberTile = (member: User) => {
-                    const isMemberOwner = member._id === groupDetails.owner;
-                    const isMemberMod = groupDetails.moderators?.some((m: User | string) =>
-                        typeof m === 'string' ? m === member._id : m._id === member._id
-                    ) ?? false;
-                    const isSelf = member._id === currentUser._id;
-                    const canTap = !isDM && !isSelf && !!onMemberPress;
-                    const canRemove = !isDM && !isMemberOwner && (isOwner || (canManage && !isMemberMod));
-
-                    const Wrapper = canTap ? PressableOpacity : View;
-                    const wrapperProps = canTap ? { onPress: () => onMemberPress!(member), activeOpacity: 0.7 } : {};
-
-                    return (
-                        <Wrapper key={member._id} style={styles.gridItem} {...wrapperProps}>
-                            <View style={styles.gridAvatarWrap}>
-                                {member.profilePicture
-                                    ? <Image source={{ uri: member.profilePicture }} style={[styles.gridAvatar, { backgroundColor: colors.backgroundAlt }]} />
-                                    : (
-                                        <View style={[styles.gridAvatar, styles.gridAvatarPlaceholder, { backgroundColor: colors.backgroundAlt }]}>
-                                            <Feather name="user" size={22} color={colors.textFaint} />
-                                        </View>
-                                    )}
-                                {isMemberOwner && (
-                                    <View style={[styles.roleBadge, styles.ownerRoleBadge, { borderColor: colors.surface }]}>
-                                        <Feather name="star" size={11} color="white" />
-                                    </View>
-                                )}
-                                {isMemberMod && !isMemberOwner && (
-                                    <View style={[styles.roleBadge, styles.modRoleBadge, { borderColor: colors.surface }]}>
-                                        <Feather name="shield" size={11} color="white" />
-                                    </View>
-                                )}
-                                {timedOutIds.has(member._id) && (
-                                    // Only owners/moderators get timeout info from the server.
-                                    <View accessibilityLabel="Timed out of chat" style={[styles.timeoutBadge, { borderColor: colors.surface }]}>
-                                        <Feather name="clock" size={10} color="white" />
-                                    </View>
-                                )}
-                                {canRemove && (
-                                    <PressableOpacity accessibilityLabel="Remove"
-                                        style={[styles.removeBadge, { borderColor: colors.surface }]}
-                                        onPress={() => onRemoveMember(member._id)}
-                                        disabled={isRemovingMember}
-                                        // Part of the badge sits outside the avatar, where Android ignores taps; grow the
-                                        // tap area inward so a ~32 px target stays inside it.
-                                        hitSlop={{ top: 4, right: 4, bottom: 12, left: 12 }}
-                                    >
-                                        <Feather name="x" size={12} color="white" />
-                                    </PressableOpacity>
-                                )}
-                            </View>
-                            <Text style={[styles.gridName, { color: colors.textSecondary }]} numberOfLines={1}>{getUserDisplayName(member)}</Text>
-                        </Wrapper>
-                    );
-                };
-
-                return (
-                    <>
-                        {staffMembers.length > 0 && (
-                            <View style={{ marginTop: 8, marginBottom: 24 }}>
-                                <View style={styles.sectionHeaderWrap}>
-                                    <Text style={[styles.sectionTitle, { color: '#7C3AED' }]}>Owner & Moderators — {staffMembers.length}</Text>
-                                    <View style={[styles.sectionHeaderLine, { backgroundColor: '#7C3AED' }]} />
-                                </View>
-                                <View style={styles.grid}>
-                                    {staffMembers.map(renderMemberTile)}
-                                </View>
-                            </View>
-                        )}
-
-                        {regularMembers.length > 0 && (
-                            <View style={{ marginTop: 8, marginBottom: 24 }}>
-                                <View style={styles.sectionHeaderWrap}>
-                                    <Text style={[styles.sectionTitle, { color: colors.brand }]}>Members — {regularMembers.length}</Text>
-                                    <View style={[styles.sectionHeaderLine, { backgroundColor: colors.brand }]} />
-                                </View>
-                                <View style={styles.grid}>
-                                    {regularMembers.map(renderMemberTile)}
-                                </View>
-                            </View>
-                        )}
-                    </>
-                );
-            })()}
+            {!isDM && (
+                <>
+                    <GroupMeetupsModal visible={meetupsOpen} onClose={() => setMeetupsOpen(false)} groupId={groupDetails._id} />
+                    <ScheduleDetailsModal visible={scheduleOpen} onClose={() => setScheduleOpen(false)} groupDetails={groupDetails} />
+                </>
+            )}
 
             {/* --- LEAVE GROUP BUTTON (for non-managers) --- */}
             {!canManage && (
@@ -467,42 +213,13 @@ export const GroupDetailsView = ({
 const styles = StyleSheet.create({
     container: { flex: 1 },
     groupHeader: { alignItems: 'center', paddingVertical: 20, marginBottom: 8 },
-    groupHeaderName: { fontSize: 20, fontWeight: '900', color: '#111827', marginTop: 12, textAlign: 'center' },
-    card: { backgroundColor: 'white', padding: 12, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, marginBottom: 12 },
-    collapsibleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    collapsibleHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    collapsibleBody: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-    cardTitle: { fontSize: 14, fontWeight: '800', color: '#111827' },
-    infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-    infoRowTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
-    infoText: { marginLeft: 12, fontSize: 16, fontWeight: '600', color: '#374151', flex: 1 },
-    scheduleBlock: { marginBottom: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-    scheduleNameLabel: { fontSize: 15, fontWeight: '900', color: '#111827', marginBottom: 10 },
-    scheduleContent: { marginLeft: 12, flex: 1 },
-    routineBlock: { marginBottom: 8 },
-    frequencyLabel: { fontSize: 14, fontWeight: '800', color: '#4A90E2', marginBottom: 4, textTransform: 'capitalize' },
-    scheduleDetailText: { fontSize: 15, fontWeight: '600', color: '#374151', marginBottom: 2 },
+    groupHeaderName: { fontSize: 20, fontWeight: '900', marginTop: 12, textAlign: 'center' },
+    card: { padding: 12, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, marginBottom: 12 },
     iconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-    iconWrapSmall: { width: 26, height: 26, borderRadius: 9 },
-    inviteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14, borderWidth: 1, backgroundColor: '#F0FDFA', borderColor: '#99F6E4', marginBottom: 12 },
-    inviteRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
-    qrButton: { marginBottom: 0, paddingHorizontal: 18 },
-    inviteButtonText: { marginLeft: 8, fontWeight: 'bold', fontSize: 14, color: '#0D9488' },
-    sectionHeaderWrap: { marginBottom: 16 },
-    sectionTitle: { fontSize: 15, fontWeight: '900', color: '#4A90E2', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
-    sectionHeaderLine: { height: 3, borderRadius: 2, backgroundColor: '#4A90E2', opacity: 0.85 },
-    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-    gridItem: { width: '30%', alignItems: 'center' },
-    gridAvatarWrap: { width: '100%', position: 'relative' },
-    gridAvatar: { width: '100%', aspectRatio: 1, borderRadius: 14, backgroundColor: '#F3F4F6' },
-    gridAvatarPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-    gridName: { fontSize: 12, fontWeight: '700', color: '#374151', marginTop: 6, textAlign: 'center' },
-    roleBadge: { position: 'absolute', top: -6, left: -6, width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
-    ownerRoleBadge: { backgroundColor: '#4F46E5' },
-    modRoleBadge: { backgroundColor: '#6B7280' },
-    timeoutBadge: { position: 'absolute', bottom: -4, left: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
-    removeBadge: { position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'white' },
-    footerActionContainer: { paddingHorizontal: 20, paddingVertical: 24, borderTopWidth: 1, borderTopColor: '#F3F4F6', marginTop: 16 },
-    leaveButton: { backgroundColor: '#EF4444', paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+    // Two per row; an odd last tile sits alone on the left.
+    tileGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12, marginTop: 4, marginBottom: 12 },
+    tile: { width: '48%' },
+    footerActionContainer: { paddingHorizontal: 20, paddingVertical: 24, borderTopWidth: 1, marginTop: 16 },
+    leaveButton: { paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
     leaveButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 });

@@ -31,7 +31,7 @@ export const MembersScreen = ({ groupId, groupName, onDone }: {
         }
         try {
             await Share.share({
-                message: buildInviteMessage({ groupName, link: inviteLink, referrerId: queryClient.getQueryData<User>(['currentUser'])?._id }),
+                message: buildInviteMessage({ groupName, link: inviteLink, code: inviteLinkData?.code, referrerId: queryClient.getQueryData<User>(['currentUser'])?._id }),
             });
         } catch {}
     };

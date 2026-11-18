@@ -2,51 +2,25 @@ import {
   View,
   Text,
   ScrollView,
-  ActivityIndicator,
   RefreshControl,
-  Alert,
-  StyleSheet,
-  Modal,
-  Pressable,
-  Image,
   Platform,
 } from 'react-native';
 import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { OfflineEmptyState } from '@/components/OfflineEmptyState';
-import { isOfflineEmpty, requireOnline } from '@/utils/offlineState';
+import { isOfflineEmpty } from '@/utils/offlineState';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
-import { useRemoveMember } from '@/hooks/useRemoveMember';
-import { User, useApiClient, userApi, groupApi } from '@/utils/api';
-import { getDMDisplayName, getUserDisplayName, getUserInitial } from '@/utils/groupDisplay';
+import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { GroupDetailsView } from '@/components/GroupDetailsView';
-import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import { GroupCalendarButton } from '@/components/GroupCalendarButton';
 import { tabScreenBottomPadding } from '@/utils/layout';
 import { useThemeColors } from '@/contexts/AppearanceContext';
-import { getGroupImage } from '@/utils/groupDisplay';
-import { ChatTimeoutSheet } from '@/components/ChatTimeoutSheet';
-import { useChatModeration } from '@/hooks/useChatModeration';
-import { ToastPortal } from '@/contexts/ToastContext';
-import { canTimeOut, formatTimeoutEnd, isTimeoutActive } from '@/utils/chatTimeout';
-
-const styles = StyleSheet.create({
-  settingsButton: {
-    padding: 6,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-});
 
 interface GroupDetailsScreenProps {
   // False when mounted outside the Groups tab (no tab bar underneath) — see app/group-details/[id].tsx
@@ -61,11 +35,6 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
   const insets = useSafeAreaInsets();
   const api = useApiClient();
   const router = useRouter();
-  const queryClient = useQueryClient();
-
-  // Cached list data gives an instant name/avatar/isDM fallback while details load.
-  const { data: groups } = useGetGroups();
-  const fallbackGroup = useMemo(() => groups?.find(g => g._id === id), [groups, id]);
 
   const detailsQuery = useGetGroupDetails(id ?? null);
   const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails, refetch: refetchDetails } = detailsQuery;
@@ -87,82 +56,8 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
     queryFn: () => userApi.getCurrentUser(api),
   });
 
-  const canManageGroup = useMemo(() => {
-    if (!groupDetails || !currentUser) return false;
-    const userId = currentUser._id;
-    const g = groupDetails as any;
-    const isOwner = (g.owner?._id || g.owner) === userId;
-    const isMod = g.moderators?.some((m: any) => (m?._id || m) === userId);
-    return isOwner || isMod;
-  }, [groupDetails, currentUser]);
-
-  const isDM = groupDetails?.isDM ?? fallbackGroup?.isDM ?? false;
-
   // Offline, this says so and stops instead of spinning until the connection is back.
   const { refreshing: isPullRefreshing, refresh: handlePullRefresh } = useRefreshOrToast([() => refetchDetails()]);
-  const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
-
-  const [dmTargetMember, setDmTargetMember] = useState<User | null>(null);
-  const [isCreatingDM, setIsCreatingDM] = useState(false);
-
-  const handleMemberPress = (member: User) => {
-    setDmTargetMember(member);
-  };
-
-  // Chat timeouts: owners/moderators can time a member out (or end it) from the member sheet.
-  const moderation = useChatModeration(id ?? '');
-  const [timeoutMember, setTimeoutMember] = useState<User | null>(null);
-  const timeoutOf = (member: User | null) => {
-    const t = member ? groupDetails?.chatTimeouts?.find((x) => x.userId === member._id) : undefined;
-    return t && isTimeoutActive(t, Date.now()) ? t : null;
-  };
-  const dmTargetTimeout = timeoutOf(dmTargetMember);
-  const canTimeOutDmTarget = !!dmTargetMember && canTimeOut(currentUser?._id, dmTargetMember._id, groupDetails as any);
-  const openTimeoutSheet = () => {
-    const member = dmTargetMember;
-    if (!member || !requireOnline('time someone out')) return;
-    setDmTargetMember(null);
-    // Two React Native modals can't be open at once; let the member sheet finish closing first.
-    setTimeout(() => setTimeoutMember(member), 350);
-  };
-
-  const handleSendDM = async () => {
-    if (!dmTargetMember) return;
-    setIsCreatingDM(true);
-    try {
-      const { group } = await groupApi.createOrGetDM(api, dmTargetMember._id);
-      queryClient.invalidateQueries({ queryKey: ['groups'] });
-      setDmTargetMember(null);
-      router.push({ pathname: '/group-chat/[id]', params: { id: group._id } });
-    } catch {
-      Alert.alert('Error', 'Could not open DM. Please try again.');
-    } finally {
-      setIsCreatingDM(false);
-    }
-  };
-
-  const handleRemoveMember = (memberIdToRemove: string) => {
-    if (!id) return;
-    if (!requireOnline('remove a member')) return;
-    Alert.alert("Remove Member", "Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Remove", style: "destructive", onPress: () => {
-        removeMember({ groupId: id, memberIdToRemove }, {
-          onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
-          }
-        });
-      }},
-    ]);
-  };
-
-  const handleSettingsPress = () => {
-    if (!id) return;
-    router.push({
-      pathname: '/group-settings/[id]',
-      params: { id }
-    });
-  };
 
   const handleOpenChat = () => {
     if (!id) return;
@@ -182,46 +77,11 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
   // Android back returns to the chat when Details was opened from it, like the on-screen arrow.
   useAndroidBack(from === 'chat', handleOpenChat);
 
-  const headerName = groupDetails?.isDM
-    ? getDMDisplayName(groupDetails as any, currentUser?.clerkId)
-    : (groupDetails?.name || fallbackGroup?.name || '');
-
   return (
     <SafeAreaView
-      style={{ flex: 1, backgroundColor: colors.background }}
+      style={{ flex: 1, backgroundColor: colors.backgroundAlt }}
       edges={showsTabBarBeneath ? ['top', 'left', 'right'] : ['top', 'left', 'right', 'bottom']}
     >
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-        <View className="flex-row items-center flex-1">
-          {/* Always back to chat — its only meaningful parent, regardless of nav stack */}
-          <PressableOpacity accessibilityLabel="Go back" onPress={handleOpenChat} className="mr-2 p-1" hitSlop={8}>
-            <Feather name="chevron-left" size={26} color="#FF7A6E"/>
-          </PressableOpacity>
-          <View style={{ marginRight: 10 }}>
-            <GroupAvatar name={headerName} imageUrl={getGroupImage((groupDetails ?? fallbackGroup) as any, currentUser?.clerkId)} size={36} borderRadius={9} />
-          </View>
-          <Text className="text-lg font-black text-gray-900 dark:text-white flex-1" numberOfLines={1}>
-            {headerName}
-          </Text>
-        </View>
-
-        <View className="flex-row items-center" style={{ gap: 8 }}>
-          {id && currentUser && (
-            <GroupCalendarButton groupId={id} isDM={isDM} />
-          )}
-
-          {canManageGroup && (
-            <PressableOpacity accessibilityLabel="Settings"
-              onPress={handleSettingsPress}
-              style={[styles.settingsButton, { backgroundColor: colors.backgroundAlt, borderColor: colors.border }]}
-              activeOpacity={0.7}
-            >
-              <Feather name="settings" size={22} color={colors.textSecondary} />
-            </PressableOpacity>
-          )}
-        </View>
-      </View>
-
       <ScrollView
         style={{ backgroundColor: colors.backgroundAlt }}
         className="flex-1"
@@ -245,92 +105,29 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
             <GroupDetailsView
               groupDetails={groupDetails}
               currentUser={currentUser!}
-              isRemovingMember={isRemovingMember}
-              onRemoveMember={handleRemoveMember}
               onLeaveSuccess={() => router.dismissTo('/(tabs)/groups')}
-              onMemberPress={groupDetails.isDM ? undefined : handleMemberPress}
             />
           )}
         </View>
       </ScrollView>
 
-      {/* DM bottom sheet */}
-      <Modal
-        visible={!!dmTargetMember}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setDmTargetMember(null)}
+      {/* No header bar: a floating back button over the top-left, always back to chat — its only
+          meaningful parent, regardless of nav stack. */}
+      <PressableOpacity
+        accessibilityLabel="Go back"
+        onPress={handleOpenChat}
+        hitSlop={8}
+        style={{
+          position: 'absolute', top: insets.top + 8, left: 12, width: 40, height: 40, borderRadius: 20,
+          alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
+          shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+        }}
       >
-        <Pressable style={dmStyles.backdrop} onPress={() => setDmTargetMember(null)}>
-          <Pressable style={[dmStyles.sheet, { backgroundColor: colors.surface }]} onPress={() => {}}>
-            <View style={[dmStyles.dragHandle, { backgroundColor: colors.borderStrong }]} />
-            {dmTargetMember && (
-              <>
-                <Image
-                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C/png?text=${getUserInitial(dmTargetMember)}` }}
-                  style={[dmStyles.avatar, { backgroundColor: colors.backgroundAlt }]}
-                />
-                <Text style={[dmStyles.name, { color: colors.textPrimary }, canTimeOutDmTarget && dmTargetTimeout && { marginBottom: 6 }]}>
-                  {getUserDisplayName(dmTargetMember)}
-                </Text>
-                {canTimeOutDmTarget && dmTargetTimeout && (
-                  <Text style={[dmStyles.timeoutCaption, { color: colors.danger }]}>
-                    Timed out · {formatTimeoutEnd(dmTargetTimeout.until, new Date())}
-                  </Text>
-                )}
-                <PressableOpacity
-                  style={[dmStyles.dmBtn, { backgroundColor: colors.brand }]}
-                  onPress={handleSendDM}
-                  disabled={isCreatingDM}
-                  activeOpacity={0.8}
-                >
-                  {isCreatingDM
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={dmStyles.dmBtnText}>Send DM</Text>
-                  }
-                </PressableOpacity>
-                {canTimeOutDmTarget && (
-                  <PressableOpacity
-                    style={[dmStyles.timeoutBtn, { backgroundColor: colors.backgroundAlt }]}
-                    onPress={openTimeoutSheet}
-                    disabled={moderation.busy}
-                    activeOpacity={0.8}
-                  >
-                    <Feather name="clock" size={16} color={colors.danger} />
-                    <Text style={[dmStyles.timeoutBtnText, { color: colors.danger }]}>Chat timeout</Text>
-                  </PressableOpacity>
-                )}
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-        {/* A Modal covers the app-level toast ("You're offline..."); draw it in here instead. */}
-        <ToastPortal />
-      </Modal>
+        <Feather name="chevron-left" size={26} color="#FF7A6E" style={{ marginLeft: -2 }} />
+      </PressableOpacity>
 
-      <ChatTimeoutSheet
-        visible={!!timeoutMember}
-        name={timeoutMember ? (timeoutMember.firstName || getUserDisplayName(timeoutMember)) : ''}
-        current={timeoutOf(timeoutMember)}
-        onPick={(key) => { if (timeoutMember) moderation.timeOut(timeoutMember._id, key); setTimeoutMember(null); }}
-        onEnd={() => { if (timeoutMember) moderation.endTimeout(timeoutMember._id); setTimeoutMember(null); }}
-        onClose={() => setTimeoutMember(null)}
-      />
     </SafeAreaView>
   );
 };
-
-const dmStyles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12, alignItems: 'center' },
-  dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginBottom: 24 },
-  avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 14, backgroundColor: '#F3F4F6' },
-  name: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 28 },
-  dmBtn: { backgroundColor: '#4A90E2', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
-  dmBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  timeoutCaption: { fontSize: 13, fontWeight: '700', marginBottom: 22 },
-  timeoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12, paddingHorizontal: 32, paddingVertical: 12, borderRadius: 16, minWidth: 160 },
-  timeoutBtnText: { fontWeight: '700', fontSize: 15 },
-});
 
 export default GroupDetailsScreen;

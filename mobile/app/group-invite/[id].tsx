@@ -56,7 +56,7 @@ export default function GroupInviteScreen() {
 
     const share = async () => {
         if (!invite) return;
-        try { await Share.share({ message: buildInviteMessage({ groupName, link: invite.link, referrerId }) }); } catch {}
+        try { await Share.share({ message: buildInviteMessage({ groupName, link: invite.link, code: invite.code, referrerId }) }); } catch {}
     };
     const copy = async (text: string, what: string) => {
         await Clipboard.setStringAsync(text);

@@ -467,9 +467,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
 
     const handleInviteToMeetup = async () => {
         try {
-            const { link } = await groupApi.generateInviteLink(api, meetup.group._id);
+            const { link, code } = await groupApi.generateInviteLink(api, meetup.group._id);
             await Share.share({
-                message: buildInviteMessage({ meetupName: meetup.name, link, meetupId: meetup._id, referrerId: currentUser?._id }),
+                message: buildInviteMessage({ meetupName: meetup.name, link, code, meetupId: meetup._id, referrerId: currentUser?._id }),
             });
         } catch {
             Alert.alert('Error', 'Could not create invite link. Please try again.');
