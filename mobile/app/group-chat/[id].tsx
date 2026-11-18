@@ -21,7 +21,7 @@ import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queueMutation } from '@/utils/queuedMutations';
 import { useIsOnline } from '@/hooks/useIsOnline';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { nextJumpStep, takeJumpRequest } from '@/utils/chatJump';
+import { nextJumpStep, takeJumpRequest, findMessageLocation, shouldLoadOlderOnScroll } from '@/utils/chatJump';
 import { CHAT_LOAD_LIMIT_MS, chatLoadState } from '@/utils/chatLoadState';
 import { toast, ToastPortal } from '@/contexts/ToastContext';
 import { useScreenTopOffset } from '@/contexts/WindowInsetsContext';
@@ -355,6 +355,9 @@ const GroupChatScreen = () => {
     }
     return Array.from(byDay.values());
   }, [messages]);
+  // Latest sections for jump retries, which fire from timers after the list may have changed.
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
 
   // Cluster info (who gets a name label / timestamp / tail) computed per day section.
   const groupingById = useMemo(() => {
@@ -386,7 +389,9 @@ const GroupChatScreen = () => {
 
   const handleListScroll = useCallback((e: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    if (contentOffset.y < 400 && contentReadyRef.current) fetchOlderRef.current();
+    if (shouldLoadOlderOnScroll({ offsetY: contentOffset.y, contentReady: contentReadyRef.current, jumping: jumpingRef.current })) {
+      fetchOlderRef.current();
+    }
     const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
     const nearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
     isNearBottomRef.current = nearBottom;
@@ -428,7 +433,8 @@ const GroupChatScreen = () => {
   const [flashId, setFlashId] = useState<string | null>(null);
   const jumpingRef = useRef(false);
   const jumpPagesRef = useRef(0);
-  const pendingScrollRef = useRef<{ sectionIndex: number; itemIndex: number; viewPosition: number; animated: boolean } | null>(null);
+  // The message a jump is scrolling to. Retries look its position up again by id, since rows can shift.
+  const pendingScrollRef = useRef<string | null>(null);
   const jumpRetryRef = useRef(0);
   const jumpFetchingRef = useRef(false);
   const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -477,11 +483,10 @@ const GroupChatScreen = () => {
       return;
     }
     if (step === 'found') {
-      const sectionIndex = sections.findIndex((s) => s.data.some((m) => m.id === jumpTarget));
-      const itemIndex = sectionIndex >= 0 ? sections[sectionIndex].data.findIndex((m) => m.id === jumpTarget) : -1;
-      if (sectionIndex >= 0 && itemIndex >= 0) {
-        const params = { sectionIndex, itemIndex, viewPosition: 0.5, animated: true };
-        pendingScrollRef.current = params;
+      const location = findMessageLocation(sections, jumpTarget);
+      if (location) {
+        const params = { ...location, viewPosition: 0.5, animated: true };
+        pendingScrollRef.current = jumpTarget;
         jumpRetryRef.current = 0;
         // Let the rows that were just paged in lay out first.
         requestAnimationFrame(() => sectionListRef.current?.scrollToLocation(params));
@@ -868,10 +873,14 @@ const GroupChatScreen = () => {
                 // The rows above the jump target haven't been measured yet: scroll near the
                 // estimate so they render, then try again (a few times at most).
                 sectionListRef.current?.getScrollResponder()?.scrollTo({ y: info.averageItemLength * info.index, animated: false });
-                const params = pendingScrollRef.current;
-                if (params && jumpRetryRef.current < 3) {
+                const targetId = pendingScrollRef.current;
+                if (targetId && jumpRetryRef.current < 3) {
                   jumpRetryRef.current += 1;
-                  setTimeout(() => sectionListRef.current?.scrollToLocation(params), 250);
+                  setTimeout(() => {
+                    // Look the message up again: rows may have shifted since the first try.
+                    const location = findMessageLocation(sectionsRef.current, targetId);
+                    if (location) sectionListRef.current?.scrollToLocation({ ...location, viewPosition: 0.5, animated: true });
+                  }, 250);
                 }
               }}
               contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}

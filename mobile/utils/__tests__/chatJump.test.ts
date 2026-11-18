@@ -1,4 +1,4 @@
-import { nextJumpStep } from '../chatJump';
+import { nextJumpStep, findMessageLocation, shouldLoadOlderOnScroll } from '../chatJump';
 
 const msgs = (...ids: string[]) => ids.map((id) => ({ id, deleted_at: null as string | null }));
 
@@ -33,5 +33,39 @@ describe('jump requests', () => {
     expect(takeJumpRequest('g2')).toBeNull();
     expect(takeJumpRequest('g1')).toBe('m1');
     expect(takeJumpRequest('g1')).toBeNull();
+  });
+});
+
+describe('findMessageLocation', () => {
+  const sec = (key: string, ...ids: string[]) => ({ key, data: ids.map((id) => ({ id })) });
+
+  it('finds the section and row of a message', () => {
+    expect(findMessageLocation([sec('d1', 'a', 'b'), sec('d2', 'c', 'd')], 'd')).toEqual({ sectionIndex: 1, itemIndex: 1 });
+  });
+
+  it('follows the message when an older page is added above it (no stale position)', () => {
+    const before = [sec('d2', 'c', 'target')];
+    const after = [sec('d0', 'x', 'y'), sec('d1', 'z'), sec('d2', 'w', 'c', 'target')];
+    expect(findMessageLocation(before, 'target')).toEqual({ sectionIndex: 0, itemIndex: 1 });
+    expect(findMessageLocation(after, 'target')).toEqual({ sectionIndex: 2, itemIndex: 2 });
+  });
+
+  it('is null when the message is not loaded', () => {
+    expect(findMessageLocation([sec('d1', 'a')], 'zz')).toBeNull();
+  });
+});
+
+describe('shouldLoadOlderOnScroll', () => {
+  it('loads older history when scrolled near the top', () => {
+    expect(shouldLoadOlderOnScroll({ offsetY: 100, contentReady: true, jumping: false })).toBe(true);
+  });
+
+  it('does not load while far from the top or before the list is shown', () => {
+    expect(shouldLoadOlderOnScroll({ offsetY: 900, contentReady: true, jumping: false })).toBe(false);
+    expect(shouldLoadOlderOnScroll({ offsetY: 100, contentReady: false, jumping: false })).toBe(false);
+  });
+
+  it('does not load mid-jump: a page added above would knock the scroll off its target', () => {
+    expect(shouldLoadOlderOnScroll({ offsetY: 100, contentReady: true, jumping: true })).toBe(false);
   });
 });

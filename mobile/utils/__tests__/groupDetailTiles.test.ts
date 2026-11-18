@@ -5,11 +5,11 @@ import {
 describe('buildDetailTiles', () => {
   it('shows all seven tiles, in order, to owners and moderators', () => {
     expect(buildDetailTiles({ isDM: false, canManage: true }))
-      .toEqual(['invite', 'calendar', 'meetups', 'past', 'members', 'schedule', 'settings']);
+      .toEqual(['invite', 'members', 'meetups', 'calendar', 'schedule', 'past', 'settings']);
   });
   it('hides Settings from regular members', () => {
     expect(buildDetailTiles({ isDM: false, canManage: false }))
-      .toEqual(['invite', 'calendar', 'meetups', 'past', 'members', 'schedule']);
+      .toEqual(['invite', 'members', 'meetups', 'calendar', 'schedule', 'past']);
   });
   it('shows no tiles for DMs', () => {
     expect(buildDetailTiles({ isDM: true, canManage: true })).toEqual([]);
