@@ -63,3 +63,6 @@ All 14 tasks built. Backend `npm test` 501/501, mobile `tsc` clean and jest 36 s
 6. Test matrix: iMessage, Android SMS, WhatsApp, Messenger, Instagram DM, Gmail (iOS + Android), desktop browser × app installed / not installed × signed in / out × link active / reset / at its limit; plus approval on and off, a meetup invite, and the invite code.
 
 **Compatibility notes:** the backend can deploy before the new build. Older apps keep sending the two-link text (both links still work), join without a preview, and can't answer join requests. Only turn on "Approve new members" once most members have updated.
+
+**2026-11-18:** QR codes removed at the owner's request (the 6-character code is enough): no `/qr` route,
+no `qrcode` package, the desktop page shows store buttons + code, the invite screen shows the code only.

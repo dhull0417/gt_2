@@ -43,7 +43,6 @@ import { resendWebhook, goPage } from "./controllers/email.controller.js";
 import User from "./models/user.model.js";
 import Group from "./models/group.model.js";
 import Meetup from "./models/meetup.model.js";
-import QRCode from "qrcode";
 import inviteRoutes from "./routes/invite.route.js";
 import { findInvite, recordInviteEvent } from "./controllers/invite.controller.js";
 import { inviteStatus, TOKEN_RE as INVITE_TOKEN_RE, APP_STORE_URL as INVITE_APP_STORE_URL, PLAY_STORE_URL as INVITE_PLAY_STORE_URL } from "./utils/invites.js";
@@ -169,29 +168,14 @@ app.get('/join/:token', rateLimit({ name: 'invite-page', limit: 60 }), async (re
       : null;
 
     if (!isLinkPreviewBot(ua)) {
-      const source = req.query.s === 'qr' ? 'qr' : 'link';
-      await recordInviteEvent({ groupId: group._id, token: invite.token, type: 'view', platform: device.platform, source });
+      await recordInviteEvent({ groupId: group._id, token: invite.token, type: 'view', platform: device.platform, source: 'link' });
     }
 
     res.send(renderInvitePage({
       token: invite.token, status, code: invite.code, groupName: group.name, groupImage: group.image || null,
       memberCount: (group.members || []).length, inviterName: inviter?.firstName || null,
-      meetup, meetupId: meetup ? meetupId : null, referrerId,
+      meetup, meetupId: meetup ? meetupId : null,
     }, device));
-  } catch (err) { next(err); }
-});
-
-// QR code for an invite link (shown on the desktop page and in the app's invite screen).
-app.get('/qr/:file', rateLimit({ name: 'invite-qr', limit: 60 }), async (req, res, next) => {
-  try {
-    const m = /^([A-Za-z0-9_-]{1,128})\.png$/.exec(req.params.file);
-    if (!m) return res.status(404).send('Not found');
-    const referrerId = OBJECT_ID_RE.test(String(req.query.r || '')) ? String(req.query.r) : null;
-    const target = `https://invite.groupthatapp.com/join/${m[1]}?s=qr${referrerId ? `&r=${referrerId}` : ''}`;
-    const png = await QRCode.toBuffer(target, { type: 'png', width: 600, margin: 2, errorCorrectionLevel: 'M' });
-    res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.send(png);
   } catch (err) { next(err); }
 });
 

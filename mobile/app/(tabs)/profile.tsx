@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable, Platform, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, Image, Alert, Modal, Linking, Pressable, Platform, StyleSheet, RefreshControl } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useCallback, useMemo, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import Constants from 'expo-constants';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { pickAndUploadImage, PhotoReadError } from '@/utils/uploadImage';
+import { shareApp } from '@/utils/shareInvite';
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useAppearance, useThemeColors, type ThemePreference } from '@/contexts/AppearanceContext';
@@ -97,26 +98,7 @@ const HomeScreen = () => {
 
   const handleShareApp = async () => {
     try {
-      const result = await Share.share(
-        Platform.OS === 'ios'
-          ? {
-              message: 'Join me on GroupThat! The easiest way to coordinate meetups with your group.',
-              url: 'https://invite.groupthatapp.com/download',
-            }
-          : {
-              message: 'Join me on GroupThat! The easiest way to coordinate meetups with your group. Download here: https://invite.groupthatapp.com/download',
-            }
-      );
-
-      if (result.action === Share.sharedAction) {
-        if (result.activityType) {
-          // shared with activity type of result.activityType
-        } else {
-          // shared
-        }
-      } else if (result.action === Share.dismissedAction) {
-        // dismissed
-      }
+      await shareApp();
     } catch (error: any) {
       Alert.alert(error.message);
     }

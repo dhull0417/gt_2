@@ -64,10 +64,12 @@ test('in-app browsers get buttons and the "open in Safari/Chrome" hint, no auto 
   assert.match(html, /const inApp = true/);
 });
 
-test('desktop shows a QR code for the same link', () => {
+test('desktop shows both stores and the invite code, and no QR code', () => {
   const html = renderInvitePage(base(), deviceInfo(UA.desktop));
-  assert.match(html, /<img class="qr" src="\/qr\/a{32}\.png"/);
   assert.match(html, /data-initial="desktop"/);
+  assert.match(html, /Open this link on your phone/);
+  assert.match(html, /K7P2QX/);
+  assert.doesNotMatch(html, /qr/i);
 });
 
 test('names from the database are escaped (no HTML/script injection)', () => {

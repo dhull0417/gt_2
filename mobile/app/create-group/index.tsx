@@ -80,7 +80,7 @@ const CreateGroupScreen = () => {
     if (step === "name") return <SafeAreaView style={s.safe}><NameScreen initialName={groupName} initialImage={groupImage} onNext={(n, img) => { setGroupName(n); setGroupImage(img); setStep("schedule"); }} onClose={handleClose} /></SafeAreaView>;
     if (step === "schedule") return <SafeAreaView style={s.safe}><ScheduleScreen groupName={groupName} initialSchedules={schedules} initialTimezone={timezone} onNext={(data, tz) => { setSchedules(data); setTimezone(tz); setStep("review"); }} onBack={() => setStep("name")} onSkip={() => { setSchedules([]); setStep("review"); }} /></SafeAreaView>;
     if (step === "review") return <SafeAreaView style={s.safe}><ReviewScreen groupName={groupName} groupImage={groupImage} members={[]} schedules={schedules} timezone={timezone} onConfirm={handleCreate} onBack={() => setStep("schedule")} isPending={isPending} /></SafeAreaView>;
-    return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} groupName={groupName} onDone={() => {
+    return <SafeAreaView style={s.safe}><MembersScreen groupId={createdGroupId!} groupName={groupName} groupImage={groupImage} onDone={() => {
         // Leave the flow on the Groups tab, then open the new group's chat so "back" returns to the list.
         router.replace({ pathname: "/(tabs)/groups", params: { promptNotifications: "1" } });
         if (createdGroupId) setTimeout(() => router.push({ pathname: "/group-chat/[id]", params: { id: createdGroupId } }), 0);

@@ -9,9 +9,9 @@ const UID = '64b0000000000000000000ff';
 
 describe('parseInviteUrl', () => {
   it('reads the token, meetup, sharer and source from an invite link', () => {
-    expect(parseInviteUrl(`https://invite.groupthatapp.com/join/${TOKEN}?m=${MID}&r=${UID}&s=qr`))
-      .toEqual({ token: TOKEN, meetupId: MID, referrerId: UID, source: 'qr' });
-    expect(parseInviteUrl(`https://invite.groupthatapp.com/join/${TOKEN}`)).toEqual({ token: TOKEN, meetupId: null, referrerId: null, source: null });
+    expect(parseInviteUrl(`https://invite.groupthatapp.com/join/${TOKEN}?m=${MID}&r=${UID}`))
+      .toEqual({ token: TOKEN, meetupId: MID, referrerId: UID });
+    expect(parseInviteUrl(`https://invite.groupthatapp.com/join/${TOKEN}`)).toEqual({ token: TOKEN, meetupId: null, referrerId: null });
   });
   it('finds the link inside a whole copied invite message', () => {
     const msg = `Hey! Join my group "Hikers" on GroupThat 👉\nhttps://invite.groupthatapp.com/join/${TOKEN}?m=${MID}`;
@@ -30,7 +30,7 @@ describe('parseInviteUrl', () => {
   });
   it('drops query values that are not ids', () => {
     expect(parseInviteUrl(`https://invite.groupthatapp.com/join/${TOKEN}?m=<script>&r=x&s=weird`))
-      .toEqual({ token: TOKEN, meetupId: null, referrerId: null, source: null });
+      .toEqual({ token: TOKEN, meetupId: null, referrerId: null });
   });
 });
 

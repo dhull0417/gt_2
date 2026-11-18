@@ -1,12 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     Alert,
     FlatList,
-    ActivityIndicator,
-    Share
+    ActivityIndicator
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useLocalSearchParams } from 'expo-router';
@@ -20,6 +19,7 @@ import { useContactMatching, ContactEntry } from '@/hooks/useContactMatching';
 import { User, useApiClient, groupApi } from '@/utils/api';
 import { useThemeColors, useAppearance } from '@/contexts/AppearanceContext';
 import { buildInviteMessage } from '@/utils/inviteMessage';
+import { shareInvite, prefetchShareImage } from '@/utils/shareInvite';
 import { toast } from '@/contexts/ToastContext';
 
 const AddMembersScreen = () => {
@@ -39,6 +39,9 @@ const AddMembersScreen = () => {
         enabled: !!groupId,
         staleTime: 1000 * 60 * 5,
     });
+
+    // Fetch the group photo now so the share sheet preview has it right away.
+    useEffect(() => { prefetchShareImage(groupDetails?.image); }, [groupDetails?.image]);
 
     // People invited during this visit, so the button flips to "Invited" instead of inviting twice.
     const [invitedIds, setInvitedIds] = useState<string[]>([]);
@@ -71,8 +74,10 @@ const AddMembersScreen = () => {
             groupApi.createContactInvite(api, groupDetails._id, { phone: contact.phone, email: contact.email }).catch(() => {});
         }
         try {
-            await Share.share({
+            await shareInvite({
                 message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, code: inviteLinkData?.code, referrerId, recipientFirstName: contact.name.split(' ')[0] }),
+                groupName: groupDetails.name,
+                imageUrl: groupDetails.image,
             });
         } catch (error) {
             console.error("Share error:", error);
@@ -82,8 +87,10 @@ const AddMembersScreen = () => {
     const handleShareInvite = async () => {
         if (!groupDetails || !inviteLink) return;
         try {
-            await Share.share({
+            await shareInvite({
                 message: buildInviteMessage({ groupName: groupDetails.name, link: inviteLink, code: inviteLinkData?.code, referrerId }),
+                groupName: groupDetails.name,
+                imageUrl: groupDetails.image,
             });
         } catch (error) {
             console.error("Share error:", error);

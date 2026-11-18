@@ -57,7 +57,7 @@ shows the logo. The message people receive does not change (text, INVITE CODE bl
 - Titles: group `Join <group name> on GroupThat`; meetup `Join <meetup name> on GroupThat`;
   app `GroupThat`.
 - Fallback when the native module is missing: `Share.share({ message })` (today's behaviour).
-- Prefetch: Group Details and the meetup sheet start the photo download when they open, so the
+- Prefetch: the meetup sheet, Add Members and the invite screen start the photo download when they open, so the
   preview is instant when Invite is tapped. (My call.)
 - "Share GroupThat" on Profile: one message on both platforms with the single link
   `https://invite.groupthatapp.com/download` and the logo (replaces the iOS-only `url` variant). (My call.)

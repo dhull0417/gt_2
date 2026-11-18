@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Alert, Share, Text, View } from "react-native";
+import { Alert, Text, View } from "react-native";
 import { StepDots } from "@/components/create-group/StepDots";
 import { makeStyles } from "@/components/create-group/styles";
 import { PressableOpacity } from "@/components/ui/PressableOpacity";
@@ -8,9 +8,10 @@ import { groupApi, useApiClient, User } from "@/utils/api";
 import { Feather } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { buildInviteMessage } from '@/utils/inviteMessage';
+import { shareInvite } from '@/utils/shareInvite';
 
-export const MembersScreen = ({ groupId, groupName, onDone }: {
-    groupId: string; groupName: string; onDone: () => void;
+export const MembersScreen = ({ groupId, groupName, groupImage, onDone }: {
+    groupId: string; groupName: string; groupImage?: string; onDone: () => void;
 }) => {
     const colors = useThemeColors();
     const s = useMemo(() => makeStyles(colors), [colors]);
@@ -30,8 +31,10 @@ export const MembersScreen = ({ groupId, groupName, onDone }: {
             return;
         }
         try {
-            await Share.share({
+            await shareInvite({
                 message: buildInviteMessage({ groupName, link: inviteLink, code: inviteLinkData?.code, referrerId: queryClient.getQueryData<User>(['currentUser'])?._id }),
+                groupName,
+                imageUrl: groupImage,
             });
         } catch {}
     };

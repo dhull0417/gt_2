@@ -1,13 +1,12 @@
-// Invite links: https://invite.groupthatapp.com/join/<token>?m=<meetupId>&r=<sharerId>&s=qr
+// Invite links: https://invite.groupthatapp.com/join/<token>?m=<meetupId>&r=<sharerId>
 // (or groupthat://join/<token>). Kept free of React Native imports so it can be unit tested.
 
-export type InviteSource = 'link' | 'install_referrer' | 'clipboard' | 'code' | 'qr' | 'contact';
+export type InviteSource = 'link' | 'install_referrer' | 'clipboard' | 'code' | 'contact';
 
 export type InviteRef = {
   token: string;
   meetupId: string | null;
   referrerId: string | null;
-  source: 'qr' | null;
 };
 
 export type PendingInvite = { token: string; meetupId: string | null; source: InviteSource };
@@ -17,7 +16,7 @@ const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 // Same alphabet as the server (no 0/O, 1/I/L).
 const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
 const LINK_RE = /(?:https:\/\/invite\.groupthatapp\.com|groupthat:\/)\/join\/([A-Za-z0-9_-]{1,128})(\?[^\s#]*)?(?=$|[\s#"'<>)\]])/;
-const SOURCES: InviteSource[] = ['link', 'install_referrer', 'clipboard', 'code', 'qr', 'contact'];
+const SOURCES: InviteSource[] = ['link', 'install_referrer', 'clipboard', 'code', 'contact'];
 
 const queryParams = (query: string | undefined): Record<string, string> => {
   const out: Record<string, string> = {};
@@ -39,7 +38,6 @@ export function parseInviteUrl(text: string | null | undefined): InviteRef | nul
     token: match[1],
     meetupId: OBJECT_ID_RE.test(q.m ?? '') ? q.m : null,
     referrerId: OBJECT_ID_RE.test(q.r ?? '') ? q.r : null,
-    source: q.s === 'qr' ? 'qr' : null,
   };
 }
 

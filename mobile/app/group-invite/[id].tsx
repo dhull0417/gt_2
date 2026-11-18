@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Alert, Share, ActivityIndicator } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -14,14 +14,14 @@ import { toast } from '@/contexts/ToastContext';
 import { useApiClient, groupApi, InviteLinkInfo, User } from '@/utils/api';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { buildInviteMessage } from '@/utils/inviteMessage';
+import { shareInvite, prefetchShareImage } from '@/utils/shareInvite';
 import { buildShareLink } from '@/utils/inviteLink';
 import { getErrorMessage } from '@/utils/networkError';
 import { haptic } from '@/utils/haptics';
 
 const MAX_USES_CHOICES: (number | null)[] = [null, 10, 25, 50, 100];
-const INVITE_HOST = 'https://invite.groupthatapp.com';
 
-/** The group's invite link: QR code, code, share; owners/moderators also reset it and set limits. */
+/** The group's invite link and code, and sharing; owners/moderators also reset it and set limits. */
 export default function GroupInviteScreen() {
     const { id: groupId } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
@@ -31,6 +31,8 @@ export default function GroupInviteScreen() {
     const queryClient = useQueryClient();
     const { data: groupDetails } = useGetGroupDetails(groupId);
     const referrerId = queryClient.getQueryData<User>(['currentUser'])?._id ?? null;
+    // Fetch the group photo now so the share sheet preview has it the moment Share is tapped.
+    useEffect(() => { prefetchShareImage(groupDetails?.image); }, [groupDetails?.image]);
 
     const { data: invite, isLoading, isError, refetch } = useQuery({
         queryKey: ['inviteLink', groupId],
@@ -56,7 +58,7 @@ export default function GroupInviteScreen() {
 
     const share = async () => {
         if (!invite) return;
-        try { await Share.share({ message: buildInviteMessage({ groupName, link: invite.link, code: invite.code, referrerId }) }); } catch {}
+        try { await shareInvite({ message: buildInviteMessage({ groupName, link: invite.link, code: invite.code, referrerId }), groupName, imageUrl: groupDetails?.image }); } catch {}
     };
     const copy = async (text: string, what: string) => {
         await Clipboard.setStringAsync(text);
@@ -66,7 +68,7 @@ export default function GroupInviteScreen() {
     const confirmReset = () => {
         Alert.alert(
             'Reset invite link?',
-            'The current link, QR code and code will stop working right away. Anyone who already joined stays in the group.',
+            'The current link and code will stop working right away. Anyone who already joined stays in the group.',
             [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: () => reset.mutate() }]
         );
     };
@@ -98,7 +100,6 @@ export default function GroupInviteScreen() {
         );
     }
 
-    const qrUri = `${INVITE_HOST}/qr/${invite.token}.png${referrerId ? `?r=${referrerId}` : ''}`;
     const limitLabel = invite.maxUses == null ? null : `${invite.uses} of ${invite.maxUses} uses`;
 
     return (
@@ -107,10 +108,7 @@ export default function GroupInviteScreen() {
             <ScrollView contentContainerStyle={styles.scroll}>
                 <View style={styles.card}>
                     <Text style={styles.groupName} numberOfLines={2}>{groupName}</Text>
-                    <View style={styles.qrWrap}>
-                        <Image source={{ uri: qrUri }} style={styles.qr} accessibilityLabel="QR code for the invite link" />
-                    </View>
-                    <Text style={styles.sub}>Scan with a phone camera to join.</Text>
+                    <Text style={styles.sub}>Friends can tap the link, or open GroupThat and enter this code.</Text>
 
                     {invite.code ? (
                         <PressableOpacity onPress={() => copy(invite.code!, 'Code')} style={styles.codeBox} accessibilityLabel={`Invite code ${invite.code}. Tap to copy.`}>
@@ -167,7 +165,7 @@ export default function GroupInviteScreen() {
                             <PressableOpacity onPress={confirmReset} disabled={reset.isPending} style={styles.row}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={[styles.rowTitle, { color: colors.danger }]}>Reset link</Text>
-                                    <Text style={styles.rowSub}>Turns off the current link, QR code and code, and makes new ones.</Text>
+                                    <Text style={styles.rowSub}>Turns off the current link and code, and makes new ones.</Text>
                                 </View>
                                 {reset.isPending ? <ActivityIndicator color={colors.danger} /> : <Feather name="refresh-cw" size={18} color={colors.danger} />}
                             </PressableOpacity>
@@ -207,8 +205,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     scroll: { padding: 16, paddingBottom: 48 },
     card: { backgroundColor: colors.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: colors.border },
     groupName: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, textAlign: 'center', marginBottom: 14 },
-    qrWrap: { alignSelf: 'center', backgroundColor: '#fff', borderRadius: 16, padding: 10 },
-    qr: { width: 200, height: 200 },
     sub: { fontSize: 13, color: colors.textMuted, lineHeight: 19, marginTop: 8, textAlign: 'center' },
     codeBox: { alignSelf: 'center', alignItems: 'center', marginTop: 14, marginBottom: 6, paddingVertical: 8, paddingHorizontal: 18, borderRadius: 12, backgroundColor: colors.background },
     codeLabel: { fontSize: 10, fontWeight: '800', color: colors.textFaint, letterSpacing: 1 },

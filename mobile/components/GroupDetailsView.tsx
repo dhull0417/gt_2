@@ -90,7 +90,7 @@ export const GroupDetailsView = ({
     const memberCount = groupDetails.members?.length ?? 0;
     const tileProps: Record<DetailTileKey, React.ComponentProps<typeof SquircleTile>> = {
         invite: {
-            icon: 'user-plus', label: 'Invite Friends', subtitle: 'QR & link', tint: tints.teal,
+            icon: 'user-plus', label: 'Invite Friends', subtitle: 'Link & code', tint: tints.teal,
             onPress: () => router.push({ pathname: '/group-invite/[id]', params: { id: groupDetails._id } }),
         },
         calendar: {

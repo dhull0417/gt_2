@@ -19,7 +19,7 @@ export { PENDING_INVITE_KEY } from '@/utils/pendingInvite';
 
 type JoinState = 'loading' | 'preview' | 'joining' | 'joined' | 'already_member' | 'pending' | 'error';
 
-const SOURCES: InviteSource[] = ['link', 'install_referrer', 'clipboard', 'code', 'qr', 'contact'];
+const SOURCES: InviteSource[] = ['link', 'install_referrer', 'clipboard', 'code', 'contact'];
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 const Logo = () => (

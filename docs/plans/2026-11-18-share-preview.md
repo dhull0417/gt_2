@@ -32,14 +32,36 @@
   `components/create-group/MembersScreen.tsx`, `app/group-invite/[id].tsx`, `app/(tabs)/profile.tsx`
 
 ## Tasks
-1. [ ] **JS module wrapper** — `modules/rich-share/index.ts`: `shareWithPreview(opts)` uses `requireOptionalNativeModule('RichShare')`; when null → `Share.share({ message })`, returns `'shared' | 'dismissed'` from its result. Test (in Task 2's file, module mocked): missing native module → `Share.share` called with only `{ message }`.
-2. [ ] **Image picker + helper** — `utils/shareInvite.ts`:
+1. [x] **JS module wrapper** — `modules/rich-share/index.ts`: `shareWithPreview(opts)` uses `requireOptionalNativeModule('RichShare')`; when null → `Share.share({ message })`, returns `'shared' | 'dismissed'` from its result. Test (in Task 2's file, module mocked): missing native module → `Share.share` called with only `{ message }`.
+2. [x] **Image picker + helper** — `utils/shareInvite.ts`:
    - `shareTitle({ groupName?, meetupName? })` → constraint titles.
    - `previewImageFor(imageUrl?: string | null): Promise<string | null>` → cached file URI | logo URI | null.
    - `prefetchShareImage(imageUrl)` (fire-and-forget).
    - `shareInvite({ message, groupName?, meetupName?, imageUrl? })` / `shareApp()`.
    Tests: title strings; https URL → download into `share-previews/`, second call reuses the file; download rejects or exceeds 1500 ms → logo URI; `''`/`null`/`'http://x'` → logo without download; logo load failure → `null` and share still happens.
-3. [ ] **iOS native** — `RichShareModule.swift`: `AsyncFunction("share")` on the main queue; `RichShareItem: NSObject, UIActivityItemSource` (placeholder + item = message; link metadata = title + image/icon providers from the file URL); present from the top-most view controller; iPad popover anchor; resolve `"shared"`/`"dismissed"` from `completionWithItemsHandler`. `RichShare.podspec` (`s.dependency 'ExpoModulesCore'`, frameworks `LinkPresentation`).
-4. [ ] **Android native** — `RichShareModule.kt`: `AsyncFunction("share")` builds the intent per the spec, `FileProvider.getUriForFile(context, "$packageName.FileSystemFileProvider", file)` when an image is given, starts the chooser from the current activity, resolves `"unknown"`. `build.gradle` (expo module plugin, `androidx.core:core-ktx`). `expo-module.config.json` lists both platforms.
-5. [ ] **Call sites** — replace `Share.share` in the 6 invite places with `shareInvite(...)` (passing the group's `image`, and the meetup name for the meetup sheet); Profile uses `shareApp()`. Prefetch in Group Details and the meetup sheet. Keep the "ask for a new link" share on the join screen as plain text.
+3. [x] **iOS native** — `RichShareModule.swift`: `AsyncFunction("share")` on the main queue; `RichShareItem: NSObject, UIActivityItemSource` (placeholder + item = message; link metadata = title + image/icon providers from the file URL); present from the top-most view controller; iPad popover anchor; resolve `"shared"`/`"dismissed"` from `completionWithItemsHandler`. `RichShare.podspec` (`s.dependency 'ExpoModulesCore'`, frameworks `LinkPresentation`).
+4. [x] **Android native** — `RichShareModule.kt`: `AsyncFunction("share")` builds the intent per the spec, `FileProvider.getUriForFile(context, "$packageName.FileSystemFileProvider", file)` when an image is given, starts the chooser from the current activity, resolves `"unknown"`. `build.gradle` (expo module plugin, `androidx.core:core-ktx`). `expo-module.config.json` lists both platforms.
+5. [x] **Call sites** — replace `Share.share` in the 6 invite places with `shareInvite(...)` (passing the group's `image`, and the meetup name for the meetup sheet); Profile uses `shareApp()`. Prefetch in Group Details and the meetup sheet. Keep the "ask for a new link" share on the join screen as plain text.
 6. [ ] **Verify** — mobile `tsc` + full jest; owner: EAS development build, then check on iPhone (group with photo, group without, meetup, app share, iPad if available), standard Android 10+, and a Samsung Galaxy; confirm recipients get only the text and the link card.
+
+## Status (2026-11-18)
+Tasks 1–5 built; Task 6's automated part done: mobile `tsc` clean, jest 47 suites / 394 tests (12 new). The
+Swift and Kotlin could not be compiled here (no Xcode / Android SDK); they were checked by hand against
+expo-sharing's module. First native check is the owner's EAS development build. Nothing committed.
+
+**Changes made while building:**
+- Tests found that a download that never finishes would block that group's photo until the app restarts;
+  a download older than 10 s is now treated as stuck and started again (test added).
+- Mail gets the title as the subject line (iOS `subjectForActivityType`).
+- Group Details no longer has a share button (its Invite tile opens the invite screen), so the 6 share
+  points are: meetup sheet, Add Members (2), create-group Members step, invite screen, Profile app share.
+  The photo is prefetched on the meetup sheet, Add Members and the invite screen.
+- Android: the logo only appears if `expo-asset` hands back a `file://` copy (it copies bundled images into
+  the cache); otherwise that share has no picture. Check on device.
+
+## Device checklist (owner)
+- [ ] iPhone: group with a photo, group without, meetup invite, Profile "Share App", Mail subject; iPad if available.
+- [ ] Android 10+ (Pixel/standard Sharesheet): same four shares show title + picture.
+- [ ] Samsung Galaxy: note whether the picture shows (acceptable if not).
+- [ ] Recipients (Messages, WhatsApp, SMS) get only the text with the link card; no image attachment, no doubled link.
+- [ ] Airplane mode on a group with an uncached photo: share sheet opens within ~1.5 s with the logo.

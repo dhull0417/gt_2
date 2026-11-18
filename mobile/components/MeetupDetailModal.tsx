@@ -21,8 +21,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    Dimensions,
-    Share
+    Dimensions
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { getMaxAttendeesError } from '@/utils/scheduleConstants';
@@ -72,6 +71,7 @@ import { PulsingWatermark } from '@/components/meetup-detail/PulsingWatermark';
 import { InOutSwapIcon } from '@/components/meetup-detail/InOutSwapIcon';
 import { styles, dmStyles } from '@/components/meetup-detail/styles';
 import { buildInviteMessage } from '@/utils/inviteMessage';
+import { shareInvite, prefetchShareImage } from '@/utils/shareInvite';
 import { muteStateFor, restoreRequest } from '@/utils/groupMute';
 
 interface MeetupDetailModalProps {
@@ -203,6 +203,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
             setLocalGuestCount(entry?.count ?? 0);
         }
     }, [meetup, currentUser, isSettingGuests]);
+
+    // Fetch the group photo now so "Invite to Meetup" can show it in the share sheet right away.
+    useEffect(() => { prefetchShareImage(meetup?.group?.image); }, [meetup?.group?.image]);
 
     const waitlistUsers = (meetup?.waitlist || [])
         .map(u => (meetup?.members || []).find(m => m._id === getUserId(u)))
@@ -468,8 +471,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
     const handleInviteToMeetup = async () => {
         try {
             const { link, code } = await groupApi.generateInviteLink(api, meetup.group._id);
-            await Share.share({
+            await shareInvite({
                 message: buildInviteMessage({ meetupName: meetup.name, link, code, meetupId: meetup._id, referrerId: currentUser?._id }),
+                meetupName: meetup.name,
+                groupName: meetup.group?.name,
+                imageUrl: meetup.group?.image,
             });
         } catch {
             Alert.alert('Error', 'Could not create invite link. Please try again.');

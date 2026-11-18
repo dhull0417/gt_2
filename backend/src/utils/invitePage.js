@@ -4,7 +4,7 @@
 //   Android  -> straight to Google Play, carrying the invite as the install referrer
 //   iOS      -> one "Get GroupThat" tap that copies the invite link, then the App Store
 //               (the app reads it from the clipboard on first launch)
-//   desktop  -> QR code to scan with a phone
+//   desktop  -> both store buttons and the invite code (open the link on a phone to join)
 //   in-app browsers (Instagram, Messenger...) block automatic jumps, so they get buttons.
 import {
   APP_STORE_URL, APP_STORE_ID, PLAY_STORE_URL, ANDROID_PACKAGE, DEAD_INVITE_MESSAGES,
@@ -55,7 +55,6 @@ const STYLE = `
   .code { font-size: 13px; color: #9CA3AF; margin-top: 10px; }
   .code b { color: #374151; letter-spacing: 2px; font-family: ui-monospace, Menlo, monospace; }
   .hint { font-size: 13px; color: #9CA3AF; line-height: 1.4; margin: 6px 0 0; }
-  .qr { width: 200px; height: 200px; margin: 4px auto 10px; display: block; image-rendering: pixelated; }
   .section { display: none; }
   .section.show { display: block; }
 `;
@@ -104,12 +103,11 @@ const deadPage = ({ status, inviterName }, device) => {
 export const renderInvitePage = (invite, device) => {
   if (invite.status !== 'active') return deadPage(invite, device);
 
-  const { token, code, groupName, groupImage, memberCount, inviterName, meetup, meetupId, referrerId } = invite;
+  const { token, code, groupName, groupImage, memberCount, inviterName, meetup, meetupId } = invite;
   const link = shareUrlFor(token, meetup ? meetupId : null);
   const playHref = playStoreUrl({ token, meetupId: meetup ? meetupId : null });
   const deepLink = `groupthat://join/${token}${meetup && meetupId ? `?m=${encodeURIComponent(meetupId)}` : ''}`;
   const intentUri = `intent://join/${token}${meetup && meetupId ? `?m=${encodeURIComponent(meetupId)}` : ''}#Intent;scheme=groupthat;package=${ANDROID_PACKAGE};S.browser_fallback_url=${encodeURIComponent(playHref)};end`;
-  const qrSrc = `/qr/${token}.png${referrerId ? `?r=${encodeURIComponent(referrerId)}` : ''}`;
 
   const what = meetup ? `${meetup.name} with ${groupName}` : groupName;
   const title = inviterName ? `${inviterName} invited you to join ${what} on GroupThat` : `You're invited to join ${what} on GroupThat`;
@@ -140,8 +138,7 @@ export const renderInvitePage = (invite, device) => {
     </div>
 
     <div class="section${device.platform === 'desktop' ? ' show' : ''}" id="desktop">
-      <img class="qr" src="${esc(qrSrc)}" alt="QR code for this invite">
-      <p class="note">Scan with your phone\u2019s camera to join.</p>
+      <p class="note">Open this link on your phone to join, or get the app and enter the code below.</p>
       <a class="btn btn-ios" href="${APP_STORE_URL}">Download on the App Store</a>
       <a class="btn btn-android" href="${esc(PLAY_STORE_URL)}">Get it on Google Play</a>
     </div>

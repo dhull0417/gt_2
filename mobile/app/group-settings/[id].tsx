@@ -158,7 +158,7 @@ const GroupSettings = () => {
   const mainOptions = [
     { id: 'group', label: 'Edit Group Info', icon: 'edit-2', color: colors.brand, bg: chipBlue },
     { id: 'schedules', label: 'Edit Meetup Schedules', icon: 'calendar', color: '#6366F1', bg: chipIndigo },
-    { id: 'invite', label: 'Invite Link & QR Code', icon: 'link', color: '#14B8A6', bg: chipCyan },
+    { id: 'invite', label: 'Invite Link & Code', icon: 'link', color: '#14B8A6', bg: chipCyan },
     { id: 'reactions', label: 'RSVP Reactions', icon: 'smile', color: '#EC4899', bg: chipPink },
     { id: 'stats', label: 'Stats & Attendance', icon: 'bar-chart-2', color: '#10B981', bg: chipGreen },
     { id: 'rankings', label: 'Strength Rankings', icon: 'list', color: '#F59E0B', bg: chipOrange },
