@@ -3,7 +3,8 @@ import { useAppleAuth } from "@/hooks/useAppleAuth";
 import React, { useCallback, useState } from "react";
 import { peekPendingInvite } from "@/utils/pendingInvite";
 import { authButtonOrder, type AuthOption } from "@/utils/authOptions";
-import { Text, Image, View, ActivityIndicator, StyleSheet, Linking, Platform, LayoutAnimation } from "react-native";
+import { Text, Image, View, ActivityIndicator, StyleSheet, Linking, Platform } from "react-native";
+import Animated, { FadeInDown, FadeOutUp, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Button } from '@/components/ui/Button';
 import { useFocusEffect, useRouter } from "expo-router";
@@ -15,6 +16,9 @@ import { fontSize } from '@/constants/theme';
 
 const BUTTON_HEIGHT = 52;
 const BUTTON_RADIUS = 14;
+// One duration for every part of the "More options" reveal so it moves as one.
+const REVEAL_MS = 260;
+const revealLayout = LinearTransition.duration(REVEAL_MS);
 
 export default function Index() {
   const { handleSocialAuth, isLoading: googleIsLoading } = useSocialAuth();
@@ -34,9 +38,14 @@ export default function Index() {
     return () => clearTimeout(t);
   }, []));
 
+  // The chevron turns as the extra options slide in. Phone drops down and fades in while the
+  // logo, the buttons and the toggle glide to their new spots, all on the same timing.
+  const chevron = useSharedValue(0);
+  const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${chevron.value * 180}deg` }] }));
   const toggleMore = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setShowMore((v) => !v);
+    const next = !showMore;
+    chevron.value = withTiming(next ? 1 : 0, { duration: REVEAL_MS });
+    setShowMore(next);
   };
 
   const handleOpenPrivacyPolicy = () => {
@@ -112,20 +121,39 @@ export default function Index() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
+        {/* The transition sits on the logo itself, not its container: the container's frame
+            animating doesn't move the logo, which would re-center instantly and jump. */}
         <View style={styles.logoArea}>
-          <Image source={require("../../assets/images/splash-icon.png")} style={styles.logoImage} resizeMode="contain" />
+          <Animated.Image
+            layout={revealLayout}
+            source={require("../../assets/images/splash-icon.png")}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
 
-        <View style={styles.buttonGroup}>
+        <Animated.View style={styles.buttonGroup} layout={revealLayout}>
           {order.primary.map(renderOption)}
-          {showMore ? order.more.map(renderOption) : null}
+          {showMore ? order.more.map((option) => (
+            <Animated.View
+              key={option}
+              entering={FadeInDown.duration(REVEAL_MS)}
+              exiting={FadeOutUp.duration(REVEAL_MS * 0.7)}
+            >
+              {renderOption(option)}
+            </Animated.View>
+          )) : null}
           {order.more.length > 0 ? (
-            <PressableOpacity style={styles.moreToggle} onPress={toggleMore} accessibilityRole="button" accessibilityState={{ expanded: showMore }}>
-              <Text style={[styles.moreText, { color: colors.textMuted }]}>{showMore ? 'Fewer options' : 'More options'}</Text>
-              <Feather name={showMore ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} style={{ marginLeft: 4 }} />
-            </PressableOpacity>
+            <Animated.View layout={revealLayout}>
+              <PressableOpacity style={styles.moreToggle} onPress={toggleMore} accessibilityRole="button" accessibilityState={{ expanded: showMore }}>
+                <Text style={[styles.moreText, { color: colors.textMuted }]}>{showMore ? 'Fewer options' : 'More options'}</Text>
+                <Animated.View style={[{ marginLeft: 4 }, chevronStyle]}>
+                  <Feather name="chevron-down" size={16} color={colors.textMuted} />
+                </Animated.View>
+              </PressableOpacity>
+            </Animated.View>
           ) : null}
-        </View>
+        </Animated.View>
 
         {hasInvite ? (
           <View style={[styles.inviteBanner, { backgroundColor: colors.brandSoft }]}>
