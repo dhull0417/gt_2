@@ -1,16 +1,19 @@
-import { View, Text, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
+import { View, Text, TextInput, Alert, StyleSheet } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useEffect, useRef, useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth, useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import * as SecureStore from 'expo-secure-store';
+import { Feather } from '@expo/vector-icons';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { openPendingInvite } from '@/utils/pendingInvite';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { haptic } from '@/utils/haptics';
 import { unregisterPushToken } from '@/hooks/usePushNotifications';
+import { AuthScreen } from '@/components/auth/AuthScreen';
+import { Button } from '@/components/ui/Button';
+import { TextField } from '@/components/ui/TextField';
+import { fontSize } from '@/constants/theme';
 
 const ProfileSetupScreen = () => {
     const { user: clerkUser } = useUser();
@@ -93,132 +96,107 @@ const ProfileSetupScreen = () => {
         }
     };
 
+    const nameFields = (
+        <>
+            <TextField
+                label="First name"
+                placeholder="Sam"
+                value={firstName}
+                onChangeText={setFirstName}
+                autoCapitalize="words"
+                autoComplete="given-name"
+                textContentType="givenName"
+                returnKeyType="next"
+                onSubmitEditing={() => lastNameRef.current?.focus()}
+                containerStyle={styles.field}
+            />
+            <TextField
+                ref={lastNameRef}
+                label="Last name"
+                placeholder="Lee"
+                value={lastName}
+                onChangeText={setLastName}
+                autoCapitalize="words"
+                autoComplete="family-name"
+                textContentType="familyName"
+                returnKeyType="next"
+                onSubmitEditing={() => zipRef.current?.focus()}
+                containerStyle={styles.field}
+            />
+        </>
+    );
+
     return (
-        <SafeAreaView className="flex-1 bg-gray-50 dark:bg-black">
-            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1">
-                <ScrollView
-                    contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
-                    keyboardShouldPersistTaps="handled"
-                >
-                <View className="p-8">
-                    <Text className="text-3xl font-bold text-gray-800 dark:text-white text-center">Welcome!</Text>
-                    <Text className="text-lg text-gray-600 dark:text-gray-400 text-center mt-2 mb-8">Let's set up your profile.</Text>
-
-                    {!isAppleUser && (
-                        <>
-                            <TextInput
-                                placeholder="First Name"
-                                value={firstName}
-                                onChangeText={setFirstName}
-                                autoCapitalize="words"
-                                autoComplete="given-name"
-                                textContentType="givenName"
-                                returnKeyType="next"
-                                onSubmitEditing={() => lastNameRef.current?.focus()}
-                                className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
-                                placeholderTextColor={colors.placeholder}
-                            />
-                            <TextInput
-                                ref={lastNameRef}
-                                placeholder="Last Name"
-                                value={lastName}
-                                onChangeText={setLastName}
-                                autoCapitalize="words"
-                                autoComplete="family-name"
-                                textContentType="familyName"
-                                returnKeyType="next"
-                                onSubmitEditing={() => zipRef.current?.focus()}
-                                className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
-                                placeholderTextColor={colors.placeholder}
-                            />
-                        </>
-                    )}
-
-                    <TextInput
-                        ref={zipRef}
-                        placeholder="Zip Code"
-                        autoComplete="postal-code"
-                        textContentType="postalCode"
-                        returnKeyType="done"
-                        onSubmitEditing={handleSaveProfile}
-                        value={zipCode}
-                        onChangeText={(text) => setZipCode(text.replace(/\D/g, '').slice(0, 5))}
-                        keyboardType="numeric"
-                        maxLength={5}
-                        className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
-                        style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
-                        placeholderTextColor={colors.placeholder}
-                    />
-                    <Text className="text-xs text-gray-500 dark:text-gray-400 mb-6 px-1">
-                        Your zip code helps us show places near you first when you pick a meetup location. We never share it.
-                    </Text>
-
-                    {needsName && (
-                        <View
-                            className="w-full rounded-lg p-4 mb-6 border"
-                            style={{ backgroundColor: colors.brandSoft, borderColor: colors.border }}
-                        >
-                            <Text className="text-base font-bold text-gray-800 dark:text-white mb-1">Update Name!</Text>
-                            <Text className="text-sm text-gray-600 dark:text-gray-400 mb-4">Make sure your friends know who you are.</Text>
-                            <TextInput
-                                placeholder="First Name"
-                                value={firstName}
-                                onChangeText={setFirstName}
-                                autoCapitalize="words"
-                                className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-3"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
-                                placeholderTextColor={colors.placeholder}
-                            />
-                            <TextInput
-                                placeholder="Last Name"
-                                value={lastName}
-                                onChangeText={setLastName}
-                                autoCapitalize="words"
-                                className="w-full bg-white dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary }}
-                                placeholderTextColor={colors.placeholder}
-                            />
-                        </View>
-                    )}
-
-                    {isAppleUser && !needsName && (
-                        <Text className="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">
-                            If you would like to modify your name, visit the Profile Tab {`>`} Update Account Info.
-                        </Text>
-                    )}
-
+        <AuthScreen
+            title="Set up your profile"
+            subtitle="Tell your groups who you are. This only takes a moment."
+            footer={
+                // Signed in with the wrong account? Without this there's no way out of setup.
+                <View style={styles.footerRow}>
+                    <Text style={[styles.footerText, { color: colors.textMuted }]}>Not you? </Text>
                     <PressableOpacity
-                        onPress={handleSaveProfile}
+                        hitSlop={8}
                         disabled={isSaving}
-                        className="w-full py-4 rounded-lg items-center shadow"
-                        style={{ backgroundColor: colors.brand }}
+                        accessibilityLabel="Sign out"
+                        onPress={async () => { await unregisterPushToken(api); queryClient.clear(); signOut(); }}
                     >
-                        {isSaving ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text className="text-white text-lg font-bold">Save & Continue</Text>
-                        )}
+                        <Text style={[styles.footerText, { color: colors.brand, fontWeight: '700' }]}>Sign out</Text>
                     </PressableOpacity>
-
-                    {/* Signed in with the wrong account? Without this there's no way out of setup. */}
-                    <View className="flex-row justify-center mt-6">
-                        <Text style={{ color: colors.textMuted, fontSize: 15 }}>Not you? </Text>
-                        <PressableOpacity
-                            hitSlop={8}
-                            disabled={isSaving}
-                            accessibilityLabel="Sign out"
-                            onPress={async () => { await unregisterPushToken(api); queryClient.clear(); signOut(); }}
-                        >
-                            <Text style={{ color: colors.brand, fontSize: 15, fontWeight: '700' }}>Sign out</Text>
-                        </PressableOpacity>
-                    </View>
                 </View>
-                </ScrollView>
-            </KeyboardAvoidingView>
-        </SafeAreaView>
+            }
+        >
+            {!isAppleUser && nameFields}
+
+            {needsName && (
+                <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.cardHeader}>
+                        <Feather name="user" size={18} color={colors.brand} />
+                        <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Add your name</Text>
+                        <Text style={[styles.optional, { color: colors.textFaint }]}>Optional</Text>
+                    </View>
+                    <Text style={[styles.cardBody, { color: colors.textMuted }]}>So your friends know who you are.</Text>
+                    {nameFields}
+                </View>
+            )}
+
+            <TextField
+                ref={zipRef}
+                label="Zip code"
+                placeholder="84060"
+                autoComplete="postal-code"
+                textContentType="postalCode"
+                returnKeyType="done"
+                onSubmitEditing={handleSaveProfile}
+                value={zipCode}
+                onChangeText={(text) => setZipCode(text.replace(/\D/g, '').slice(0, 5))}
+                keyboardType="number-pad"
+                maxLength={5}
+                helperText="Helps us show places near you first when you pick a meetup location. We never share it."
+                containerStyle={styles.fieldLast}
+            />
+
+            {isAppleUser && !needsName && (
+                <Text style={[styles.note, { color: colors.textMuted }]}>
+                    You can change your name anytime in Profile › Update Account Info.
+                </Text>
+            )}
+
+            <Button title="Save & continue" size="lg" onPress={handleSaveProfile} loading={isSaving} />
+        </AuthScreen>
     );
 };
+
+const styles = StyleSheet.create({
+    field: { marginBottom: 14 },
+    fieldLast: { marginBottom: 24 },
+    card: { borderRadius: 20, borderWidth: 1, padding: 16, paddingBottom: 4, marginBottom: 18 },
+    cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+    cardTitle: { fontSize: fontSize.lg, fontWeight: '800', flex: 1 },
+    optional: { fontSize: fontSize.xs, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+    cardBody: { fontSize: fontSize.md, marginBottom: 14 },
+    note: { fontSize: fontSize.sm, textAlign: 'center', marginBottom: 18 },
+    footerRow: { flexDirection: 'row', justifyContent: 'center' },
+    footerText: { fontSize: fontSize.base },
+});
 
 export default ProfileSetupScreen;
