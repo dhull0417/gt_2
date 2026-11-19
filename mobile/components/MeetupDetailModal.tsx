@@ -21,7 +21,6 @@ import {
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    Dimensions
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { getMaxAttendeesError } from '@/utils/scheduleConstants';
@@ -63,6 +62,7 @@ import NativeTimePicker from './NativeTimePicker';
 import EndTimeField from './EndTimeField';
 import LocationField from './LocationField';
 import LocationSearchModal from './LocationSearchModal';
+import { ActionSheet } from './ActionSheet';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { toast, ToastPortal } from '@/contexts/ToastContext';
 import { formatAgo } from '@/utils/listTime';
@@ -174,28 +174,8 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
     }));
     const [manualRsvpEdit, setManualRsvpEdit] = useState(false);
     const [isActionsMenuVisible, setIsActionsMenuVisible] = useState(false);
-    const [actionsMenuAnchor, setActionsMenuAnchor] = useState<{ top: number; left: number; pointerLeft: number } | null>(null);
-    const moreBtnRef = useRef<View>(null);
 
-    const openActionsMenu = () => {
-        moreBtnRef.current?.measureInWindow((x, y, width, height) => {
-            const screenWidth = Dimensions.get('window').width;
-            const cardWidth = 200;
-            const pointerSize = 14;
-            const margin = 12;
-            const buttonCenterX = x + width / 2;
-            const left = Math.min(
-                Math.max(buttonCenterX - cardWidth / 2, margin),
-                screenWidth - cardWidth - margin
-            );
-            const pointerLeft = Math.min(
-                Math.max(buttonCenterX - left - pointerSize / 2, 12),
-                cardWidth - 12 - pointerSize
-            );
-            setActionsMenuAnchor({ top: y + height + 36, left, pointerLeft });
-            setIsActionsMenuVisible(true);
-        });
-    };
+    const openActionsMenu = () => setIsActionsMenuVisible(true);
 
     useEffect(() => {
         if (!isSettingGuests && meetup && currentUser) {
@@ -986,7 +966,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
 
                     <Animated.View layout={LinearTransition.duration(350).easing(Easing.out(Easing.cubic))} style={[styles.actionRow, { justifyContent: 'center' }]}>
                         <PressableOpacity
-                            ref={moreBtnRef}
                             onPress={openActionsMenu}
                             style={[styles.actionBtn, styles.moreActionBtn, { backgroundColor: colors.brandSoft, borderColor: colors.brand }]}
                             activeOpacity={0.7}
@@ -1271,58 +1250,40 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
             </ScrollView>
 
             {/* Actions Menu */}
-            <Modal transparent visible={isActionsMenuVisible} animationType="fade" onRequestClose={() => setIsActionsMenuVisible(false)}>
-                <Pressable style={styles.actionsMenuOverlay} onPress={() => setIsActionsMenuVisible(false)}>
-                    <View style={[styles.actionsMenuCard, actionsMenuAnchor && { top: actionsMenuAnchor.top, left: actionsMenuAnchor.left }]}>
-                        {actionsMenuAnchor && (
-                            <View style={[styles.actionsMenuPointer, { left: actionsMenuAnchor.pointerLeft }]} />
-                        )}
-                        {canEditOrCancel && (
-                            <>
-                                <PressableOpacity
-                                    style={styles.actionsMenuItem}
-                                    onPress={() => { setIsActionsMenuVisible(false); openEditModal(); }}
-                                >
-                                    <View style={[styles.actionsMenuIconWrap, { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB' }]}>
-                                        <Feather name="edit-2" size={18} color="#F59E0B" />
-                                    </View>
-                                    <Text style={styles.actionsMenuLabel}>Edit Meetup</Text>
-                                </PressableOpacity>
-                                <View style={styles.actionsMenuDivider} />
-                            </>
-                        )}
-                        <PressableOpacity
-                            style={styles.actionsMenuItem}
-                            onPress={() => { setIsActionsMenuVisible(false); handleAddToCalendar(); }}
-                        >
-                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: isDark ? '#132A1E' : '#F0FDF4' }]}>
-                                <Feather name="calendar" size={18} color="#16A34A" />
-                            </View>
-                            <Text style={styles.actionsMenuLabel}>Add to Calendar</Text>
-                        </PressableOpacity>
-                        <View style={styles.actionsMenuDivider} />
-                        <PressableOpacity
-                            style={styles.actionsMenuItem}
-                            onPress={() => { setIsActionsMenuVisible(false); handleGoToChat(); }}
-                        >
-                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: isDark ? '#1A2A42' : '#F0F9FF' }]}>
-                                <Feather name="message-circle" size={18} color="#0EA5E9" />
-                            </View>
-                            <Text style={styles.actionsMenuLabel}>Go to Chat</Text>
-                        </PressableOpacity>
-                        <View style={styles.actionsMenuDivider} />
-                        <PressableOpacity
-                            style={styles.actionsMenuItem}
-                            onPress={() => { setIsActionsMenuVisible(false); handleInviteToMeetup(); }}
-                        >
-                            <View style={[styles.actionsMenuIconWrap, { backgroundColor: isDark ? '#123330' : '#ECFDF5' }]}>
-                                <Feather name="user-plus" size={18} color="#0D9488" />
-                            </View>
-                            <Text style={styles.actionsMenuLabel}>Invite to Meetup</Text>
-                        </PressableOpacity>
-                    </View>
-                </Pressable>
-            </Modal>
+            <ActionSheet
+                visible={isActionsMenuVisible}
+                onClose={() => setIsActionsMenuVisible(false)}
+                items={[
+                    ...(canEditOrCancel ? [{
+                        key: 'edit',
+                        label: 'Edit Meetup',
+                        icon: <Feather name="edit-2" size={18} color="#F59E0B" />,
+                        iconBg: isDark ? '#3A2E12' : '#FFFBEB',
+                        onPress: openEditModal,
+                    }] : []),
+                    {
+                        key: 'calendar',
+                        label: 'Add to Calendar',
+                        icon: <Feather name="calendar" size={18} color="#16A34A" />,
+                        iconBg: isDark ? '#132A1E' : '#F0FDF4',
+                        onPress: handleAddToCalendar,
+                    },
+                    {
+                        key: 'chat',
+                        label: 'Go to Chat',
+                        icon: <Feather name="message-circle" size={18} color="#0EA5E9" />,
+                        iconBg: isDark ? '#1A2A42' : '#F0F9FF',
+                        onPress: handleGoToChat,
+                    },
+                    {
+                        key: 'invite',
+                        label: 'Invite to Meetup',
+                        icon: <Feather name="user-plus" size={18} color="#0D9488" />,
+                        iconBg: isDark ? '#123330' : '#ECFDF5',
+                        onPress: handleInviteToMeetup,
+                    },
+                ]}
+            />
 
             {/* Start DM Confirmation Sheet */}
             <Modal
