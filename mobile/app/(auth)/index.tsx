@@ -1,25 +1,29 @@
 import { useSocialAuth } from "@/hooks/useSocialAuth";
 import { useAppleAuth } from "@/hooks/useAppleAuth";
-import { useCallback, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { peekPendingInvite } from "@/utils/pendingInvite";
-import Reanimated, { interpolate, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import { Dimensions, Text, Image, View, ActivityIndicator, StyleSheet, Linking } from "react-native";
+import { authButtonOrder, type AuthOption } from "@/utils/authOptions";
+import { Text, Image, View, ActivityIndicator, StyleSheet, Linking, Platform, LayoutAnimation } from "react-native";
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import { Button } from '@/components/ui/Button';
 import { useFocusEffect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from '@expo/vector-icons';
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { fontSize } from '@/constants/theme';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
+const BUTTON_HEIGHT = 52;
+const BUTTON_RADIUS = 14;
 
 export default function Index() {
-  const { handleSocialAuth, isLoading } = useSocialAuth();
+  const { handleSocialAuth, isLoading: googleIsLoading } = useSocialAuth();
   const { handleAppleAuth, isLoading: appleIsLoading } = useAppleAuth();
-  const isAnyLoading = isLoading || appleIsLoading;
+  const isAnyLoading = googleIsLoading || appleIsLoading;
   const router = useRouter();
   const colors = useThemeColors();
-  const [showOtherOptions, setShowOtherOptions] = useState(false);
+  const order = authButtonOrder(Platform.OS);
+  const [showMore, setShowMore] = useState(false);
   // An invite picked up from a link or from the install is waiting for sign-in.
   const [hasInvite, setHasInvite] = useState(false);
   useFocusEffect(useCallback(() => {
@@ -29,19 +33,11 @@ export default function Index() {
     const t = setTimeout(check, 1500);
     return () => clearTimeout(t);
   }, []));
-  const slide = useSharedValue(0);
 
-  const toggleOtherOptions = () => {
-    slide.value = withTiming(showOtherOptions ? 0 : 1, { duration: 300 });
-    setShowOtherOptions(!showOtherOptions);
+  const toggleMore = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowMore((v) => !v);
   };
-
-  const primaryPaneStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: interpolate(slide.value, [0, 1], [0, -SCREEN_WIDTH]) }],
-  }));
-  const otherPaneStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: interpolate(slide.value, [0, 1], [SCREEN_WIDTH, 0]) }],
-  }));
 
   const handleOpenPrivacyPolicy = () => {
     Linking.openURL("https://groupthatapp.com/privacy-policy/").catch((err) =>
@@ -49,184 +45,123 @@ export default function Index() {
     );
   };
 
+  const optionStyle = [styles.option, { backgroundColor: colors.surface }];
+
+  const renderOption = (option: AuthOption) => {
+    switch (option) {
+      case 'apple':
+        // Apple's own branded button (its style is Apple's guideline, kept black in both themes).
+        return appleIsLoading ? (
+          <View key="apple" style={[styles.appleButton, styles.shadow]}>
+            <ActivityIndicator size="small" color="#fff" />
+          </View>
+        ) : (
+          <View key="apple" pointerEvents={isAnyLoading ? 'none' : 'auto'} style={{ opacity: isAnyLoading ? 0.5 : 1 }}>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={BUTTON_RADIUS}
+              style={[styles.appleButton, styles.shadow]}
+              onPress={handleAppleAuth}
+            />
+          </View>
+        );
+      case 'google':
+        return (
+          <Button
+            key="google"
+            title="Continue with Google"
+            variant="outline"
+            size="lg"
+            onPress={() => handleSocialAuth("oauth_google")}
+            loading={googleIsLoading}
+            disabled={isAnyLoading && !googleIsLoading}
+            icon={<Image source={require("../../assets/images/google-logo.png")} style={styles.googleLogo} resizeMode="contain" />}
+            style={optionStyle}
+          />
+        );
+      case 'email':
+        return (
+          <Button
+            key="email"
+            title="Continue with Email"
+            variant="outline"
+            size="lg"
+            onPress={() => router.push('/(auth)/email')}
+            disabled={isAnyLoading}
+            icon={<Feather name="mail" size={20} color={colors.textPrimary} />}
+            style={optionStyle}
+          />
+        );
+      case 'phone':
+        return (
+          <Button
+            key="phone"
+            title="Continue with Phone"
+            variant="outline"
+            size="lg"
+            onPress={() => router.push('/(auth)/phone-login')}
+            disabled={isAnyLoading}
+            icon={<Feather name="phone" size={20} color={colors.textPrimary} />}
+            style={optionStyle}
+          />
+        );
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
-          <View style={styles.logoContainer}>
-            <View style={styles.logoBox}>
-              <Image
-                source={require("../../assets/images/splash-icon.png")}
-                style={styles.logoImage}
-                resizeMode="contain"
-              />
-            </View>
-          </View>
+        <View style={styles.logoArea}>
+          <Image source={require("../../assets/images/splash-icon.png")} style={styles.logoImage} resizeMode="contain" />
+        </View>
 
-          <View style={{ height: '50%' }} />
-
-          <View style={[styles.buttonGroup, { marginTop: 118 }]}>
-            <View style={styles.slideStage}>
-              {/* Primary: Google + Email */}
-              <Reanimated.View
-                style={[styles.slidePane, primaryPaneStyle]}
-                pointerEvents={showOtherOptions ? 'none' : 'auto'}
-              >
-                <PressableOpacity
-                  style={[styles.button, styles.shadow, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
-                  onPress={() => handleSocialAuth("oauth_google")}
-                  disabled={isAnyLoading}
-                >
-                  {isLoading ? <ActivityIndicator size="small" color={colors.textPrimary} /> : (
-                    <View style={styles.buttonContent}>
-                      <Image source={require("../../assets/images/google-logo.png")} style={styles.iconImage} resizeMode="contain" />
-                      <Text style={[styles.buttonText, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Google</Text>
-                    </View>
-                  )}
-                </PressableOpacity>
-
-                <PressableOpacity
-                  style={[styles.button, styles.shadow, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
-                  onPress={() => router.push('/(auth)/sign-in')}
-                >
-                  <View style={styles.buttonContent}>
-                      <Feather name="mail" size={24} color={colors.textPrimary} style={{ marginRight: 12 }} />
-                      <Text style={[styles.buttonText, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Email</Text>
-                  </View>
-                </PressableOpacity>
-              </Reanimated.View>
-
-              {/* Other: Apple + Phone */}
-              <Reanimated.View
-                style={[styles.slidePane, styles.slidePaneOverlay, otherPaneStyle]}
-                pointerEvents={showOtherOptions ? 'auto' : 'none'}
-              >
-                {appleIsLoading ? (
-                  // Mirrors AppleAuthenticationButton's mandated black BLACK style below — kept black in both themes
-                  <View style={[styles.appleButton, styles.shadow]}>
-                    <ActivityIndicator size="small" color="#fff" />
-                  </View>
-                ) : (
-                  // Apple's own branded button — buttonStyle is Apple's brand guideline, left as-is regardless of theme
-                  <AppleAuthentication.AppleAuthenticationButton
-                    buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
-                    buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                    cornerRadius={9999}
-                    style={[styles.appleButton, styles.shadow]}
-                    onPress={handleAppleAuth}
-                  />
-                )}
-
-                <PressableOpacity
-                  style={[styles.button, styles.shadow, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
-                  onPress={() => router.push('/(auth)/phone-login')}
-                  disabled={isAnyLoading}
-                >
-                  <View style={styles.buttonContent}>
-                    <Feather name="phone" size={22} color={colors.textPrimary} style={{ marginRight: 12 }} />
-                    <Text style={[styles.buttonText, { color: colors.textPrimary }]} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Phone</Text>
-                  </View>
-                </PressableOpacity>
-              </Reanimated.View>
-            </View>
-
-            {/* Other Options Toggle */}
-            <PressableOpacity
-              style={styles.otherOptionsToggle}
-              onPress={toggleOtherOptions}
-            >
-              <Text style={[styles.otherOptionsText, { color: colors.textMuted }]}>Other Options</Text>
-              <Feather name={showOtherOptions ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} style={{ marginLeft: 4 }} />
+        <View style={styles.buttonGroup}>
+          {order.primary.map(renderOption)}
+          {showMore ? order.more.map(renderOption) : null}
+          {order.more.length > 0 ? (
+            <PressableOpacity style={styles.moreToggle} onPress={toggleMore} accessibilityRole="button" accessibilityState={{ expanded: showMore }}>
+              <Text style={[styles.moreText, { color: colors.textMuted }]}>{showMore ? 'Fewer options' : 'More options'}</Text>
+              <Feather name={showMore ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} style={{ marginLeft: 4 }} />
             </PressableOpacity>
+          ) : null}
+        </View>
+
+        {hasInvite ? (
+          <View style={[styles.inviteBanner, { backgroundColor: colors.brandSoft }]}>
+            <Feather name="check-circle" size={18} color={colors.success} style={{ marginRight: 8 }} />
+            <Text style={[styles.inviteBannerText, { color: colors.textPrimary }]}>Your invite is saved. Sign in or sign up to join the group.</Text>
           </View>
+        ) : (
+          <Text style={[styles.inviteHint, { color: colors.textMuted }]}>
+            Invited to a group? Tap the invite link again after signing in, or{' '}
+            <Text style={{ color: colors.brand, fontWeight: '600' }} onPress={() => router.push('/join/code')}>enter an invite code</Text>.
+          </Text>
+        )}
 
-          <View style={{ flex: 1 }} />
-
-          {hasInvite ? (
-            <View style={[styles.inviteBanner, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
-              <Feather name="check-circle" size={18} color={colors.success} style={{ marginRight: 8 }} />
-              <Text style={[styles.inviteBannerText, { color: colors.textPrimary }]}>Your invite is saved. Sign in or sign up to join the group.</Text>
-            </View>
-          ) : (
-            <Text style={[styles.inviteHint, { color: colors.textMuted }]}>
-              Invited to a group? Tap the invite link again after signing in, or{' '}
-              <Text style={{ color: colors.brand, fontWeight: '600' }} onPress={() => router.push('/join/code')}>enter an invite code</Text>.
-            </Text>
-          )}
-
-          <View>
-            <Text style={[styles.footerText, { color: colors.textMuted }]}>
-              By signing up, you agree to our
-              <Text style={[styles.linkText, { color: colors.brand }]} onPress={handleOpenPrivacyPolicy}> Privacy Policy</Text>
-            </Text>
-          </View>
+        <Text style={[styles.footerText, { color: colors.textMuted }]}>
+          By continuing, you agree to our
+          <Text style={{ color: colors.brand }} onPress={handleOpenPrivacyPolicy}> Privacy Policy</Text>
+        </Text>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 32,
-    justifyContent: 'center',
-  },
-  logoContainer: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ translateY: -85 }],
-  },
-  logoBox: {
-    width: 320,
-    height: 196,
-    position: 'relative',
-  },
-  logoImage: {
-    width: 320,
-    height: 196,
-  },
-  buttonGroup: {
-    gap: 8,
-  },
-  slideStage: {
-    height: 104,
-  },
-  slidePane: {
-    width: '100%',
-    gap: 8,
-  },
-  slidePaneOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-  },
+  safeArea: { flex: 1 },
+  container: { flex: 1, paddingHorizontal: 24, paddingBottom: 12 },
+  logoArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  logoImage: { width: 320, height: 196 },
+  buttonGroup: { gap: 12, marginBottom: 20 },
+  option: { minHeight: BUTTON_HEIGHT, borderRadius: BUTTON_RADIUS },
   appleButton: {
     width: '100%',
-    height: 48,
+    height: BUTTON_HEIGHT,
     backgroundColor: '#000000',
-    borderRadius: 9999,
+    borderRadius: BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 9999,
-    height: 48,
-    paddingHorizontal: 24,
   },
   shadow: {
     shadowColor: "#000",
@@ -235,62 +170,11 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconImage: {
-    width: 20,
-    height: 20,
-    marginRight: 10,
-  },
-  buttonText: {
-    color: '#000000',
-    fontWeight: '600',
-    fontSize: 18,
-    flexShrink: 1,
-  },
-  otherOptionsToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    marginTop: 8,
-  },
-  otherOptionsText: {
-    color: '#6B7280',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  inviteBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  inviteBannerText: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 19,
-  },
-  inviteHint: {
-    textAlign: 'center',
-    fontSize: 13,
-    lineHeight: 18,
-    paddingHorizontal: 8,
-  },
-  footerText: {
-    textAlign: 'center',
-    color: '#6B7280',
-    fontSize: 12,
-    lineHeight: 16,
-    marginTop: 24,
-    paddingHorizontal: 8,
-  },
-  linkText: {
-    color: '#3B82F6',
-  },
+  googleLogo: { width: 20, height: 20 },
+  moreToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8 },
+  moreText: { fontWeight: '600', fontSize: fontSize.md },
+  inviteBanner: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14 },
+  inviteBannerText: { flex: 1, fontSize: fontSize.md, lineHeight: 19 },
+  inviteHint: { textAlign: 'center', fontSize: fontSize.sm, lineHeight: 18, paddingHorizontal: 8 },
+  footerText: { textAlign: 'center', fontSize: fontSize.xs, lineHeight: 16, marginTop: 16, paddingHorizontal: 8 },
 });

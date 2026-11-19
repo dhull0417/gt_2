@@ -389,15 +389,35 @@ export const updateNotificationPrefs = asyncHandler(async (req, res) => {
   res.status(200).json({ notificationPrefs: user.notificationPrefs });
 });
 
+const APPLE_PLACEHOLDER_NAME = "New Member";
+
+/** Name fields to $set when the stored name is blank or the Apple placeholder and the request carries one. */
+export const nameFill = (user, body) => {
+  const first = typeof body?.firstName === "string" ? body.firstName.trim() : "";
+  const last = typeof body?.lastName === "string" ? body.lastName.trim() : "";
+  if (!first && !last) return {};
+  const storedFirst = (user.firstName || "").trim();
+  const storedLast = (user.lastName || "").trim();
+  const missing = (!storedFirst && !storedLast) || (storedFirst === APPLE_PLACEHOLDER_NAME && !storedLast);
+  if (!missing) return {};
+  return { firstName: first, lastName: last };
+};
+
 export const syncUser = asyncHandler(async (req, res) => {
   const { userId } = getAuth(req);
   let user = await User.findOne({ clerkId: userId });
   if (user) {
+    const set = {};
     // keep the device timezone current (used to time lifecycle emails)
     const tz = resolveZone(req.body?.timezone);
-    if (tz && user.timezone !== tz) {
-      await User.updateOne({ _id: user._id }, { $set: { timezone: tz } });
-      user.timezone = tz;
+    if (tz && user.timezone !== tz) set.timezone = tz;
+    // Sign in with Apple hands over the name once. useUserSync usually creates the user
+    // (blank, or "New Member") a moment before useAppleAuth sends that name, so fill in a
+    // missing or placeholder name here. A real name is never overwritten.
+    Object.assign(set, nameFill(user, req.body));
+    if (Object.keys(set).length) {
+      await User.updateOne({ _id: user._id }, { $set: set });
+      Object.assign(user, set);
     }
     return res.status(200).json({ user: serializeUser(user), message: "User already exists" });
   }
@@ -417,7 +437,7 @@ export const syncUser = asyncHandler(async (req, res) => {
     clerkId: userId,
     email: clerkUser.emailAddresses[0]?.emailAddress,
     phoneNumber: clerkUser.phoneNumbers[0]?.phoneNumber,
-    firstName: bodyFirstName || clerkUser.firstName || (isAppleUser ? "New Member" : ""),
+    firstName: bodyFirstName || clerkUser.firstName || (isAppleUser ? APPLE_PLACEHOLDER_NAME : ""),
     lastName: bodyLastName || clerkUser.lastName || "",
     profilePicture: clerkUser.imageUrl || "",
     timezone: resolveZone(req.body?.timezone),

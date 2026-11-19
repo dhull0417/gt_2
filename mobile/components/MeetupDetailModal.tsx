@@ -1,10 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { requireOnline } from '@/utils/offlineState';
 import { getErrorMessage } from '@/utils/networkError';
-import { DateTime } from 'luxon';
-import { meetupDayKey, meetupStartInstant, meetupEndInstant, dayKeyToLocalDate, localDateToDayKey, formatMeetupDate, formatMeetupTimeRange, viewerZone } from '@/utils/meetupTime';
-import { addHour, endTimeError } from '@/utils/timeString';
-import { tzAbbr } from '@/utils/timezones';
+import { meetupStartInstant, meetupEndInstant, formatMeetupDate, formatMeetupTimeRange, viewerZone } from '@/utils/meetupTime';
 import { LinkifiedText } from '@/components/LinkifiedText';
 import { haptic } from '@/utils/haptics';
 import { CancelReasonSheet } from '@/components/CancelReasonSheet';
@@ -15,15 +12,12 @@ import {
     Image,
     Alert,
     ActivityIndicator,
-    TextInput,
     Modal,
     StyleSheet,
-    KeyboardAvoidingView,
     Platform,
     Pressable,
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import { getMaxAttendeesError } from '@/utils/scheduleConstants';
 import { FREQUENCY_LABELS, buildFrequencyDetail } from '@/utils/meetupFrequency';
 import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -58,12 +52,9 @@ import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { RsvpBreather } from '@/components/RsvpBreather';
 import { useRouter } from 'expo-router';
 import * as Calendar from 'expo-calendar';
-import NativeTimePicker from './NativeTimePicker';
-import EndTimeField from './EndTimeField';
-import LocationField from './LocationField';
-import LocationSearchModal from './LocationSearchModal';
 import { ActionSheet } from './ActionSheet';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { MeetupForm } from './meetup-form/MeetupForm';
+import { draftFromMeetup, updatePayload, validateDraft, type MeetupDraft } from '@/utils/meetupFormDraft';
 import { toast, ToastPortal } from '@/contexts/ToastContext';
 import { formatAgo } from '@/utils/listTime';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
@@ -100,22 +91,12 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
     const { data: allMeetups } = useGetMeetups();
     const [swapIconNonce, setSwapIconNonce] = useState(0);
 
-    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-    const [newDate, setNewDate] = useState(new Date());
+    // Edit Meetup: the form's draft while it's open (null = closed), and what it started from.
+    const [editDraft, setEditDraft] = useState<MeetupDraft | null>(null);
+    const editOriginal = useRef<MeetupDraft | null>(null);
+    const [isUpdating, setIsUpdating] = useState(false);
     const [cancelSheetVisible, setCancelSheetVisible] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
-    const [tempDate, setTempDate] = useState(new Date());
-    const [newTime, setNewTime] = useState('');
-    const [newEndTime, setNewEndTime] = useState<string | null>(null);
-    const [capacityMode, setCapacityMode] = useState<"unlimited" | "limited">("unlimited");
-    const [newCapacity, setNewCapacity] = useState('');
-    const [newLocation, setNewLocation] = useState('');
-    const [newDescription, setNewDescription] = useState('');
-    const [isLocationSearchActive, setIsLocationSearchActive] = useState(false);
-    const [showDatePicker, setShowDatePicker] = useState(false);
-    const [showTimePicker, setShowTimePicker] = useState(false);
-    const [showEndTimePicker, setShowEndTimePicker] = useState(false);
-    const [isUpdating, setIsUpdating] = useState(false);
     const [dmTargetUser, setDmTargetUser] = useState<User | null>(null);
     // Member an owner/moderator is editing assignments for.
     const [assignTarget, setAssignTarget] = useState<User | null>(null);
@@ -123,8 +104,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
     const [isSendingReminder, setIsSendingReminder] = useState(false);
     const [isUpdatingTargetRsvp, setIsUpdatingTargetRsvp] = useState(false);
 
-    const capacityError = getMaxAttendeesError(capacityMode, newCapacity);
-    const canSaveCapacity = capacityMode !== "limited" || (newCapacity !== "" && !capacityError);
 
     useEffect(() => {
         setMeetup(initialMeetup);
@@ -521,75 +500,49 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
         );
     };
 
+    const openEditModal = () => {
+        const d = draftFromMeetup(meetup);
+        editOriginal.current = d;
+        setEditDraft(d);
+    };
+
     const handleUpdateMeetupDetails = async () => {
-        if (isReadOnly || !canSaveCapacity) return;
-        const payload: any = { meetupId: meetup._id };
-        const capInt = capacityMode === "limited" ? parseInt(newCapacity, 10) : 0;
-
-        // Plain calendar days in the GROUP's timezone, so the date can't shift for someone far from the group.
-        if (localDateToDayKey(newDate) !== meetupDayKey(meetup)) payload.date = localDateToDayKey(newDate);
-        if (newTime !== meetup.time) payload.time = newTime;
-        const endProblem = endTimeError(newTime, newEndTime);
-        if (endProblem) { Alert.alert('Check the end time', endProblem); return; }
-        if ((newEndTime || null) !== (meetup.endTime || null)) payload.endTime = newEndTime;
-        if (newLocation !== (meetup.location || '')) payload.location = newLocation;
-        if (newDescription !== (meetup.description || '')) payload.description = newDescription;
-        if (capInt !== meetup.capacity) payload.capacity = capInt;
-
-        if (Object.keys(payload).length <= 1) {
-            setIsEditModalVisible(false);
+        if (isReadOnly || !editDraft || !editOriginal.current || validateDraft(editDraft)) return;
+        // Only what changed: untouched settings aren't sent, so a series meetup only gets its
+        // own settings when they're actually changed here.
+        const changes = updatePayload(editOriginal.current, editDraft);
+        if (Object.keys(changes).length === 0) {
+            setEditDraft(null);
             return;
         }
-        
         setIsUpdating(true);
         try {
-            const response = await meetupApi.updateMeetup(api, payload);
+            const response = await meetupApi.updateMeetup(api, { meetupId: meetup._id, ...changes } as any);
             await queryClient.invalidateQueries({ queryKey: ['meetups'] });
             if (response?.meetup) setMeetup(response.meetup);
-            setIsEditModalVisible(false);
+            broadcastMeetupUpdate(getToken, meetupGroupId);
+            setEditDraft(null);
             toast.success("Meetup details updated.");
         } catch (error: any) {
-            Alert.alert("Update Failed", getErrorMessage(error, "Couldn't save the meetup. Please try again."));
+            const data = error?.response?.data;
+            Alert.alert("Update Failed", data?.error === 'premium_required' && data?.message ? data.message : getErrorMessage(error, "Couldn't save the meetup. Please try again."));
         } finally {
             setIsUpdating(false);
         }
     };
 
-    // Today in the group's timezone: earlier days can't be picked (the server rejects them anyway).
-    const minPickableDate = dayKeyToLocalDate(DateTime.now().setZone(meetup.timezone || undefined).toFormat('yyyy-LL-dd'));
-
-    const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-        if (Platform.OS === 'android') {
-            // Android's dialog has no Done button; closing on a pick (event.type 'set') IS
-            // the confirm. A dismiss fires 'dismissed' with no selectedDate — don't fall back
-            // to tempDate here, it only tracks the original date on this branch.
-            setShowDatePicker(false);
-            if (event.type === 'set' && selectedDate) {
-                setNewDate(selectedDate);
-            }
-            return;
-        }
-        if (selectedDate) {
-            setTempDate(selectedDate);
-        }
-    };
-
-    const confirmIosDate = () => {
-        setNewDate(tempDate);
-        setShowDatePicker(false);
-    };
-
-    const openEditModal = () => {
-        setNewDate(dayKeyToLocalDate(meetupDayKey(meetup)));
-        setTempDate(dayKeyToLocalDate(meetupDayKey(meetup)));
-        setNewTime(meetup.time);
-        setNewEndTime(meetup.endTime ?? null);
-        setShowEndTimePicker(false);
-        setCapacityMode(meetup.capacity > 0 ? "limited" : "unlimited");
-        setNewCapacity(meetup.capacity > 0 ? meetup.capacity.toString() : "");
-        setNewLocation(meetup.location || '');
-        setNewDescription(meetup.description || '');
-        setIsEditModalVisible(true);
+    // RSVP questions have their own screen; leaving the form drops unsaved edits, so ask first.
+    const openMeetupQuestions = () => {
+        const go = () => {
+            setEditDraft(null);
+            leaveTo({ pathname: '/group-questions/[id]', params: { id: meetupGroupId, meetupId: meetup._id } });
+        };
+        const unsaved = editDraft && editOriginal.current && Object.keys(updatePayload(editOriginal.current, editDraft)).length > 0;
+        if (!unsaved) return go();
+        Alert.alert('Unsaved changes', 'Leave without saving your changes to this meetup?', [
+            { text: 'Keep editing', style: 'cancel' },
+            { text: 'Leave', style: 'destructive', onPress: go },
+        ]);
     };
 
     // Items someone is bringing and their ride role, shown as pills under their name.
@@ -1412,166 +1365,23 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                 />
             )}
 
-            {/* Combined Edit Details Modal */}
-            {/* onRequestClose: Android's back button/gesture closes whatever is on top of the form first
-                (location search, date/time picker), then the form. Without it, back did nothing here. */}
-            <Modal
-                transparent
-                visible={isEditModalVisible}
-                animationType="slide"
-                onRequestClose={() => {
-                    if (isLocationSearchActive) setIsLocationSearchActive(false);
-                    else if (showTimePicker) setShowTimePicker(false);
-                    else if (showEndTimePicker) setShowEndTimePicker(false);
-                    else if (showDatePicker) setShowDatePicker(false);
-                    else setIsEditModalVisible(false);
-                }}
-            >
-                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
-                    <View style={styles.modalOverlay}>
-                        <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-                            <View style={styles.modalHeaderInner}>
-                                <PressableOpacity onPress={() => setIsEditModalVisible(false)}><Feather name="x" size={24} color={colors.textFaint} /></PressableOpacity>
-                                <Text style={[styles.modalTitleInner, { color: colors.textPrimary }]}>Edit Meetup</Text>
-                                <PressableOpacity onPress={handleUpdateMeetupDetails} disabled={isUpdating || !canSaveCapacity}>
-                                    {isUpdating ? <ActivityIndicator size="small" color={colors.brand} /> : <Text style={[styles.saveBtnText, { color: colors.brand }, !canSaveCapacity && styles.saveBtnTextDisabled]}>Save</Text>}
-                                </PressableOpacity>
-                            </View>
-
-                            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-                                <Text style={[styles.fieldLabel, { color: colors.textFaint }]}>Date</Text>
-                                <PressableOpacity style={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} onPress={() => setShowDatePicker(true)}>
-                                    <Feather name="calendar" size={18} color={colors.brand} />
-                                    <Text style={[styles.dateInputText, { color: colors.textSecondary }]}>
-                                        {newDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                                    </Text>
-                                </PressableOpacity>
-
-                                <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Time</Text>
-                                <PressableOpacity style={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} onPress={() => setShowTimePicker(true)}>
-                                    <Feather name="clock" size={18} color={colors.brand} />
-                                    <Text style={[styles.dateInputText, { color: colors.textSecondary }]}>
-                                        {/* Edited in the group's own time, so say which zone that is. */}
-                                        {newTime}{meetup.timezone ? ` ${tzAbbr(meetup.timezone)}` : ''}
-                                    </Text>
-                                </PressableOpacity>
-
-                                <EndTimeField
-                                    startTime={newTime}
-                                    endTime={newEndTime}
-                                    onChange={setNewEndTime}
-                                    open={showEndTimePicker}
-                                    onOpenChange={(o) => { setShowEndTimePicker(o); if (o) setShowTimePicker(false); }}
-                                    renderPicker={false}
-                                    labelStyle={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}
-                                    fieldStyle={[styles.dateInput, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
-                                    textStyle={[styles.dateInputText, { color: colors.textSecondary }]}
-                                />
-
-                                <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Location Override</Text>
-                                <LocationField
-                                    variant="card"
-                                    placeholder="Specific address or link..."
-                                    value={newLocation}
-                                    onPress={() => setIsLocationSearchActive(true)}
-                                />
-
-                                <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Max Attendees</Text>
-                                <View style={styles.boolRow}>
-                                    <PressableOpacity
-                                        style={[styles.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, capacityMode === "unlimited" && [styles.boolBtnActive, { borderColor: colors.brand, backgroundColor: colors.brandSoft }]]}
-                                        onPress={() => { setCapacityMode("unlimited"); setNewCapacity(""); }}
-                                    >
-                                        <Text style={[styles.boolBtnText, { color: colors.textMuted }, capacityMode === "unlimited" && { color: colors.brand }]}>Unlimited</Text>
-                                    </PressableOpacity>
-                                    <PressableOpacity
-                                        style={[styles.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, capacityMode === "limited" && [styles.boolBtnActive, { borderColor: colors.brand, backgroundColor: colors.brandSoft }]]}
-                                        onPress={() => setCapacityMode("limited")}
-                                    >
-                                        <Text style={[styles.boolBtnText, { color: colors.textMuted }, capacityMode === "limited" && { color: colors.brand }]}>Limited</Text>
-                                    </PressableOpacity>
-                                </View>
-                                {capacityMode === "limited" && (
-                                    <View style={{ marginTop: 10 }}>
-                                        <View style={[styles.inputContainer, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }, capacityError && styles.inputContainerError]}>
-                                            <Feather name="users" size={18} color={colors.brand} />
-                                            <TextInput
-                                                style={[styles.textInput, { color: colors.textSecondary }]}
-                                                placeholder="How many?"
-                                                placeholderTextColor={colors.placeholder}
-                                                keyboardType="number-pad"
-                                                value={newCapacity}
-                                                onChangeText={setNewCapacity}
-                                            />
-                                        </View>
-                                        {capacityError && <Text style={styles.errorText}>{capacityError}</Text>}
-                                    </View>
-                                )}
-
-                                <Text style={[styles.fieldLabel, { color: colors.textFaint, marginTop: 20 }]}>Description (optional)</Text>
-                                <View style={[styles.inputContainer, styles.descriptionInputContainer, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
-                                    <TextInput
-                                        style={[styles.textInput, styles.descriptionInput, { color: colors.textSecondary }]}
-                                        placeholder="Add any extra details for this meetup..."
-                                        placeholderTextColor={colors.placeholder}
-                                        value={newDescription}
-                                        onChangeText={setNewDescription}
-                                        multiline
-                                        textAlignVertical="top"
-                                    />
-                                </View>
-                            </ScrollView>
-                        </View>
-                    </View>
-                </KeyboardAvoidingView>
-
-                <LocationSearchModal
-                    visible={isLocationSearchActive}
-                    initialValue={newLocation}
-                    placeholder="Specific address or link..."
-                    onDone={(text) => { setNewLocation(text); setIsLocationSearchActive(false); }}
-                    onCancel={() => setIsLocationSearchActive(false)}
-                    asOverlay
+            {/* Edit Meetup: the same form as Add Meetup, for this meetup only */}
+            {editDraft && (
+                <MeetupForm
+                    visible
+                    mode="edit"
+                    draft={editDraft}
+                    onChange={patch => setEditDraft(d => (d ? { ...d, ...patch } : d))}
+                    isPremium={(meetup.group as any)?.isPremium !== false}
+                    owner={(meetup.group as any)?.owner}
+                    lockedNote="The group's owner needs Premium to turn these on."
+                    questionsLink={openMeetupQuestions}
+                    timezoneEditable={false}
+                    saving={isUpdating}
+                    onSubmit={handleUpdateMeetupDetails}
+                    onClose={() => setEditDraft(null)}
                 />
-
-                {/* Rendered inside this Modal's tree, not a sibling — RN can't stack a second native Modal */}
-                {showDatePicker && (
-                    Platform.OS === 'ios' ? (
-                        <View style={StyleSheet.absoluteFillObject}>
-                            <View style={styles.datePickerOverlay}>
-                                <View style={[styles.datePickerContent, { backgroundColor: colors.surface }]}>
-                                    <DateTimePicker
-                                        value={tempDate}
-                                        mode="date"
-                                        minimumDate={minPickableDate}
-                                        display="spinner"
-                                        onChange={onDateChange}
-                                        textColor={isDark ? colors.textPrimary : 'black'}
-                                    />
-                                    <PressableOpacity onPress={confirmIosDate} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
-                                        <Text style={styles.doneButtonText}>Done</Text>
-                                    </PressableOpacity>
-                                </View>
-                            </View>
-                        </View>
-                    ) : (
-                        <DateTimePicker
-                            value={newDate} // Android picker can use the final state directly
-                            mode="date"
-                            minimumDate={minPickableDate}
-                            display="default"
-                            onChange={onDateChange}
-                        />
-                    )
-                )}
-
-                {showTimePicker && (
-                    <NativeTimePicker value={newTime} onChange={setNewTime} onClose={() => setShowTimePicker(false)} asOverlay />
-                )}
-                {showEndTimePicker && (
-                    <NativeTimePicker value={newEndTime || addHour(newTime)} onChange={setNewEndTime} onClose={() => setShowEndTimePicker(false)} asOverlay />
-                )}
-            </Modal>
+            )}
 
             <CancelReasonSheet
                 visible={cancelSheetVisible}

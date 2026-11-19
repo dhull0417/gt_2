@@ -1,27 +1,35 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import { Button } from '@/components/ui/Button';
+import { TextField } from '@/components/ui/TextField';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import { fontSize } from '@/constants/theme';
 
 interface Props {
-  /** "We emailed a code to a***@gmail.com" - say where it went. */
+  /** "We sent a code to a***@gmail.com" - say where it went. */
   destination: string;
   onSubmit: (code: string) => Promise<void> | void;
-  onResend?: () => Promise<void> | void;
+  /** Return false when the resend failed (the handler shows its own error) so the button stays available. */
+  onResend?: () => Promise<boolean | void> | boolean | void;
   isLoading?: boolean;
   /** Hide "Resend" (e.g. authenticator app codes). */
   hideResend?: boolean;
   onBack?: () => void;
+  /** Off when the surrounding AuthScreen already has a title. */
+  showHeading?: boolean;
 }
 
 const RESEND_COOLDOWN_S = 30;
 
-/** The one code-entry step used by sign-up and sign-in, with guidance, autofill and a resend timer. */
-export function VerificationCodeForm({ destination, onSubmit, onResend, isLoading, hideResend, onBack }: Props) {
+/** The one code-entry step used by every sign-in path, with guidance, autofill and a resend timer. */
+export function VerificationCodeForm({ destination, onSubmit, onResend, isLoading, hideResend, onBack, showHeading = true }: Props) {
   const colors = useThemeColors();
   const [code, setCode] = useState('');
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_S);
+  const [resending, setResending] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const isEmail = destination.includes('@');
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
@@ -30,54 +38,69 @@ export function VerificationCodeForm({ destination, onSubmit, onResend, isLoadin
     return () => clearTimeout(t);
   }, [cooldown]);
 
-  const submit = () => { if (code.trim().length >= 4 && !isLoading) onSubmit(code.trim()); };
+  const ready = code.length >= 4;
+  const submit = () => { if (ready && !isLoading) onSubmit(code); };
 
   return (
     <View>
-      <Text className="text-3xl font-black text-gray-900 dark:text-white mb-2">Check your {destination.includes('@') ? 'email' : 'messages'}</Text>
-      <Text className="text-base text-gray-600 dark:text-gray-400 mb-6">
-        We sent a verification code to {destination}. It can take a minute to arrive - check your spam folder if you don't see it.
+      {showHeading ? (
+        <Text style={[styles.title, { color: colors.textPrimary }]} accessibilityRole="header">
+          Check your {isEmail ? 'email' : 'messages'}
+        </Text>
+      ) : null}
+      <Text style={[styles.body, { color: colors.textMuted }]}>
+        We sent a code to <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>{destination}</Text>.
+        {isEmail ? " It can take a minute to arrive. Check your spam folder if you don't see it." : ''}
       </Text>
-      <TextInput
+      <TextField
         ref={inputRef}
         value={code}
         onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 8))}
-        placeholder="Verification code"
-        placeholderTextColor={colors.placeholder}
+        placeholder="••••••"
+        accessibilityLabel="Verification code"
         keyboardType="number-pad"
         autoComplete="one-time-code"
         textContentType="oneTimeCode"
         returnKeyType="done"
         onSubmitEditing={submit}
-        className="w-full bg-gray-100 dark:bg-gray-800 p-4 border border-gray-300 dark:border-gray-700 rounded-lg text-base mb-4"
-        style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined, color: colors.textPrimary, letterSpacing: 4 }}
+        style={styles.codeInput}
+        containerStyle={styles.field}
       />
-      <PressableOpacity
-        onPress={submit}
-        disabled={isLoading || code.trim().length < 4}
-        haptic="press"
-        className="w-full py-4 rounded-lg items-center shadow"
-        style={{ backgroundColor: colors.brand, opacity: code.trim().length < 4 ? 0.6 : 1 }}
-      >
-        {isLoading ? <ActivityIndicator color="#fff" /> : <Text className="text-white text-lg font-bold">Verify</Text>}
-      </PressableOpacity>
-      <View className="flex-row justify-between mt-5">
+      <Button title="Verify" size="lg" onPress={submit} loading={isLoading} disabled={!ready} />
+      <View style={styles.row}>
         {onBack ? (
-          <PressableOpacity onPress={onBack}>
-            <Text className="text-base text-gray-600 dark:text-gray-400">Back</Text>
+          <PressableOpacity onPress={onBack} hitSlop={8}>
+            <Text style={[styles.link, { color: colors.textMuted }]}>{isEmail ? 'Use a different email' : 'Use a different number'}</Text>
           </PressableOpacity>
         ) : <View />}
-        {!hideResend && onResend && (
+        {!hideResend && onResend ? (
           <PressableOpacity
-            disabled={cooldown > 0}
-            onPress={async () => { await onResend(); setCooldown(RESEND_COOLDOWN_S); }}
+            disabled={cooldown > 0 || resending}
+            hitSlop={8}
+            onPress={async () => {
+              setResending(true);
+              try {
+                if ((await onResend()) !== false) setCooldown(RESEND_COOLDOWN_S);
+              } finally {
+                setResending(false);
+              }
+            }}
           >
-            <Text className="text-base font-bold" style={{ color: cooldown > 0 ? colors.textFaint : colors.brand }}>
-              {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+            <Text style={[styles.link, { color: cooldown > 0 ? colors.textFaint : colors.brand, fontWeight: '700' }]}>
+              {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
             </Text>
           </PressableOpacity>
-        )}
+        ) : null}
       </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  title: { fontSize: 26, fontWeight: '900', letterSpacing: -0.3, marginBottom: 6 },
+  body: { fontSize: fontSize.base, lineHeight: 21, marginBottom: 20 },
+  field: { marginBottom: 16 },
+  codeInput: { textAlign: 'center', fontSize: 24, fontWeight: '700', letterSpacing: 6, height: 56, paddingVertical: 0 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 18 },
+  link: { fontSize: fontSize.base },
+});

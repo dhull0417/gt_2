@@ -12,7 +12,8 @@ import { Feather } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/expo';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
-import { useApiClient, groupApi, RsvpQuestion } from '@/utils/api';
+import { useApiClient, groupApi, meetupApi, RsvpQuestion } from '@/utils/api';
+import { useGetMeetups } from '@/hooks/useGetMeetups';
 import { broadcastGroupUpdate, broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useThemeColors } from '@/contexts/AppearanceContext';
@@ -37,7 +38,8 @@ const blank = (): Draft => ({ key: newKey(), prompt: '', type: 'text', options: 
 export default function GroupQuestionsScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { id, scheduleId } = useLocalSearchParams<{ id: string; scheduleId: string }>();
+  // A series' questions (scheduleId), or one meetup's own (meetupId).
+  const { id, scheduleId, meetupId } = useLocalSearchParams<{ id: string; scheduleId?: string; meetupId?: string }>();
   const router = useRouter();
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -45,7 +47,12 @@ export default function GroupQuestionsScreen() {
   const groupQuery = useGetGroupDetails(id);
   const { data: group, isLoading } = groupQuery;
 
-  const schedule = useMemo(() => group?.schedules?.find((s) => s._id === scheduleId) ?? null, [group, scheduleId]);
+  const schedule = useMemo(() => (scheduleId ? group?.schedules?.find((s) => s._id === scheduleId) ?? null : null), [group, scheduleId]);
+  const { data: allMeetups } = useGetMeetups();
+  const meetup = useMemo(() => (meetupId ? allMeetups?.find((m) => m._id === meetupId) ?? null : null), [allMeetups, meetupId]);
+  const source = schedule
+    ? { name: schedule.name, questions: schedule.defaultQuestions ?? [] }
+    : meetup ? { name: meetup.name, questions: meetup.questions ?? [] } : null;
   const isPremium = group?.isPremium === true;
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -53,13 +60,14 @@ export default function GroupQuestionsScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!schedule || loaded) return;
-    setDrafts((schedule.defaultQuestions ?? []).map((q) => ({
+    if (!source || loaded) return;
+    setDrafts(source.questions.map((q) => ({
       key: newKey(), _id: q._id, prompt: q.prompt, type: q.type,
       options: q.type === 'choice' ? [...q.options] : ['', ''], required: q.required,
     })));
     setLoaded(true);
-  }, [schedule, loaded]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedule, meetup, loaded]);
 
   const patch = (key: string, p: Partial<Draft>) => setDrafts((cur) => cur.map((d) => (d.key === key ? { ...d, ...p } : d)));
 
@@ -74,20 +82,20 @@ export default function GroupQuestionsScreen() {
   };
 
   const save = async () => {
-    if (!id || !scheduleId) return;
+    if (!id || (!scheduleId && !meetupId)) return;
     const err = problem();
     if (err) { Alert.alert('Check your questions', err); return; }
     setSaving(true);
     try {
-      await groupApi.updateScheduleQuestions(api, id, scheduleId, {
-        questions: drafts.map((d) => ({
-          _id: d._id,
-          prompt: d.prompt.trim(),
-          type: d.type,
-          options: d.type === 'choice' ? d.options.map((o) => o.trim()).filter(Boolean) : [],
-          required: d.required,
-        })),
-      });
+      const questions = drafts.map((d) => ({
+        _id: d._id,
+        prompt: d.prompt.trim(),
+        type: d.type,
+        options: d.type === 'choice' ? d.options.map((o) => o.trim()).filter(Boolean) : [],
+        required: d.required,
+      }));
+      if (scheduleId) await groupApi.updateScheduleQuestions(api, id, scheduleId, { questions });
+      else await meetupApi.updateMeetupQuestions(api, meetupId!, { questions });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
         queryClient.invalidateQueries({ queryKey: ['meetups'] }),
@@ -113,7 +121,7 @@ export default function GroupQuestionsScreen() {
     return <SafeAreaView style={styles.safe}><OfflineEmptyState onBack={() => router.back()} /></SafeAreaView>;
   }
 
-  if (isLoading || !group || !schedule) {
+  if (isLoading || !group || !source) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><LoadingAnimation /></View>
@@ -138,7 +146,7 @@ export default function GroupQuestionsScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 140 }}>
           <Text style={styles.sub}>
-            Ask members something when they RSVP "I'm In" to "{schedule.name}". Everyone going can see the answers on the meetup. Up to {MAX_QUESTIONS} questions.
+            Ask members something when they RSVP "I'm In" to "{source.name}"{meetupId ? ' (this meetup only)' : ''}. Everyone going can see the answers on the meetup. Up to {MAX_QUESTIONS} questions.
           </Text>
 
           {!isPremium ? (

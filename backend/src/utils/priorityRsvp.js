@@ -400,7 +400,7 @@ export const refreshPriorityTiers = async (group, schedule) => {
     status: "scheduled",
     date: { $gte: now },
   })
-    .select("startsAt date rsvpOpenDate rsvpNotified")
+    .select("startsAt date rsvpOpenDate rsvpNotified customSettings rsvpLeadDays rsvpLeadTime")
     .lean();
   if (meetups.length === 0) return 0;
 
@@ -410,8 +410,11 @@ export const refreshPriorityTiers = async (group, schedule) => {
   const ops = [];
   for (const m of meetups) {
     const startsAtDT = DateTime.fromJSDate(new Date(m.startsAt || m.date)).setZone(group.timezone);
-    const baseOpen = schedule.generationLeadDays != null
-      ? startsAtDT.minus({ days: schedule.generationLeadDays }).set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 }).toJSDate()
+    // A meetup with RSVP rules of its own opens on its own time; the priority groups follow it.
+    const own = m.customSettings ? { days: m.rsvpLeadDays ?? null, ...parseTimeString(m.rsvpLeadTime || "09:00 AM") } : null;
+    const leadDays = own ? own.days : schedule.generationLeadDays;
+    const baseOpen = leadDays != null
+      ? startsAtDT.minus({ days: leadDays }).set({ hour: own ? own.hours : leadH, minute: own ? own.minutes : leadM, second: 0, millisecond: 0 }).toJSDate()
       : null;
     const { rsvpOpenDate, priorityTiers, priorityOpened } = resolveRsvpOpen({ schedule, group, baseOpen, active, now });
     // already-open (or no gate) skips the "RSVPs are open" ping; a future open time re-arms it

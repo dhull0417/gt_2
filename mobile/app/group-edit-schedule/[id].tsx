@@ -13,8 +13,7 @@ import {
     KeyboardAvoidingView,
 } from "react-native";
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
-import { DAYS_OF_WEEK, DAY_COLORS_LIGHT, ORDINAL_OCCURRENCES, FREQ_LABELS, uid, ordSfx, timeToMinutes, getMaxAttendeesError } from '@/utils/scheduleConstants';
+import { DAYS_OF_WEEK, DAY_COLORS_LIGHT, ORDINAL_OCCURRENCES, FREQ_LABELS, uid, ordSfx, getMaxAttendeesError } from '@/utils/scheduleConstants';
 import { timezoneOptions, tzAbbr } from '@/utils/timezones';
 import { toast } from '@/contexts/ToastContext';
 import { haptic } from '@/utils/haptics';
@@ -37,9 +36,9 @@ import { buildLongRoutine, emptyLongDraft, isLongDraftValid, isLongFrequency, lo
 import OptionPickerModal from "../../components/OptionPickerModal";
 import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
-import InfoBubble from "@/components/InfoBubble";
 import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
-import { MinimumToMeetField } from '@/components/schedule/MinimumToMeetField';
+import { RsvpRulesCard } from '@/components/schedule/RsvpRulesCard';
+import { CapacityCard } from '@/components/schedule/CapacityCard';
 import { PremiumFeaturesCard } from '@/components/schedule/PremiumFeaturesCard';
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -1063,207 +1062,26 @@ const EditScheduleScreen = () => {
                     </View>
 
                     {/* RSVP Rules */}
-                    <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#7C3AED", backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, { backgroundColor: chipPurpleBg, borderColor: chipPurpleBorder }]}>
-                                <Feather name="bell" size={16} color="#7C3AED" />
-                            </View>
-                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>RSVP Rules</Text>
-                        </View>
-
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>Limit when people can RSVP?</Text>
-                        <View style={s.boolRow}>
-                            <PressableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, !d.rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
-                                onPress={() => upd({ rsvpRestricted: false })}>
-                                <Text style={[s.boolBtnText, { color: colors.textMuted }, !d.rsvpRestricted && { color: colors.brand }]}>Allow anytime</Text>
-                            </PressableOpacity>
-                            <PressableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
-                                onPress={() => upd({ rsvpRestricted: true })}>
-                                <Text style={[s.boolBtnText, { color: colors.textMuted }, d.rsvpRestricted && { color: colors.brand }]}>Limit RSVPs</Text>
-                            </PressableOpacity>
-                        </View>
-
-                        {d.rsvpRestricted && (
-                            <View style={{ marginTop: 14, gap: 14 }}>
-                                <View>
-                                    <View style={s.toggleRow}>
-                                        <View style={s.toggleRowLabelWrap}>
-                                            <Text style={[s.toggleRowLabel, { color: colors.textSecondary }]}>Earliest time to RSVP</Text>
-                                            <InfoBubble
-                                                title="Earliest time to RSVP"
-                                                description={"This sets the earliest time and day people can respond.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs as soon as the meetup is created."}
-                                            />
-                                        </View>
-                                        <ToggleSwitch activeColor="#7C3AED" value={d.leadEnabled} onValueChange={v => {
-                                            const leadDays = v && d.deadlineEnabled && d.leadDays < d.deadlineDays ? d.deadlineDays : d.leadDays;
-                                            const sameDayViolation = v && d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
-                                            upd({
-                                                leadEnabled: v,
-                                                leadDays,
-                                                ...(sameDayViolation ? { leadTime: d.deadlineTime } : {}),
-                                            });
-                                        }} />
-                                    </View>
-                                    {d.leadEnabled && (
-                                        <View style={{ marginTop: 10 }}>
-                                            <View style={[s.leadRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                                <PressableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => {
-                                                    const leadDays = Math.max(d.deadlineEnabled ? d.deadlineDays : 0, d.leadDays - 1);
-                                                    const sameDayViolation = d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
-                                                    upd({ leadDays, ...(sameDayViolation ? { leadTime: d.deadlineTime } : {}) });
-                                                }}>
-                                                    <Feather name="minus" size={18} color={colors.brand} />
-                                                </PressableOpacity>
-                                                <View style={s.leadCenter}>
-                                                    <Text style={[s.leadVal, { color: colors.textPrimary }]}>{d.leadDays}</Text>
-                                                    <Text style={[s.leadSub, { color: colors.textFaint }]}>days before</Text>
-                                                </View>
-                                                <PressableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => upd({ leadDays: d.leadDays + 1 })}>
-                                                    <Feather name="plus" size={18} color={colors.brand} />
-                                                </PressableOpacity>
-                                            </View>
-                                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                                            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                                                onPress={() => upd({ showLeadTimePicker: !d.showLeadTimePicker, showDeadlineTimePicker: false, showStartDatePicker: false, showFreqPicker: false, showTZPicker: false })}>
-                                                <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
-                                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{d.leadTime}</Text>
-                                                <Feather name={d.showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                            </PressableOpacity>
-                                        </View>
-                                    )}
-                                    {d.leadEnabled && d.showLeadTimePicker && (
-                                        <NativeTimePicker value={d.leadTime} onChange={t => {
-                                            const capped = d.deadlineEnabled && d.leadDays === d.deadlineDays && timeToMinutes(t) > timeToMinutes(d.deadlineTime);
-                                            if (capped) {
-                                                Alert.alert(
-                                                    "Earliest RSVP time must be before the latest RSVP time",
-                                                    `• Both are ${d.leadDays} day${d.leadDays === 1 ? '' : 's'} before the meetup\n• Earliest time can't be later than ${d.deadlineTime}\n• Earliest time set to ${d.deadlineTime}`
-                                                );
-                                            }
-                                            upd({ leadTime: capped ? d.deadlineTime : t });
-                                        }}
-                                            onClose={() => upd({ showLeadTimePicker: false })} />
-                                    )}
-                                </View>
-
-                                <View>
-                                    <View style={s.toggleRow}>
-                                        <View style={s.toggleRowLabelWrap}>
-                                            <Text style={[s.toggleRowLabel, { color: colors.textSecondary }]}>Latest time to RSVP</Text>
-                                            <InfoBubble
-                                                title="Latest time to RSVP"
-                                                description={"This sets the cutoff for responding.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs right up until the meetup starts."}
-                                            />
-                                        </View>
-                                        <ToggleSwitch activeColor="#7C3AED" value={d.deadlineEnabled} onValueChange={v => {
-                                            const deadlineDays = v && d.leadEnabled && d.deadlineDays > d.leadDays ? d.leadDays : d.deadlineDays;
-                                            const sameDayViolation = v && d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
-                                            upd({
-                                                deadlineEnabled: v,
-                                                deadlineDays,
-                                                ...(sameDayViolation ? { deadlineTime: d.leadTime } : {}),
-                                            });
-                                        }} />
-                                    </View>
-                                    {d.deadlineEnabled && (
-                                        <View style={{ marginTop: 10 }}>
-                                            <View style={[s.leadRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                                <PressableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => upd({ deadlineDays: Math.max(0, d.deadlineDays - 1) })}>
-                                                    <Feather name="minus" size={18} color={colors.brand} />
-                                                </PressableOpacity>
-                                                <View style={s.leadCenter}>
-                                                    <Text style={[s.leadVal, { color: colors.textPrimary }]}>{d.deadlineDays}</Text>
-                                                    <Text style={[s.leadSub, { color: colors.textFaint }]}>days before</Text>
-                                                </View>
-                                                <PressableOpacity style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]} onPress={() => {
-                                                    const deadlineDays = d.leadEnabled ? Math.min(d.leadDays, d.deadlineDays + 1) : d.deadlineDays + 1;
-                                                    const sameDayViolation = d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
-                                                    upd({ deadlineDays, ...(sameDayViolation ? { deadlineTime: d.leadTime } : {}) });
-                                                }}>
-                                                    <Feather name="plus" size={18} color={colors.brand} />
-                                                </PressableOpacity>
-                                            </View>
-                                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                                            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                                                onPress={() => upd({ showDeadlineTimePicker: !d.showDeadlineTimePicker, showLeadTimePicker: false, showStartDatePicker: false, showFreqPicker: false, showTZPicker: false })}>
-                                                <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
-                                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{d.deadlineTime}</Text>
-                                                <Feather name={d.showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                            </PressableOpacity>
-                                        </View>
-                                    )}
-                                    {d.deadlineEnabled && d.showDeadlineTimePicker && (
-                                        <NativeTimePicker value={d.deadlineTime} onChange={t => {
-                                            const capped = d.leadEnabled && d.deadlineDays === d.leadDays && timeToMinutes(t) < timeToMinutes(d.leadTime);
-                                            if (capped) {
-                                                Alert.alert(
-                                                    "Latest RSVP time must be after the earliest RSVP time",
-                                                    `• Both are ${d.deadlineDays} day${d.deadlineDays === 1 ? '' : 's'} before the meetup\n• Latest time can't be earlier than ${d.leadTime}\n• Latest time set to ${d.leadTime}`
-                                                );
-                                            }
-                                            upd({ deadlineTime: capped ? d.leadTime : t });
-                                        }}
-                                            onClose={() => upd({ showDeadlineTimePicker: false })} />
-                                    )}
-                                </View>
-
-                                <MinimumToMeetField
-                                    isPremium={group?.isPremium === true}
-                                    owner={group?.owner}
-                                    deadlineOn={d.deadlineEnabled}
-                                    value={d.minAttendeesInput}
-                                    onChange={v => upd({ minAttendeesInput: v })}
-                                    error={getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput)}
-                                />
-                            </View>
-                        )}
-                    </View>
+                    <RsvpRulesCard
+                        value={d}
+                        onChange={upd}
+                        isPremium={group?.isPremium === true}
+                        owner={group?.owner}
+                        minError={getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput)}
+                        openPicker={d.showLeadTimePicker ? "lead" : d.showDeadlineTimePicker ? "deadline" : null}
+                        onOpenPickerChange={p => upd({ showLeadTimePicker: p === "lead", showDeadlineTimePicker: p === "deadline", showStartDatePicker: false, showFreqPicker: false, showTZPicker: false })}
+                        chipStyle={[s.sectionIconChip, { backgroundColor: chipPurpleBg, borderColor: chipPurpleBorder }]}
+                        iconSize={16}
+                    />
 
                     {/* Capacity */}
-                    <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#0D9488", marginBottom: 18, backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, { backgroundColor: chipTealBg, borderColor: chipTealBorder }]}>
-                                <Feather name="users" size={16} color="#0D9488" />
-                            </View>
-                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Capacity</Text>
-                        </View>
-
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>Max Attendees</Text>
-                        <View style={s.boolRow}>
-                            <PressableOpacity
-                                style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.maxAttendeesMode === "unlimited" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
-                                onPress={() => upd({ maxAttendeesMode: "unlimited", maxAttendeesInput: "" })}
-                            >
-                                <Text style={[s.boolBtnText, { color: colors.textMuted }, d.maxAttendeesMode === "unlimited" && { color: colors.brand }]}>Unlimited</Text>
-                            </PressableOpacity>
-                            <PressableOpacity
-                                style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.maxAttendeesMode === "limited" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
-                                onPress={() => upd({ maxAttendeesMode: "limited" })}
-                            >
-                                <Text style={[s.boolBtnText, { color: colors.textMuted }, d.maxAttendeesMode === "limited" && { color: colors.brand }]}>Limited</Text>
-                            </PressableOpacity>
-                        </View>
-                        {d.maxAttendeesMode === "limited" && (() => {
-                            const maxAttendeesError = getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput);
-                            return (
-                                <View style={{ marginTop: 10 }}>
-                                    <View style={[s.inputRow, { marginBottom: 0, backgroundColor: colors.surface, borderColor: colors.border }, maxAttendeesError && { borderColor: colors.danger }]}>
-                                        <Feather name="users" size={16} color={colors.textFaint} style={{ marginRight: 8 }} />
-                                        <TextInput
-                                            style={[s.inlineInput, { color: colors.textSecondary }]}
-                                            placeholder="How many?"
-                                            placeholderTextColor={colors.placeholder}
-                                            keyboardType="number-pad"
-                                            value={d.maxAttendeesInput}
-                                            onChangeText={v => upd({ maxAttendeesInput: v })}
-                                        />
-                                    </View>
-                                    {maxAttendeesError && <Text style={[s.errorText, { color: colors.danger }]}>{maxAttendeesError}</Text>}
-                                </View>
-                            );
-                        })()}
-
-                    </View>
+                    <CapacityCard
+                        mode={d.maxAttendeesMode}
+                        input={d.maxAttendeesInput}
+                        onChange={upd}
+                        chipStyle={[s.sectionIconChip, { backgroundColor: chipTealBg, borderColor: chipTealBorder }]}
+                        iconSize={16}
+                    />
 
                     {/* Premium features */}
                     <PremiumFeaturesCard

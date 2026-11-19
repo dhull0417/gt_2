@@ -1,255 +1,74 @@
-import React, { useRef, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
-import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import { useSignIn, useSignUp } from '@clerk/expo';
+import React, { useState } from 'react';
+import { StyleSheet, Text } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { Feather } from '@expo/vector-icons';
+import { AuthScreen } from '@/components/auth/AuthScreen';
+import { VerificationCodeForm } from '@/components/auth/VerificationCodeForm';
+import { Button } from '@/components/ui/Button';
+import { TextField } from '@/components/ui/TextField';
 import { useThemeColors } from '@/contexts/AppearanceContext';
-import { clerkErrorMessage } from '@/utils/clerkErrors';
+import { useCodeAuth } from '@/hooks/useCodeAuth';
+import { toE164US } from '@/utils/phone';
+import { fontSize } from '@/constants/theme';
 
+/** Sign in or sign up with a text message code. New numbers get an account automatically. */
 export default function PhoneLogin() {
-  const { signIn } = useSignIn();
-  const { signUp } = useSignUp();
   const router = useRouter();
   const colors = useThemeColors();
+  const code = useCodeAuth('phone');
+  const [phone, setPhone] = useState('');
+  const normalized = toE164US(phone);
+  const canSend = normalized.replace(/\D/g, '').length >= 10;
 
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [code, setCode] = useState("");
-  const [pendingVerification, setPendingVerification] = useState(false);
-  // Android back from the code step returns to the phone number, like the arrow.
-  useAndroidBack(pendingVerification, () => setPendingVerification(false));
-  const [isSigningUp, setIsSigningUp] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const phoneInputRef = useRef<TextInput>(null);
-
-  // 1. Handle "Send Code"
-  const onSendCodePress = async () => {
-    setIsLoading(true);
-    try {
-      const { error } = await signIn.create({ identifier: phoneNumber });
-
-      if (!error) {
-        const phoneFactor = signIn.supportedFirstFactors?.find(
-          (f: any) => f.strategy === 'phone_code'
-        ) as any;
-
-        if (phoneFactor) {
-          await signIn.phoneCode.sendCode();
-          setIsSigningUp(false);
-          setPendingVerification(true);
-        } else {
-          Alert.alert("Error", "This account does not support phone login.");
-        }
-      } else if ((error as any).errors?.[0]?.code === 'form_identifier_not_found') {
-        const { error: signUpError } = await signUp.create({ phoneNumber });
-        if (signUpError) {
-          Alert.alert("Error", clerkErrorMessage(signUpError, "Failed to create account."));
-          return;
-        }
-        const { error: sendError } = await signUp.verifications.sendPhoneCode();
-        if (sendError) {
-          Alert.alert("Error", clerkErrorMessage(sendError, "Failed to send code."));
-          return;
-        }
-        setIsSigningUp(true);
-        setPendingVerification(true);
-      } else {
-        Alert.alert("Error", clerkErrorMessage(error, "Something went wrong."));
-      }
-    } catch (err: any) {
-      Alert.alert("Error", clerkErrorMessage(err, "Something went wrong."));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 2. Handle "Verify Code"
-  const onVerifyPress = async () => {
-    setIsLoading(true);
-    try {
-      if (isSigningUp) {
-        const { error } = await signUp.verifications.verifyPhoneCode({ code });
-        if (error) {
-          Alert.alert("Error", clerkErrorMessage(error, "Invalid code."));
-          return;
-        }
-        if (signUp.status === 'complete') {
-          await signUp.finalize();
-        } else {
-          Alert.alert("Error", `Verification failed. Status: ${signUp.status}`);
-        }
-      } else {
-        const { error } = await signIn.phoneCode.verifyCode({ code });
-        if (error) {
-          Alert.alert("Error", clerkErrorMessage(error, "Invalid code."));
-          return;
-        }
-        if (signIn.status === 'complete') {
-          await signIn.finalize();
-        } else {
-          Alert.alert("Error", `Verification failed. Status: ${signIn.status}`);
-        }
-      }
-    } catch (err: any) {
-      Alert.alert("Error", clerkErrorMessage(err, "Invalid code."));
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  if (code.step === 'code') {
+    return (
+      <AuthScreen title="Check your messages" onBack={code.back}>
+        <VerificationCodeForm
+          destination={code.destination}
+          onSubmit={code.verify}
+          onResend={code.resend}
+          isLoading={code.isLoading}
+          onBack={code.back}
+          showHeading={false}
+        />
+      </AuthScreen>
+    );
+  }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={[styles.container, { backgroundColor: colors.background }]}
+    <AuthScreen
+      title="Continue with phone"
+      subtitle="We'll text you a code to sign in or create your account."
+      onBack={() => router.back()}
     >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <View style={{ flex: 1 }}>
-      {/* Header / Back Button */}
-      <View style={styles.header}>
-        <PressableOpacity accessibilityLabel="Go back"
-          onPress={() => (pendingVerification ? setPendingVerification(false) : router.back())}
-          style={styles.backButton}
-          hitSlop={8}
-        >
-          <Feather name="arrow-left" size={24} color="#FF7A6E" />
-        </PressableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Phone Login</Text>
-      </View>
-
-      <View style={styles.content}>
-        {!pendingVerification ? (
-          // === STEP 1: ENTER PHONE ===
-          <>
-            <Text style={[styles.label, { color: colors.textPrimary }]}>Enter your phone number</Text>
-            <Text style={[styles.subLabel, { color: colors.textMuted }]}>We'll send you a code to verify your account.</Text>
-
-            <TextInput
-              ref={phoneInputRef}
-              autoFocus
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-              onFocus={() =>
-                phoneInputRef.current?.setNativeProps({
-                  selection: { start: phoneNumber.length, end: phoneNumber.length },
-                })
-              }
-              placeholder="+1 555 555 5555"
-              keyboardType="phone-pad"
-              style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textPrimary }]}
-              placeholderTextColor={colors.placeholder}
-            />
-
-            <PressableOpacity
-              onPress={onSendCodePress}
-              style={[styles.button, { backgroundColor: colors.brand }, isLoading && styles.buttonDisabled]}
-              disabled={isLoading}
-            >
-              {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Send Code</Text>}
-            </PressableOpacity>
-          </>
-        ) : (
-          // === STEP 2: ENTER CODE ===
-          <>
-            <Text style={[styles.label, { color: colors.textPrimary }]}>Enter verification code</Text>
-            <Text style={[styles.subLabel, { color: colors.textMuted }]}>Sent to {phoneNumber}</Text>
-
-            <TextInput
-              autoFocus
-              value={code}
-              onChangeText={setCode}
-              placeholder="123456"
-              keyboardType="number-pad"
-              style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textPrimary }]}
-              placeholderTextColor={colors.placeholder}
-              maxLength={6}
-            />
-
-            <PressableOpacity
-              onPress={onVerifyPress}
-              style={[styles.button, { backgroundColor: colors.brand }, isLoading && styles.buttonDisabled]}
-              disabled={isLoading}
-            >
-               {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Verify & Continue</Text>}
-            </PressableOpacity>
-
-            <PressableOpacity onPress={() => setPendingVerification(false)} style={styles.secondaryButton}>
-               <Text style={[styles.secondaryButtonText, { color: colors.brand }]}>Change Phone Number</Text>
-            </PressableOpacity>
-          </>
-        )}
-      </View>
-      </View>
-      </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+      <TextField
+        autoFocus
+        value={phone}
+        onChangeText={setPhone}
+        placeholder="(801) 555-1234"
+        accessibilityLabel="Phone number"
+        keyboardType="phone-pad"
+        autoComplete="tel"
+        textContentType="telephoneNumber"
+        returnKeyType="go"
+        onSubmitEditing={() => canSend && code.start(normalized)}
+        helperText="US numbers don't need +1. For other countries, start with + and the country code."
+        containerStyle={styles.field}
+      />
+      <Button
+        title="Send code"
+        size="lg"
+        onPress={() => code.start(normalized)}
+        loading={code.isLoading}
+        disabled={!canSend}
+        icon={<Feather name="message-circle" size={18} color="#FFFFFF" />}
+      />
+      <Text style={[styles.hint, { color: colors.textMuted }]}>Message and data rates may apply.</Text>
+    </AuthScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFF',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  backButton: {
-    padding: 8,
-    marginRight: 16,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  content: {
-    padding: 24,
-    flex: 1,
-  },
-  label: {
-    fontSize: 24,
-    fontWeight: '900',
-    marginBottom: 8,
-    color: '#111827',
-  },
-  subLabel: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginBottom: 32,
-  },
-  input: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 18,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  button: {
-    backgroundColor: '#4A90E2',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: '#4A90E2',
-    fontWeight: '500',
-  },
+  field: { marginBottom: 20 },
+  hint: { fontSize: fontSize.sm, textAlign: 'center', marginTop: 18 },
 });

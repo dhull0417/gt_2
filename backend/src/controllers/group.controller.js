@@ -33,6 +33,7 @@ import { postSystemMessage } from "../utils/systemMessage.js";
 import { isLegacyClient } from "../middleware/clientInfo.middleware.js";
 import { validateRoutineEndTimes, preserveLegacyEndTimes, validateEndTime, computeEndsAt } from "../utils/meetupEndTime.js";
 import { validateLongIntervalRoutines, keepLongIntervalRoutinesForLegacy } from "../utils/longIntervalValidation.js";
+import { minHeadcountProblem, MIN_HEADCOUNT_PREMIUM_REQUIRED, ASSIGNMENTS_PREMIUM_REQUIRED, parseBringItems, withExistingIds, parseMeetupSettings, ownRsvpWindow } from "../utils/meetupSettings.js";
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(String(id)) && String(new mongoose.Types.ObjectId(String(id))) === String(id);
 
@@ -68,77 +69,6 @@ const touchGroupMeetups = (groupId) =>
 // --- Multi-schedule helpers ---
 
 const MAX_ACTIVE_SCHEDULES = 5;
-
-/**
- * Minimum headcount is checked at the RSVP deadline, so it needs one, and it
- * can't exceed the capacity. Returns { status, body } to respond with, or
- * null when the values are fine. (Premium is checked separately.)
- */
-const minHeadcountProblem = ({ min, capacity, deadlineDays }) => {
-    if (!min) return null;
-    if (!Number.isInteger(min) || min < 1) {
-        return { status: 400, body: { error: "Minimum headcount must be a whole number of at least 1." } };
-    }
-    if (deadlineDays == null) {
-        return { status: 400, body: { error: "Set an RSVP deadline to use a minimum headcount." } };
-    }
-    if (capacity > 0 && min > capacity) {
-        return { status: 400, body: { error: "Minimum headcount can't be higher than the maximum attendees." } };
-    }
-    return null;
-};
-
-const MIN_HEADCOUNT_PREMIUM_REQUIRED = {
-    error: "premium_required",
-    message: "Minimum headcount requires GroupThat Premium.",
-};
-
-const MAX_BRING_ITEMS = 20;
-
-const ASSIGNMENTS_PREMIUM_REQUIRED = {
-    error: "premium_required",
-    message: "Meetup assignments require GroupThat Premium.",
-};
-
-/**
- * Validates the "things to bring" list from a request. `max` is optional (null =
- * as many as people want to bring). Returns { items } or { error }.
- */
-const parseBringItems = (raw) => {
-    if (raw == null) return { items: [] };
-    if (!Array.isArray(raw)) return { error: "Items to bring must be a list." };
-    if (raw.length > MAX_BRING_ITEMS) return { error: `You can list at most ${MAX_BRING_ITEMS} items.` };
-    const seen = new Set();
-    const items = [];
-    for (const r of raw) {
-        const name = String(r?.name ?? "").trim();
-        if (!name) return { error: "Each item needs a name." };
-        if (name.length > 40) return { error: "Item names can be at most 40 characters." };
-        const key = name.toLowerCase();
-        if (seen.has(key)) return { error: `"${name}" is listed twice.` };
-        seen.add(key);
-        let max = null;
-        if (r.max !== null && r.max !== undefined && r.max !== "") {
-            max = Number(r.max);
-            if (!Number.isInteger(max) || max < 1 || max > 99) {
-                return { error: `The number for "${name}" must be a whole number from 1 to 99.` };
-            }
-        }
-        items.push({ _id: r._id, name, max });
-    }
-    return { items };
-};
-
-// Keeps an item's _id only when it already exists on the series, so claims
-// follow edits to the same item and clients can't mint ids.
-const withExistingIds = (items, existing = []) => {
-    const known = new Set(existing.map((i) => i._id.toString()));
-    return items.map((i) => ({
-        ...(i._id && known.has(String(i._id)) ? { _id: i._id } : {}),
-        name: i.name,
-        max: i.max,
-    }));
-};
 
 const assignmentsSignature = (items, rides) =>
     JSON.stringify([(items || []).map((i) => [i.name, i.max ?? null]), !!rides]);
@@ -1248,6 +1178,19 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
     const fallbackLocation = linkedSchedule ? linkedSchedule.defaultLocation : group.defaultLocation;
     const fallbackCapacity = linkedSchedule ? linkedSchedule.defaultCapacity : group.defaultCapacity;
     const fallbackDescription = linkedSchedule ? linkedSchedule.defaultDescription : "";
+    const meetupCapacity = capacity !== undefined ? capacity : fallbackCapacity;
+
+    // The meetup's own RSVP rules, minimum, things to bring and rides (Premium ones need the owner's Premium).
+    const settings = await parseMeetupSettings(req.body, { meetup: null, group, capacity: meetupCapacity });
+    if (settings.status) return res.status(settings.status).json(settings.body);
+    const { bringClaims: _claims, rides: _rides, ...settingsPatch } = settings.patch;
+    const ownSettings = settings.touched
+        ? {
+            ...settingsPatch,
+            customSettings: true,
+            ...ownRsvpWindow({ ...settingsPatch, startsAt: meetupDate, timezone }),
+        }
+        : {};
 
     let newMeetup;
     try {
@@ -1264,10 +1207,11 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
             description: description !== undefined ? description : fallbackDescription,
             members: group.members,
             undecided: group.members,
-            capacity: capacity !== undefined ? capacity : fallbackCapacity,
+            capacity: meetupCapacity,
             isOverride: true,
             startsAt: meetupDate,
             createdBy: requester._id,
+            ...ownSettings,
         });
     } catch (err) {
         // Linked to a series slot that already has a meetup (the unique index

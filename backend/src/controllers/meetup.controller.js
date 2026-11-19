@@ -18,11 +18,12 @@ import { flags } from "../utils/featureFlags.js";
 import { evaluateMinimumHeadcount, evaluateDueMeetups } from "../utils/minimumHeadcount.js";
 import { meetupChanges, pushBody } from "../utils/changeSummary.js";
 import { applyEndTimeEdit, isMeetupOver } from "../utils/meetupEndTime.js";
-import { pruneAnswers, MAX_ANSWER_LENGTH } from "../utils/rsvpQuestions.js";
+import { pruneAnswers, parseQuestions, MAX_ANSWER_LENGTH } from "../utils/rsvpQuestions.js";
 import { guestCountFn, normalizeRides, applyAssignment, setRideRole, autoAssign, guestIncreaseBlocked } from "../utils/rides.js";
 import { notifyRideChanges } from "../utils/rideNotify.js";
 import { coordsForZip } from "../utils/zipDistance.js";
 import { deleteUnfinishedTournaments } from "../utils/tournament/cleanup.js";
+import { parseMeetupSettings, settingsTouched, seedRulesFromSchedule, ownRsvpWindow } from "../utils/meetupSettings.js";
 import { canRsvpNow, userOpensAt, userTierIndex, chooseBumpVictim, pickWaitlistIndex, notifyOpenTiers, resolveRsvpOpen } from "../utils/priorityRsvp.js";
 
 /**
@@ -459,6 +460,20 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     // --- The source of truth for timezone is ALWAYS the parent group ---
     const groupTimezone = meetup.group.timezone;
 
+    // The meetup's own settings (RSVP rules, minimum, things to bring, rides). Checked before
+    // anything changes so a refused setting leaves the meetup untouched.
+    const linkedSchedule = meetup.schedule ? meetup.group.schedules?.id(meetup.schedule) : null;
+    const touchingSettings = settingsTouched(req.body);
+    const settingsBase = touchingSettings && !meetup.customSettings && linkedSchedule
+        ? (() => { const seeded = { customSettings: false }; seedRulesFromSchedule(seeded, linkedSchedule); return seeded; })()
+        : {};
+    const settings = await parseMeetupSettings(req.body, {
+        meetup: { ...(meetup.toObject ? meetup.toObject() : meetup), ...settingsBase },
+        group: meetup.group,
+        capacity,
+    });
+    if (settings.status) return res.status(settings.status).json(settings.body);
+
     // Store old values for notification check
     const oldCapacity = meetup.capacity;
     const originalSlot = { date: meetup.date, time: meetup.time };
@@ -496,6 +511,14 @@ export const updateMeetup = asyncHandler(async (req, res) => {
     if (location !== undefined) meetup.location = location;
     if (description !== undefined) meetup.description = description;
 
+    // Apply the meetup's own settings; from now on series edits leave them alone.
+    if (settings.touched) {
+        Object.assign(meetup, settingsBase, settings.patch);
+        meetup.customSettings = true;
+    }
+    const rulesChanged = ['rsvpLeadDays', 'rsvpLeadTime', 'rsvpDeadlineDays', 'rsvpDeadlineTime']
+        .some((f) => settings.patch[f] !== undefined || settingsBase[f] !== undefined);
+
     // Recompute startsAt whenever date or time changes
     if (date || time) {
         const { hours: sH, minutes: sM } = parseTimeString(meetup.time);
@@ -506,11 +529,31 @@ export const updateMeetup = asyncHandler(async (req, res) => {
         // keep `date` in sync with `startsAt`: isPast/expiry checks read `date`,
         // and the old time-of-day made reschedules look already-expired.
         meetup.date = startsAtDT.toJSDate();
+    }
+
+    // A customized meetup or a one-off with its own rules: the window comes from the meetup.
+    const ownRules = meetup.customSettings;
+    if (ownRules && (date || time || rulesChanged)) {
+        const w = ownRsvpWindow(meetup);
+        // A series meetup keeps the series' priority groups, timed from its own opening.
+        const priorityActive = !!linkedSchedule?.priorityEnabled && await groupHasPremium(meetup.group);
+        const resolvedOpen = linkedSchedule
+            ? resolveRsvpOpen({ schedule: linkedSchedule, group: meetup.group, baseOpen: w.rsvpOpenDate, active: priorityActive })
+            : { rsvpOpenDate: w.rsvpOpenDate, priorityTiers: [], priorityOpened: [] };
+        meetup.rsvpOpenDate = resolvedOpen.rsvpOpenDate;
+        meetup.priorityTiers = resolvedOpen.priorityTiers;
+        meetup.priorityOpened = resolvedOpen.priorityOpened;
+        meetup.rsvpCloseDate = w.rsvpCloseDate;
+        meetup.rsvpNotified = !resolvedOpen.rsvpOpenDate || resolvedOpen.rsvpOpenDate <= new Date();
+        meetup.minimumChecked = w.minimumChecked;
+        // A reschedule re-arms the reminders off the new time; a settings change alone doesn't.
+        if (date || time) meetup.rsvpReminderStagesSent = [];
+    } else if (date || time) {
+        const startsAtDT = DateTime.fromJSDate(meetup.startsAt).setZone(groupTimezone);
 
         // recompute rsvpOpenDate/CloseDate as generation does, or a past deadline
         // stays stuck even after the meetup moves to a future date. Settings come from the meetup's own linked schedule now
-        // — a one-off meetup with no schedule keeps no RSVP gating at all.
-        const linkedSchedule = meetup.schedule ? meetup.group.schedules?.id(meetup.schedule) : null;
+        // — a one-off meetup with no schedule (and no rules of its own) keeps no RSVP gating at all.
         const { hours: leadH, minutes: leadM } = parseTimeString(linkedSchedule?.generationLeadTime || "09:00 AM");
         const baseRsvpOpen = linkedSchedule?.generationLeadDays != null
             ? startsAtDT.minus({ days: linkedSchedule.generationLeadDays }).set({ hour: leadH, minute: leadM, second: 0, millisecond: 0 }).toJSDate()
@@ -1102,6 +1145,44 @@ export const autoAssignRides = asyncHandler(async (req, res) => {
     });
 });
 
+
+/**
+ * @desc    Set one meetup's own RSVP questions (Premium). The meetup then keeps them when its
+ *          series' questions change. Answers to questions that are kept stay.
+ * @route   PUT /api/meetups/:meetupId/questions
+ * @body    { questions: [{ _id?, prompt, type, options, required }] }
+ */
+export const updateMeetupQuestions = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { meetupId } = req.params;
+
+    const meetup = await Meetup.findById(meetupId).populate('group');
+    const requester = await User.findOne({ clerkId }).lean();
+    if (!meetup || !requester) return res.status(404).json({ error: "Resource not found." });
+
+    if (meetup.status !== 'scheduled' || new Date(meetup.date) < new Date()) {
+        return res.status(400).json({ error: "This event is closed for adjustments." });
+    }
+    const isCreator = meetup.createdBy && meetup.createdBy.toString() === requester._id.toString();
+    if (!canManageGroup(requester._id, meetup.group) && !isCreator) {
+        return res.status(403).json({ error: "Permission denied." });
+    }
+
+    const parsed = parseQuestions(req.body?.questions, meetup.questions);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    if (parsed.questions.length > 0 && !(await groupHasPremium(meetup.group))) {
+        return res.status(403).json({ error: "premium_required", message: "Custom RSVP questions require GroupThat Premium." });
+    }
+
+    const linkedSchedule = meetup.schedule ? meetup.group.schedules?.id(meetup.schedule) : null;
+    seedRulesFromSchedule(meetup, linkedSchedule);
+    meetup.customSettings = true;
+    meetup.questions = parsed.questions;
+    meetup.answers = pruneAnswers(meetup.answers, meetup.questions);
+    await meetup.save();
+
+    res.status(200).json({ message: "RSVP questions updated.", meetup: await withGroupPremium(meetup) });
+});
 
 /**
  * @desc    Save the signed-in member's answers to the meetup's custom RSVP questions (Premium).

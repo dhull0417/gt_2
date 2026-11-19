@@ -98,6 +98,16 @@ const meetupSchema = new mongoose.Schema({
   }],
   // True when the log started after people had already answered (their answers weren't logged).
   rsvpLogPartial: { type: Boolean },
+  // The meetup's own RSVP rules ("N days before at a time"; null days = no limit on that side).
+  // Set on one-offs and on meetups whose settings were changed individually; rsvpOpenDate and
+  // rsvpCloseDate are computed from them (and recomputed when the meetup is rescheduled).
+  rsvpLeadDays: { type: Number, min: 0, default: null },
+  rsvpLeadTime: { type: String, default: "09:00 AM" },
+  rsvpDeadlineDays: { type: Number, min: 0, default: null },
+  rsvpDeadlineTime: { type: String, default: "09:00 AM" },
+  // True once this meetup's RSVP rules, minimum, things to bring, rides or questions were set
+  // on the meetup itself. Series edits then leave those settings alone.
+  customSettings: { type: Boolean, default: false },
   rsvpOpenDate: { type: Date },
   rsvpCloseDate: { type: Date },
   rsvpNotified: { type: Boolean, default: false },

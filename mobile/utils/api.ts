@@ -292,6 +292,13 @@ export interface Meetup {
   frequency?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'ordinal' | 'quarterly' | 'semiannual' | 'yearly' | null;
   rsvpOpenDate?: string;
   rsvpCloseDate?: string;
+  /** The meetup's own RSVP rules ("N days before at a time"; null days = no limit). Set once it has its own settings. */
+  rsvpLeadDays?: number | null;
+  rsvpLeadTime?: string;
+  rsvpDeadlineDays?: number | null;
+  rsvpDeadlineTime?: string;
+  /** True once this meetup's RSVP rules, minimum, items, rides or questions were set on the meetup itself. */
+  customSettings?: boolean;
   guests?: { userId: string; count: number }[];
   /** Premium meetup assignments (copied from the series). */
   /** Priority RSVP snapshot: groups of member ids and when each group's window opens. */
@@ -471,7 +478,22 @@ interface RemoveScheduledDayPayload {
   frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
 }
 
-interface UpdateMeetupPayload {
+/** A meetup's own settings, sent when creating or editing it. Leave a field out to keep it as it is. */
+export interface MeetupSettingsPayload {
+  /** null = no limit on that side */
+  rsvpLeadDays?: number | null;
+  rsvpLeadTime?: string;
+  rsvpDeadlineDays?: number | null;
+  rsvpDeadlineTime?: string;
+  /** Premium; 0 = none */
+  minAttendees?: number;
+  /** Premium; known items keep their _id so people's claims stay */
+  bringItems?: { _id?: string; name: string; max: number | null }[];
+  /** Premium */
+  ridesEnabled?: boolean;
+}
+
+interface UpdateMeetupPayload extends MeetupSettingsPayload {
   meetupId: string;
   date?: Date;
   time?: string;
@@ -489,7 +511,7 @@ interface CreateGroupResponse {
   message: string;
 }
 
-interface CreateOneOffMeetupPayload {
+interface CreateOneOffMeetupPayload extends MeetupSettingsPayload {
   groupId: string;
   date: Date;
   time: string;
@@ -896,6 +918,15 @@ export const meetupApi = {
   },
   updateMeetup: async (api: AxiosInstance, { meetupId, ...details }: UpdateMeetupPayload): Promise<{ meetup: Meetup }> => {
     const response = await api.put<{ meetup: Meetup }>(`/api/meetups/${meetupId}`, details);
+    return response.data;
+  },
+  /** Sets one meetup's own RSVP questions (Premium); the meetup then keeps them when its series' questions change. */
+  updateMeetupQuestions: async (
+    api: AxiosInstance,
+    meetupId: string,
+    data: { questions: { _id?: string; prompt: string; type: RsvpQuestion['type']; options?: string[]; required?: boolean }[] },
+  ): Promise<{ message: string; meetup: Meetup }> => {
+    const response = await api.put<{ message: string; meetup: Meetup }>(`/api/meetups/${meetupId}/questions`, data);
     return response.data;
   },
   deleteMeetup: async (api: AxiosInstance, meetupId: string): Promise<{ message: string }> => {

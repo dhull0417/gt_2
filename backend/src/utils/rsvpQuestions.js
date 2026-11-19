@@ -56,6 +56,8 @@ export const refreshSeriesQuestions = async (group, schedule) => {
   const meetups = await Meetup.find({
     group: group._id,
     schedule: schedule._id,
+    // Meetups with settings of their own keep their questions.
+    customSettings: { $ne: true },
     status: "scheduled",
     date: { $gte: new Date() },
   }).select("answers").lean();

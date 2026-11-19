@@ -284,6 +284,8 @@ export const refreshOverrideMeetupWindows = async (group, schedule, { includeSer
     group: group._id,
     schedule: schedule._id,
     ...(includeSeries ? {} : { isOverride: true }),
+    // Meetups with settings of their own keep them.
+    customSettings: { $ne: true },
     status: 'scheduled',
     date: { $gte: now },
   })
@@ -345,6 +347,8 @@ export const refreshOverrideAssignments = async (group, schedule, { includeSerie
     group: group._id,
     schedule: schedule._id,
     ...(includeSeries ? {} : { isOverride: true }),
+    // Meetups with settings of their own keep them.
+    customSettings: { $ne: true },
     status: 'scheduled',
     date: { $gte: new Date() },
   })

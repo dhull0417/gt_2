@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Alert, ScrollView, Text, TextInput, View } from "react-native";
-import InfoBubble from "@/components/InfoBubble";
+import { ScrollView, Text, TextInput, View } from "react-native";
 import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
 import NativeTimePicker from "@/components/NativeTimePicker";
@@ -14,15 +13,15 @@ import { StepDots } from "@/components/create-group/StepDots";
 import { animate, getDayColors } from "@/components/create-group/shared";
 import { makeStyles } from "@/components/create-group/styles";
 import { PressableOpacity } from "@/components/ui/PressableOpacity";
-import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
-import { MinimumToMeetField } from "@/components/schedule/MinimumToMeetField";
+import { RsvpRulesCard } from "@/components/schedule/RsvpRulesCard";
+import { CapacityCard } from "@/components/schedule/CapacityCard";
 import { PremiumFeaturesCard } from "@/components/schedule/PremiumFeaturesCard";
 import { usePremium } from "@/hooks/usePremium";
 import { getMinAttendeesError } from "@/utils/editScheduleDraft";
 import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
 import { DayTime, Frequency } from "@/utils/api";
 import { BuiltRoutine, defaultSchedule, isScheduleTabValid, MonthlyDateEntry, OrdinalEntry, ScheduleData, WeekdayRow } from "@/utils/createGroupDraft";
-import { DAYS_OF_WEEK, FREQ_LABELS, getMaxAttendeesError, ORDINAL_OCCURRENCES, ordSfx, timeToMinutes, uid } from "@/utils/scheduleConstants";
+import { DAYS_OF_WEEK, FREQ_LABELS, ORDINAL_OCCURRENCES, ordSfx, uid } from "@/utils/scheduleConstants";
 import { deviceTimeZone, timezoneOptions, tzAbbr } from "@/utils/timezones";
 import { Feather } from "@expo/vector-icons";
 import { DateTime } from "luxon";
@@ -841,206 +840,26 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                 </View>
 
                 {/* RSVP Rules */}
-                <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#7C3AED" }]}>
-                    <View style={s.sectionHeaderRow}>
-                        <View style={s.sectionIconChip}>
-                            <Feather name="bell" size={19} color="#7C3AED" />
-                        </View>
-                        <Text style={s.sectionTitle}>RSVP Rules</Text>
-                    </View>
-
-                    <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Limit when people can RSVP?</Text>
-                    <View style={s.boolRow}>
-                        <PressableOpacity style={[s.boolBtn, !d.rsvpRestricted && s.boolBtnActive]}
-                            onPress={() => upd({ rsvpRestricted: false })}>
-                            <Text style={[s.boolBtnText, !d.rsvpRestricted && s.boolBtnTextActive]}>Allow anytime</Text>
-                        </PressableOpacity>
-                        <PressableOpacity style={[s.boolBtn, d.rsvpRestricted && s.boolBtnActive]}
-                            onPress={() => upd({ rsvpRestricted: true })}>
-                            <Text style={[s.boolBtnText, d.rsvpRestricted && s.boolBtnTextActive]}>Limit RSVPs</Text>
-                        </PressableOpacity>
-                    </View>
-
-                    {d.rsvpRestricted && (
-                        <View style={{ marginTop: 14, gap: 14 }}>
-                            <View>
-                                <View style={s.toggleRow}>
-                                    <View style={s.toggleRowLabelWrap}>
-                                        <Text style={s.toggleRowLabel}>Earliest time to RSVP</Text>
-                                        <InfoBubble
-                                            title="Earliest time to RSVP"
-                                            description={"This sets the earliest time and day people can respond.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs as soon as the meetup is created."}
-                                        />
-                                    </View>
-                                    <ToggleSwitch activeColor="#7C3AED" value={d.leadEnabled} onValueChange={v => {
-                                        const leadDays = v && d.deadlineEnabled && d.leadDays < d.deadlineDays ? d.deadlineDays : d.leadDays;
-                                        const sameDayViolation = v && d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
-                                        upd({
-                                            leadEnabled: v,
-                                            leadDays,
-                                            ...(sameDayViolation ? { leadTime: d.deadlineTime } : {}),
-                                        });
-                                    }} />
-                                </View>
-                                {d.leadEnabled && (
-                                    <View style={{ marginTop: 10 }}>
-                                        <View style={s.leadRow}>
-                                            <PressableOpacity style={s.stepperBtn} onPress={() => {
-                                                const leadDays = Math.max(d.deadlineEnabled ? d.deadlineDays : 0, d.leadDays - 1);
-                                                const sameDayViolation = d.deadlineEnabled && leadDays === d.deadlineDays && timeToMinutes(d.leadTime) > timeToMinutes(d.deadlineTime);
-                                                upd({ leadDays, ...(sameDayViolation ? { leadTime: d.deadlineTime } : {}) });
-                                            }}>
-                                                <Feather name="minus" size={18} color={colors.brand} />
-                                            </PressableOpacity>
-                                            <View style={s.leadCenter}>
-                                                <Text style={s.leadVal}>{d.leadDays}</Text>
-                                                <Text style={s.leadSub}>days before</Text>
-                                            </View>
-                                            <PressableOpacity style={s.stepperBtn} onPress={() => upd({ leadDays: d.leadDays + 1 })}>
-                                                <Feather name="plus" size={18} color={colors.brand} />
-                                            </PressableOpacity>
-                                        </View>
-                                        <Text style={s.fieldLabel}>Time</Text>
-                                        <PressableOpacity style={s.dateFieldRow}
-                                            onPress={() => { setShowTZPicker(false); upd({ showLeadTimePicker: !d.showLeadTimePicker, showDeadlineTimePicker: false, showStartDatePicker: false, showFreqPicker: false }); }}>
-                                            <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
-                                            <Text style={s.dateFieldText}>{d.leadTime}</Text>
-                                            <Feather name={d.showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                        </PressableOpacity>
-                                    </View>
-                                )}
-                                {d.leadEnabled && d.showLeadTimePicker && (
-                                    <NativeTimePicker value={d.leadTime} onChange={t => {
-                                        const capped = d.deadlineEnabled && d.leadDays === d.deadlineDays && timeToMinutes(t) > timeToMinutes(d.deadlineTime);
-                                        if (capped) {
-                                            Alert.alert(
-                                                "Earliest RSVP time must be before the latest RSVP time",
-                                                `• Both are ${d.leadDays} day${d.leadDays === 1 ? '' : 's'} before the meetup\n• Earliest time can't be later than ${d.deadlineTime}\n• Earliest time set to ${d.deadlineTime}`
-                                            );
-                                        }
-                                        upd({ leadTime: capped ? d.deadlineTime : t });
-                                    }}
-                                        onClose={() => upd({ showLeadTimePicker: false })} />
-                                )}
-                            </View>
-
-                            <View>
-                                <View style={s.toggleRow}>
-                                    <View style={s.toggleRowLabelWrap}>
-                                        <Text style={s.toggleRowLabel}>Latest time to RSVP</Text>
-                                        <InfoBubble
-                                            title="Latest time to RSVP"
-                                            description={"This sets the cutoff for responding.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs right up until the meetup starts."}
-                                        />
-                                    </View>
-                                    <ToggleSwitch activeColor="#7C3AED" value={d.deadlineEnabled} onValueChange={v => {
-                                        const deadlineDays = v && d.leadEnabled && d.deadlineDays > d.leadDays ? d.leadDays : d.deadlineDays;
-                                        const sameDayViolation = v && d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
-                                        upd({
-                                            deadlineEnabled: v,
-                                            deadlineDays,
-                                            ...(sameDayViolation ? { deadlineTime: d.leadTime } : {}),
-                                        });
-                                    }} />
-                                </View>
-                                {d.deadlineEnabled && (
-                                    <View style={{ marginTop: 10 }}>
-                                        <View style={s.leadRow}>
-                                            <PressableOpacity style={s.stepperBtn} onPress={() => upd({ deadlineDays: Math.max(0, d.deadlineDays - 1) })}>
-                                                <Feather name="minus" size={18} color={colors.brand} />
-                                            </PressableOpacity>
-                                            <View style={s.leadCenter}>
-                                                <Text style={s.leadVal}>{d.deadlineDays}</Text>
-                                                <Text style={s.leadSub}>days before</Text>
-                                            </View>
-                                            <PressableOpacity style={s.stepperBtn} onPress={() => {
-                                                const deadlineDays = d.leadEnabled ? Math.min(d.leadDays, d.deadlineDays + 1) : d.deadlineDays + 1;
-                                                const sameDayViolation = d.leadEnabled && deadlineDays === d.leadDays && timeToMinutes(d.deadlineTime) < timeToMinutes(d.leadTime);
-                                                upd({ deadlineDays, ...(sameDayViolation ? { deadlineTime: d.leadTime } : {}) });
-                                            }}>
-                                                <Feather name="plus" size={18} color={colors.brand} />
-                                            </PressableOpacity>
-                                        </View>
-                                        <Text style={s.fieldLabel}>Time</Text>
-                                        <PressableOpacity style={s.dateFieldRow}
-                                            onPress={() => { setShowTZPicker(false); upd({ showDeadlineTimePicker: !d.showDeadlineTimePicker, showLeadTimePicker: false, showStartDatePicker: false, showFreqPicker: false }); }}>
-                                            <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
-                                            <Text style={s.dateFieldText}>{d.deadlineTime}</Text>
-                                            <Feather name={d.showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                        </PressableOpacity>
-                                    </View>
-                                )}
-                                {d.deadlineEnabled && d.showDeadlineTimePicker && (
-                                    <NativeTimePicker value={d.deadlineTime} onChange={t => {
-                                        const capped = d.leadEnabled && d.deadlineDays === d.leadDays && timeToMinutes(t) < timeToMinutes(d.leadTime);
-                                        if (capped) {
-                                            Alert.alert(
-                                                "Latest RSVP time must be after the earliest RSVP time",
-                                                `• Both are ${d.deadlineDays} day${d.deadlineDays === 1 ? '' : 's'} before the meetup\n• Latest time can't be earlier than ${d.leadTime}\n• Latest time set to ${d.leadTime}`
-                                            );
-                                        }
-                                        upd({ deadlineTime: capped ? d.leadTime : t });
-                                    }}
-                                        onClose={() => upd({ showDeadlineTimePicker: false })} />
-                                )}
-                            </View>
-
-                            <MinimumToMeetField
-                                isPremium={isPremium}
-                                owner={userId}
-                                deadlineOn={d.deadlineEnabled}
-                                value={d.minAttendeesInput}
-                                onChange={v => upd({ minAttendeesInput: v })}
-                                error={getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput)}
-                            />
-                        </View>
-                    )}
-                </View>
+                <RsvpRulesCard
+                    value={d}
+                    onChange={upd}
+                    isPremium={isPremium}
+                    owner={userId}
+                    minError={getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput)}
+                    openPicker={d.showLeadTimePicker ? "lead" : d.showDeadlineTimePicker ? "deadline" : null}
+                    onOpenPickerChange={p => {
+                        setShowTZPicker(false);
+                        upd({ showLeadTimePicker: p === "lead", showDeadlineTimePicker: p === "deadline", showStartDatePicker: false, showFreqPicker: false });
+                    }}
+                />
 
                 {/* Capacity */}
-                <View style={[s.sectionCard, { marginBottom: 8, borderLeftWidth: 3, borderLeftColor: "#0D9488" }]}>
-                    <View style={s.sectionHeaderRow}>
-                        <View style={s.sectionIconChip}>
-                            <Feather name="users" size={19} color="#0D9488" />
-                        </View>
-                        <Text style={s.sectionTitle}>Capacity</Text>
-                    </View>
-
-                    <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Max Attendees</Text>
-                    <View style={s.boolRow}>
-                        <PressableOpacity
-                            style={[s.boolBtn, d.maxAttendeesMode === "unlimited" && s.boolBtnActive]}
-                            onPress={() => upd({ maxAttendeesMode: "unlimited", maxAttendeesInput: "" })}
-                        >
-                            <Text style={[s.boolBtnText, d.maxAttendeesMode === "unlimited" && s.boolBtnTextActive]}>Unlimited</Text>
-                        </PressableOpacity>
-                        <PressableOpacity
-                            style={[s.boolBtn, d.maxAttendeesMode === "limited" && s.boolBtnActive]}
-                            onPress={() => upd({ maxAttendeesMode: "limited" })}
-                        >
-                            <Text style={[s.boolBtnText, d.maxAttendeesMode === "limited" && s.boolBtnTextActive]}>Limited</Text>
-                        </PressableOpacity>
-                    </View>
-                    {d.maxAttendeesMode === "limited" && (() => {
-                        const maxAttendeesError = getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput);
-                        return (
-                            <View style={{ marginTop: 10 }}>
-                                <View style={[s.inputRow, { marginBottom: 0 }, maxAttendeesError && s.inputRowError]}>
-                                    <Feather name="users" size={16} color={colors.textFaint} style={{ marginRight: 8 }} />
-                                    <TextInput
-                                        style={s.inlineInput}
-                                        placeholder="How many?"
-                                        placeholderTextColor={colors.placeholder}
-                                        keyboardType="number-pad"
-                                        value={d.maxAttendeesInput}
-                                        onChangeText={v => upd({ maxAttendeesInput: v })}
-                                    />
-                                </View>
-                                {maxAttendeesError && <Text style={s.errorText}>{maxAttendeesError}</Text>}
-                            </View>
-                        );
-                    })()}
-                </View>
+                <CapacityCard
+                    style={{ marginBottom: 8 }}
+                    mode={d.maxAttendeesMode}
+                    input={d.maxAttendeesInput}
+                    onChange={upd}
+                />
 
                 {/* Premium (starts collapsed; tap to open). Keyed by tab so each schedule starts closed. */}
                 <PremiumFeaturesCard

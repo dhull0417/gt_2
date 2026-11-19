@@ -2,7 +2,7 @@ import { View, Text, TextInput, ActivityIndicator, KeyboardAvoidingView, Platfor
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useUser } from '@clerk/expo';
+import { useAuth, useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as SecureStore from 'expo-secure-store';
@@ -10,17 +10,18 @@ import { User, useApiClient, userApi } from '@/utils/api';
 import { openPendingInvite } from '@/utils/pendingInvite';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { haptic } from '@/utils/haptics';
+import { unregisterPushToken } from '@/hooks/usePushNotifications';
 
 const ProfileSetupScreen = () => {
     const { user: clerkUser } = useUser();
+    const { signOut } = useAuth();
     const router = useRouter();
     const api = useApiClient();
     const queryClient = useQueryClient();
     const colors = useThemeColors();
-    // This app never writes the name back to Clerk (only to our own backend via
-    // syncUser/updateProfile — see useAppleAuth.ts), so clerkUser.firstName is never
-    // populated for Apple sign-in. The saved name lives on our own currentUser record,
-    // which app/_layout.tsx's routing already keeps warm in this same query cache.
+    // Our own currentUser record is the source of truth for the name. Clerk only gets a
+    // best-effort copy of an Apple name (see useAppleAuth.ts), so prefer currentUser; it's
+    // kept warm in this same query cache by app/_layout.tsx's routing.
     const { data: currentUser } = useQuery<User, Error>({
         queryKey: ['currentUser'],
         queryFn: () => userApi.getCurrentUser(api),
@@ -200,6 +201,19 @@ const ProfileSetupScreen = () => {
                             <Text className="text-white text-lg font-bold">Save & Continue</Text>
                         )}
                     </PressableOpacity>
+
+                    {/* Signed in with the wrong account? Without this there's no way out of setup. */}
+                    <View className="flex-row justify-center mt-6">
+                        <Text style={{ color: colors.textMuted, fontSize: 15 }}>Not you? </Text>
+                        <PressableOpacity
+                            hitSlop={8}
+                            disabled={isSaving}
+                            accessibilityLabel="Sign out"
+                            onPress={async () => { await unregisterPushToken(api); queryClient.clear(); signOut(); }}
+                        >
+                            <Text style={{ color: colors.brand, fontSize: 15, fontWeight: '700' }}>Sign out</Text>
+                        </PressableOpacity>
+                    </View>
                 </View>
                 </ScrollView>
             </KeyboardAvoidingView>
