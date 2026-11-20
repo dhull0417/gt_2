@@ -4,6 +4,7 @@ import { resolveRsvpOpen } from "./priorityRsvp.js";
 import { groupHasPremium } from "./premium.js";
 import { slotEndFields, buildEndTimeUpdates } from "./meetupEndTime.js";
 import { deleteUnfinishedTournaments } from "./tournament/cleanup.js";
+import { scheduleEndBoundary } from "./scheduleEndDate.js";
 import { calculateNextMeetupDate, computeNextGenerationAt, getGenerationWindowDays, parseTimeString, isLongInterval, nextLongIntervalDate } from "./date.utils.js";
 
 const existenceKey = (date, time) => `${new Date(date).toISOString()}|${time}`;
@@ -14,7 +15,7 @@ const existenceKey = (date, time) => `${new Date(date).toISOString()}|${time}`;
  * the window, and the bounds used.
  */
 export const computeScheduleCandidates = (group, schedule) => {
-  const empty = { candidates: [], earliestNextTrigger: null, overallWindowEnd: null, kickoffDate: null };
+  const empty = { candidates: [], earliestNextTrigger: null, overallWindowEnd: null, kickoffDate: null, finished: false };
   if (!schedule.routines?.length) return empty;
 
   const timezone = group.timezone;
@@ -26,12 +27,16 @@ export const computeScheduleCandidates = (group, schedule) => {
         .startOf('day')
         .toJSDate()
     : now.startOf('day').toJSDate();
+  // Inclusive: nothing is generated after the end of the end date's day.
+  const endBoundary = scheduleEndBoundary(schedule, timezone);
 
   // Pass 1 (in memory): walk each routine/dayTime out to its window,
   // collecting candidates and the next trigger beyond it.
   const candidates = [];
   let earliestNextTrigger = null;
   let overallWindowEnd = null;
+  let dayTimeCount = 0;
+  let endedCount = 0; // dayTimes whose next occurrence is past the end date
 
   for (const routine of schedule.routines) {
     const windowEndDT = now.plus({ days: getGenerationWindowDays(routine.frequency) }).endOf('day');
@@ -60,6 +65,8 @@ export const computeScheduleCandidates = (group, schedule) => {
 
       let fillingWindow = true;
       let safetyCounter = 0;
+      let ended = false;
+      dayTimeCount++;
 
       while (fillingWindow && safetyCounter < 100) {
         safetyCounter++;
@@ -85,6 +92,11 @@ export const computeScheduleCandidates = (group, schedule) => {
 
         const nextMeetupDT = DateTime.fromJSDate(nextDate).setZone(timezone);
 
+        // Checked first: a slot past both the window and the end date ends the series.
+        if (endBoundary && nextMeetupDT > endBoundary) {
+          ended = true;
+          break;
+        }
         if (nextMeetupDT > windowEndDT) {
           fillingWindow = false;
           break;
@@ -94,6 +106,12 @@ export const computeScheduleCandidates = (group, schedule) => {
         currentAnchor = nextDate;
       }
 
+      // Every remaining slot is past the end date: nothing left to trigger.
+      if (ended) {
+        endedCount++;
+        continue;
+      }
+
       const trigger = computeNextGenerationAt(schedule, timezone, currentAnchor, routine, dtEntry, ordinalRule);
       if (!earliestNextTrigger || trigger < earliestNextTrigger) {
         earliestNextTrigger = trigger;
@@ -101,7 +119,8 @@ export const computeScheduleCandidates = (group, schedule) => {
     }
   }
 
-  return { candidates, earliestNextTrigger, overallWindowEnd, kickoffDate };
+  const finished = dayTimeCount > 0 && endedCount === dayTimeCount;
+  return { candidates, earliestNextTrigger, overallWindowEnd, kickoffDate, finished };
 };
 
 /**
@@ -117,7 +136,7 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
   if (!schedule.routines?.length) return { generatedCount: 0 };
 
   const timezone = group.timezone;
-  const { candidates, earliestNextTrigger, overallWindowEnd, kickoffDate } = computeScheduleCandidates(group, schedule);
+  const { candidates, earliestNextTrigger, overallWindowEnd, kickoffDate, finished } = computeScheduleCandidates(group, schedule);
 
   let generatedCount = 0;
 
@@ -216,7 +235,10 @@ const generateMeetupsForSchedule = async (group, schedule, { onMeetupCreated } =
     }
   }
 
-  if (earliestNextTrigger) {
+  if (finished) {
+    // Past its end date: the regen job has nothing left to do for this series.
+    schedule.nextGenerationAt = null;
+  } else if (earliestNextTrigger) {
     schedule.nextGenerationAt = earliestNextTrigger;
   }
 
@@ -384,6 +406,21 @@ export const refreshOverrideAssignments = async (group, schedule, { includeSerie
 
 
 /**
+ * Which upcoming series meetups an edit removes: slots no longer part of the series.
+ * Meetups after the end date are the exception: they're only removed when the organizer
+ * chose to (`removeAfterEnd`), so a "Keep" answer survives every later edit.
+ * `resetAll` (timezone change) removes everything.
+ */
+export const pickStaleMeetupIds = (upcoming, wantedKeys, { resetAll = false, endBoundary = null, removeAfterEnd = false } = {}) =>
+  upcoming
+    .filter((m) => {
+      if (resetAll) return true;
+      if (endBoundary && DateTime.fromJSDate(new Date(m.date)) > endBoundary) return removeAfterEnd;
+      return !wantedKeys.has(existenceKey(m.date, m.time));
+    })
+    .map((m) => m._id);
+
+/**
  * Brings a series' upcoming meetups in line with an edited schedule WITHOUT
  * wiping anyone's RSVPs:
  *   - meetups whose slot (date + time) is still part of the series are kept and
@@ -396,9 +433,11 @@ export const refreshOverrideAssignments = async (group, schedule, { includeSerie
  *
  * @param {object} opts.resetAll  delete every upcoming series meetup instead (used when
  *                                the group's timezone changed, which moves every slot)
+ * @param {object} opts.removeAfterEnd  also delete series meetups after the schedule's end
+ *                                date (the organizer chose Delete); otherwise they're kept
  * @returns {Promise<{removed: number, kept: number}>}
  */
-export const reconcileScheduleMeetups = async (group, schedule, { resetAll = false } = {}) => {
+export const reconcileScheduleMeetups = async (group, schedule, { resetAll = false, removeAfterEnd = false } = {}) => {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
 
@@ -412,9 +451,11 @@ export const reconcileScheduleMeetups = async (group, schedule, { resetAll = fal
   const { candidates } = schedule.routines?.length ? computeScheduleCandidates(group, schedule) : { candidates: [] };
   const wanted = new Set(candidates.map(({ nextDate, dtEntry }) => existenceKey(nextDate, dtEntry.time)));
 
-  const staleIds = upcoming
-    .filter((m) => resetAll || !wanted.has(existenceKey(m.date, m.time)))
-    .map((m) => m._id);
+  const staleIds = pickStaleMeetupIds(upcoming, wanted, {
+    resetAll,
+    endBoundary: scheduleEndBoundary(schedule, group.timezone),
+    removeAfterEnd,
+  });
   if (staleIds.length > 0) {
     await Meetup.deleteMany({ _id: { $in: staleIds } });
     await deleteUnfinishedTournaments(staleIds);

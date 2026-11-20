@@ -50,6 +50,9 @@ const routineSchema = new mongoose.Schema({
 const namedScheduleSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   startDate: { type: Date }, // Selected from the calendar card after routines are set
+  // Optional, inclusive: no meetups are generated after this day (leagues, seasons).
+  // Stored like startDate (date-only UTC midnight); null = the series runs forever.
+  endDate: { type: Date, default: null },
   routines: [routineSchema], // Support for "Multiple Rules" (max 5)
 
   defaultLocation: { type: String, trim: true, default: "" },
