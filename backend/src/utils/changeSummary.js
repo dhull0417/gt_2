@@ -139,6 +139,12 @@ export const scheduleChanges = (before, after, { now = new Date() } = {}) => {
     out.push(orderedChange('when', 'When', `${whenAfter || 'No times set'}${suffix}`));
   }
 
+  // The end date is a calendar day (date-only UTC midnight), so it's shown as stored.
+  const endDay = (d) => (d ? DateTime.fromJSDate(new Date(d), { zone: 'utc' }).toFormat('LLL d, yyyy') : null);
+  if (endDay(before.endDate) !== endDay(after.endDate)) {
+    out.push(orderedChange('endDate', 'Ends', endDay(after.endDate) || 'No end date'));
+  }
+
   if (text(before.defaultLocation) !== text(after.defaultLocation)) {
     out.push(orderedChange('location', 'Location', text(after.defaultLocation) || 'Removed'));
   }
@@ -175,6 +181,7 @@ export const scheduleSnapshot = (schedule, timezone) => {
     name: s.name,
     timezone,
     routines: JSON.parse(JSON.stringify(s.routines || [])),
+    endDate: s.endDate ?? null,
     defaultLocation: s.defaultLocation,
     defaultCapacity: s.defaultCapacity,
     defaultMinAttendees: s.defaultMinAttendees,

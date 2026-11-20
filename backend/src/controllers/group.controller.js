@@ -15,6 +15,7 @@ import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { DateTime } from "luxon";
 import { resolveZone } from "../utils/email/lifecycle.js";
 import { generateMeetupsForGroup, generateMeetupsForSchedule, reconcileScheduleMeetups } from "../utils/meetupGeneration.js";
+import { endDateProblem } from "../utils/scheduleEndDate.js";
 import { promoteWaitlist } from "../utils/waitlist.js";
 import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
 import { deleteTournamentsForGroup, deleteUnfinishedTournaments } from "../utils/tournament/cleanup.js";
@@ -80,6 +81,7 @@ const assignmentsSignature = (items, rides) =>
 const normalizeScheduleInput = (input, fallbackName) => ({
     name: (input.name && String(input.name).trim()) || fallbackName || "Schedule",
     startDate: input.startDate || null,
+    endDate: input.endDate || null,
     routines: input.routines || [],
     defaultLocation: input.defaultLocation || "",
     defaultCapacity: input.defaultCapacity || 0,
@@ -224,7 +226,7 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
 
   for (const s of initialSchedules) {
-      const endTimeError = validateRoutineEndTimes(s.routines) || validateLongIntervalRoutines(s.routines);
+      const endTimeError = validateRoutineEndTimes(s.routines) || validateLongIntervalRoutines(s.routines) || endDateProblem(s);
       if (endTimeError) return res.status(400).json({ error: endTimeError });
   }
 
@@ -438,7 +440,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const { userId: clerkId } = getAuth(req);
     const {
-        name, startDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription,
+        name, startDate, endDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription,
         defaultBringItems, defaultRidesEnabled,
         generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
         timezone, // shared across the whole group, not per-schedule — see updateSchedule
@@ -470,7 +472,8 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (!name || !String(name).trim()) {
         return res.status(400).json({ error: "Schedule name is required." });
     }
-    const endTimeError = validateRoutineEndTimes(routines) || validateLongIntervalRoutines(routines);
+    const endTimeError = validateRoutineEndTimes(routines) || validateLongIntervalRoutines(routines)
+        || endDateProblem({ endDate, startDate, routines });
     if (endTimeError) return res.status(400).json({ error: endTimeError });
 
     // Guards against a double-fired create (a mistimed double-tap, or a
@@ -500,7 +503,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (timezone) group.timezone = timezone;
 
     group.schedules.push(normalizeScheduleInput(
-        { name, startDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription, defaultBringItems, defaultRidesEnabled, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
+        { name, startDate, endDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription, defaultBringItems, defaultRidesEnabled, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
         name
     ));
     await group.save();
@@ -528,10 +531,12 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     const { groupId, scheduleId } = req.params;
     const { userId: clerkId } = getAuth(req);
     const {
-        name, startDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription,
+        name, startDate, endDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription,
         defaultBringItems, defaultRidesEnabled,
         generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
         timezone, // shared across the whole group — schedules don't carry their own
+        // The organizer's answer to "Delete meetups after <end date>?" (absent = Keep).
+        removeAfterEnd,
     } = req.body;
 
     const group = await Group.findById(groupId);
@@ -577,7 +582,12 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         return res.status(403).json(ASSIGNMENTS_PREMIUM_REQUIRED);
     }
 
-    const endTimeError = validateRoutineEndTimes(routines) || validateLongIntervalRoutines(routines);
+    // The end date is checked against the start as it will be after this edit.
+    const endTimeError = validateRoutineEndTimes(routines) || validateLongIntervalRoutines(routines) || endDateProblem({
+        endDate: endDate !== undefined ? endDate : target.endDate,
+        startDate: startDate !== undefined ? startDate : target.startDate,
+        routines: routines !== undefined ? routines : target.routines,
+    });
     if (endTimeError) return res.status(400).json({ error: endTimeError });
 
     const previousTimezone = group.timezone;
@@ -594,6 +604,8 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         );
     }
     if (startDate !== undefined) target.startDate = startDate;
+    // Old app builds never send endDate, so they can't clear it.
+    if (endDate !== undefined) target.endDate = endDate || null;
     // Old app builds don't send end times; keep the ones already on unchanged rows.
     // Old app builds: never let them drop or mangle a quarterly/semiannual/yearly routine.
     if (routines !== undefined) {
@@ -642,7 +654,10 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     // their RSVPs, guests, items and answers; only slots that no longer exist are removed.
     // (A timezone change moves every slot, so that one case starts the series over.)
     try {
-        await reconcileScheduleMeetups(group, target, { resetAll: !!timezone && timezone !== previousTimezone });
+        await reconcileScheduleMeetups(group, target, {
+            resetAll: !!timezone && timezone !== previousTimezone,
+            removeAfterEnd: removeAfterEnd === true,
+        });
     } catch (err) {
         console.error("Update Schedule Reconcile Error:", err);
     }
@@ -687,6 +702,38 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     }
 
     res.status(200).json({ message: "Schedule updated.", group: withLegacyScheduleMirror(group.toObject()) });
+});
+
+/**
+ * @desc    How many of a schedule's regular (not hand-edited) upcoming meetups fall after
+ *          a given day. The app asks before saving an end date, so it only shows the
+ *          "Delete meetups after …?" prompt when there's something to delete.
+ * @route   GET /api/groups/:groupId/schedules/:scheduleId/meetups-after?date=YYYY-MM-DD
+ */
+export const countMeetupsAfter = asyncHandler(async (req, res) => {
+    const { groupId, scheduleId } = req.params;
+    const { userId: clerkId } = getAuth(req);
+    const { date } = req.query || {};
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const target = group.schedules.id(scheduleId);
+    if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
+
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? DateTime.fromISO(date, { zone: group.timezone }) : null;
+    if (!day?.isValid) return res.status(400).json({ error: "A date (YYYY-MM-DD) is required." });
+
+    const count = await Meetup.countDocuments({
+        group: group._id,
+        schedule: target._id,
+        isOverride: false,
+        status: "scheduled",
+        date: { $gt: day.endOf("day").toJSDate() },
+    });
+    res.status(200).json({ count });
 });
 
 /**

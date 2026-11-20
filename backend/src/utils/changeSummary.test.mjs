@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { meetupChanges, scheduleChanges, pushBody, truncate } from './changeSummary.js';
+import { meetupChanges, scheduleChanges, scheduleSnapshot, pushBody, truncate } from './changeSummary.js';
 
 const TZ = 'America/New_York';
 const NOW = new Date('2026-11-07T15:00:00Z');
@@ -148,4 +148,30 @@ test('schedule: quarterly / semiannual / yearly wording', () => {
   assert.equal(mk({ frequency: 'semiannual', repeatBy: 'weekday', dayTimes: [{ startDate: start('2027-01-21'), day: 4, time: '06:00 PM' }], rules: [{ type: 'byDay', occurrence: '3rd', day: 4 }] }), 'Every 6 months on the 3rd Thursday at 6:00 PM');
   assert.equal(mk({ frequency: 'yearly', repeatBy: 'date', dayTimes: [{ startDate: start('2027-03-15'), date: 15, time: '06:00 PM' }], rules: [] }), 'Yearly on March 15 at 6:00 PM');
   assert.equal(mk({ frequency: 'yearly', repeatBy: 'weekday', dayTimes: [{ startDate: start('2026-11-26'), day: 4, time: '06:00 PM' }], rules: [{ type: 'byDay', occurrence: '4th', day: 4 }] }), 'Yearly on the 4th Thursday of November at 6:00 PM');
+});
+
+// ---- schedule end date ----
+const ends = (iso) => ({ ...sched(), endDate: iso ? new Date(iso + 'T00:00:00Z') : null });
+
+test('schedule snapshot carries the end date', () => {
+  assert.equal(scheduleSnapshot({ ...sched(), endDate: new Date('2027-03-15T00:00:00Z') }, TZ).endDate.toISOString(), '2027-03-15T00:00:00.000Z');
+});
+
+test('schedule: adding an end date says Ends with the date', () => {
+  assert.deepEqual(scheduleChanges(ends(null), ends('2027-03-15'), { now: NOW }).map((x) => [x.label, x.value]), [['Ends', 'Mar 15, 2027']]);
+});
+
+test('schedule: removing the end date says No end date', () => {
+  assert.deepEqual(scheduleChanges(ends('2027-03-15'), ends(null), { now: NOW }).map((x) => [x.label, x.value]), [['Ends', 'No end date']]);
+});
+
+test('schedule: an unchanged end date is not mentioned', () => {
+  assert.deepEqual(scheduleChanges(ends('2027-03-15'), ends('2027-03-15'), { now: NOW }), []);
+});
+
+test('schedule: Ends comes right after When', () => {
+  const after = ends('2027-03-15');
+  after.routines = [{ frequency: 'weekly', dayTimes: [{ day: 4, time: '06:00 PM' }], rules: [] }];
+  after.defaultLocation = 'Gym';
+  assert.deepEqual(scheduleChanges(ends(null), after, { now: NOW }).map((x) => x.label), ['When', 'Ends', 'Location']);
 });

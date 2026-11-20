@@ -14,6 +14,7 @@ import {
   updateGroupSchedule,
   createSchedule,
   updateSchedule,
+  countMeetupsAfter,
   updateSchedulePriority,
   updateScheduleQuestions,
   getGroupStats,
@@ -150,6 +151,7 @@ router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
 // multi-schedule routes — a group can have several named schedules
 router.post("/:groupId/schedules", protectRoute, createSchedule);
 router.patch("/:groupId/schedules/:scheduleId", protectRoute, updateSchedule);
+router.get("/:groupId/schedules/:scheduleId/meetups-after", protectRoute, countMeetupsAfter);
 router.put("/:groupId/schedules/:scheduleId/priority", protectRoute, updateSchedulePriority);
 router.put("/:groupId/schedules/:scheduleId/questions", protectRoute, updateScheduleQuestions);
 router.get("/:groupId/stats", protectRoute, getGroupStats);
