@@ -15,7 +15,7 @@ import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { DateTime } from "luxon";
 import { resolveZone } from "../utils/email/lifecycle.js";
 import { generateMeetupsForGroup, generateMeetupsForSchedule, reconcileScheduleMeetups } from "../utils/meetupGeneration.js";
-import { endDateProblem } from "../utils/scheduleEndDate.js";
+import { endDateProblem, parseEndDate } from "../utils/scheduleEndDate.js";
 import { promoteWaitlist } from "../utils/waitlist.js";
 import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
 import { deleteTournamentsForGroup, deleteUnfinishedTournaments } from "../utils/tournament/cleanup.js";
@@ -226,6 +226,9 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
 
   for (const s of initialSchedules) {
+      const parsedEnd = parseEndDate(s.endDate);
+      if (parsedEnd.error) return res.status(400).json({ error: parsedEnd.error });
+      s.endDate = parsedEnd.value;
       const endTimeError = validateRoutineEndTimes(s.routines) || validateLongIntervalRoutines(s.routines) || endDateProblem(s);
       if (endTimeError) return res.status(400).json({ error: endTimeError });
   }
@@ -472,8 +475,10 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (!name || !String(name).trim()) {
         return res.status(400).json({ error: "Schedule name is required." });
     }
+    const parsedEnd = parseEndDate(endDate);
+    if (parsedEnd.error) return res.status(400).json({ error: parsedEnd.error });
     const endTimeError = validateRoutineEndTimes(routines) || validateLongIntervalRoutines(routines)
-        || endDateProblem({ endDate, startDate, routines });
+        || endDateProblem({ endDate: parsedEnd.value, startDate, routines });
     if (endTimeError) return res.status(400).json({ error: endTimeError });
 
     // Guards against a double-fired create (a mistimed double-tap, or a
@@ -503,7 +508,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (timezone) group.timezone = timezone;
 
     group.schedules.push(normalizeScheduleInput(
-        { name, startDate, endDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription, defaultBringItems, defaultRidesEnabled, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
+        { name, startDate, endDate: parsedEnd.value, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription, defaultBringItems, defaultRidesEnabled, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
         name
     ));
     await group.save();
@@ -583,8 +588,10 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     }
 
     // The end date is checked against the start as it will be after this edit.
+    const parsedEnd = endDate !== undefined ? parseEndDate(endDate) : { value: target.endDate ?? null };
+    if (parsedEnd.error) return res.status(400).json({ error: parsedEnd.error });
     const endTimeError = validateRoutineEndTimes(routines) || validateLongIntervalRoutines(routines) || endDateProblem({
-        endDate: endDate !== undefined ? endDate : target.endDate,
+        endDate: parsedEnd.value,
         startDate: startDate !== undefined ? startDate : target.startDate,
         routines: routines !== undefined ? routines : target.routines,
     });
@@ -605,7 +612,7 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     }
     if (startDate !== undefined) target.startDate = startDate;
     // Old app builds never send endDate, so they can't clear it.
-    if (endDate !== undefined) target.endDate = endDate || null;
+    if (endDate !== undefined) target.endDate = parsedEnd.value;
     // Old app builds don't send end times; keep the ones already on unchanged rows.
     // Old app builds: never let them drop or mangle a quarterly/semiannual/yearly routine.
     if (routines !== undefined) {

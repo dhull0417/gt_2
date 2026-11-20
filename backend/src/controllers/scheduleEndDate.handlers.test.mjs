@@ -211,3 +211,14 @@ test('a missing or malformed date is a 400', async () => {
   assert.equal((await count({ date: 'April 27' })).code, 400);
   assert.equal(counted, null);
 });
+
+test('a malformed end date is a 400, not a crash', async () => {
+  const res = await update({ endDate: 'garbage' });
+  assert.equal(res.code, 400);
+  assert.equal(res.body.error, 'End date must be a date (YYYY-MM-DD).');
+});
+
+test('an end date sent as a timestamp is stored as its calendar day', async () => {
+  await update({ endDate: '2027-04-27T23:30:00-06:00' });
+  assert.equal(isoDay(target().endDate), '2027-04-27');
+});
