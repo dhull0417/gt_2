@@ -29,7 +29,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi, groupApi } from '@/utils/api';
 import { usePremium } from '@/hooks/usePremium';
 import { getErrorMessage } from '@/utils/networkError';
-import { formatSchedule } from '@/utils/schedule';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
@@ -68,7 +67,7 @@ const GroupSettings = () => {
   const { mutate: leaveGroup } = useLeaveGroup();
 
   // --- Top-level navigation between Settings home / Edit Group / Edit Schedule ---
-  const [view, setView] = useState<'main' | 'group' | 'schedules'>('main');
+  const [view, setView] = useState<'main' | 'group'>('main');
   // Android back from a sub-page returns to the main settings page, like the on-screen arrow.
   useAndroidBack(view !== 'main', () => setView('main'));
 
@@ -117,13 +116,6 @@ const GroupSettings = () => {
     return isUserOwner || isUserMod;
   }, [isUserOwner, isUserMod]);
 
-  const activeSchedules = useMemo(
-    () => (group?.schedules ?? []).filter(sch => sch.active !== false),
-    [group?.schedules]
-  );
-  const MAX_ACTIVE_SCHEDULES = 5;
-  const canAddSchedule = activeSchedules.length < MAX_ACTIVE_SCHEDULES;
-
   // --- ACCESS CONTROL GUARD ---
   useEffect(() => {
     if (!isLoadingGroup && !isLoadingUser && group && currentUser) {
@@ -157,7 +149,6 @@ const GroupSettings = () => {
 
   const mainOptions = [
     { id: 'group', label: 'Edit Group Info', icon: 'edit-2', color: colors.brand, bg: chipBlue },
-    { id: 'schedules', label: 'Edit Meetup Schedules', icon: 'calendar', color: '#6366F1', bg: chipIndigo },
     { id: 'invite', label: 'Invite Link & Code', icon: 'link', color: '#14B8A6', bg: chipCyan },
     { id: 'reactions', label: 'RSVP Reactions', icon: 'smile', color: '#EC4899', bg: chipPink },
     { id: 'stats', label: 'Stats & Attendance', icon: 'bar-chart-2', color: '#10B981', bg: chipGreen },
@@ -171,9 +162,6 @@ const GroupSettings = () => {
     switch (optionId) {
       case 'group':
         setView('group');
-        break;
-      case 'schedules':
-        setView('schedules');
         break;
       case 'reactions':
         router.push({ pathname: '/group-rsvp-responses/[id]', params: { id } });
@@ -554,7 +542,7 @@ const GroupSettings = () => {
           </PressableOpacity>
         )}
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-          {view === 'main' ? 'Group Settings' : view === 'group' ? 'Edit Group Info' : 'Edit Meetup Schedules'}
+          {view === 'main' ? 'Group Settings' : 'Edit Group Info'}
         </Text>
         <View style={{ width: 44 }} />
       </View>
@@ -631,48 +619,6 @@ const GroupSettings = () => {
                 <Feather name="chevron-right" size={18} color={colors.textFaint} />
               </PressableOpacity>
             ))}
-          </View>
-        )}
-
-        {view === 'schedules' && (
-          <View style={styles.optionsContainer}>
-            {activeSchedules.map((sch) => (
-              <View key={sch._id} style={[styles.optionButton, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <PressableOpacity
-                  style={styles.optionLeft}
-                  activeOpacity={0.7}
-                  onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: sch._id } })}
-                >
-                  <View style={[styles.iconContainer, { backgroundColor: chipIndigo }]}>
-                    <Feather name="calendar" size={20} color="#6366F1" />
-                  </View>
-                  <View style={{ flexShrink: 1 }}>
-                    <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>{sch.name}</Text>
-                    <Text style={[styles.optionSubLabel, { color: colors.textFaint }]} numberOfLines={1}>{formatSchedule(sch)}</Text>
-                  </View>
-                </PressableOpacity>
-                <PressableOpacity accessibilityLabel="Notifications"
-                  style={{ padding: 6 }}
-                  onPress={() => router.push({ pathname: '/group-edit-jit/[id]', params: { id: id!, scheduleId: sch._id } })}
-                >
-                  <Feather name="bell" size={18} color="#F59E0B" />
-                </PressableOpacity>
-              </View>
-            ))}
-            {canAddSchedule && (
-              <PressableOpacity
-                style={[styles.optionButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                activeOpacity={0.7}
-                onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: 'new' } })}
-              >
-                <View style={styles.optionLeft}>
-                  <View style={[styles.iconContainer, { backgroundColor: chipIndigo }]}>
-                    <Feather name="plus" size={20} color="#6366F1" />
-                  </View>
-                  <Text style={[styles.optionLabel, { color: colors.textPrimary }]}>Add Schedule</Text>
-                </View>
-              </PressableOpacity>
-            )}
           </View>
         )}
 

@@ -124,3 +124,35 @@ describe('grouping', () => {
     expect(roundsOf(t).map((r) => r.title)).toEqual(['Round 1', 'Final']);
   });
 });
+
+describe('setup summaries', () => {
+  const S = require('../tournament');
+  test('team split', () => {
+    expect(S.splitSummary('size', 2)).toBe('Teams of 2');
+    expect(S.splitSummary('count', 4)).toBe('4 teams');
+  });
+  test('per match', () => {
+    expect(S.perMatchSummary('teams', 3)).toBe('3 teams');
+    expect(S.perMatchSummary('singles', 2)).toBe('2 players');
+  });
+  test('players (caller passes the guest-inclusive total)', () => {
+    expect(S.playersSummary(8)).toBe('8 playing');
+    expect(S.playersSummary(1)).toBe('1 playing');
+  });
+  test('strength ranking', () => {
+    expect(S.rankingSummary(false, 'Spring', true, true)).toBe('Off');
+    expect(S.rankingSummary(true, null, false, false)).toBe('On');
+    expect(S.rankingSummary(true, 'Spring', true, false)).toBe('Spring · Balanced');
+    expect(S.rankingSummary(true, null, false, true)).toBe('On · Finale');
+    expect(S.rankingSummary(true, 'Spring', true, true)).toBe('Spring · Balanced, Finale');
+  });
+  test('disabled reasons', () => {
+    expect(S.TEAMS_ONLY).toBe('Teams only');
+    expect(S.NOT_FOR_JUST_TEAMS).toBe('Not used for Just teams');
+  });
+  test('turning the ranking on picks a sensible default', () => {
+    expect(S.rankingToggledOn({ balanceTeams: false, buildToFinale: false }, 'teams')).toEqual({ balanceTeams: true });
+    expect(S.rankingToggledOn({ balanceTeams: false, buildToFinale: false }, 'singles')).toEqual({ buildToFinale: true });
+    expect(S.rankingToggledOn({ balanceTeams: false, buildToFinale: true }, 'teams')).toEqual({});
+  });
+});

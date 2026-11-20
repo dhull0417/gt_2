@@ -1,4 +1,4 @@
-import { hasAssignments, assignmentsActive, memberName, summarizeAssignments } from '../assignments';
+import { hasAssignments, assignmentsActive, memberName, summarizeAssignments, nextRole, rideBody, canEditOwnAssignments } from '../assignments';
 
 const base = (over: any = {}) =>
   ({
@@ -94,5 +94,45 @@ describe('summarizeAssignments', () => {
   it('handles a meetup with nothing set up', () => {
     const s = summarizeAssignments(base());
     expect(s).toEqual({ items: [], drivers: [], passengers: [], seatsAvailable: 0, seatsNeeded: 0, seatBalance: 0 });
+  });
+});
+
+describe('nextRole', () => {
+  it('tapping the selected role unselects it', () => {
+    expect(nextRole('driver', 'driver')).toBeNull();
+    expect(nextRole('passenger', 'passenger')).toBeNull();
+  });
+  it('tapping another role selects it', () => {
+    expect(nextRole(null, 'driver')).toBe('driver');
+    expect(nextRole('driver', 'passenger')).toBe('passenger');
+  });
+});
+
+describe('rideBody', () => {
+  it('sends null when no role, so the ride is removed', () => {
+    expect(rideBody(null, 3)).toBeNull();
+  });
+  it('sends seats only for drivers', () => {
+    expect(rideBody('driver', 3)).toEqual({ role: 'driver', seats: 3 });
+    expect(rideBody('passenger', 3)).toEqual({ role: 'passenger' });
+  });
+});
+
+describe('canEditOwnAssignments', () => {
+  const m = (over: any = {}) => base({ ridesEnabled: true, out: ['u4'], waitlist: [], ...over });
+  it('is true for someone In', () => {
+    expect(canEditOwnAssignments(m(), 'u1', false)).toBe(true);
+  });
+  it('is false for Out, waitlisted or undecided', () => {
+    expect(canEditOwnAssignments(m(), 'u4', false)).toBe(false);
+    expect(canEditOwnAssignments(m({ in: ['u1'], waitlist: ['u3'] }), 'u3', false)).toBe(false);
+    expect(canEditOwnAssignments(m({ in: ['u1'] }), 'u2', false)).toBe(false);
+  });
+  it('is false on a past/cancelled meetup or without Premium', () => {
+    expect(canEditOwnAssignments(m(), 'u1', true)).toBe(false);
+    expect(canEditOwnAssignments(m({ group: { isPremium: false } }), 'u1', false)).toBe(false);
+  });
+  it('accepts populated users in "in"', () => {
+    expect(canEditOwnAssignments(m({ in: [{ _id: 'u1' }] }), 'u1', false)).toBe(true);
   });
 });

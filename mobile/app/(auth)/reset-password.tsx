@@ -89,9 +89,9 @@ const ResetPasswordScreen = () => {
       subtitle={email ? `We emailed a code to ${email}.` : 'We emailed you a code.'}
       onBack={() => router.back()}
     >
+      {/* Uncontrolled on purpose, like VerificationCodeForm: echoing state back can undo an iOS paste. */}
       <TextField
         autoFocus
-        value={code}
         onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 8))}
         placeholder="Code"
         accessibilityLabel="Verification code"

@@ -1,32 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, LayoutChangeEvent } from 'react-native';
+import { View, Text, StyleSheet, LayoutChangeEvent, Modal, Pressable, ScrollView, useWindowDimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue, useAnimatedStyle, useDerivedValue, withTiming, interpolateColor, Easing,
   FadeIn, FadeOut, LinearTransition, SharedValue,
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import { useThemeColors, useAppearance } from '@/contexts/AppearanceContext';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
-
-export interface Accent { fg: string; bg: string; border: string }
-
-/** Section colors, in the same pastel-chip style as Group Settings (with dark variants). */
-export function useAccents() {
-  const { scheme } = useAppearance();
-  const dark = scheme === 'dark';
-  const a = (fg: string, light: string, darkBg: string, lightBorder: string, darkBorder: string): Accent =>
-    ({ fg, bg: dark ? darkBg : light, border: dark ? darkBorder : lightBorder });
-  return {
-    indigo: a('#6366F1', '#EEF2FF', '#1E2340', '#C7D2FE', '#2E3566'),
-    cyan: a('#0891B2', '#ECFEFF', '#123338', '#A5F3FC', '#1C4A52'),
-    purple: a('#8B5CF6', '#F5F3FF', '#241B3D', '#DDD6FE', '#372A5C'),
-    orange: a('#F97316', '#FFF7ED', '#3A2712', '#FED7AA', '#57391A'),
-    green: a('#10B981', '#ECFDF5', '#12301F', '#A7F3D0', '#1C4A30'),
-    pink: a('#EC4899', '#FDF2F8', '#3A1B2E', '#FBCFE8', '#572845'),
-    blue: a('#3B82F6', '#EFF6FF', '#1A2A42', '#BFDBFE', '#283F63'),
-  };
-}
 
 const EASE = { duration: 260, easing: Easing.out(Easing.cubic) };
 const SEG_PAD = 3;
@@ -45,12 +27,12 @@ function SegLabel({ label, index, pos, active, inactive }: { label: string; inde
 }
 
 /** Segmented control whose highlight slides between options; text eases between sizes and colors. */
-export function Segmented<T extends string | number>({ value, options, onChange, accent }: {
-  value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; accent?: Accent;
+export function Segmented<T extends string | number>({ value, options, onChange }: {
+  value: T; options: { value: T; label: string }[]; onChange: (v: T) => void;
 }) {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const fg = accent?.fg ?? colors.brand;
+  const fg = colors.brand;
   const index = Math.max(0, options.findIndex((o) => o.value === value));
   const pos = useSharedValue(index);
   const [width, setWidth] = useState(0);
@@ -63,7 +45,7 @@ export function Segmented<T extends string | number>({ value, options, onChange,
 
   return (
     <View onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)}
-      style={[styles.seg, accent && { backgroundColor: accent.bg, borderWidth: 1, borderColor: accent.border }]}>
+      style={styles.seg}>
       {itemW > 0 && (
         <Animated.View pointerEvents="none" style={[{
           position: 'absolute', left: SEG_PAD, top: SEG_PAD, bottom: SEG_PAD, width: itemW, borderRadius: 10, backgroundColor: fg,
@@ -73,7 +55,7 @@ export function Segmented<T extends string | number>({ value, options, onChange,
       {options.map((o, i) => (
         <PressableOpacity key={String(o.value)} onPress={() => onChange(o.value)} style={styles.segItem} activeOpacity={0.8}
           accessibilityRole="radio" accessibilityState={{ selected: i === index }}>
-          <SegLabel label={o.label} index={i} pos={pos} active="#FFFFFF" inactive={accent ? fg : colors.textMuted} />
+          <SegLabel label={o.label} index={i} pos={pos} active="#FFFFFF" inactive={colors.textMuted} />
         </PressableOpacity>
       ))}
     </View>
@@ -91,103 +73,25 @@ export const Glide = ({ children, style }: { children: React.ReactNode; style?: 
   <Animated.View layout={LinearTransition.duration(240)} style={style}>{children}</Animated.View>
 );
 
-/** A colored icon chip plus an uppercase label, like the section headers elsewhere in the app. */
-export function SectionHeader({ icon, label, accent }: { icon: string; label: string; accent: Accent }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, marginBottom: 8 }}>
-      <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: accent.bg, borderWidth: 1, borderColor: accent.border, alignItems: 'center', justifyContent: 'center' }}>
-        <Feather name={icon as any} size={14} color={accent.fg} />
-      </View>
-      <Text style={{ fontSize: 12, fontWeight: '800', color: accent.fg, textTransform: 'uppercase', letterSpacing: 0.6 }}>{label}</Text>
-    </View>
-  );
-}
+export { OptionRow } from '@/components/ui/form';
 
-function Tile({ on, label, sub, icon, disabled, onPress, accent }: {
-  on: boolean; label: string; sub: string; icon: string; disabled?: boolean; onPress: () => void; accent: Accent;
-}) {
-  const colors = useThemeColors();
-  const p = useSharedValue(on ? 1 : 0);
-  useEffect(() => { p.value = withTiming(on ? 1 : 0, EASE); }, [on, p]);
-  const box = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(p.value, [0, 1], [colors.surface, accent.bg]),
-    borderColor: interpolateColor(p.value, [0, 1], [colors.border, accent.fg]),
-    transform: [{ scale: 0.98 + 0.02 * p.value }],
-  }));
-  const chip = useAnimatedStyle(() => ({ backgroundColor: interpolateColor(p.value, [0, 1], [accent.bg, accent.fg]) }));
-  const iconOn = useAnimatedStyle(() => ({ opacity: p.value }));
-  const iconOff = useAnimatedStyle(() => ({ opacity: 1 - p.value }));
-  const check = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ scale: 0.6 + 0.4 * p.value }] }));
-  const title = useAnimatedStyle(() => ({ color: interpolateColor(p.value, [0, 1], [colors.textPrimary, accent.fg]) }));
-  return (
-    <PressableOpacity disabled={disabled} onPress={onPress} activeOpacity={0.85}
-      accessibilityRole="radio" accessibilityState={{ selected: on, disabled }}
-      style={{ width: '48%', flexGrow: 1, opacity: disabled ? 0.45 : 1 }}>
-      <Animated.View style={[{ minHeight: 104, borderRadius: 14, padding: 12, borderWidth: 2 }, box]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Animated.View style={[{ width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' }, chip]}>
-            <Animated.View style={[{ position: 'absolute' }, iconOff]}><Feather name={icon as any} size={16} color={accent.fg} /></Animated.View>
-            <Animated.View style={iconOn}><Feather name={icon as any} size={16} color="#FFFFFF" /></Animated.View>
-          </Animated.View>
-          <Animated.View style={check}><Feather name="check-circle" size={18} color={accent.fg} /></Animated.View>
-        </View>
-        <Animated.Text style={[{ fontSize: 15, fontWeight: '800', marginTop: 8 }, title]}>{label}</Animated.Text>
-        <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>{sub}</Text>
-      </Animated.View>
-    </PressableOpacity>
-  );
-}
-
-/** Two-column grid of selectable tiles (icon, title, one line), e.g. the Format choice. */
-export function TileGrid<T extends string>({ value, tiles, onChange, accent }: {
-  value: T;
-  tiles: { value: T; label: string; sub: string; icon: string; disabled?: boolean; note?: string }[];
-  onChange: (v: T) => void;
-  accent: Accent;
-}) {
-  return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-      {tiles.map((t) => (
-        <Tile key={t.value} on={t.value === value} label={t.label} sub={t.disabled && t.note ? t.note : t.sub} icon={t.icon}
-          disabled={t.disabled} onPress={() => onChange(t.value)} accent={accent} />
-      ))}
-    </View>
-  );
-}
-
-export function OptionRow({ label, sub, selected, onPress, disabled, check = 'radio', accent }: {
-  label: string; sub?: string; selected: boolean; onPress: () => void; disabled?: boolean; check?: 'radio' | 'box'; accent?: Accent;
-}) {
-  const colors = useThemeColors();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const icon = check === 'box' ? (selected ? 'check-square' : 'square') : (selected ? 'check-circle' : 'circle');
-  return (
-    <PressableOpacity onPress={onPress} disabled={disabled} style={[styles.option, disabled && { opacity: 0.5 }]}
-      accessibilityRole={check === 'box' ? 'checkbox' : 'radio'} accessibilityState={{ checked: selected, disabled }}>
-      <Feather name={icon as any} size={20} color={selected ? (accent?.fg ?? colors.brand) : colors.textFaint} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.optionLabel}>{label}</Text>
-        {sub ? <Text style={styles.optionSub}>{sub}</Text> : null}
-      </View>
-    </PressableOpacity>
-  );
-}
-
-export function Stepper({ value, min, max, onChange, label, accent }: { value: number; min: number; max: number; onChange: (n: number) => void; label: string; accent?: Accent }) {
+export function Stepper({ value, min, max, onChange, label }: { value: number; min: number; max: number; onChange: (n: number) => void; label: string }) {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.stepper}>
-      <PressableOpacity accessibilityLabel={`Fewer ${label}`} disabled={value <= min} onPress={() => onChange(value - 1)} style={[styles.stepBtn, accent && { backgroundColor: accent.fg, borderColor: accent.fg }, value <= min && { opacity: 0.4 }]}>
-        <Feather name="minus" size={18} color={accent ? '#FFFFFF' : colors.textPrimary} />
+      <PressableOpacity accessibilityLabel={`Fewer ${label}`} disabled={value <= min} onPress={() => onChange(value - 1)} style={[styles.stepBtn, value <= min && { opacity: 0.4 }]}>
+        <Feather name="minus" size={18} color={colors.textPrimary} />
       </PressableOpacity>
-      <Text style={[styles.stepValue, accent && { color: accent.fg }]}>{value}</Text>
-      <PressableOpacity accessibilityLabel={`More ${label}`} disabled={value >= max} onPress={() => onChange(value + 1)} style={[styles.stepBtn, accent && { backgroundColor: accent.fg, borderColor: accent.fg }, value >= max && { opacity: 0.4 }]}>
-        <Feather name="plus" size={18} color={accent ? '#FFFFFF' : colors.textPrimary} />
+      <Text style={styles.stepValue}>{value}</Text>
+      <PressableOpacity accessibilityLabel={`More ${label}`} disabled={value >= max} onPress={() => onChange(value + 1)} style={[styles.stepBtn, value >= max && { opacity: 0.4 }]}>
+        <Feather name="plus" size={18} color={colors.textPrimary} />
       </PressableOpacity>
     </View>
   );
 }
+
+export { GroupCard, SummaryRow, SettingSheet } from '@/components/ui/form';
 
 export const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
@@ -222,6 +126,8 @@ export const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   chipTextOn: { color: colors.brand, fontWeight: '800' },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
   teamDot: { width: 10, height: 10, borderRadius: 5 },
+  summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 52, paddingHorizontal: 14, paddingVertical: 10 },
+  summaryValue: { flex: 1, textAlign: 'right', fontSize: 15, color: colors.textMuted },
 });
 
 export const TEAM_COLORS = ['#4FD1C5', '#F59E0B', '#6366F1', '#EF4444', '#10B981', '#EC4899', '#3B82F6', '#8B5CF6'];

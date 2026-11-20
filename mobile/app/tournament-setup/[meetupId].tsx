@@ -1,7 +1,7 @@
 // Set up (or edit) Teams & Tourneys for a meetup. Owners and moderators, Premium.
 // Spec: docs/specs/2026-11-10-team-tournaments-design.md
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, TextInput, Alert, ActivityIndicator, Switch, Modal, BackHandler, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, ScrollView, TextInput, Alert, ActivityIndicator, Modal, BackHandler, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -16,9 +16,16 @@ import { useThemeColors } from '@/contexts/AppearanceContext';
 import { useToast } from '@/contexts/ToastContext';
 import RankingEditor, { RankItem } from '@/components/tournament/RankingEditor';
 import BracketView from '@/components/tournament/BracketView';
-import { Segmented, OptionRow, Stepper, SectionHeader, TileGrid, Reveal, Glide, useAccents, Accent, makeStyles, TEAM_COLORS } from '@/components/tournament/ui';
+import { Segmented, OptionRow, Reveal, Glide, GroupCard, SummaryRow, makeStyles, TEAM_COLORS } from '@/components/tournament/ui';
+import ChoiceSheet from '@/components/tournament/setup/ChoiceSheet';
+import TeamSplitSheet from '@/components/tournament/setup/TeamSplitSheet';
+import PlayersSheet from '@/components/tournament/setup/PlayersSheet';
+import RankingSheet from '@/components/tournament/setup/RankingSheet';
 import { tournamentApi, apiError, Tournament, TournamentConfig, SetupBody, TMode, TFormat } from '@/utils/tournamentApi';
-import { allowedFormats, allowedResultTypes, fixConfig, playerLabel, matchTitle, roundsOf, RESULT_LABEL } from '@/utils/tournament';
+import {
+  allowedFormats, allowedResultTypes, fixConfig, playerLabel, matchTitle, roundsOf, RESULT_LABEL,
+  splitSummary, perMatchSummary, playersSummary, rankingSummary, rankingToggledOn, TEAMS_ONLY, NOT_FOR_JUST_TEAMS,
+} from '@/utils/tournament';
 
 const FORMAT_TILES: { value: TFormat; label: string; sub: string; icon: string }[] = [
   { value: 'roundRobin', label: 'Round robin', sub: 'Everyone plays everyone', icon: 'refresh-cw' },
@@ -35,9 +42,6 @@ type Draft = { name: string | null; players: string[] }[];
 export default function TournamentSetupScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const accents = useAccents();
-  const tinted = (a: Accent) => [styles.card, { backgroundColor: a.bg, borderColor: a.border }];
-  const sw = (a: Accent) => ({ trackColor: { true: a.fg, false: colors.borderStrong }, thumbColor: '#FFFFFF', ios_backgroundColor: colors.borderStrong });
   const { meetupId, groupId, tournamentId } = useLocalSearchParams<{ meetupId: string; groupId: string; tournamentId?: string }>();
   const router = useRouter();
   const api = useApiClient();
@@ -74,6 +78,8 @@ export default function TournamentSetupScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [allRounds, setAllRounds] = useState(false);
   const [editing, setEditing] = useState<null | 'players' | 'teams'>(null);
+  const [sheet, setSheet] = useState<null | 'split' | 'format' | 'perMatch' | 'results' | 'players' | 'ranking'>(null);
+  const closeSheet = () => setSheet(null);
   const [moving, setMoving] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | 'preview' | 'save' | 'list'>(null);
   const [error, setError] = useState<string | null>(null);
@@ -232,6 +238,8 @@ export default function TournamentSetupScreen() {
   const isPremium = group.isPremium === true;
   const formats = allowedFormats(config.mode, config.teamsPerMatch);
   const resultTypes = allowedResultTypes(config.format, config.teamsPerMatch);
+  const formatLabel = FORMAT_TILES.find((f) => f.value === config.format)?.label ?? '';
+  const listName = lists.find((l) => l._id === listId)?.name ?? null;
   const rankItems: RankItem[] = rankedIds.map((id) => ({ id, label: nameOf(members.get(id)), picture: members.get(id)?.profilePicture }));
   const previewTeams = preview && draft ? draft : null;
   const labelOfKey = (key: string) => {
@@ -267,138 +275,32 @@ export default function TournamentSetupScreen() {
             </View>
           ) : (
             <>
-              <SectionHeader icon="users" label="Who's competing" accent={accents.indigo} />
-              <Segmented<TMode> accent={accents.indigo} value={config.mode} onChange={(mode) => setConfig({ mode })}
-                options={[{ value: 'teams', label: 'Teams' }, { value: 'singles', label: 'Singles' }]} />
-              {config.mode === 'teams' && (
-                <Reveal>
-                <View style={[...tinted(accents.indigo), { marginTop: 10 }]}>
-                  <Segmented accent={accents.indigo} value={splitBy} onChange={(v) => { setSplitBy(v); setSplitValue(2); setDirty(true); }}
-                    options={[{ value: 'size', label: 'Team size' }, { value: 'count', label: 'Number of teams' }]} />
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
-                    <Text style={styles.body}>{splitBy === 'size' ? 'Players per team' : 'Teams'}</Text>
-                    <Stepper accent={accents.indigo} label={splitBy === 'size' ? 'players per team' : 'teams'} value={splitValue} min={splitBy === 'size' ? 1 : 2} max={32}
-                      onChange={(n) => { setSplitValue(n); setDirty(true); }} />
-                  </View>
-                  {splitBy === 'size' && totalPlayers % splitValue !== 0 && totalPlayers >= splitValue && (
-                    <Reveal>
-                      <Text style={styles.hint}>
-                        {totalPlayers} players can't be split evenly into teams of {splitValue}, so the top {totalPlayers % splitValue === 1 ? 'player plays' : `${totalPlayers % splitValue} players each play`} on their own team{weightOn ? ' (from your ranking)' : ' (picked at random without a ranking)'}.
-                      </Text>
-                    </Reveal>
-                  )}
-                </View>
-                </Reveal>
-              )}
-
-              {config.format !== 'none' && (
-                <Reveal>
-                  <SectionHeader icon="grid" label={`${config.mode === 'singles' ? 'Players' : 'Teams'} per match`} accent={accents.cyan} />
-                  <Segmented<number> accent={accents.cyan} value={config.teamsPerMatch} onChange={(n) => setConfig({ teamsPerMatch: n as 2 | 3 | 4 })}
-                    options={[{ value: 2, label: '2' }, { value: 3, label: '3' }, { value: 4, label: '4' }]} />
-                </Reveal>
-              )}
-
-              <Glide>
-              <SectionHeader icon="award" label="Format" accent={accents.purple} />
-              <TileGrid<TFormat> accent={accents.purple} value={config.format} onChange={(format) => setConfig({ format })}
-                tiles={FORMAT_TILES.map((f) => ({
-                  ...f,
-                  disabled: !formats.includes(f.value),
-                  note: f.value === 'none' ? 'Teams mode only' : 'Matches of 2 only',
-                }))} />
-              </Glide>
-
-              {resultTypes.length > 0 && (
-                <Reveal>
-                  <SectionHeader icon="edit-3" label="Record results as" accent={accents.orange} />
-                  <Segmented accent={accents.orange} value={config.resultType} onChange={(resultType) => setConfig({ resultType })}
-                    options={resultTypes.map((r) => ({ value: r, label: RESULT_LABEL[r] }))} />
-                </Reveal>
-              )}
-
-              <Glide>
-              <SectionHeader icon="user-check" label="Players" accent={accents.green} />
-              <View style={tinted(accents.green)}>
-                {inIds.map((id) => (
-                  <OptionRow key={id} accent={accents.green} check="box" selected disabled label={nameOf(members.get(id))}
-                    sub={guestCount(id) ? `+${guestCount(id)} guest${guestCount(id) > 1 ? 's' : ''}` : "I'm In"} onPress={() => {}} />
-                ))}
-                {undecidedIds.length > 0 && (
-                  <>
-                    <View style={styles.divider} />
-                    <Text style={styles.hint}>Also add (haven't answered)</Text>
-                    {undecidedIds.map((id) => (
-                      <OptionRow key={id} accent={accents.green} check="box" selected={extraPlayers.includes(id)} label={nameOf(members.get(id))}
-                        onPress={() => { setExtraPlayers((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])); setDirty(true); }} />
-                    ))}
-                  </>
-                )}
+              <View style={{ marginTop: 16 }}>
+                <Segmented<TMode> value={config.mode} onChange={(mode) => setConfig({ mode })}
+                  options={[{ value: 'teams', label: 'Teams' }, { value: 'singles', label: 'Singles' }]} />
               </View>
-              </Glide>
 
-              <Glide>
-              <SectionHeader icon="bar-chart-2" label="Weighting" accent={accents.pink} />
-              <View style={tinted(accents.pink)}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flex: 1, paddingRight: 12 }}>
-                    <Text style={styles.cardTitle}>Use a strength ranking</Text>
-                    <Text style={styles.hint}>Off means everything is random.</Text>
-                  </View>
-                  <Switch value={weightOn} onValueChange={(v) => { setWeightOn(v); setDirty(true); if (v && !config.balanceTeams && !config.buildToFinale) setConfig(config.mode === 'teams' ? { balanceTeams: true } : { buildToFinale: true }); }}
-                    {...sw(accents.pink)} />
-                </View>
-                {weightOn && (
-                  <Reveal>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                      {lists.map((l) => (
-                        <PressableOpacity key={l._id} onPress={() => pickList(listId === l._id ? null : l._id)}
-                          style={[styles.chip, { borderColor: accents.pink.border }, listId === l._id && { backgroundColor: accents.pink.fg, borderColor: accents.pink.fg }]}>
-                          <Text style={[styles.chipText, { color: accents.pink.fg }, listId === l._id && { color: '#FFFFFF', fontWeight: '800' }]}>{l.name}</Text>
-                        </PressableOpacity>
-                      ))}
-                    </View>
-                    <PressableOpacity onPress={() => setEditing('players')} style={[styles.secondaryBtn, { borderColor: accents.pink.fg }]}>
-                      <Text style={[styles.secondaryText, { color: accents.pink.fg }]}>Edit ranking ({rankedIds.length})</Text>
-                    </PressableOpacity>
-                    <Text style={styles.hint} numberOfLines={2}>
-                      {rankedIds.slice(0, 5).map((id, i) => `${i + 1}. ${nameOf(members.get(id))}`).join('  ')}{rankedIds.length > 5 ? ' …' : ''}
-                    </Text>
-                    {lists.length < 10 && (
-                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'center' }}>
-                        <TextInput value={newListName} onChangeText={setNewListName} maxLength={30} placeholder="Save as a list (name)"
-                          placeholderTextColor={colors.placeholder} style={{ flex: 1, borderWidth: 1, borderColor: accents.pink.border, backgroundColor: colors.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, color: colors.textPrimary }} />
-                        <PressableOpacity onPress={saveList} disabled={!newListName.trim() || busy === 'list'}>
-                          <Text style={[styles.action, { color: accents.pink.fg }, !newListName.trim() && { opacity: 0.4 }]}>Save</Text>
-                        </PressableOpacity>
-                      </View>
-                    )}
-                    {config.mode === 'teams' && (
-                      <Reveal style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
-                        <View style={{ flex: 1, paddingRight: 12 }}>
-                          <Text style={styles.cardTitle}>Balance teams</Text>
-                          <Text style={styles.hint}>Spread strong and weaker players evenly.</Text>
-                        </View>
-                        <Switch value={config.balanceTeams} onValueChange={(v) => setConfig({ balanceTeams: v })} {...sw(accents.pink)} />
-                      </Reveal>
-                    )}
-                    {config.format !== 'none' && (
-                      <Reveal style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
-                        <View style={{ flex: 1, paddingRight: 12 }}>
-                          <Text style={styles.cardTitle}>Build to a finale</Text>
-                          <Text style={styles.hint}>{config.format === 'roundRobin' ? 'Mismatches first; the top two meet last.' : 'Top seeds can only meet late in the bracket.'}</Text>
-                        </View>
-                        <Switch value={config.buildToFinale} onValueChange={(v) => setConfig({ buildToFinale: v })} {...sw(accents.pink)} />
-                      </Reveal>
-                    )}
-                  </Reveal>
-                )}
-              </View>
-              </Glide>
+              <Text style={styles.sectionLabel}>Match</Text>
+              <GroupCard>
+                <SummaryRow label="Team split" value={splitSummary(splitBy, splitValue)} onPress={() => setSheet('split')}
+                  disabledReason={config.mode === 'singles' ? TEAMS_ONLY : undefined} />
+                <SummaryRow label="Format" value={formatLabel} onPress={() => setSheet('format')} />
+                <SummaryRow label="Per match" value={perMatchSummary(config.mode, config.teamsPerMatch)} onPress={() => setSheet('perMatch')}
+                  disabledReason={config.format === 'none' ? NOT_FOR_JUST_TEAMS : undefined} />
+                <SummaryRow label="Results as" value={RESULT_LABEL[config.resultType]} onPress={() => setSheet('results')}
+                  disabledReason={resultTypes.length === 0 ? NOT_FOR_JUST_TEAMS : undefined} />
+              </GroupCard>
+
+              <Text style={styles.sectionLabel}>Players</Text>
+              <GroupCard>
+                <SummaryRow label="Players" value={playersSummary(totalPlayers)} onPress={() => setSheet('players')} />
+                <SummaryRow label="Strength ranking" onPress={() => setSheet('ranking')}
+                  value={rankingSummary(weightOn, listName, config.mode === 'teams' && config.balanceTeams, config.format !== 'none' && config.buildToFinale)} />
+              </GroupCard>
 
               {previewTeams && (
                 <Reveal>
-                  <SectionHeader icon="eye" label="Preview" accent={accents.blue} />
+                  <Text style={styles.sectionLabel}>Preview</Text>
                   <Text style={[styles.hint, { marginTop: 0, marginBottom: 8 }]}>Tap a player to move them. Rename teams here.</Text>
                   {previewTeams.map((t, i) => (
                     <View key={i} style={[styles.card, { marginBottom: 8 }]}>
@@ -432,10 +334,8 @@ export default function TournamentSetupScreen() {
                   {shown && config.format !== 'none' && (
                     <>
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <View style={{ flex: 1 }}>
-                          <SectionHeader icon={config.format === 'roundRobin' ? 'calendar' : 'git-merge'} label={config.format === 'roundRobin' ? 'Schedule preview' : 'Bracket preview'} accent={accents.purple} />
-                        </View>
-                        {refreshing && <ActivityIndicator size="small" color={accents.purple.fg} style={{ marginTop: 14 }} />}
+                        <Text style={[styles.sectionLabel, { flex: 1 }]}>{config.format === 'roundRobin' ? 'Schedule preview' : 'Bracket preview'}</Text>
+                        {refreshing && <ActivityIndicator size="small" color={colors.brand} style={{ marginTop: 12 }} />}
                       </View>
                       <View style={{ opacity: refreshing ? 0.5 : 1 }}>
                         {config.format === 'roundRobin' ? (
@@ -444,8 +344,8 @@ export default function TournamentSetupScreen() {
                               {shown.matches.length} matches in {rounds.length} rounds{config.buildToFinale && weightOn ? ', building to the top two' : ''}.
                             </Text>
                             {(allRounds ? rounds : rounds.slice(0, 3)).map((r) => (
-                              <View key={r.key} style={[...tinted(accents.purple), { marginBottom: 8, paddingVertical: 10 }]}>
-                                <Text style={{ fontSize: 12, fontWeight: '800', color: accents.purple.fg, marginBottom: 4 }}>{r.title}</Text>
+                              <View key={r.key} style={[styles.card, { marginBottom: 8, paddingVertical: 10 }]}>
+                                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textFaint, marginBottom: 4 }}>{r.title}</Text>
                                 {r.matches.map((m) => (
                                   <Text key={m.id} style={[styles.body, { paddingVertical: 2 }]} numberOfLines={1}>{matchTitle(shown, m)}</Text>
                                 ))}
@@ -453,7 +353,7 @@ export default function TournamentSetupScreen() {
                             ))}
                             {rounds.length > 3 && (
                               <PressableOpacity onPress={() => setAllRounds((v) => !v)} style={{ paddingVertical: 6 }}>
-                                <Text style={[styles.action, { color: accents.purple.fg, textAlign: 'center', fontSize: 14 }]}>
+                                <Text style={[styles.action, { textAlign: 'center', fontSize: 14 }]}>
                                   {allRounds ? 'Show less' : `Show all ${rounds.length} rounds`}
                                 </Text>
                               </PressableOpacity>
@@ -482,12 +382,33 @@ export default function TournamentSetupScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      <TeamSplitSheet visible={sheet === 'split'} onClose={closeSheet} splitBy={splitBy} value={splitValue} totalPlayers={totalPlayers} ranked={weightOn}
+        onSplitBy={(v) => { setSplitBy(v); setSplitValue(2); setDirty(true); }} onValue={(n) => { setSplitValue(n); setDirty(true); }} />
+      <ChoiceSheet<TFormat> visible={sheet === 'format'} title="Format" value={config.format} onClose={closeSheet} onPick={(format) => setConfig({ format })}
+        options={FORMAT_TILES.map((f) => ({ value: f.value, label: f.label, sub: f.sub, disabled: !formats.includes(f.value), note: f.value === 'none' ? 'Teams mode only' : 'Matches of 2 only' }))} />
+      <ChoiceSheet<number> visible={sheet === 'perMatch'} title={`${config.mode === 'singles' ? 'Players' : 'Teams'} per match`} value={config.teamsPerMatch}
+        onClose={closeSheet} onPick={(n) => setConfig({ teamsPerMatch: n as 2 | 3 | 4 })}
+        options={[2, 3, 4].map((n) => ({ value: n, label: perMatchSummary(config.mode, n) }))} />
+      <ChoiceSheet visible={sheet === 'results'} title="Record results as" value={config.resultType} onClose={closeSheet} onPick={(resultType) => setConfig({ resultType })}
+        options={resultTypes.map((r) => ({ value: r, label: RESULT_LABEL[r] }))} />
+      <PlayersSheet visible={sheet === 'players'} onClose={closeSheet}
+        inRows={inIds.map((id) => ({ id, label: nameOf(members.get(id)), sub: guestCount(id) ? `+${guestCount(id)} guest${guestCount(id) > 1 ? 's' : ''}` : "I'm In" }))}
+        undecided={undecidedIds.map((id) => ({ id, label: nameOf(members.get(id)) }))} extra={extraPlayers}
+        onToggle={(id) => { setExtraPlayers((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])); setDirty(true); }} />
+      <RankingSheet visible={sheet === 'ranking'} onClose={closeSheet} on={weightOn}
+        onToggle={(v) => { setWeightOn(v); setDirty(true); if (v) { const patch = rankingToggledOn(config, config.mode); if (Object.keys(patch).length) setConfig(patch); } }}
+        mode={config.mode} format={config.format} lists={lists} listId={listId} onPickList={pickList}
+        preview={rankedIds.slice(0, 5).map((id, i) => `${i + 1}. ${nameOf(members.get(id))}`).join('  ') + (rankedIds.length > 5 ? ' …' : '')}
+        count={rankedIds.length} onEditRanking={() => { setSheet(null); setEditing('players'); }}
+        newListName={newListName} onNewListName={setNewListName} onSaveList={saveList} saving={busy === 'list'}
+        balance={config.balanceTeams} finale={config.buildToFinale} onBalance={(v) => setConfig({ balanceTeams: v })} onFinale={(v) => setConfig({ buildToFinale: v })} />
+
       <RankingEditor
         visible={editing === 'players'}
         title="Strength ranking"
         items={rankItems}
-        onCancel={() => setEditing(null)}
-        onDone={(ids) => { setOrder(ids); setDirty(true); setEditing(null); }}
+        onCancel={() => { setEditing(null); setSheet('ranking'); }}
+        onDone={(ids) => { setOrder(ids); setDirty(true); setEditing(null); setSheet('ranking'); }}
       />
       <RankingEditor
         visible={editing === 'teams'}

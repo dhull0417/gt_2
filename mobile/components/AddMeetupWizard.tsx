@@ -7,7 +7,8 @@ import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import OptionPickerModal from './OptionPickerModal';
 import { MeetupForm } from './meetup-form/MeetupForm';
 import { makeStyles } from './create-group/styles';
-import { Group, groupApi, useApiClient } from '@/utils/api';
+import { Group, groupApi, meetupApi, useApiClient } from '@/utils/api';
+import { saveDraftQuestions } from '@/utils/questionDrafts';
 import { pickAndUploadImage } from '@/utils/uploadImage';
 import { createPayload, draftForNew, type MeetupDraft } from '@/utils/meetupFormDraft';
 import { usePremium } from '@/hooks/usePremium';
@@ -135,7 +136,11 @@ const AddMeetupWizard = ({ visible, onClose, groupDetails, groupPickerMode, onMe
             }
 
             // If the group was just created above but this call throws, the group stays so the user can retry.
-            await groupApi.createOneOffMeetup(api, { groupId: target._id, name: target.name, ...createPayload(draft) } as any);
+            const { meetup } = await groupApi.createOneOffMeetup(api, { groupId: target._id, name: target.name, ...createPayload(draft) } as any);
+            // RSVP questions written before the meetup existed.
+            const questionsSaved = await saveDraftQuestions([draft.questions], [meetup?._id],
+                (mid, questions) => meetupApi.updateMeetupQuestions(api, mid, { questions }));
+            if (!questionsSaved) Alert.alert("Meetup added", "Your RSVP questions couldn't be saved. You can add them from the meetup's Edit screen.");
             toast.success("Meetup added!");
             queryClient.invalidateQueries({ queryKey: ['meetups'] });
             (groupPickerMode ? groupPickerMode.onMeetupCreated : onMeetupCreated)?.(target._id);

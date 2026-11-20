@@ -20,6 +20,21 @@ export const allowedResultTypes = (format: TFormat, perMatch: number): TResultTy
   return ['points', 'winLoss', 'places'];
 };
 
+// One-line summaries for the setup screen's rows.
+export const TEAMS_ONLY = 'Teams only';
+export const NOT_FOR_JUST_TEAMS = 'Not used for Just teams';
+export const splitSummary = (splitBy: 'size' | 'count', n: number) => (splitBy === 'size' ? `Teams of ${n}` : `${n} teams`);
+export const perMatchSummary = (mode: TMode, n: number) => `${n} ${mode === 'singles' ? 'players' : 'teams'}`;
+export const playersSummary = (total: number) => `${total} playing`;
+export const rankingSummary = (on: boolean, listName: string | null, balance: boolean, finale: boolean) => {
+  if (!on) return 'Off';
+  const extras = [balance && 'Balanced', finale && 'Finale'].filter(Boolean).join(', ');
+  return `${listName ?? 'On'}${extras ? ` · ${extras}` : ''}`;
+};
+/** Turning the strength ranking on with nothing selected picks the option that fits the mode. */
+export const rankingToggledOn = (c: Pick<TournamentConfig, 'balanceTeams' | 'buildToFinale'>, mode: TMode): Partial<TournamentConfig> =>
+  c.balanceTeams || c.buildToFinale ? {} : mode === 'teams' ? { balanceTeams: true } : { buildToFinale: true };
+
 /** Keep a config valid as the organizer changes one setting at a time. */
 export const fixConfig = (c: TournamentConfig): TournamentConfig => {
   const next = { ...c };

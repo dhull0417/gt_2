@@ -1,4 +1,4 @@
-import { buildCars, lineActions, planJoin, canAutoAssign, assignmentBodyFor } from '../rides';
+import { ridersOf, buildCars, lineActions, planJoin, canAutoAssign, assignmentBodyFor } from '../rides';
 
 const members = [
   { _id: 'd1', firstName: 'Sam', clerkId: 'cd1' },
@@ -166,5 +166,19 @@ describe('autoAssignMessage', () => {
     expect(autoAssignMessage(4, 1)).toBe('Placed 4 people. 1 person still needs a ride.');
     expect(autoAssignMessage(1, 0)).toBe('Placed 1 person.');
     expect(autoAssignMessage(0, 2)).toBe('Nobody could be placed. 2 people still need a ride.');
+  });
+});
+
+describe('ridersOf', () => {
+  it("lists a driver's riders and their guests", () => {
+    expect(ridersOf(meetup(), 'd1', 'b').map((l) => l.label)).toEqual(['Ana', "Ana's guest"]);
+  });
+  it('says You / Your guest for the viewer', () => {
+    expect(ridersOf(meetup(), 'd1', 'a').map((l) => l.label)).toEqual(['You', 'Your guest']);
+  });
+  it('is empty for a driver with nobody or an unknown id', () => {
+    const m = meetup({ rides: [{ user: 'd1', role: 'driver', seats: 2 }] });
+    expect(ridersOf(m, 'd1', 'b')).toEqual([]);
+    expect(ridersOf(meetup(), 'nope', 'b')).toEqual([]);
   });
 });

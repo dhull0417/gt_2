@@ -1,32 +1,31 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, ScrollView, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { DateTime } from "luxon";
-import EndTimeField from "@/components/EndTimeField";
 import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
-import NativeTimePicker from "@/components/NativeTimePicker";
 import OptionPickerModal from "@/components/OptionPickerModal";
-import { InlineCalendar } from "@/components/create-group/InlineCalendar";
 import { makeStyles } from "@/components/create-group/styles";
-import { CapacityCard } from "@/components/schedule/CapacityCard";
-import { PremiumFeaturesCard } from "@/components/schedule/PremiumFeaturesCard";
-import { RsvpRulesCard, RsvpTimePicker, type RsvpPicker } from "@/components/schedule/RsvpRulesCard";
+import { GroupCard, SummaryRow, FieldError, useFormStyles, useIssueScroll } from "@/components/ui/form";
+import { OneOffWhenSheet, RsvpRulesSheet, CapacitySheet, BringItemsSheet, PremiumUpsellSheet, QuestionsSheet } from "@/components/schedule/sheets";
+import { questionsSummary } from "@/utils/questionDrafts";
 import { PressableOpacity } from "@/components/ui/PressableOpacity";
 import { useThemeColors } from "@/contexts/AppearanceContext";
-import { getMinAttendeesError } from "@/utils/editScheduleDraft";
-import { validateDraft, type MeetupDraft } from "@/utils/meetupFormDraft";
-import { addHour } from "@/utils/timeString";
+import { meetupIssues, visibleIssues, fixMessage, firstArea, issueFor, type FormArea } from "@/utils/formIssues";
+import { oneOffWhenSummary, rsvpSummary, capacitySummary, bringSummary } from "@/utils/formSummaries";
+import type { MeetupDraft } from "@/utils/meetupFormDraft";
 import { timezoneLabel, timezoneOptions } from "@/utils/timezones";
 
-type Overlay = "time" | "endTime" | "timezone" | "location" | null;
+type Sheet = "when" | "rsvp" | "capacity" | "bring" | "questions" | "upsell" | null;
+const ORDER: FormArea[] = ["group", "where", "when", "timezone", "rsvp", "capacity", "bring", "questions"];
 
 /**
- * Full-screen form for one meetup, laid out like Set Recurring Meetups: Description, Where, When,
- * RSVP Rules, Capacity and the Premium card. Used by Add Meetup and Edit Meetup. Controlled: the
- * host keeps the draft. Pickers are drawn as overlays (siblings of the ScrollView), since a second
- * native Modal can't open on top of this one.
+ * Full-screen form for one meetup (Add Meetup and Edit Meetup): typed fields inline, everything
+ * else as one-line rows that open sheets. Controlled: the host keeps the draft. Sheets and pickers
+ * are drawn as overlays, since a second native Modal can't open on top of this one.
+ * Problems: wrong input is red right away; missing information turns red after the first
+ * Create/Save tap, which also scrolls to it instead of saving.
  */
 export function MeetupForm({
     visible, mode, draft, onChange, isPremium, owner, lockedNote, questionsLink, topSection, overlays,
@@ -55,24 +54,43 @@ export function MeetupForm({
 }) {
     const colors = useThemeColors();
     const s = useMemo(() => makeStyles(colors), [colors]);
+    const f = useFormStyles();
     const scrollRef = useRef<ScrollView>(null);
-    const [overlay, setOverlay] = useState<Overlay>(null);
-    const [rsvpPicker, setRsvpPicker] = useState<RsvpPicker>(null);
+    const { register, scrollTo } = useIssueScroll(scrollRef);
+    const [sheet, setSheet] = useState<Sheet>(null);
+    const [locationOpen, setLocationOpen] = useState(false);
+    const [timezoneOpen, setTimezoneOpen] = useState(false);
+    const [attempted, setAttempted] = useState(false);
+    useEffect(() => { if (visible) { setAttempted(false); setSheet(null); } }, [visible]);
 
-    const error = validateDraft(draft) ?? extraError ?? null;
+    const allIssues = meetupIssues(draft, extraError);
+    const issues = visibleIssues(allIssues, attempted);
     const today = DateTime.now().setZone(draft.timezone).toISODate()!;
+    const close = () => setSheet(null);
 
-    const open = (o: Overlay) => { setRsvpPicker(null); setOverlay(prev => (prev === o ? null : o)); };
+    const submit = () => {
+        if (allIssues.length) {
+            setAttempted(true);
+            scrollTo(firstArea(allIssues, ORDER));
+            return;
+        }
+        onSubmit();
+    };
+
+    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) => isPremium
+        ? <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />
+        : <SummaryRow label={label} value={value} onPress={() => setSheet("upsell")} locked />;
 
     return (
         <Modal
             visible={visible}
             animationType="slide"
             presentationStyle="pageSheet"
-            // Android back closes an open picker first instead of discarding the whole form.
+            // Android back closes an open sheet or picker first instead of discarding the whole form.
             onRequestClose={() => {
-                if (overlay) setOverlay(null);
-                else if (rsvpPicker) setRsvpPicker(null);
+                if (sheet) setSheet(null);
+                else if (locationOpen) setLocationOpen(false);
+                else if (timezoneOpen) setTimezoneOpen(false);
                 else onClose();
             }}
         >
@@ -90,130 +108,82 @@ export function MeetupForm({
                     <ScrollView
                         ref={scrollRef}
                         style={{ flex: 1 }}
-                        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
+                        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
                         keyboardShouldPersistTaps="handled"
                         showsVerticalScrollIndicator={false}
                     >
                         <Text style={s.screenTitle}>{mode === "create" ? "Add Meetup" : "Edit Meetup"}</Text>
                         <Text style={s.screenSub}>{mode === "create" ? "Set up when, where, and how you meet" : "Changes apply to this meetup only"}</Text>
 
-                        {topSection}
-
-                        {/* Description */}
-                        <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: colors.brand }]}>
-                            <View style={s.sectionHeaderRow}>
-                                <View style={s.sectionIconChip}><Feather name="align-left" size={19} color={colors.brand} /></View>
-                                <Text style={s.sectionTitle}>Description</Text>
+                        {topSection && (
+                            <View onLayout={register("group")}>
+                                {topSection}
+                                <FieldError message={issueFor(issues, "group")} />
                             </View>
-                            <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Description (optional)</Text>
-                            <View style={[s.inputRow, s.descriptionInputRow, { marginBottom: 0 }]}>
+                        )}
+
+                        <View onLayout={register("where")}>
+                            <Text style={f.sectionLabel}>Details</Text>
+                            <View style={[f.card, { padding: 14 }]}>
                                 <TextInput
-                                    style={[s.inlineInput, s.descriptionInput]}
+                                    style={[styles.description, { color: colors.textPrimary }]}
                                     placeholder="Add any extra details for this meetup..."
                                     placeholderTextColor={colors.placeholder}
                                     value={draft.description}
                                     onChangeText={t => onChange({ description: t })}
                                     multiline
                                     textAlignVertical="top"
+                                    accessibilityLabel="Description"
                                 />
+                                <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 10 }} />
+                                <LocationField variant="wizard" placeholder="Where? e.g. Starbucks or Zoom link..." value={draft.location} onPress={() => setLocationOpen(true)} />
                             </View>
                         </View>
 
-                        {/* Where */}
-                        <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: colors.danger }]}>
-                            <View style={s.sectionHeaderRow}>
-                                <View style={s.sectionIconChip}><Feather name="map-pin" size={19} color={colors.danger} /></View>
-                                <Text style={s.sectionTitle}>Where</Text>
-                            </View>
-                            <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Location or link</Text>
-                            <LocationField variant="wizard" placeholder="e.g. Starbucks or Zoom link..." value={draft.location} onPress={() => open("location")} />
+                        <View onLayout={register("when", "timezone")}>
+                            <Text style={f.sectionLabel}>Date &amp; time</Text>
+                            <GroupCard>
+                                <SummaryRow label="When" value={oneOffWhenSummary(draft.date, draft.time, draft.endTime)}
+                                    onPress={() => setSheet("when")} error={issueFor(issues, "when")} />
+                                <SummaryRow label="Timezone" value={timezoneLabel(draft.timezone)} onPress={() => setTimezoneOpen(true)}
+                                    disabledReason={timezoneEditable ? undefined : "Set by the group"} />
+                            </GroupCard>
                         </View>
 
-                        {/* When */}
-                        <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: colors.warning }]}>
-                            <View style={s.sectionHeaderRow}>
-                                <View style={s.sectionIconChip}><Feather name="calendar" size={19} color={colors.warning} /></View>
-                                <Text style={s.sectionTitle}>When</Text>
-                            </View>
-                            <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Date</Text>
-                            <InlineCalendar value={draft.date} minDate={today} onChange={iso => onChange({ date: iso })} />
-
-                            <Text style={s.fieldLabel}>Time</Text>
-                            <PressableOpacity style={s.dateFieldRow} onPress={() => open("time")}>
-                                <Feather name="clock" size={16} color={colors.brand} style={{ marginRight: 8 }} />
-                                <Text style={s.dateFieldText}>{draft.time}</Text>
-                                <Feather name={overlay === "time" ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                            </PressableOpacity>
-
-                            {/* Optional end time (an end earlier than the start is the next day) */}
-                            <EndTimeField
-                                startTime={draft.time}
-                                endTime={draft.endTime}
-                                onChange={endTime => onChange({ endTime })}
-                                open={overlay === "endTime"}
-                                onOpenChange={o => (o ? open("endTime") : setOverlay(null))}
-                                renderPicker={false}
-                                labelStyle={s.fieldLabel}
-                                fieldStyle={s.dateFieldRow}
-                                textStyle={s.dateFieldText}
-                            />
-
-                            <Text style={s.fieldLabel}>Timezone</Text>
-                            {timezoneEditable ? (
-                                <PressableOpacity style={s.dateFieldRow} onPress={() => open("timezone")}>
-                                    <Feather name="globe" size={16} color={colors.brand} style={{ marginRight: 8 }} />
-                                    <Text style={s.dateFieldText}>{timezoneLabel(draft.timezone)}</Text>
-                                    <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                </PressableOpacity>
-                            ) : (
-                                // The server always uses the group's timezone for an existing meetup.
-                                <View style={[s.dateFieldRow, { opacity: 0.7 }]}>
-                                    <Feather name="globe" size={16} color={colors.textFaint} style={{ marginRight: 8 }} />
-                                    <Text style={s.dateFieldText}>{timezoneLabel(draft.timezone)}</Text>
-                                </View>
-                            )}
+                        <View onLayout={register("rsvp", "capacity")}>
+                            <Text style={f.sectionLabel}>RSVPs</Text>
+                            <GroupCard>
+                                <SummaryRow label="RSVP rules" value={rsvpSummary(draft)} onPress={() => setSheet("rsvp")} error={issueFor(issues, "rsvp")} />
+                                <SummaryRow label="Capacity" value={capacitySummary(draft.maxAttendeesMode, draft.maxAttendeesInput)}
+                                    onPress={() => setSheet("capacity")} error={issueFor(issues, "capacity")} />
+                            </GroupCard>
                         </View>
 
-                        <RsvpRulesCard
-                            value={draft}
-                            onChange={onChange}
-                            isPremium={isPremium}
-                            owner={owner}
-                            minError={getMinAttendeesError(draft.minAttendeesInput, draft.maxAttendeesMode, draft.maxAttendeesInput)}
-                            openPicker={rsvpPicker}
-                            onOpenPickerChange={p => { setOverlay(null); setRsvpPicker(p); }}
-                            renderPicker={false}
-                        />
-
-                        <CapacityCard style={{ marginBottom: 8 }} mode={draft.maxAttendeesMode} input={draft.maxAttendeesInput} onChange={onChange} />
-
-                        <PremiumFeaturesCard
-                            collapsible
-                            style={{ marginTop: 10, marginBottom: 8 }}
-                            isPremium={isPremium}
-                            owner={owner}
-                            lockedNote={lockedNote}
-                            bringItems={draft.bringItems}
-                            ridesEnabled={draft.ridesEnabled}
-                            onChange={onChange}
-                            links={[{
-                                key: "questions",
-                                icon: "help-circle",
-                                title: "RSVP Questions",
-                                subtitle: questionsLink ? "Ask people a few questions when they say they're in." : "Set up after the meetup is created.",
-                                onPress: questionsLink,
-                            }]}
-                        />
+                        <View onLayout={register("bring", "questions")}>
+                            <Text style={f.sectionLabel}>Premium</Text>
+                            <GroupCard>
+                                {premiumRow("Food/Things to bring", bringSummary(draft.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"))}
+                                {premiumRow("Rides", draft.ridesEnabled ? "On" : "Off", () => onChange({ ridesEnabled: !draft.ridesEnabled }),
+                                    <Switch accessibilityLabel="Coordinate rides" value={draft.ridesEnabled} onValueChange={v => onChange({ ridesEnabled: v })}
+                                        trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />)}
+                                {!isPremium
+                                    ? <SummaryRow label="RSVP Questions" value="" onPress={() => setSheet("upsell")} locked />
+                                    : questionsLink
+                                        // An existing meetup: its questions (and answers) live on their own screen.
+                                        ? <SummaryRow label="RSVP Questions" value="Manage" onPress={questionsLink} />
+                                        : <SummaryRow label="RSVP Questions" value={questionsSummary(draft.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} />}
+                            </GroupCard>
+                        </View>
                     </ScrollView>
 
                     <View style={s.screenFooter}>
-                        <Text style={{ flex: 1, marginRight: 12, color: colors.danger, fontSize: 12, fontWeight: "600" }} numberOfLines={2}>
-                            {error ?? ""}
+                        <Text style={{ flex: 1, marginRight: 12, color: colors.danger, fontSize: 13, fontWeight: "700" }} numberOfLines={2}>
+                            {attempted ? fixMessage(issues.length) : ""}
                         </Text>
                         <PressableOpacity
-                            style={[s.primaryBtn, (error || saving) && s.primaryBtnDisabled]}
-                            onPress={onSubmit}
-                            disabled={!!error || saving}
+                            style={[s.primaryBtn, saving && s.primaryBtnDisabled]}
+                            onPress={submit}
+                            disabled={saving}
                             accessibilityLabel={mode === "create" ? "Create Meetup" : "Save"}
                         >
                             {saving ? (
@@ -228,30 +198,33 @@ export function MeetupForm({
                     </View>
                 </KeyboardAvoidingView>
 
+                <OneOffWhenSheet asOverlay visible={sheet === "when"} onClose={close} issues={issues}
+                    date={draft.date} time={draft.time} endTime={draft.endTime} minDate={today} onChange={onChange} />
+                <RsvpRulesSheet asOverlay visible={sheet === "rsvp"} onClose={close} issues={issues}
+                    value={draft} onChange={onChange} isPremium={isPremium} owner={owner} />
+                <CapacitySheet asOverlay visible={sheet === "capacity"} onClose={close} issues={issues}
+                    mode={draft.maxAttendeesMode} input={draft.maxAttendeesInput} onChange={onChange} />
+                <BringItemsSheet asOverlay visible={sheet === "bring"} onClose={close} issues={allIssues} showIssues={attempted}
+                    items={draft.bringItems} onChange={bringItems => onChange({ bringItems })} />
+                <QuestionsSheet asOverlay visible={sheet === "questions"} onClose={close} showIssues={attempted} savedLater="meetup"
+                    drafts={draft.questions ?? []} onChange={questions => onChange({ questions })} />
+                <PremiumUpsellSheet asOverlay visible={sheet === "upsell"} onClose={close} note={lockedNote} owner={owner} />
+
                 <LocationSearchModal
-                    visible={overlay === "location"}
+                    visible={locationOpen}
                     initialValue={draft.location}
                     placeholder="e.g. Starbucks or Zoom link..."
-                    onDone={text => { onChange({ location: text }); setOverlay(null); }}
-                    onCancel={() => setOverlay(null)}
+                    onDone={text => { onChange({ location: text }); setLocationOpen(false); }}
+                    onCancel={() => setLocationOpen(false)}
                     asOverlay
                 />
-                {overlay === "time" && (
-                    <NativeTimePicker value={draft.time} onChange={time => onChange({ time })} onClose={() => setOverlay(null)} asOverlay />
-                )}
-                {overlay === "endTime" && (
-                    <NativeTimePicker value={draft.endTime || addHour(draft.time)} onChange={endTime => onChange({ endTime })} onClose={() => setOverlay(null)} asOverlay />
-                )}
-                {rsvpPicker && (
-                    <RsvpTimePicker which={rsvpPicker} value={draft} onChange={onChange} onClose={() => setRsvpPicker(null)} asOverlay />
-                )}
-                {overlay === "timezone" && (
+                {timezoneOpen && (
                     <OptionPickerModal
                         title="Timezone"
                         options={timezoneOptions(draft.timezone)}
                         selectedKey={draft.timezone}
-                        onSelect={key => { onChange({ timezone: key }); setOverlay(null); }}
-                        onClose={() => setOverlay(null)}
+                        onSelect={key => { onChange({ timezone: key }); setTimezoneOpen(false); }}
+                        onClose={() => setTimezoneOpen(false)}
                     />
                 )}
                 {overlays}
@@ -259,3 +232,7 @@ export function MeetupForm({
         </Modal>
     );
 }
+
+const styles = StyleSheet.create({
+    description: { minHeight: 64, fontSize: 15, padding: 0 },
+});

@@ -41,8 +41,11 @@ import { Meetup, User, useApiClient, userApi, meetupApi, groupApi } from '@/util
 import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor, describeRsvpOpensFor, canPriorityBump, isMeetupFull } from '@/utils/meetupStatus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
-import MeetupAssignments, { AssignmentsSheet } from '@/components/MeetupAssignments';
-import { assignmentsActive, summarizeAssignments } from '@/utils/assignments';
+import { AssignmentsSheet } from '@/components/MeetupAssignments';
+import { assignmentsActive, summarizeAssignments, canEditOwnAssignments } from '@/utils/assignments';
+import { ridersOf } from '@/utils/rides';
+import { showTourneySetup } from '@/utils/meetupActions';
+import { tournamentApi } from '@/utils/tournamentApi';
 import MeetupQuestions from '@/components/MeetupQuestions';
 import MeetupTournamentCard from '@/components/MeetupTournamentCard';
 import { questionsActive, hasAnsweredAny } from '@/utils/questions';
@@ -100,6 +103,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
     const [dmTargetUser, setDmTargetUser] = useState<User | null>(null);
     // Member an owner/moderator is editing assignments for.
     const [assignTarget, setAssignTarget] = useState<User | null>(null);
+    // Your own assignments sheet (opened from your tile in the In grid).
+    const [selfAssignOpen, setSelfAssignOpen] = useState(false);
+    // Driver whose riders are shown in the "Riding with…" sheet.
+    const [ridersDriverId, setRidersDriverId] = useState<string | null>(null);
     const [isCreatingDM, setIsCreatingDM] = useState(false);
     const [isSendingReminder, setIsSendingReminder] = useState(false);
     const [isUpdatingTargetRsvp, setIsUpdatingTargetRsvp] = useState(false);
@@ -129,10 +136,14 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
     const isRsvping = meetup ? isRsvpBusyFor(meetup._id) : false;
     const rsvpQueued = meetup ? isRsvpQueuedFor(meetup._id) : false;
 
-    const [assignmentsSignal, setAssignmentsSignal] = useState(0);
     const [questionsSignal, setQuestionsSignal] = useState(0);
-    // Set when the questions sheet should follow the assignments sheet.
-    const questionsAfterAssignments = useRef(false);
+    // Same query as MeetupTournamentCard: decides whether ⋯ offers "Set up Teams & Tourneys".
+    const { data: tournament } = useQuery({
+        queryKey: ['tournamentForMeetup', meetup?._id],
+        queryFn: () => tournamentApi.getForMeetup(api, meetup!._id),
+        enabled: !!meetup,
+        staleTime: 15000,
+    });
     const [localGuestCount, setLocalGuestCount] = useState(0);
     const [isSettingGuests, setIsSettingGuests] = useState(false);
     const [guestExpanded, setGuestExpanded] = useState(false);
@@ -263,14 +274,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                 queryClient.invalidateQueries({ queryKey: ['meetups'] });
                 if (data.meetup) setMeetup(data.meetup);
                 setManualRsvpEdit(false);
-                // Newly "In" on a meetup with things to bring / rides: ask right away.
-                if (status === 'in' && data.meetup && assignmentsActive(data.meetup)
-                    && !data.meetup.bringClaims?.some((c: any) => c.user === currentUser._id)
-                    && !data.meetup.rides?.some((r: any) => r.user === currentUser._id)
-                    && !data.meetup.waitlist?.some((u: any) => (typeof u === 'string' ? u : u._id) === currentUser._id)) {
-                    setAssignmentsSignal((n) => n + 1);
-                    questionsAfterAssignments.current = questionsActive(data.meetup) && !hasAnsweredAny(data.meetup, currentUser._id);
-                } else if (status === 'in' && data.meetup && questionsActive(data.meetup)
+                // Newly "In": ask the meetup's questions right away. (Assignments don't pop up; you
+                // open them from your tile.)
+                if (status === 'in' && data.meetup && questionsActive(data.meetup)
                     && !hasAnsweredAny(data.meetup, currentUser._id)
                     && !data.meetup.waitlist?.some((u: any) => (typeof u === 'string' ? u : u._id) === currentUser._id)) {
                     setQuestionsSignal((n) => n + 1);
@@ -549,7 +555,7 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
     const assignmentSummary = assignmentsActive(meetup) ? summarizeAssignments(meetup) : null;
     const renderAssignmentPills = (userId: string) => {
         if (!assignmentSummary) return null;
-        const pills: { key: string; label: string; icon: keyof typeof Feather.glyphMap; bg: string; fg: string }[] = [];
+        const pills: { key: string; label: string; icon: keyof typeof Feather.glyphMap; bg: string; fg: string; onPress?: () => void }[] = [];
         for (const item of assignmentSummary.items) {
             if (item.claimedBy.includes(userId)) {
                 pills.push({ key: `i-${item._id}`, label: item.name, icon: 'shopping-bag', bg: '#F0FDFA', fg: '#0F766E' });
@@ -557,27 +563,47 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
         }
         const driver = assignmentSummary.drivers.find(d => d.userId === userId);
         if (driver) {
-            pills.push({ key: 'driver', label: `Driver · ${driver.seats}`, icon: 'truck', bg: '#EEF6FF', fg: '#2563EB' });
+            pills.push({ key: 'driver', label: `Driver · ${driver.seats}`, icon: 'truck', bg: '#EEF6FF', fg: '#2563EB', onPress: () => setRidersDriverId(userId) });
         } else if (assignmentSummary.passengers.includes(userId)) {
             pills.push({ key: 'passenger', label: 'Needs ride', icon: 'user', bg: '#FFF7ED', fg: '#C2410C' });
         }
         if (pills.length === 0) return null;
         return (
             <View style={styles.pillStack}>
-                {pills.map(p => (
-                    <View key={p.key} style={[styles.assignPill, { backgroundColor: p.bg }]}>
-                        <Feather name={p.icon} size={9} color={p.fg} />
-                        <Text style={[styles.assignPillText, { color: p.fg }]} numberOfLines={1}>{p.label}</Text>
-                    </View>
-                ))}
+                {pills.map(p => {
+                    const content = (
+                        <>
+                            <Feather name={p.icon} size={9} color={p.fg} />
+                            <Text style={[styles.assignPillText, { color: p.fg }]} numberOfLines={1}>{p.label}</Text>
+                        </>
+                    );
+                    // The driver pill shows who's riding; its own press stops the tile's press.
+                    return p.onPress ? (
+                        <PressableOpacity
+                            key={p.key}
+                            onPress={() => { haptic.select(); p.onPress!(); }}
+                            accessibilityLabel="See who's riding"
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            style={[styles.assignPill, { backgroundColor: p.bg }]}
+                        >
+                            {content}
+                        </PressableOpacity>
+                    ) : (
+                        <View key={p.key} style={[styles.assignPill, { backgroundColor: p.bg }]}>{content}</View>
+                    );
+                })}
             </View>
         );
     };
 
     const renderUserTile = (user: User, key: string, opts?: { waitlistPosition?: number }) => {
         const isSelf = user._id === currentUser._id;
-        const Wrapper = isSelf ? View : PressableOpacity;
-        const wrapperProps = isSelf ? {} : { onPress: () => setDmTargetUser(user), activeOpacity: 0.7 };
+        // Your own tile opens your assignments (when you can have any); anyone else's opens the person sheet.
+        const selfEditable = isSelf && canEditOwnAssignments(meetup, currentUser._id, isReadOnly);
+        const Wrapper = isSelf && !selfEditable ? View : PressableOpacity;
+        const wrapperProps = isSelf
+            ? (selfEditable ? { onPress: () => setSelfAssignOpen(true), activeOpacity: 0.7, accessibilityLabel: 'Edit my assignments' } : {})
+            : { onPress: () => setDmTargetUser(user), activeOpacity: 0.7 };
         return (
             <Wrapper key={key} style={styles.gridItem} {...wrapperProps}>
                 <View style={styles.gridAvatarWrap}>
@@ -1105,27 +1131,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                     </Animated.View>
                 )}
 
-                <MeetupAssignments
-                    meetup={meetup}
-                    currentUserId={currentUser._id}
-                    isIn={isIn && !isReadOnly}
-                    openSignal={assignmentsSignal}
-                    canManage={canManage}
-                    readOnly={isReadOnly}
-                    onUpdated={(m) => {
-                        setMeetup(m);
-                        queryClient.invalidateQueries({ queryKey: ['meetups'] });
-                        broadcastMeetupUpdate(getToken, meetupGroupId);
-                    }}
-                    onStale={() => queryClient.invalidateQueries({ queryKey: ['meetups'] })}
-                    onSheetClosed={() => {
-                        if (questionsAfterAssignments.current) {
-                            questionsAfterAssignments.current = false;
-                            setQuestionsSignal((n) => n + 1);
-                        }
-                    }}
-                />
-
                 <MeetupTournamentCard
                     meetup={meetup}
                     currentUserId={currentUser._id}
@@ -1235,7 +1240,36 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                         iconBg: isDark ? '#123330' : '#ECFDF5',
                         onPress: handleInviteToMeetup,
                     },
+                    ...(showTourneySetup({ canManage, meetup, tournament }) ? [{
+                        key: 'tourney',
+                        label: 'Set up Teams & Tourneys',
+                        icon: <Feather name="users" size={18} color="#7C3AED" />,
+                        iconBg: isDark ? '#2A1F45' : '#F5F3FF',
+                        onPress: () => leaveTo({ pathname: '/tournament-setup/[meetupId]', params: { meetupId: meetup._id, groupId: meetup.group._id } }),
+                    }] : []),
                 ]}
+            />
+
+            {/* Who's riding with a driver (from a Driver pill) */}
+            <ActionSheet
+                visible={!!ridersDriverId}
+                onClose={() => setRidersDriverId(null)}
+                title={ridersDriverId === currentUser._id
+                    ? 'Riding with you'
+                    : `Riding with ${(meetup.members || []).find(m => m._id === ridersDriverId)?.firstName?.trim() || 'them'}`}
+                items={(() => {
+                    if (!ridersDriverId) return [];
+                    const riders = ridersOf(meetup, ridersDriverId, currentUser._id);
+                    if (riders.length === 0) {
+                        return [{ key: 'none', label: 'No one riding yet', icon: <Feather name="users" size={18} color={colors.textMuted} />, iconBg: colors.surfaceAlt }];
+                    }
+                    return riders.map(r => ({
+                        key: r.key,
+                        label: r.label,
+                        icon: <Feather name={r.isGuest ? 'user-plus' : 'user'} size={18} color={colors.textMuted} />,
+                        iconBg: colors.surfaceAlt,
+                    }));
+                })()}
             />
 
             {/* Start DM Confirmation Sheet */}
@@ -1348,6 +1382,19 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                     </Pressable>
                 </Pressable>
             </Modal>
+
+            <AssignmentsSheet
+                visible={selfAssignOpen}
+                meetup={meetup}
+                currentUserId={currentUser._id}
+                onClose={() => setSelfAssignOpen(false)}
+                onUpdated={(m) => {
+                    setMeetup(m);
+                    queryClient.invalidateQueries({ queryKey: ['meetups'] });
+                    broadcastMeetupUpdate(getToken, meetupGroupId);
+                }}
+                onStale={() => queryClient.invalidateQueries({ queryKey: ['meetups'] })}
+            />
 
             {assignTarget && (
                 <AssignmentsSheet

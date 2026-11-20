@@ -1,160 +1,43 @@
-import React, { useState, useMemo, useCallback, useRef } from "react";
-import {
-    View,
-    Text,
-    TextInput,
-    ScrollView,
-    StyleSheet,
-    Alert,
-    Platform,
-    ActivityIndicator,
-    LayoutAnimation,
-    UIManager,
-    KeyboardAvoidingView,
-} from "react-native";
+// New / Edit Schedule: one recurring series of a group. Typed fields inline; everything else as
+// one-line rows that open sheets. Save with problems marks them red and scrolls to the first.
+// Spec: docs/specs/2026-11-19-calmer-meetup-forms-design.md
+import React, { useState, useMemo, useCallback, useRef, type ReactNode } from "react";
+import { View, Text, TextInput, ScrollView, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Switch } from "react-native";
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import { DAYS_OF_WEEK, DAY_COLORS_LIGHT, ORDINAL_OCCURRENCES, FREQ_LABELS, uid, ordSfx, getMaxAttendeesError } from '@/utils/scheduleConstants';
 import { timezoneOptions, tzAbbr } from '@/utils/timezones';
 import { toast } from '@/contexts/ToastContext';
 import { haptic } from '@/utils/haptics';
-import { getMinAttendeesError, WeekdayRow, MonthlyDateEntry, OrdinalEntry, BuiltRoutine, getBringItemsError, ScheduleData, defaultSchedule, buildLabel, buildSchedulePayload, scheduleFromNamedSchedule, scheduleEndTimeError } from '@/utils/editScheduleDraft';
+import { ScheduleData, defaultSchedule, buildSchedulePayload, scheduleFromNamedSchedule } from '@/utils/editScheduleDraft';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
-import { DateTime } from "luxon";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/expo";
 import { useGetGroupDetails } from "../../hooks/useGetGroupDetails";
-import { useApiClient, groupApi, Frequency, DayTime } from "../../utils/api";
+import { useApiClient, groupApi } from "../../utils/api";
 import { broadcastGroupUpdate, broadcastMeetupUpdate } from "../../utils/groupRealtime";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
-import NativeTimePicker from "../../components/NativeTimePicker";
-import EndTimeField from "../../components/EndTimeField";
-import { formatTimeRange } from "@/utils/timeString";
-import { LongIntervalOptions } from "@/components/create-group/LongIntervalOptions";
-import { buildLongRoutine, emptyLongDraft, isLongDraftValid, isLongFrequency, longRoutineLabel, LONG_FREQUENCIES, type LongDraft } from "@/utils/longInterval";
 import OptionPickerModal from "../../components/OptionPickerModal";
 import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
-import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
-import { RsvpRulesCard } from '@/components/schedule/RsvpRulesCard';
-import { CapacityCard } from '@/components/schedule/CapacityCard';
-import { PremiumFeaturesCard } from '@/components/schedule/PremiumFeaturesCard';
+import { useThemeColors } from "@/contexts/AppearanceContext";
+import type { ThemeColors } from "@/constants/theme";
+import { GroupCard, SummaryRow, SettingSheet, FieldError, useFormStyles, useIssueScroll } from "@/components/ui/form";
+import RecurrenceEditor from "@/components/schedule/RecurrenceEditor";
+import { RsvpRulesSheet, CapacitySheet, BringItemsSheet, PremiumUpsellSheet, QuestionsSheet } from "@/components/schedule/sheets";
+import { questionsSummary } from "@/utils/questionDrafts";
+import { scheduleIssues, visibleIssues, fixMessage, firstArea, issueFor, fieldIssue, type FormArea } from "@/utils/formIssues";
+import { recurrenceSummary, rsvpSummary, capacitySummary, bringSummary } from "@/utils/formSummaries";
+import { saveDraftQuestions } from "@/utils/questionDrafts";
 
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-
-// Friday (pink) has no established pastel-chip dark equivalent elsewhere in the
-// app; #3D1530 extrapolates the same treatment used for the other named hues.
-const DAY_COLORS_DARK: { bg: string; fg: string }[] = [
-    { bg: "#3B1E1E", fg: "#DC2626" }, // Sunday (red)
-    { bg: "#1A2A42", fg: "#2563EB" }, // Monday (blue)
-    { bg: "#241B3D", fg: "#7C3AED" }, // Tuesday (purple)
-    { bg: "#132A1E", fg: "#059669" }, // Wednesday (green)
-    { bg: "#3A2E12", fg: "#D97706" }, // Thursday (amber)
-    { bg: "#3D1530", fg: "#DB2777" }, // Friday (pink, extrapolated)
-    { bg: "#123338", fg: "#0891B2" }, // Saturday (cyan)
-];
-
-
-
-
-
-const animate = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-
-
-
-// ─── InlineCalendar ───────────────────────────────────────────────────────────
-
-const InlineCalendar = ({ value, onChange, minDate }: {
-    value: string; onChange: (iso: string) => void; minDate?: string;
-}) => {
-    const colors = useThemeColors();
-    const [month, setMonth] = useState(
-        value ? DateTime.fromISO(value).startOf("month") : DateTime.now().startOf("month")
-    );
-    const grid = useMemo(() => {
-        const start = month.startOf("month");
-        const firstDow = start.weekday === 7 ? 0 : start.weekday;
-        const cells: (DateTime | null)[] = [];
-        for (let i = 0; i < firstDow; i++) cells.push(null);
-        for (let d = 1; d <= month.daysInMonth!; d++) cells.push(month.set({ day: d }));
-        return cells;
-    }, [month]);
-    const minDT = minDate ? DateTime.fromISO(minDate) : DateTime.now().startOf("day");
-    return (
-        <View style={[cal.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={cal.nav}>
-                <PressableOpacity onPress={() => setMonth(m => m.minus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
-                    <Feather name="chevron-left" size={18} color={colors.brand} />
-                </PressableOpacity>
-                <Text style={[cal.monthLabel, { color: colors.textPrimary }]}>{month.toFormat("MMMM yyyy")}</Text>
-                <PressableOpacity onPress={() => setMonth(m => m.plus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
-                    <Feather name="chevron-right" size={18} color={colors.brand} />
-                </PressableOpacity>
-            </View>
-            <View style={cal.grid}>
-                {["S","M","T","W","T","F","S"].map((d, i) => (
-                    <Text key={i} style={[cal.dayHeader, { color: colors.textFaint }]}>{d}</Text>
-                ))}
-                {grid.map((day, i) => {
-                    if (!day) return <View key={`e-${i}`} style={cal.cell} />;
-                    const iso = day.toISODate()!;
-                    const selected = iso === value;
-                    const disabled = day < minDT;
-                    return (
-                        <PressableOpacity
-                            key={iso}
-                            style={[cal.cell, selected && cal.cellSelected, selected && { backgroundColor: colors.brand }, disabled && cal.cellDisabled]}
-                            onPress={() => !disabled && onChange(iso)}
-                            disabled={disabled}
-                        >
-                            <Text style={[cal.cellText, { color: colors.textSecondary }, selected && cal.cellTextSelected, disabled && { color: colors.borderStrong }]}>
-                                {day.day}
-                            </Text>
-                        </PressableOpacity>
-                    );
-                })}
-            </View>
-        </View>
-    );
-};
-
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+type Sheet = "when" | "rsvp" | "capacity" | "bring" | "questions" | "upsell" | null;
+const ORDER: FormArea[] = ["name", "where", "when", "timezone", "rsvp", "capacity", "bring", "questions"];
 
 const EditScheduleScreen = () => {
     const { id, scheduleId: rawScheduleId } = useLocalSearchParams<{ id: string; scheduleId?: string }>();
     const colors = useThemeColors();
-    const { scheme } = useAppearance();
-    const isDark = scheme === "dark";
-    // Pastel icon-chip backgrounds adapt by scheme while keeping the same hue family
-    // (exact dark equivalents established elsewhere in the app for these named hues).
-    const chipBlueBg = isDark ? "#1A2A42" : "#EFF6FF";
-    const chipBlueBorder = isDark ? "#2C4870" : "#BFDBFE";
-    const chipAmberBg = isDark ? "#3A2E12" : "#FFFBEB";
-    const chipAmberBorder = isDark ? "#5C4A1E" : "#FDE68A";
-    const chipPurpleBg = isDark ? "#241B3D" : "#F5F3FF";
-    const chipPurpleBorder = isDark ? "#3B2E63" : "#DDD6FE";
-    const chipTealBg = isDark ? "#123330" : "#ECFDF9";
-    const chipTealBorder = isDark ? "#1F5B54" : "#99E6DA";
-    const chipIndigoBg = isDark ? "#1E2340" : "#EEF2FF";
-    const chipIndigoBorder = isDark ? "#333B6B" : "#C7D2FE";
-    const deleteChipBg = isDark ? "#3B1E1E" : "#FEF2F2";
-    const deleteChipBorder = isDark ? "#5C2E2E" : "#FECACA";
-    // Blue border/text used for the "highlighted" recurrence panels and active blue
-    // labels below — extrapolated dark equivalents (no exact dark token exists for
-    // these particular light blues elsewhere in the app).
-    const blueBorder = isDark ? "#2C4870" : "#BFDBFE";
-    const blueTextActive = isDark ? "#93C5FD" : "#1D4ED8";
-    const mutedBlueText = isDark ? "#6B93C4" : "#93C5FD";
-    const primaryDisabledBg = isDark ? "#2A3A52" : "#93C5FD";
-    // Per-weekday accent colors: dark mode swaps in the muted background variant
-    const DAY_COLORS = isDark ? DAY_COLORS_DARK : DAY_COLORS_LIGHT;
-    // "new" (or no param at all) means creating a schedule rather than editing one.
+    const s = useMemo(() => makeStyles(colors), [colors]);
+    const f = useFormStyles();
     const scheduleId = rawScheduleId && rawScheduleId !== "new" ? rawScheduleId : null;
     const isNew = !scheduleId;
     const router = useRouter();
@@ -193,235 +76,34 @@ const EditScheduleScreen = () => {
         }
     }, [group, targetSchedule, isNew]);
 
-    const upd = useCallback((patch: Partial<ScheduleData>) => {
-        animate();
-        setD(prev => ({ ...prev, ...patch }));
-    }, []);
-
-    const selectFreq = (freq: Frequency) => {
-        animate();
-        setD(prev => ({
-            ...prev,
-            frequency: freq,
-            showFreqPicker: false,
-            dailySameTime: null,
-            weekdayRows: [],
-            monthlyMode: null,
-            monthlyDates: [],
-            ordinalEntries: [],
-            ...emptyLongDraft(),
-            builtRoutines: [],
-            customBuilding: false,
-            customFreq: null,
-        }));
-    };
-
-    // ── Weekday rows ──────────────────────────────────────────────────────────
-
-    const addWeekdayRow = () => {
-        animate();
-        setD(prev => ({
-            ...prev,
-            weekdayRows: [...prev.weekdayRows, {
-                id: uid(), day: null, time: "05:00 PM",
-                startDate: DateTime.now().toISODate()!,
-                showTimePicker: false, showDayPicker: true, showStartDatePicker: false,
-            }],
-        }));
-    };
-
-    const updWeekdayRow = (rowId: string, patch: Partial<WeekdayRow>) => {
-        animate();
-        setD(prev => ({
-            ...prev,
-            weekdayRows: prev.weekdayRows.map(r => r.id === rowId ? { ...r, ...patch } : r),
-        }));
-    };
-
-    const removeWeekdayRow = (rowId: string) => {
-        animate();
-        setD(prev => ({ ...prev, weekdayRows: prev.weekdayRows.filter(r => r.id !== rowId) }));
-    };
-
-    // ── Monthly dates ─────────────────────────────────────────────────────────
-
-    const addMonthlyDate = () => {
-        animate();
-        setD(prev => ({
-            ...prev,
-            monthlyDates: [...prev.monthlyDates, { id: uid(), date: 1, time: "05:00 PM", expanded: true, showTimePicker: false }],
-        }));
-    };
-    const updMonthlyDate = (entryId: string, patch: Partial<MonthlyDateEntry>) => {
-        animate();
-        setD(prev => ({ ...prev, monthlyDates: prev.monthlyDates.map(e => e.id === entryId ? { ...e, ...patch } : e) }));
-    };
-    const removeMonthlyDate = (entryId: string) => {
-        animate();
-        setD(prev => ({ ...prev, monthlyDates: prev.monthlyDates.filter(e => e.id !== entryId) }));
-    };
-
-    // ── Ordinal entries ───────────────────────────────────────────────────────
-
-    const addOrdinalEntry = () => {
-        animate();
-        setD(prev => ({
-            ...prev,
-            ordinalEntries: [...prev.ordinalEntries, { id: uid(), occurrence: "1st", day: 1, time: "05:00 PM", expanded: true, showTimePicker: false, showOccurrencePicker: false, showDayOfWeekPicker: false }],
-        }));
-    };
-    const updOrdinal = (entryId: string, patch: Partial<OrdinalEntry>) => {
-        animate();
-        setD(prev => ({ ...prev, ordinalEntries: prev.ordinalEntries.map(e => e.id === entryId ? { ...e, ...patch } : e) }));
-    };
-    const removeOrdinal = (entryId: string) => {
-        animate();
-        setD(prev => ({ ...prev, ordinalEntries: prev.ordinalEntries.filter(e => e.id !== entryId) }));
-    };
-
-    // ── Custom routines ───────────────────────────────────────────────────────
-
-    const withEnd = (endTime?: string | null) => (endTime ? { endTime } : {});
-
-    const buildRoutineFromState = (): BuiltRoutine | null => {
-        const freq = d.customFreq;
-        if (!freq) return null;
-        if (isLongFrequency(freq)) {
-            if (!isLongDraftValid(d)) return null;
-            const r = buildLongRoutine(freq, d);
-            const long: LongDraft = { longFirstDate: d.longFirstDate, longRepeatBy: d.longRepeatBy, longTime: d.longTime, longEndTime: d.longEndTime };
-            return { id: uid(), frequency: freq, label: longRoutineLabel(r), dayTimes: r.dayTimes, rules: r.rules, repeatBy: r.repeatBy, editing: false, snapshot: long };
-        }
-        let dayTimes: DayTime[] = [];
-        let rules: any[] | undefined;
-        let finalFreq: Frequency = freq;
-
-        if (freq === "daily") {
-            dayTimes = d.dailySameTime
-                ? DAYS_OF_WEEK.map(dw => ({ day: dw.value, time: d.dailySharedTime, ...withEnd(d.dailySharedEndTime) }))
-                : d.dailyRows.map(r => ({ day: r.day!, time: r.time, ...withEnd(r.endTime) }));
-        } else if (freq === "weekly" || freq === "biweekly") {
-            dayTimes = d.weekdayRows.filter(r => r.day !== null).map(r => ({ day: r.day!, time: r.time, ...withEnd(r.endTime), ...(r.startDate ? { startDate: r.startDate } : {}) }));
-        } else if (freq === "monthly") {
-            if (d.monthlyMode === "date") {
-                dayTimes = d.monthlyDates.map(e => ({ date: e.date, time: e.time, ...withEnd(e.endTime) }));
-            } else if (d.monthlyMode === "ordinal") {
-                finalFreq = "ordinal" as Frequency;
-                dayTimes = d.ordinalEntries.map(e => ({ day: e.day, time: e.time, ...withEnd(e.endTime) }));
-                rules = d.ordinalEntries.map(e => ({ type: "byDay", occurrence: e.occurrence, day: e.day }));
-            }
-        }
-        if (!dayTimes.length) return null;
-        return {
-            id: uid(),
-            frequency: finalFreq,
-            label: buildLabel(finalFreq, dayTimes, d.ordinalEntries),
-            dayTimes, rules,
-            editing: false,
-            snapshot: {
-                dailySameTime: d.dailySameTime,
-                dailySharedTime: d.dailySharedTime,
-                dailySharedEndTime: d.dailySharedEndTime ?? null,
-                weekdayRows: d.weekdayRows.map(r => ({ ...r, showTimePicker: false, showEndTimePicker: false, showDayPicker: false, showStartDatePicker: false })),
-                monthlyMode: d.monthlyMode,
-                monthlyDates: d.monthlyDates.map(e => ({ ...e, expanded: false, showTimePicker: false, showEndTimePicker: false })),
-                ordinalEntries: d.ordinalEntries.map(e => ({ ...e, expanded: false, showTimePicker: false, showEndTimePicker: false, showOccurrencePicker: false, showDayOfWeekPicker: false })),
-            },
-        };
-    };
-
-    const finishCustomRoutine = () => {
-        const routine = buildRoutineFromState();
-        if (!routine) return;
-        animate();
-        setD(prev => ({
-            ...prev,
-            builtRoutines: [...prev.builtRoutines, routine],
-            customBuilding: false, customFreq: null, customShowFreqPicker: false,
-            weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, dailySharedEndTime: null,
-            ...emptyLongDraft(),
-        }));
-    };
-
-    const startEditingRoutine = (routineId: string) => {
-        animate();
-        setD(prev => {
-            const r = prev.builtRoutines.find(br => br.id === routineId);
-            if (!r) return prev;
-            return {
-                ...prev,
-                customFreq: r.frequency === "ordinal" ? ("monthly" as Frequency) : r.frequency,
-                customBuilding: true,
-                customShowFreqPicker: false,
-                dailySameTime: r.snapshot.dailySameTime ?? null,
-                dailySharedTime: r.snapshot.dailySharedTime ?? "05:00 PM",
-                dailySharedEndTime: r.snapshot.dailySharedEndTime ?? null,
-                weekdayRows: r.snapshot.weekdayRows ?? [],
-                monthlyMode: r.snapshot.monthlyMode ?? null,
-                monthlyDates: r.snapshot.monthlyDates ?? [],
-                ordinalEntries: (r.snapshot.ordinalEntries ?? []).map(e => ({ ...e, expanded: true })),
-                longFirstDate: r.snapshot.longFirstDate ?? null,
-                longRepeatBy: r.snapshot.longRepeatBy ?? null,
-                longTime: r.snapshot.longTime ?? "05:00 PM",
-                longEndTime: r.snapshot.longEndTime ?? null,
-                builtRoutines: prev.builtRoutines.map(br => br.id === routineId ? { ...br, editing: true } : br),
-            };
-        });
-    };
-
-    const saveEditedRoutine = (editingId: string) => {
-        const routine = buildRoutineFromState();
-        if (!routine) return;
-        animate();
-        setD(prev => ({
-            ...prev,
-            builtRoutines: prev.builtRoutines.map(r => r.id === editingId ? { ...routine, id: editingId } : r),
-            customBuilding: false, customFreq: null,
-            weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, dailySharedEndTime: null,
-            ...emptyLongDraft(),
-        }));
-    };
-
-    const removeBuiltRoutine = (routineId: string) => {
-        animate();
-        setD(prev => ({ ...prev, builtRoutines: prev.builtRoutines.filter(r => r.id !== routineId) }));
-    };
-
-    const editingRoutineId = d.builtRoutines.find(r => r.editing)?.id ?? null;
-
-    // ── Validation ────────────────────────────────────────────────────────────
-
-    const isScheduleValid = (): boolean => {
-        if (!d.name.trim()) return false;
-        if (d.maxAttendeesMode === "limited" && (d.maxAttendeesInput === "" || getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput))) return false;
-        if (getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput)) return false;
-        if (getBringItemsError(d.bringItems)) return false;
-        if (!d.frequency) return false;
-        if (d.frequency === "daily") return d.dailySameTime !== null;
-        if (d.frequency === "weekly" || d.frequency === "biweekly")
-            return d.weekdayRows.length > 0 && d.weekdayRows.every(r => r.day !== null);
-        if (d.frequency === "monthly") {
-            if (!d.monthlyMode) return false;
-            if (d.monthlyMode === "date") return d.monthlyDates.length > 0;
-            return d.ordinalEntries.length > 0;
-        }
-        if (isLongFrequency(d.frequency)) return isLongDraftValid(d);
-        if (d.frequency === "custom") return d.builtRoutines.length > 0;
-        return false;
-    };
+    const upd = useCallback((patch: Partial<ScheduleData>) => setD(prev => ({ ...prev, ...patch })), []);
+    const [sheet, setSheet] = useState<Sheet>(null);
+    const [showTZPicker, setShowTZPicker] = useState(false);
+    const [attempted, setAttempted] = useState(false);
+    const scrollRef = useRef<ScrollView>(null);
+    const { register, scrollTo } = useIssueScroll(scrollRef);
+    const allIssues = scheduleIssues(d, { requireName: true, emptyIsValid: false });
+    const issues = visibleIssues(allIssues, attempted);
+    const close = () => setSheet(null);
+    const isPremium = group?.isPremium === true;
 
     const hasChanged = useMemo(() => {
         if (!originalRef.current) return false;
         return JSON.stringify(buildSchedulePayload(d)) !== JSON.stringify(buildSchedulePayload(originalRef.current));
     }, [d]);
 
-    const saveEnabled = isScheduleValid() && hasChanged && !isSaving;
+    // Nothing to save on an unchanged existing schedule; otherwise Save is always tappable and
+    // explains any problems instead of saving.
+    const unchanged = !isNew && !hasChanged;
 
     // ── Save ──────────────────────────────────────────────────────────────────
 
     const handleSave = async () => {
-        const endProblem = scheduleEndTimeError(d);
-        if (endProblem) { Alert.alert("Check the end time", endProblem); return; }
+        if (allIssues.length) {
+            setAttempted(true);
+            scrollTo(firstArea(allIssues, ORDER));
+            return;
+        }
         const payload = buildSchedulePayload(d);
         if (!payload || !id) return;
         if (inFlightRef.current) return;
@@ -429,7 +111,11 @@ const EditScheduleScreen = () => {
         setIsSaving(true);
         try {
             if (isNew) {
-                await groupApi.createSchedule(api, id, payload);
+                const created = await groupApi.createSchedule(api, id, payload);
+                // RSVP questions written before the schedule existed.
+                const ok = await saveDraftQuestions([d.questions], [created.scheduleId],
+                    (sid, questions) => groupApi.updateScheduleQuestions(api, id, sid, { questions }));
+                if (!ok) Alert.alert("Schedule created", "Your RSVP questions couldn't be saved. You can add them from this schedule's RSVP Questions.");
             } else {
                 await groupApi.updateSchedule(api, id, scheduleId!, payload);
             }
@@ -489,415 +175,6 @@ const EditScheduleScreen = () => {
         );
     };
 
-    // ── Sub-renderers ─────────────────────────────────────────────────────────
-
-    const renderDailyOptions = () => (
-        <View style={[s.expandBox, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]}>
-            <Text style={[s.expandBoxTitle, { color: blueTextActive }]}>Daily Options</Text>
-            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Same time every day?</Text>
-            <View style={s.boolRow}>
-                <PressableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.dailySameTime === true && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
-                    onPress={() => upd({ dailySameTime: true })}>
-                    <Text style={[s.boolBtnText, { color: colors.textMuted }, d.dailySameTime === true && { color: colors.brand }]}>Yes</Text>
-                </PressableOpacity>
-                <PressableOpacity style={[s.boolBtn, { backgroundColor: colors.surface, borderColor: colors.border }, d.dailySameTime === false && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
-                    onPress={() => upd({ dailySameTime: false })}>
-                    <Text style={[s.boolBtnText, { color: colors.textMuted }, d.dailySameTime === false && { color: colors.brand }]}>No, varies</Text>
-                </PressableOpacity>
-            </View>
-
-            {d.dailySameTime === true && (
-                <View style={{ marginTop: 12 }}>
-                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                    <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        onPress={() => upd({ showDailySameTimePicker: !d.showDailySameTimePicker })}>
-                        <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
-                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{d.dailySharedTime}</Text>
-                        <Feather name={d.showDailySameTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                    </PressableOpacity>
-                    {d.showDailySameTimePicker && (
-                        <NativeTimePicker value={d.dailySharedTime} onChange={t => upd({ dailySharedTime: t })}
-                            onClose={() => upd({ showDailySameTimePicker: false })} />
-                    )}
-                    <EndTimeField startTime={d.dailySharedTime} endTime={d.dailySharedEndTime}
-                        onChange={t => upd({ dailySharedEndTime: t })}
-                        open={!!d.showDailySameEndTimePicker} onOpenChange={o => upd({ showDailySameEndTimePicker: o })}
-                        labelStyle={[s.fieldLabel, { color: colors.textFaint }]} fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} textStyle={[s.dateFieldText, { color: colors.textSecondary }]} />
-                </View>
-            )}
-
-            {d.dailySameTime === false && (
-                <View style={{ marginTop: 12, gap: 8 }}>
-                    {d.dailyRows.map(row => (
-                        <View key={row.id}>
-                            <Text style={s.dayRowLabel}>{DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label}</Text>
-                            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                                onPress={() => setD(prev => ({
-                                    ...prev,
-                                    dailyRows: prev.dailyRows.map(r =>
-                                        r.id === row.id
-                                            ? { ...r, showTimePicker: !r.showTimePicker }
-                                            : { ...r, showTimePicker: false }
-                                    ),
-                                }))}>
-                                <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
-                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{row.time}</Text>
-                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                            </PressableOpacity>
-                            {row.showTimePicker && (
-                                <NativeTimePicker value={row.time}
-                                    onChange={t => setD(prev => ({
-                                        ...prev,
-                                        dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, time: t } : r),
-                                    }))}
-                                    onClose={() => setD(prev => ({
-                                        ...prev,
-                                        dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, showTimePicker: false } : r),
-                                    }))} />
-                            )}
-                            <EndTimeField startTime={row.time} endTime={row.endTime}
-                                onChange={t => setD(prev => ({ ...prev, dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, endTime: t } : r) }))}
-                                open={!!row.showEndTimePicker}
-                                onOpenChange={o => setD(prev => ({ ...prev, dailyRows: prev.dailyRows.map(r => r.id === row.id ? { ...r, showEndTimePicker: o } : { ...r, showEndTimePicker: false }) }))}
-                                labelStyle={[s.fieldLabel, { color: colors.textFaint }]} fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} textStyle={[s.dateFieldText, { color: colors.textSecondary }]} />
-                        </View>
-                    ))}
-                </View>
-            )}
-        </View>
-    );
-
-    const renderWeekdayRows = (isBiweekly = false) => (
-        <View style={[s.expandBox, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]}>
-            <Text style={[s.expandBoxTitle, { color: blueTextActive }]}>{isBiweekly ? "Bi-Weekly Options" : "Weekly Options"}</Text>
-            {d.weekdayRows.map(row => (
-                <View key={row.id} style={[s.dayCard, { backgroundColor: colors.surface, borderColor: colors.border }, row.day !== null && { borderLeftColor: DAY_COLORS[row.day].fg }]}>
-                    {isBiweekly && <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Day of Week</Text>}
-                    <View style={s.dayRow}>
-                        <PressableOpacity style={[s.dayPickerTrigger, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                            onPress={() => updWeekdayRow(row.id, { showDayPicker: !row.showDayPicker, showTimePicker: false, showStartDatePicker: false })}>
-                            <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                                <View style={[s.dayBadge, { backgroundColor: row.day !== null ? DAY_COLORS[row.day].bg : colors.backgroundAlt }]}>
-                                    {row.day !== null
-                                        ? <Text style={[s.dayBadgeText, { color: DAY_COLORS[row.day].fg }]}>{DAYS_OF_WEEK[row.day].short.slice(0, 2)}</Text>
-                                        : <Feather name="calendar" size={12} color={colors.textFaint} />}
-                                </View>
-                                <Text style={row.day !== null ? [s.dayPickerText, { color: colors.textSecondary }] : [s.dayPickerPlaceholder, { color: colors.textFaint }]}>
-                                    {row.day !== null ? DAYS_OF_WEEK.find(dw => dw.value === row.day)?.label : "Select day"}
-                                </Text>
-                            </View>
-                            <Feather name={row.showDayPicker ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} />
-                        </PressableOpacity>
-                        <PressableOpacity onPress={() => removeWeekdayRow(row.id)} style={{ marginLeft: 8 }}>
-                            <Feather name="trash-2" size={16} color="#F87171" />
-                        </PressableOpacity>
-                    </View>
-
-                    {row.showDayPicker && (
-                        <OptionPickerModal title="Day of week"
-                            options={DAYS_OF_WEEK.map(dw => ({ key: String(dw.value), label: dw.label }))}
-                            selectedKey={row.day !== null ? String(row.day) : ""}
-                            onSelect={key => updWeekdayRow(row.id, { day: Number(key), showDayPicker: false, showTimePicker: true })}
-                            onClose={() => updWeekdayRow(row.id, { showDayPicker: false })} />
-                    )}
-
-                    {row.day !== null && (
-                        <View style={{ marginTop: 8 }}>
-                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                                onPress={() => updWeekdayRow(row.id, { showTimePicker: !row.showTimePicker, showDayPicker: false, showStartDatePicker: false })}>
-                                <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
-                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{row.time}</Text>
-                                <Feather name={row.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                            </PressableOpacity>
-                        </View>
-                    )}
-
-                    {row.showTimePicker && (
-                        <NativeTimePicker value={row.time}
-                            onChange={t => updWeekdayRow(row.id, { time: t })}
-                            onClose={() => updWeekdayRow(row.id, { showTimePicker: false })} />
-                    )}
-
-                    {row.day !== null && (
-                        <EndTimeField startTime={row.time} endTime={row.endTime}
-                            onChange={t => updWeekdayRow(row.id, { endTime: t })}
-                            open={!!row.showEndTimePicker} onOpenChange={o => updWeekdayRow(row.id, { showEndTimePicker: o, showDayPicker: false, showStartDatePicker: false })}
-                            labelStyle={[s.fieldLabel, { color: colors.textFaint }]} fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} textStyle={[s.dateFieldText, { color: colors.textSecondary }]} />
-                    )}
-
-                    {isBiweekly && row.day !== null && (
-                        <View style={{ marginTop: 8 }}>
-                            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Start Date</Text>
-                            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                                onPress={() => updWeekdayRow(row.id, { showStartDatePicker: !row.showStartDatePicker, showTimePicker: false, showDayPicker: false })}>
-                                <Feather name="calendar" size={14} color={colors.brand} style={{ marginRight: 6 }} />
-                                <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>
-                                    {row.startDate ? DateTime.fromISO(row.startDate).toLocaleString(DateTime.DATE_MED) : "Set start date"}
-                                </Text>
-                                <Feather name={row.showStartDatePicker ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                            </PressableOpacity>
-                            {row.showStartDatePicker && (
-                                <InlineCalendar value={row.startDate || DateTime.now().toISODate()!}
-                                    onChange={iso => updWeekdayRow(row.id, { startDate: iso, showStartDatePicker: false })}
-                                    minDate={DateTime.now().toISODate()!} />
-                            )}
-                        </View>
-                    )}
-                </View>
-            ))}
-            <PressableOpacity style={s.addRowBtn} onPress={addWeekdayRow}>
-                <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
-                <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add day</Text>
-            </PressableOpacity>
-        </View>
-    );
-
-    const renderMonthlyDateEntry = (entry: MonthlyDateEntry) => (
-        <View key={entry.id} style={[s.ordinalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            {!entry.expanded ? (
-                <PressableOpacity style={s.collapsedRuleRow} onPress={() => updMonthlyDate(entry.id, { expanded: true })}>
-                    <Text style={[s.collapsedRuleText, { color: blueTextActive }]}>{entry.date}{ordSfx(entry.date)} of month · {formatTimeRange(entry.time, entry.endTime)}</Text>
-                    <View style={s.collapsedRuleActions}>
-                        <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
-                        <PressableOpacity onPress={() => removeMonthlyDate(entry.id)}>
-                            <Feather name="trash-2" size={14} color="#F87171" />
-                        </PressableOpacity>
-                    </View>
-                </PressableOpacity>
-            ) : (
-                <View>
-                    <View style={s.ordinalRow}>
-                        <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Select date of month</Text>
-                        <PressableOpacity onPress={() => removeMonthlyDate(entry.id)}>
-                            <Feather name="trash-2" size={16} color="#F87171" />
-                        </PressableOpacity>
-                    </View>
-                    <View style={s.dateGrid}>
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map(n => (
-                            <PressableOpacity key={n} style={[s.dateBox, { backgroundColor: colors.surface, borderColor: colors.border }, entry.date === n && { backgroundColor: colors.brand, borderColor: colors.brand }]}
-                                onPress={() => updMonthlyDate(entry.id, { date: n })}>
-                                <Text style={[s.dateBoxText, { color: colors.textSecondary }, entry.date === n && s.dateBoxTextActive]}>{n}</Text>
-                            </PressableOpacity>
-                        ))}
-                    </View>
-                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                    <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        onPress={() => updMonthlyDate(entry.id, { showTimePicker: !entry.showTimePicker })}>
-                        <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
-                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.time}</Text>
-                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                    </PressableOpacity>
-                    <EndTimeField startTime={entry.time} endTime={entry.endTime}
-                        onChange={t => updMonthlyDate(entry.id, { endTime: t })}
-                        open={!!entry.showEndTimePicker} onOpenChange={o => updMonthlyDate(entry.id, { showEndTimePicker: o })}
-                        labelStyle={[s.fieldLabel, { color: colors.textFaint }]} fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} textStyle={[s.dateFieldText, { color: colors.textSecondary }]} />
-                    <PressableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10, backgroundColor: colors.brand }]}
-                        onPress={() => updMonthlyDate(entry.id, { expanded: false, showTimePicker: false, showEndTimePicker: false })}>
-                        <Text style={s.doneBtnText}>Done</Text>
-                    </PressableOpacity>
-                    {entry.showTimePicker && (
-                        <NativeTimePicker value={entry.time}
-                            onChange={t => updMonthlyDate(entry.id, { time: t })}
-                            onClose={() => updMonthlyDate(entry.id, { showTimePicker: false })} />
-                    )}
-                </View>
-            )}
-        </View>
-    );
-
-    const renderOrdinalEntry = (entry: OrdinalEntry) => (
-        <View key={entry.id} style={[s.ordinalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            {!entry.expanded ? (
-                <PressableOpacity style={s.collapsedRuleRow} onPress={() => updOrdinal(entry.id, { expanded: true })}>
-                    <Text style={[s.collapsedRuleText, { color: blueTextActive }]}>
-                        {entry.occurrence} {DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label} · {formatTimeRange(entry.time, entry.endTime)}
-                    </Text>
-                    <View style={s.collapsedRuleActions}>
-                        <Feather name="edit-2" size={14} color={colors.brand} style={{ marginRight: 10 }} />
-                        <PressableOpacity onPress={() => removeOrdinal(entry.id)}>
-                            <Feather name="trash-2" size={14} color="#F87171" />
-                        </PressableOpacity>
-                    </View>
-                </PressableOpacity>
-            ) : (
-                <View>
-                    <View style={s.ordinalRow}>
-                        <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Occurrence &amp; day</Text>
-                        <PressableOpacity onPress={() => removeOrdinal(entry.id)}>
-                            <Feather name="trash-2" size={16} color="#F87171" />
-                        </PressableOpacity>
-                    </View>
-                    <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        onPress={() => updOrdinal(entry.id, { showOccurrencePicker: true, showDayOfWeekPicker: false, showTimePicker: false })}>
-                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.occurrence}</Text>
-                        <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                    </PressableOpacity>
-                    <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        onPress={() => updOrdinal(entry.id, { showDayOfWeekPicker: true, showOccurrencePicker: false, showTimePicker: false })}>
-                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{DAYS_OF_WEEK.find(dw => dw.value === entry.day)?.label}</Text>
-                        <Feather name="chevron-down" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                    </PressableOpacity>
-                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
-                    <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        onPress={() => updOrdinal(entry.id, { showTimePicker: !entry.showTimePicker, showOccurrencePicker: false, showDayOfWeekPicker: false })}>
-                        <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
-                        <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{entry.time}</Text>
-                        <Feather name={entry.showTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                    </PressableOpacity>
-                    <EndTimeField startTime={entry.time} endTime={entry.endTime}
-                        onChange={t => updOrdinal(entry.id, { endTime: t })}
-                        open={!!entry.showEndTimePicker} onOpenChange={o => updOrdinal(entry.id, { showEndTimePicker: o, showOccurrencePicker: false, showDayOfWeekPicker: false })}
-                        labelStyle={[s.fieldLabel, { color: colors.textFaint }]} fieldStyle={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} textStyle={[s.dateFieldText, { color: colors.textSecondary }]} />
-                    <PressableOpacity style={[s.doneBtn, { alignSelf: "flex-end", marginTop: 10, backgroundColor: colors.brand }]}
-                        onPress={() => updOrdinal(entry.id, { expanded: false, showTimePicker: false, showEndTimePicker: false })}>
-                        <Text style={s.doneBtnText}>Done</Text>
-                    </PressableOpacity>
-                    {entry.showTimePicker && (
-                        <NativeTimePicker value={entry.time}
-                            onChange={t => updOrdinal(entry.id, { time: t })}
-                            onClose={() => updOrdinal(entry.id, { showTimePicker: false })} />
-                    )}
-                    {entry.showOccurrencePicker && (
-                        <OptionPickerModal title="Occurrence"
-                            options={ORDINAL_OCCURRENCES.map(occ => ({ key: occ, label: occ }))}
-                            selectedKey={entry.occurrence}
-                            onSelect={occ => updOrdinal(entry.id, { occurrence: occ, showOccurrencePicker: false })}
-                            onClose={() => updOrdinal(entry.id, { showOccurrencePicker: false })} />
-                    )}
-                    {entry.showDayOfWeekPicker && (
-                        <OptionPickerModal title="Day of week"
-                            options={DAYS_OF_WEEK.map(dw => ({ key: String(dw.value), label: dw.label }))}
-                            selectedKey={String(entry.day)}
-                            onSelect={key => updOrdinal(entry.id, { day: Number(key), showDayOfWeekPicker: false })}
-                            onClose={() => updOrdinal(entry.id, { showDayOfWeekPicker: false })} />
-                    )}
-                </View>
-            )}
-        </View>
-    );
-
-    const renderMonthlyOptions = () => (
-        <View style={[s.expandBox, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]}>
-            <Text style={[s.expandBoxTitle, { color: blueTextActive }]}>Monthly Options</Text>
-            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Recur by</Text>
-            <View style={s.monthlyModeList}>
-                <PressableOpacity style={[s.monthlyModeCard, { backgroundColor: colors.surface, borderColor: colors.border }, d.monthlyMode === "date" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
-                    onPress={() => upd({ monthlyMode: "date" })}>
-                    <View style={[s.monthlyModeRadio, { borderColor: colors.borderStrong }, d.monthlyMode === "date" && { borderColor: colors.brand }]}>
-                        {d.monthlyMode === "date" && <View style={[s.monthlyModeRadioDot, { backgroundColor: colors.brand }]} />}
-                    </View>
-                    <View style={[s.monthlyModeIcon, { backgroundColor: colors.backgroundAlt }, d.monthlyMode === "date" && { backgroundColor: colors.brand }]}>
-                        <Feather name="hash" size={16} color={d.monthlyMode === "date" ? "#fff" : colors.textFaint} />
-                    </View>
-                    <View style={s.monthlyModeCopy}>
-                        <Text style={[s.monthlyModeTitle, { color: colors.textSecondary }, d.monthlyMode === "date" && { color: blueTextActive }]}>Same date every month</Text>
-                        <Text style={[s.monthlyModeExample, { color: colors.textFaint }]}>e.g. the 15th</Text>
-                    </View>
-                </PressableOpacity>
-                <PressableOpacity style={[s.monthlyModeCard, { backgroundColor: colors.surface, borderColor: colors.border }, d.monthlyMode === "ordinal" && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
-                    onPress={() => upd({ monthlyMode: "ordinal" })}>
-                    <View style={[s.monthlyModeRadio, { borderColor: colors.borderStrong }, d.monthlyMode === "ordinal" && { borderColor: colors.brand }]}>
-                        {d.monthlyMode === "ordinal" && <View style={[s.monthlyModeRadioDot, { backgroundColor: colors.brand }]} />}
-                    </View>
-                    <View style={[s.monthlyModeIcon, { backgroundColor: colors.backgroundAlt }, d.monthlyMode === "ordinal" && { backgroundColor: colors.brand }]}>
-                        <Feather name="repeat" size={16} color={d.monthlyMode === "ordinal" ? "#fff" : colors.textFaint} />
-                    </View>
-                    <View style={s.monthlyModeCopy}>
-                        <Text style={[s.monthlyModeTitle, { color: colors.textSecondary }, d.monthlyMode === "ordinal" && { color: blueTextActive }]}>Same weekday every month</Text>
-                        <Text style={[s.monthlyModeExample, { color: colors.textFaint }]}>e.g. the 2nd Tuesday</Text>
-                    </View>
-                </PressableOpacity>
-            </View>
-            {d.monthlyMode === "date" && (
-                <View style={{ marginTop: 12, gap: 8 }}>
-                    {d.monthlyDates.map(renderMonthlyDateEntry)}
-                    <PressableOpacity style={s.addRowBtn} onPress={addMonthlyDate}>
-                        <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
-                        <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add date</Text>
-                    </PressableOpacity>
-                </View>
-            )}
-            {d.monthlyMode === "ordinal" && (
-                <View style={{ marginTop: 12, gap: 8 }}>
-                    {d.ordinalEntries.map(renderOrdinalEntry)}
-                    <PressableOpacity style={s.addRowBtn} onPress={addOrdinalEntry}>
-                        <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
-                        <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add pattern</Text>
-                    </PressableOpacity>
-                </View>
-            )}
-        </View>
-    );
-
-    const renderCustomSubBuilder = () => (
-        <View style={[s.ordinalCard, { marginTop: 8, backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Rule type</Text>
-            <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                onPress={() => upd({ customShowFreqPicker: !d.customShowFreqPicker })}>
-                <Text style={d.customFreq ? [s.dateFieldText, { color: colors.textSecondary }] : [s.dayPickerPlaceholder, { color: colors.textFaint }]}>
-                    {d.customFreq ? FREQ_LABELS[d.customFreq] : "Select frequency"}
-                </Text>
-                <Feather name={d.customShowFreqPicker ? "chevron-up" : "chevron-down"} size={14} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-            </PressableOpacity>
-            {d.customShowFreqPicker && (
-                <View style={[s.inlineDayPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    {(["daily", "weekly", "biweekly", "monthly", ...LONG_FREQUENCIES] as Frequency[]).map(f => (
-                        <PressableOpacity key={f} style={[s.dayOption, { borderBottomColor: colors.border }, d.customFreq === f && { backgroundColor: colors.brandSoft }]}
-                            onPress={() => { animate(); setD(prev => ({ ...prev, customFreq: f, customShowFreqPicker: false, weekdayRows: [], monthlyMode: null, monthlyDates: [], ordinalEntries: [], dailySameTime: null, ...emptyLongDraft() })); }}>
-                            <Text style={[s.dayOptionText, { color: colors.textSecondary }, d.customFreq === f && { color: colors.brand }]}>{FREQ_LABELS[f]}</Text>
-                        </PressableOpacity>
-                    ))}
-                </View>
-            )}
-            {d.customFreq === "daily" && renderDailyOptions()}
-            {d.customFreq === "weekly" && renderWeekdayRows(false)}
-            {d.customFreq === "biweekly" && renderWeekdayRows(true)}
-            {d.customFreq === "monthly" && renderMonthlyOptions()}
-            {isLongFrequency(d.customFreq) && <LongIntervalOptions frequency={d.customFreq} value={d} onChange={upd} />}
-            <View style={[s.boolRow, { marginTop: 14 }]}>
-                <PressableOpacity style={s.skipBtn}
-                    onPress={() => { animate(); upd({ customBuilding: false, customFreq: null, builtRoutines: d.builtRoutines.map(r => ({ ...r, editing: false })) }); }}>
-                    <Text style={[s.skipBtnText, { color: colors.textFaint }]}>Cancel</Text>
-                </PressableOpacity>
-                <PressableOpacity style={[s.primaryBtn, { backgroundColor: colors.brand }]}
-                    onPress={() => editingRoutineId ? saveEditedRoutine(editingRoutineId) : finishCustomRoutine()}>
-                    <Text style={s.primaryBtnText}>{editingRoutineId ? "Save changes" : "Add rule"}</Text>
-                </PressableOpacity>
-            </View>
-        </View>
-    );
-
-    const renderCustomOptions = () => (
-        <View style={[s.expandBox, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]}>
-            <Text style={[s.expandBoxTitle, { color: blueTextActive }]}>Multiple Rules</Text>
-            {d.builtRoutines.map(r =>
-                r.editing ? (
-                    <View key={r.id}>{renderCustomSubBuilder()}</View>
-                ) : (
-                    <PressableOpacity key={r.id} style={[s.routineCard, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]} onPress={() => startEditingRoutine(r.id)}>
-                        <View style={{ flex: 1 }}>
-                            <Text style={[s.routineCardLabel, { color: blueTextActive }]}>{r.label}</Text>
-                            <Text style={[s.routineCardSub, { color: mutedBlueText }]}>Tap to edit</Text>
-                        </View>
-                        <PressableOpacity onPress={() => removeBuiltRoutine(r.id)}>
-                            <Feather name="x-circle" size={18} color="#F87171" />
-                        </PressableOpacity>
-                    </PressableOpacity>
-                )
-            )}
-            {d.builtRoutines.length < 5 && !d.customBuilding && (
-                <PressableOpacity style={s.addRowBtn} onPress={() => upd({ customBuilding: true, customFreq: null })}>
-                    <Feather name="plus-circle" size={16} color={colors.brand} style={{ marginRight: 6 }} />
-                    <Text style={[s.addRowBtnText, { color: colors.brand }]}>Add rule</Text>
-                </PressableOpacity>
-            )}
-            {d.customBuilding && !editingRoutineId && renderCustomSubBuilder()}
-        </View>
-    );
-
-    // ── Loading state ─────────────────────────────────────────────────────────
-
     if (isLoading || !group) {
         return (
             <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
@@ -908,212 +185,137 @@ const EditScheduleScreen = () => {
         );
     }
 
-    // ── Render ────────────────────────────────────────────────────────────────
+    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) => isPremium
+        ? <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />
+        : <SummaryRow label={label} value={value} onPress={() => setSheet("upsell")} locked />;
+    const questionCount = targetSchedule?.defaultQuestions?.length ?? 0;
+    const nameError = fieldIssue(issues, "name");
 
     return (
         <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
-            <View style={s.screen}>
-                <View style={[s.screenHeader, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                    <PressableOpacity onPress={() => router.back()} style={s.iconBtn}>
+            <View style={{ flex: 1 }}>
+                <View style={s.header}>
+                    <PressableOpacity onPress={() => router.back()} style={s.iconBtn} accessibilityLabel="Back">
                         <Feather name="arrow-left" size={24} color={colors.textMuted} />
                     </PressableOpacity>
-                    <Text style={[s.headerTitle, { color: colors.textPrimary }]}>{isNew ? "New Schedule" : "Edit Schedule"}</Text>
+                    <Text style={s.headerTitle}>{isNew ? "New Schedule" : "Edit Schedule"}</Text>
                     <View style={{ width: 36 }} />
                 </View>
 
                 <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
                 <ScrollView
+                    ref={scrollRef}
                     style={{ flex: 1 }}
-                    contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 120 }}
+                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }}
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="on-drag"
                     showsVerticalScrollIndicator={false}
                 >
-                    <Text style={[s.screenSub, { color: colors.textFaint }]}>
+                    <Text style={s.sub}>
                         {isNew
                             ? "Give this schedule a name (e.g. \"Monthly Camping\") and set its recurrence — it shares this group's members and chat."
                             : "Changes will delete future meetups and regenerate them from the updated schedule."}
                     </Text>
 
-                    {/* Timezone — applies to the whole group, not just this schedule,
-                        so it's a standalone field rather than part of the form below. */}
-                    <View style={s.tzSection}>
-                        <View style={s.tzRow}>
-                            <Text style={[s.fieldLabel, s.fieldLabelFirst, { marginBottom: 0, color: colors.textFaint }]}>Timezone</Text>
-                            <PressableOpacity style={[s.tzPill, { backgroundColor: colors.brandSoft, borderColor: blueBorder }]} onPress={() => upd({
-                                showTZPicker: !d.showTZPicker,
-                                showFreqPicker: false, showStartDatePicker: false, showLeadTimePicker: false, showDeadlineTimePicker: false,
-                            })}>
-                                <Feather name="globe" size={13} color={colors.brand} />
-                                <Text style={[s.tzPillText, { color: colors.brand }]}>{tzAbbr(d.timezone)}</Text>
-                                <Feather name={d.showTZPicker ? "chevron-up" : "chevron-down"} size={13} color={colors.brand} />
-                            </PressableOpacity>
-                        </View>
-                    </View>
-
-                    {/* Name */}
-                    <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: "#6366F1", backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, { backgroundColor: chipIndigoBg, borderColor: chipIndigoBorder }]}>
-                                <Feather name="tag" size={16} color="#6366F1" />
-                            </View>
-                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Name</Text>
-                        </View>
-
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>Schedule name</Text>
-                        <View style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                            <Feather name="tag" size={16} color={colors.brand} style={{ marginRight: 8 }} />
+                    <View onLayout={register("name", "where")}>
+                        <Text style={f.sectionLabel}>Details</Text>
+                        <View style={[f.card, { padding: 14 }, !!nameError && { borderColor: colors.danger }]}>
                             <TextInput
-                                style={[s.textInputField, { color: colors.textSecondary }]}
+                                style={[s.name, { color: colors.textPrimary }]}
                                 value={d.name}
-                                onChangeText={t => setD(prev => ({ ...prev, name: t }))}
-                                placeholder="e.g. Sunday Dinner"
-                                placeholderTextColor={colors.placeholder}
+                                onChangeText={t => upd({ name: t })}
+                                placeholder="Schedule name, e.g. Sunday Dinner"
+                                placeholderTextColor={nameError ? colors.danger : colors.placeholder}
                                 maxLength={60}
+                                accessibilityLabel="Schedule name"
                             />
-                        </View>
-
-                        <Text style={[s.fieldLabel, { marginTop: 35, color: colors.textFaint }]}>Description (optional)</Text>
-                        <View style={[s.inputRow, s.descriptionInputRow, { marginBottom: 0, backgroundColor: colors.surface, borderColor: colors.border }]}>
+                            <FieldError message={nameError} />
+                            <View style={s.divider} />
                             <TextInput
-                                style={[s.inlineInput, s.descriptionInput, { color: colors.textSecondary }]}
+                                style={[s.description, { color: colors.textPrimary }]}
                                 placeholder="Add any extra details for this series..."
                                 placeholderTextColor={colors.placeholder}
                                 value={d.description}
-                                onChangeText={t => setD(prev => ({ ...prev, description: t }))}
+                                onChangeText={t => upd({ description: t })}
                                 multiline
                                 textAlignVertical="top"
+                                accessibilityLabel="Description"
                             />
+                            <View style={s.divider} />
+                            <LocationField variant="wizard" placeholder="Where? e.g. 123 Main St or zoom.us/j/..." value={d.location} onPress={() => setIsLocationSearchOpen(true)} />
                         </View>
                     </View>
 
-                    {/* Where */}
-                    <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: colors.danger, backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, { backgroundColor: chipBlueBg, borderColor: chipBlueBorder }]}>
-                                <Feather name="map-pin" size={16} color={colors.danger} />
-                            </View>
-                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Where</Text>
-                        </View>
-
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>Location or link</Text>
-                        <LocationField
-                            variant="wizard"
-                            placeholder="e.g. 123 Main St or zoom.us/j/..."
-                            value={d.location}
-                            onPress={() => setIsLocationSearchOpen(true)}
-                        />
+                    <View onLayout={register("when", "timezone")}>
+                        <Text style={f.sectionLabel}>Date &amp; time</Text>
+                        <GroupCard>
+                            <SummaryRow testID="row-when" label="When" value={recurrenceSummary(d)} onPress={() => setSheet("when")} error={issueFor(issues, "when")} />
+                            <SummaryRow label="Timezone" value={tzAbbr(d.timezone)} onPress={() => setShowTZPicker(true)} />
+                        </GroupCard>
                     </View>
 
-                    {/* When */}
-                    <View style={[s.sectionCard, { borderLeftWidth: 3, borderLeftColor: colors.warning, backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, { backgroundColor: chipAmberBg, borderColor: chipAmberBorder }]}>
-                                <Feather name="calendar" size={16} color="#F59E0B" />
-                            </View>
-                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>When</Text>
-                        </View>
-
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textFaint }]}>How often?</Text>
-                        <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                            onPress={() => upd({ showFreqPicker: !d.showFreqPicker, showStartDatePicker: false, showTZPicker: false })}>
-                            <Feather name="repeat" size={16} color={colors.brand} style={{ marginRight: 8 }} />
-                            <Text style={d.frequency ? [s.dateFieldText, { color: colors.textSecondary }] : [s.dayPickerPlaceholder, { color: colors.textFaint }]}>
-                                {d.frequency ? FREQ_LABELS[d.frequency] : "Select frequency"}
-                            </Text>
-                            <Feather name={d.showFreqPicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                        </PressableOpacity>
-                        {d.showFreqPicker && (
-                            <View style={[s.inlineDayPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                {(["daily", "weekly", "biweekly", "monthly", ...LONG_FREQUENCIES, "custom"] as Frequency[]).map(f => (
-                                    <PressableOpacity key={f} style={[s.dayOption, { borderBottomColor: colors.border }, d.frequency === f && { backgroundColor: colors.brandSoft }]}
-                                        onPress={() => selectFreq(f)}>
-                                        <Text style={[s.dayOptionText, { color: colors.textSecondary }, d.frequency === f && { color: colors.brand }]}>{FREQ_LABELS[f]}</Text>
-                                    </PressableOpacity>
-                                ))}
-                            </View>
-                        )}
-
-                        {d.frequency === "daily" && renderDailyOptions()}
-                        {d.frequency === "weekly" && renderWeekdayRows(false)}
-                        {d.frequency === "biweekly" && renderWeekdayRows(true)}
-                        {d.frequency === "monthly" && renderMonthlyOptions()}
-                        {isLongFrequency(d.frequency) && <LongIntervalOptions frequency={d.frequency} value={d} onChange={upd} />}
-                        {d.frequency === "custom" && renderCustomOptions()}
-
-                        {/* Start Date — hidden for biweekly (each day asks for its own start date) and for
-                            quarterly/semiannual/yearly (the first date is the start) */}
-                        {d.frequency !== "biweekly" && !isLongFrequency(d.frequency) && (
-                            <>
-                                <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Start date</Text>
-                                <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                                    onPress={() => upd({ showStartDatePicker: !d.showStartDatePicker, showFreqPicker: false, showTZPicker: false })}>
-                                    <Feather name="calendar" size={16} color={colors.brand} style={{ marginRight: 8 }} />
-                                    <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{DateTime.fromISO(d.startDate).toLocaleString(DateTime.DATE_FULL)}</Text>
-                                    <Feather name={d.showStartDatePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
-                                </PressableOpacity>
-                                {d.showStartDatePicker && (
-                                    <InlineCalendar value={d.startDate}
-                                        onChange={iso => upd({ startDate: iso, showStartDatePicker: false })}
-                                        minDate={DateTime.now().toISODate()!} />
-                                )}
-                            </>
-                        )}
+                    <View onLayout={register("rsvp", "capacity")}>
+                        <Text style={f.sectionLabel}>RSVPs</Text>
+                        <GroupCard>
+                            <SummaryRow label="RSVP rules" value={rsvpSummary(d)} onPress={() => setSheet("rsvp")} error={issueFor(issues, "rsvp")} />
+                            <SummaryRow label="Capacity" value={capacitySummary(d.maxAttendeesMode, d.maxAttendeesInput)} onPress={() => setSheet("capacity")} error={issueFor(issues, "capacity")} />
+                        </GroupCard>
                     </View>
 
-                    {/* RSVP Rules */}
-                    <RsvpRulesCard
-                        value={d}
-                        onChange={upd}
-                        isPremium={group?.isPremium === true}
-                        owner={group?.owner}
-                        minError={getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput)}
-                        openPicker={d.showLeadTimePicker ? "lead" : d.showDeadlineTimePicker ? "deadline" : null}
-                        onOpenPickerChange={p => upd({ showLeadTimePicker: p === "lead", showDeadlineTimePicker: p === "deadline", showStartDatePicker: false, showFreqPicker: false, showTZPicker: false })}
-                        chipStyle={[s.sectionIconChip, { backgroundColor: chipPurpleBg, borderColor: chipPurpleBorder }]}
-                        iconSize={16}
-                    />
-
-                    {/* Capacity */}
-                    <CapacityCard
-                        mode={d.maxAttendeesMode}
-                        input={d.maxAttendeesInput}
-                        onChange={upd}
-                        chipStyle={[s.sectionIconChip, { backgroundColor: chipTealBg, borderColor: chipTealBorder }]}
-                        iconSize={16}
-                    />
-
-                    {/* Premium features */}
-                    <PremiumFeaturesCard
-                        style={{ marginBottom: 8 }}
-                        isPremium={group?.isPremium === true}
-                        owner={group?.owner}
-                        lockedNote="Requires the group owner to have Premium."
-                        bringItems={d.bringItems}
-                        ridesEnabled={d.ridesEnabled}
-                        onChange={patch => upd(patch)}
-                        // Priority RSVP and questions rank members and edit open meetups, so they need a saved series.
-                        links={isNew ? [] : [
-                            {
-                                key: "priority",
-                                icon: "award",
-                                title: "Priority RSVP",
-                                subtitle: targetSchedule?.priorityEnabled ? "On. Manage groups and order." : "Let chosen members RSVP first.",
-                                onPress: () => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId! } }),
-                            },
-                            {
-                                key: "questions",
-                                icon: "help-circle",
-                                title: "RSVP Questions",
-                                subtitle: (targetSchedule?.defaultQuestions?.length ?? 0) > 0
-                                    ? `${targetSchedule!.defaultQuestions!.length} question${targetSchedule!.defaultQuestions!.length === 1 ? "" : "s"}. Tap to manage.`
-                                    : "Collect answers like dietary needs or skill level.",
-                                onPress: () => router.push({ pathname: "/group-questions/[id]", params: { id: id!, scheduleId: scheduleId! } }),
-                            },
-                        ]}
-                    />
+                    <View onLayout={register("bring", "questions")}>
+                        <Text style={f.sectionLabel}>Premium</Text>
+                        <GroupCard>
+                            {premiumRow("Food/Things to bring", bringSummary(d.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"))}
+                            {premiumRow("Rides", d.ridesEnabled ? "On" : "Off", () => upd({ ridesEnabled: !d.ridesEnabled }),
+                                <Switch accessibilityLabel="Coordinate rides" value={d.ridesEnabled} onValueChange={v => upd({ ridesEnabled: v })}
+                                    trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />)}
+                            {/* Priority RSVP and questions rank members and edit open meetups, so they need a saved series. */}
+                            {!isPremium ? <SummaryRow label="Priority RSVP" value="" onPress={() => setSheet("upsell")} locked />
+                                : <SummaryRow label="Priority RSVP" value={targetSchedule?.priorityEnabled ? "On" : "Off"}
+                                    disabledReason={isNew ? "Set up after the schedule is created" : undefined}
+                                    onPress={() => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId! } })} />}
+                            {!isPremium ? <SummaryRow label="RSVP Questions" value="" onPress={() => setSheet("upsell")} locked />
+                                : isNew
+                                    ? <SummaryRow label="RSVP Questions" value={questionsSummary(d.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} />
+                                    : <SummaryRow label="RSVP Questions" value={questionCount ? `${questionCount} question${questionCount === 1 ? "" : "s"}` : "None"}
+                                        onPress={() => router.push({ pathname: "/group-questions/[id]", params: { id: id!, scheduleId: scheduleId! } })} />}
+                        </GroupCard>
+                    </View>
                 </ScrollView>
                 </KeyboardAvoidingView>
+
+                <View style={s.footer}>
+                    {!isNew && (
+                        <PressableOpacity style={s.deleteBtn} onPress={handleDelete} disabled={isDeleting} accessibilityLabel="Remove schedule">
+                            {isDeleting
+                                ? <ActivityIndicator color={colors.danger} size="small" />
+                                : <Feather name="trash-2" size={18} color={colors.danger} />}
+                        </PressableOpacity>
+                    )}
+                    <Text style={[s.hint, attempted && issues.length > 0 && { color: colors.danger, fontWeight: "700" }]} numberOfLines={2}>
+                        {attempted && issues.length ? fixMessage(issues.length) : unchanged ? "No changes yet" : ""}
+                    </Text>
+                    <PressableOpacity
+                        style={[s.primaryBtn, (unchanged || isSaving) && { opacity: 0.5 }]}
+                        onPress={handleSave}
+                        disabled={unchanged || isSaving}
+                        accessibilityLabel={isNew ? "Create Schedule" : "Save Changes"}
+                    >
+                        {isSaving
+                            ? <ActivityIndicator color="#fff" size="small" />
+                            : <><Text style={s.primaryBtnText}>{isNew ? "Create Schedule" : "Save Changes"}</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>}
+                    </PressableOpacity>
+                </View>
+
+                <SettingSheet visible={sheet === "when"} title="When" onClose={close} tall>
+                    <RecurrenceEditor value={d} update={fn => setD(prev => fn(prev))} issues={issues} />
+                </SettingSheet>
+                <RsvpRulesSheet visible={sheet === "rsvp"} onClose={close} issues={issues} value={d} onChange={upd} isPremium={isPremium} owner={group?.owner} />
+                <CapacitySheet visible={sheet === "capacity"} onClose={close} issues={issues} mode={d.maxAttendeesMode} input={d.maxAttendeesInput} onChange={upd} />
+                <BringItemsSheet visible={sheet === "bring"} onClose={close} issues={allIssues} showIssues={attempted} items={d.bringItems} onChange={bringItems => upd({ bringItems })} />
+                <QuestionsSheet visible={sheet === "questions"} onClose={close} showIssues={attempted} savedLater="schedule"
+                    drafts={d.questions ?? []} onChange={questions => upd({ questions })} />
+                <PremiumUpsellSheet visible={sheet === "upsell"} onClose={close} note="Requires the group owner to have Premium." owner={group?.owner} />
 
                 <LocationSearchModal
                     visible={isLocationSearchOpen}
@@ -1122,40 +324,15 @@ const EditScheduleScreen = () => {
                     onDone={(text) => { upd({ location: text }); setIsLocationSearchOpen(false); }}
                     onCancel={() => setIsLocationSearchOpen(false)}
                 />
-
-                {d.showTZPicker && (
+                {showTZPicker && (
                     <OptionPickerModal
                         title="Timezone"
                         options={timezoneOptions(d.timezone)}
                         selectedKey={d.timezone}
-                        onSelect={key => upd({ timezone: key, showTZPicker: false })}
-                        onClose={() => upd({ showTZPicker: false })}
+                        onSelect={key => { upd({ timezone: key }); setShowTZPicker(false); }}
+                        onClose={() => setShowTZPicker(false)}
                     />
                 )}
-
-                <View style={[s.screenFooter, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-                    {!isNew && (
-                        <PressableOpacity style={[s.deleteBtn, { backgroundColor: deleteChipBg, borderColor: deleteChipBorder }]} onPress={handleDelete} disabled={isDeleting}>
-                            {isDeleting
-                                ? <ActivityIndicator color={colors.danger} size="small" />
-                                : <Feather name="trash-2" size={18} color={colors.danger} />
-                            }
-                        </PressableOpacity>
-                    )}
-                    {!hasChanged && isScheduleValid() && (
-                        <Text style={[s.noChangeHint, { color: colors.textFaint }]}>No changes yet</Text>
-                    )}
-                    <PressableOpacity
-                        style={[s.primaryBtn, { backgroundColor: colors.brand }, !saveEnabled && { backgroundColor: primaryDisabledBg }]}
-                        onPress={handleSave}
-                        disabled={!saveEnabled}
-                    >
-                        {isSaving
-                            ? <ActivityIndicator color="#fff" size="small" />
-                            : <><Text style={s.primaryBtnText}>{isNew ? "Create Schedule" : "Save Changes"}</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>
-                        }
-                    </PressableOpacity>
-                </View>
             </View>
         </SafeAreaView>
     );
@@ -1163,118 +340,18 @@ const EditScheduleScreen = () => {
 
 export default EditScheduleScreen;
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const s = StyleSheet.create({
-    safe: { flex: 1, backgroundColor: "#F9FAFB" },
-    screen: { flex: 1 },
-    screenHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: "#F3F4F6", backgroundColor: "#fff" },
-    headerTitle: { fontSize: 17, fontWeight: "800", color: "#111827" },
-    screenSub: { fontSize: 13, color: "#9CA3AF", marginBottom: 8, marginTop: 12, lineHeight: 18 },
-    screenFooter: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#F3F4F6", backgroundColor: "#fff", gap: 12 },
-    noChangeHint: { fontSize: 13, color: "#9CA3AF", fontWeight: "600" },
-    deleteBtn: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: "#FECACA", marginRight: "auto" },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+    safe: { flex: 1 },
+    header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: c.border, backgroundColor: c.surface },
+    headerTitle: { fontSize: 17, fontWeight: "800", color: c.textPrimary },
     iconBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-    textInputField: { flex: 1, fontSize: 15, color: "#374151", fontWeight: "500", padding: 0 },
-    fieldLabelFirst: { marginTop: 0 },
-    sectionCard: { backgroundColor: "#fff", borderRadius: 20, borderWidth: 1, borderColor: "#F3F4F6", padding: 18, marginBottom: 18, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
-    sectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
-    sectionIconChip: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-    sectionIconChipBlue: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
-    sectionIconChipAmber: { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" },
-    sectionIconChipViolet: { backgroundColor: "#F5F3FF", borderColor: "#DDD6FE" },
-    sectionIconChipTeal: { backgroundColor: "#ECFDF9", borderColor: "#99E6DA" },
-    sectionIconChipIndigo: { backgroundColor: "#EEF2FF", borderColor: "#C7D2FE" },
-    tzSection: { marginTop: 2, marginBottom: 24 },
-    tzRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    tzPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: "#EEF6FF", borderWidth: 1, borderColor: "#BFDBFE" },
-    tzPillText: { fontSize: 13, fontWeight: "800", color: "#4A90E2" },
-    sectionTitle: { fontSize: 16, fontWeight: "900", color: "#111827", letterSpacing: -0.2 },
-    toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    toggleRowLabelWrap: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, marginRight: 12 },
-    toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151" },
-    leadRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
-    stepperBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
-    leadCenter: { alignItems: "center", minWidth: 60 },
-    leadVal: { fontSize: 22, fontWeight: "900", color: "#111827" },
-    leadSub: { fontSize: 10, color: "#9CA3AF", fontWeight: "600", textTransform: "uppercase" },
-    inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16 },
-    inputRowError: { borderColor: "#EF4444" },
-    inlineInput: { flex: 1, fontSize: 15, color: "#374151" },
-    descriptionInputRow: { alignItems: "flex-start", height: 90 },
-    descriptionInput: { height: "100%" },
-    errorText: { fontSize: 12, fontWeight: "600", color: "#EF4444", marginTop: 6, marginLeft: 2 },
-    primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#4A90E2", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
-    primaryBtnDisabled: { backgroundColor: "#93C5FD" },
-    primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
-    skipBtn: { paddingHorizontal: 16, paddingVertical: 14 },
-    skipBtnText: { color: "#9CA3AF", fontWeight: "700", fontSize: 15 },
-    doneBtn: { backgroundColor: "#4A90E2", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
-    doneBtnText: { color: "#fff", fontWeight: "800", fontSize: 13 },
-    fieldLabel: { fontSize: 11, fontWeight: "800", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, marginTop: 16 },
-    dateFieldRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 14, paddingVertical: 13, marginBottom: 4 },
-    dateFieldText: { fontSize: 15, color: "#374151", fontWeight: "500" },
-    expandBox: { backgroundColor: "#F0F7FF", borderRadius: 14, borderWidth: 1.5, borderColor: "#BFDBFE", padding: 14, marginTop: 8 },
-    expandBoxTitle: { fontSize: 12, fontWeight: "900", color: "#1D4ED8", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
-    boolRow: { flexDirection: "row", gap: 10 },
-    boolBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: "#E5E7EB", alignItems: "center", backgroundColor: "#fff" },
-    boolBtnActive: { borderColor: "#4A90E2", backgroundColor: "#EEF6FF" },
-    boolBtnText: { fontSize: 14, fontWeight: "700", color: "#6B7280" },
-    boolBtnTextActive: { color: "#4A90E2" },
-
-    monthlyModeList: { gap: 10 },
-    monthlyModeCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderWidth: 1.5, borderColor: "#E5E7EB", borderRadius: 12, padding: 12 },
-    monthlyModeCardActive: { borderColor: "#4A90E2", backgroundColor: "#EEF6FF" },
-    monthlyModeRadio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: "#D1D5DB", alignItems: "center", justifyContent: "center" },
-    monthlyModeRadioActive: { borderColor: "#4A90E2" },
-    monthlyModeRadioDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: "#4A90E2" },
-    monthlyModeIcon: { width: 30, height: 30, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: "#F3F4F6", marginHorizontal: 10 },
-    monthlyModeIconActive: { backgroundColor: "#4A90E2" },
-    monthlyModeCopy: { flex: 1 },
-    monthlyModeTitle: { fontSize: 14, fontWeight: "700", color: "#374151" },
-    monthlyModeTitleActive: { color: "#1D4ED8" },
-    monthlyModeExample: { fontSize: 12.5, color: "#9CA3AF", marginTop: 2 },
-    dayRow: { flexDirection: "row", alignItems: "center" },
-    dayRowLabel: { flex: 1, fontSize: 14, fontWeight: "700", color: "#374151" },
-    dayCard: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", borderLeftWidth: 4, borderLeftColor: "#E5E7EB", padding: 14, marginBottom: 10 },
-    dayBadge: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", marginRight: 10 },
-    dayBadgeText: { fontSize: 11, fontWeight: "800" },
-    inlineDayPicker: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", marginTop: 6, overflow: "hidden" },
-    dayPickerTrigger: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#fff", borderRadius: 10, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10 },
-    dayPickerText: { fontSize: 14, fontWeight: "600", color: "#374151" },
-    dayPickerPlaceholder: { fontSize: 14, color: "#C4C9D4" },
-    dayOption: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-    dayOptionActive: { backgroundColor: "#EEF6FF" },
-    dayOptionText: { fontSize: 15, color: "#374151" },
-    dayOptionTextActive: { color: "#4A90E2", fontWeight: "700" },
-    addRowBtn: { flexDirection: "row", alignItems: "center", paddingVertical: 10, marginTop: 4 },
-    addRowBtnText: { fontSize: 14, fontWeight: "700", color: "#4A90E2" },
-    dateGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-    dateBox: { width: 38, height: 38, borderRadius: 8, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-    dateBoxActive: { backgroundColor: "#4A90E2", borderColor: "#4A90E2" },
-    dateBoxText: { fontSize: 13, fontWeight: "600", color: "#374151" },
-    dateBoxTextActive: { color: "#fff" },
-    ordinalCard: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 14, marginBottom: 8 },
-    ordinalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-    collapsedRuleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    collapsedRuleText: { fontSize: 14, fontWeight: "700", color: "#1D4ED8", flex: 1 },
-    collapsedRuleActions: { flexDirection: "row", alignItems: "center" },
-    routineCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#EEF6FF", borderRadius: 12, borderWidth: 1, borderColor: "#93C5FD", paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8 },
-    routineCardLabel: { fontSize: 14, fontWeight: "700", color: "#1D4ED8" },
-    routineCardSub: { fontSize: 11, color: "#93C5FD", marginTop: 2 },
-});
-
-const cal = StyleSheet.create({
-    container: { backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", padding: 12, marginTop: 6, marginBottom: 4 },
-    nav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-    navBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
-    monthLabel: { fontSize: 15, fontWeight: "800", color: "#111827" },
-    grid: { flexDirection: "row", flexWrap: "wrap" },
-    dayHeader: { width: `${100 / 7}%`, textAlign: "center", fontSize: 11, fontWeight: "800", color: "#9CA3AF", marginBottom: 4 },
-    cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: "center", justifyContent: "center" },
-    cellSelected: { backgroundColor: "#4A90E2", borderRadius: 100 },
-    cellDisabled: { opacity: 0.3 },
-    cellText: { fontSize: 14, color: "#374151" },
-    cellTextSelected: { color: "#fff", fontWeight: "800" },
-    cellTextDisabled: { color: "#D1D5DB" },
+    sub: { fontSize: 13, color: c.textMuted, marginTop: 12, lineHeight: 18 },
+    name: { fontSize: 16, fontWeight: "700", padding: 0, minHeight: 28 },
+    description: { minHeight: 56, fontSize: 15, padding: 0 },
+    divider: { height: 1, backgroundColor: c.border, marginVertical: 10 },
+    footer: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1, borderTopColor: c.border, backgroundColor: c.surface },
+    hint: { flex: 1, textAlign: "right", fontSize: 13, color: c.textFaint, fontWeight: "600" },
+    deleteBtn: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.border },
+    primaryBtn: { flexDirection: "row", alignItems: "center", backgroundColor: c.brand, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 13 },
+    primaryBtnText: { color: "#fff", fontSize: 15, fontWeight: "800" },
 });

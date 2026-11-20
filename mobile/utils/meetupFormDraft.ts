@@ -6,6 +6,8 @@ import { getMaxAttendeesError } from "./scheduleConstants";
 import { endTimeError } from "./timeString";
 import { getBringItemsError, getMinAttendeesError, newBringItemKey, type BringItemDraft } from "./editScheduleDraft";
 import { deviceTimeZone } from "./timezones";
+import { meetupIssues } from "./formIssues";
+import type { QuestionDraft } from "./questionDrafts";
 
 export interface MeetupDraft {
     /** Calendar day in the meetup's timezone, "YYYY-MM-DD". */
@@ -29,6 +31,8 @@ export interface MeetupDraft {
     // Premium
     bringItems: BringItemDraft[];
     ridesEnabled: boolean;
+    /** Premium: RSVP questions written before it exists (saved right after it's created). */
+    questions?: QuestionDraft[];
 }
 
 const RSVP_DEFAULTS = { leadDays: 1, leadTime: "09:00 AM", deadlineDays: 0, deadlineTime: "09:00 AM" };
@@ -99,12 +103,7 @@ export const draftFromMeetup = (m: Meetup): MeetupDraft => {
 };
 
 /** The first problem with the draft, or null when it can be saved. */
-export const validateDraft = (d: MeetupDraft): string | null =>
-    getMaxAttendeesError(d.maxAttendeesMode, d.maxAttendeesInput)
-    ?? (d.maxAttendeesMode === "limited" && d.maxAttendeesInput === "" ? "How many people can come?" : null)
-    ?? endTimeError(d.time, d.endTime)
-    ?? (d.rsvpRestricted && d.deadlineEnabled ? getMinAttendeesError(d.minAttendeesInput, d.maxAttendeesMode, d.maxAttendeesInput) : null)
-    ?? getBringItemsError(d.bringItems);
+export const validateDraft = (d: MeetupDraft): string | null => meetupIssues(d)[0]?.message ?? null;
 
 const capacityOf = (d: MeetupDraft) => (d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) || 0 : 0);
 // The minimum is checked at the latest RSVP time, so without one it's sent as off.

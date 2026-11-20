@@ -33,4 +33,41 @@ describe('ScheduleDetailsModal', () => {
     fireEvent.press(screen.getByLabelText('Close'));
     expect(onClose).toHaveBeenCalled();
   });
+
+  describe('for owners and moderators', () => {
+    const one = group([{ _id: 's1', name: 'Tuesday Hikes', routines: [] }]);
+    const handlers = () => ({ onEditSchedule: jest.fn(), onScheduleNotifications: jest.fn(), onAddSchedule: jest.fn() });
+
+    it('hides all editing for regular members', () => {
+      render(<ScheduleDetailsModal visible onClose={() => {}} groupDetails={one} {...handlers()} />);
+      expect(screen.queryByLabelText('Edit Tuesday Hikes')).toBeNull();
+      expect(screen.queryByLabelText('Notifications for Tuesday Hikes')).toBeNull();
+      expect(screen.queryByText('Add Schedule')).toBeNull();
+    });
+
+    it('edits a schedule and opens its notifications', () => {
+      const h = handlers();
+      render(<ScheduleDetailsModal visible onClose={() => {}} groupDetails={one} canManage {...h} />);
+      fireEvent.press(screen.getByLabelText('Edit Tuesday Hikes'));
+      expect(h.onEditSchedule).toHaveBeenCalledWith('s1');
+      fireEvent.press(screen.getByLabelText('Notifications for Tuesday Hikes'));
+      expect(h.onScheduleNotifications).toHaveBeenCalledWith('s1');
+    });
+
+    it('adds a schedule, including when there are none yet', () => {
+      const h = handlers();
+      render(<ScheduleDetailsModal visible onClose={() => {}} groupDetails={group([])} canManage {...h} />);
+      fireEvent.press(screen.getByText('Add Schedule'));
+      expect(h.onAddSchedule).toHaveBeenCalled();
+    });
+
+    it('hides Add Schedule at the limit of 5 active schedules (paused ones do not count)', () => {
+      const five = Array.from({ length: 5 }, (_, i) => ({ _id: `s${i}`, name: `S${i}`, routines: [] }));
+      const { unmount } = render(<ScheduleDetailsModal visible onClose={() => {}} groupDetails={group(five)} canManage {...handlers()} />);
+      expect(screen.queryByText('Add Schedule')).toBeNull();
+      unmount();
+      render(<ScheduleDetailsModal visible onClose={() => {}} groupDetails={group([...five.slice(0, 4), { _id: 'p', name: 'P', active: false, routines: [] }])} canManage {...handlers()} />);
+      expect(screen.getByText('Add Schedule')).toBeTruthy();
+    });
+  });
 });

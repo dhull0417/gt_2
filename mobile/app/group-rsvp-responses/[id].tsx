@@ -42,7 +42,7 @@ function ReactionCard({ status, emoji, text, onPress, onDelete, selected }: {
       <Text style={[styles.cardText, { color: ACCENT[status] }]}>{text || 'Your catchphrase'}</Text>
       {onDelete && (
         <PressableOpacity accessibilityLabel="Delete" onPress={onDelete} style={styles.trash} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Feather name="trash-2" size={16} color={colors.textFaint} />
+          <Feather name="trash-2" size={16} color={colors.danger} />
         </PressableOpacity>
       )}
     </PressableOpacity>

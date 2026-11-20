@@ -1,4 +1,5 @@
 import type { Meetup, User } from '@/utils/api';
+import { buildCars } from '@/utils/rides';
 
 const idOf = (u: User | string) => (typeof u === 'string' ? u : u._id);
 
@@ -57,4 +58,58 @@ export const summarizeAssignments = (meetup: Meetup): AssignmentSummary => {
   const seatsAvailable = drivers.reduce((sum, d) => sum + d.seats, 0);
 
   return { items, drivers, passengers, seatsAvailable, seatsNeeded, seatBalance: seatsAvailable - seatsNeeded };
+};
+
+export type RideRole = 'driver' | 'passenger';
+
+/** Tapping the role that's already selected unselects it. */
+export const nextRole = (current: RideRole | null, tapped: RideRole): RideRole | null =>
+  current === tapped ? null : tapped;
+
+/** The `ride` part of a setAssignments body; null removes the ride. */
+export const rideBody = (role: RideRole | null, seats: number): { role: 'driver'; seats: number } | { role: 'passenger' } | null =>
+  role === 'driver' ? { role: 'driver', seats } : role === 'passenger' ? { role: 'passenger' } : null;
+
+/** Whether this user may open their own assignments sheet: they're In on a live meetup with assignments on. */
+export const canEditOwnAssignments = (meetup: Meetup, userId: string, readOnly: boolean): boolean =>
+  !readOnly && assignmentsActive(meetup) && (meetup.in ?? []).some((u) => idOf(u as any) === userId);
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+export type CardLine = { icon: 'truck' | 'shopping-bag' | 'clipboard'; text: string };
+
+/**
+ * The assignments glance on the meetup card. Until you've picked anything (while In), one line
+ * with the group overview; after that, only your own choices: your ride on one line and what
+ * you're bringing on the next. [] = show nothing.
+ */
+export const cardAssignmentLines = (meetup: Meetup, userId: string): CardLine[] => {
+  if (!assignmentsActive(meetup)) return [];
+  const summary = summarizeAssignments(meetup);
+  const myItems = summary.items.filter((i) => i.claimedBy.includes(userId)).map((i) => i.name);
+  const driving = summary.drivers.some((d) => d.userId === userId);
+  const riding = summary.passengers.includes(userId);
+
+  if (myItems.length > 0 || driving || riding) {
+    const lines: CardLine[] = [];
+    const { cars } = buildCars(meetup, userId);
+    if (driving) {
+      const n = cars.find((c) => c.driverId === userId)?.lines.length ?? 0;
+      lines.push({ icon: 'truck', text: `Driving (${n === 0 ? 'Select riders' : plural(n, 'rider', 'riders')})` });
+    } else if (riding) {
+      const car = cars.find((c) => c.lines.some((l) => l.riderId === userId && !l.isGuest));
+      lines.push({ icon: 'truck', text: car ? `Riding with ${car.name}` : 'Needs ride' });
+    }
+    if (myItems.length > 0) lines.push({ icon: 'shopping-bag', text: myItems.join(', ') });
+    return lines;
+  }
+
+  const parts: string[] = [];
+  if (summary.drivers.length + summary.passengers.length > 0) {
+    const b = summary.seatBalance;
+    parts.push(b >= 0 ? `${plural(b, 'seat', 'seats')} open` : `${plural(-b, 'seat', 'seats')} needed`);
+  }
+  const openItems = summary.items.filter((i) => i.max !== null && !i.isFull).length;
+  if (openItems > 0) parts.push(`${plural(openItems, 'item', 'items')} needed`);
+  return parts.length ? [{ icon: 'clipboard', text: parts.join(' · ') }] : [];
 };

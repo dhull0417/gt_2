@@ -112,7 +112,7 @@ export const GroupDetailsView = ({
             onPress: () => router.push({ pathname: '/group-members/[id]', params: { id: groupDetails._id } }),
         },
         schedule: {
-            icon: 'clock', label: 'Schedule Details', tint: tints.rose,
+            icon: 'clock', label: canManage ? 'Edit Meetup Details' : 'Meetup Details', tint: tints.rose,
             subtitle: scheduleSummary(groupDetails.schedules),
             onPress: () => setScheduleOpen(true),
         },
@@ -122,6 +122,13 @@ export const GroupDetailsView = ({
         },
     };
     const tiles = buildDetailTiles({ isDM, canManage });
+
+    // Schedule editing (owners/moderators) lives in the Schedule Details sheet. Close the sheet first:
+    // a screen pushed while a page-sheet Modal is up opens underneath it.
+    const openFromSchedule = (pathname: '/group-edit-schedule/[id]' | '/group-edit-jit/[id]', scheduleId: string) => {
+        setScheduleOpen(false);
+        setTimeout(() => router.push({ pathname, params: { id: groupDetails._id, scheduleId } }), 350);
+    };
 
     const handleLeaveGroup = () => {
         if (!requireOnline('leave this group')) return;
@@ -197,7 +204,15 @@ export const GroupDetailsView = ({
             {!isDM && (
                 <>
                     <GroupMeetupsModal visible={meetupsOpen} onClose={() => setMeetupsOpen(false)} groupId={groupDetails._id} />
-                    <ScheduleDetailsModal visible={scheduleOpen} onClose={() => setScheduleOpen(false)} groupDetails={groupDetails} />
+                    <ScheduleDetailsModal
+                        visible={scheduleOpen}
+                        onClose={() => setScheduleOpen(false)}
+                        groupDetails={groupDetails}
+                        canManage={canManage}
+                        onEditSchedule={(scheduleId) => openFromSchedule('/group-edit-schedule/[id]', scheduleId)}
+                        onScheduleNotifications={(scheduleId) => openFromSchedule('/group-edit-jit/[id]', scheduleId)}
+                        onAddSchedule={() => openFromSchedule('/group-edit-schedule/[id]', 'new')}
+                    />
                 </>
             )}
 

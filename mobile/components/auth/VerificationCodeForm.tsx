@@ -52,9 +52,11 @@ export function VerificationCodeForm({ destination, onSubmit, onResend, isLoadin
         We sent a code to <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>{destination}</Text>.
         {isEmail ? " It can take a minute to arrive. Check your spam folder if you don't see it." : ''}
       </Text>
+      {/* Deliberately uncontrolled (no `value`): iOS can deliver a pasted or autofilled code as
+          several quick changes, and echoing each one back from state could overwrite the paste
+          with a stale value (it left just one digit). We only read what was typed. */}
       <TextField
         ref={inputRef}
-        value={code}
         onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 8))}
         placeholder="••••••"
         accessibilityLabel="Verification code"

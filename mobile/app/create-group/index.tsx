@@ -9,6 +9,8 @@ import { useThemeColors } from "@/contexts/AppearanceContext";
 import { useCreateGroup } from "@/hooks/useCreateGroup";
 import { deviceTimeZone } from "@/utils/timezones";
 import { buildSchedulePayload, ScheduleData } from "@/utils/createGroupDraft";
+import { saveDraftQuestions } from "@/utils/questionDrafts";
+import { useApiClient, groupApi } from "@/utils/api";
 import { useFocusEffect, useRouter } from "expo-router";
 import Animated, { FadeInRight } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -20,6 +22,7 @@ const CreateGroupScreen = () => {
     const s = useMemo(() => makeStyles(colors), [colors]);
     const router = useRouter();
     const { mutate, isPending } = useCreateGroup();
+    const api = useApiClient();
     const [step, setStep] = useState<Step>("name");
     const [groupName, setGroupName] = useState("");
     const [groupImage, setGroupImage] = useState("");
@@ -45,12 +48,13 @@ const CreateGroupScreen = () => {
     const handleCreate = () => {
         // Empty (frequency-less) tabs were already filtered out before reaching
         // this step, so every entry here is a real schedule to create.
-        const scheduleInputs = schedules
+        const built = schedules
             .map(sch => {
                 const routinePart = buildSchedulePayload(sch);
-                return routinePart ? { name: sch.name.trim() || groupName, ...routinePart } : null;
+                return routinePart ? { input: { name: sch.name.trim() || groupName, ...routinePart }, questions: sch.questions } : null;
             })
             .filter((s): s is NonNullable<typeof s> => s !== null);
+        const scheduleInputs = built.map(b => b.input);
 
         const firstCapacity = schedules[0]?.maxAttendeesMode === "limited"
             ? parseInt(schedules[0].maxAttendeesInput, 10)
@@ -68,7 +72,15 @@ const CreateGroupScreen = () => {
             schedules: scheduleInputs,
         };
         mutate(payload, {
-            onSuccess: (data) => {
+            onSuccess: async (data) => {
+                // RSVP questions written during setup are saved now that the series exist
+                // (the server returns the schedules in the order they were sent).
+                const ok = await saveDraftQuestions(
+                    built.map(b => b.questions),
+                    built.map((_, i) => data.group.schedules?.[i]?._id),
+                    (scheduleId, questions) => groupApi.updateScheduleQuestions(api, data.group._id, scheduleId, { questions }),
+                );
+                if (!ok) Alert.alert("Group created", "Your RSVP questions couldn't be saved. You can add them from the schedule in Group Settings.");
                 setCreatedGroupId(data.group._id);
                 setStep("invite");
             },

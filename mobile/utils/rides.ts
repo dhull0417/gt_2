@@ -202,3 +202,7 @@ export const rideNoticeLead = (
 };
 
 export type { RideEntry };
+
+/** Everyone riding in this driver's car (riders and their guests), or [] if they have no car. */
+export const ridersOf = (meetup: Meetup, driverId: string, me: string): PersonLine[] =>
+  buildCars(meetup, me).cars.find((c) => c.driverId === driverId)?.lines ?? [];

@@ -13,19 +13,6 @@ export const DAYS_OF_WEEK = [
     { label: "Saturday",  short: "Sat", value: 6 },
 ];
 
-// One accent color per weekday so day rows/cards are distinguishable at a glance.
-// Dark-mode pairs swap in muted, low-saturation versions of the same hues (mirroring
-// the pastel icon-chip treatment used elsewhere) so they don't blow out on a dark card.
-export const DAY_COLORS_LIGHT: { bg: string; fg: string }[] = [
-    { bg: "#FEE2E2", fg: "#DC2626" }, // Sunday
-    { bg: "#DBEAFE", fg: "#2563EB" }, // Monday
-    { bg: "#EDE9FE", fg: "#7C3AED" }, // Tuesday
-    { bg: "#D1FAE5", fg: "#059669" }, // Wednesday
-    { bg: "#FEF3C7", fg: "#D97706" }, // Thursday
-    { bg: "#FCE7F3", fg: "#DB2777" }, // Friday
-    { bg: "#CFFAFE", fg: "#0891B2" }, // Saturday
-];
-
 export const ORDINAL_OCCURRENCES = ["1st", "2nd", "3rd", "4th", "5th", "Last"];
 
 export const USA_TIMEZONES = [

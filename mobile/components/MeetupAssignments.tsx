@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useApiClient, meetupApi, Meetup } from '@/utils/api';
-import { assignmentsActive, summarizeAssignments, memberName } from '@/utils/assignments';
+import { assignmentsActive, summarizeAssignments, memberName, nextRole, rideBody } from '@/utils/assignments';
 import RideCars from '@/components/RideCars';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
@@ -168,7 +168,6 @@ export function AssignmentsSheet({
 
   const summary = summarizeAssignments(meetup);
   const hasItems = summary.items.length > 0;
-  const needsRole = !!meetup.ridesEnabled && role === null;
 
   const toggle = (id: string) =>
     setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
@@ -179,7 +178,7 @@ export function AssignmentsSheet({
       const body: Parameters<typeof meetupApi.setAssignments>[2] = {};
       if (forUser) body.targetUserId = forUser.id;
       if (hasItems) body.bring = selected;
-      if (meetup.ridesEnabled) body.ride = role === 'driver' ? { role: 'driver', seats } : role === 'passenger' ? { role: 'passenger' } : null;
+      if (meetup.ridesEnabled) body.ride = rideBody(role, seats);
       const result = await meetupApi.setAssignments(api, meetup._id, body);
       if (result.meetup) onUpdated(result.meetup);
       onClose();
@@ -243,7 +242,7 @@ export function AssignmentsSheet({
                   {(['driver', 'passenger'] as const).map((r) => (
                     <PressableOpacity
                       key={r}
-                      onPress={() => setRole(r)}
+                      onPress={() => setRole((cur) => nextRole(cur, r))}
                       style={[styles.roleBtn, role === r && styles.roleBtnOn]}
                     >
                       <Feather name={r === 'driver' ? 'truck' : 'user'} size={16} color={role === r ? '#fff' : colors.accentTeal} />
@@ -279,8 +278,8 @@ export function AssignmentsSheet({
 
           <PressableOpacity
             onPress={save}
-            disabled={saving || needsRole}
-            style={[styles.saveBtn, (saving || needsRole) && { opacity: 0.5 }]}
+            disabled={saving}
+            style={[styles.saveBtn, saving && { opacity: 0.5 }]}
           >
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save</Text>}
           </PressableOpacity>

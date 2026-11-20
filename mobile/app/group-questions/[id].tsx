@@ -166,7 +166,7 @@ export default function GroupQuestionsScreen() {
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                     <Text style={styles.qLabel}>Question {i + 1}</Text>
                     <PressableOpacity accessibilityLabel="Delete" onPress={() => setDrafts((cur) => cur.filter((x) => x.key !== d.key))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Feather name="trash-2" size={16} color={colors.textFaint} />
+                      <Feather name="trash-2" size={16} color={colors.danger} />
                     </PressableOpacity>
                   </View>
                   <TextInput

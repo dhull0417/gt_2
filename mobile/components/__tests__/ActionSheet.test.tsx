@@ -56,4 +56,16 @@ describe('ActionSheet', () => {
     render(<ActionSheet visible={false} onClose={() => {}} items={makeItems()} />);
     expect(screen.queryByText('Go to Chat')).toBeNull();
   });
+
+  it('renders a title', () => {
+    render(<ActionSheet visible title="Riding with Sam" onClose={() => {}} items={makeItems()} />);
+    expect(screen.getByText('Riding with Sam')).toBeTruthy();
+  });
+
+  it('a row without onPress does not close', () => {
+    const onClose = jest.fn();
+    render(<ActionSheet visible onClose={onClose} items={[{ key: 'r', label: 'Ana', icon: null, iconBg: '#eee' }]} />);
+    fireEvent.press(screen.getByText('Ana'));
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

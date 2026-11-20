@@ -47,3 +47,20 @@ describe('VerificationCodeForm', () => {
     }
   });
 });
+
+describe('pasting a code', () => {
+  it('leaves the text field in charge of its own text, so a paste is never rolled back', () => {
+    render(<VerificationCodeForm destination="sam@x.com" onSubmit={jest.fn()} />);
+    // A controlled field (value=...) echoes each change back; on iOS a paste arrives as several
+    // quick changes and a late echo can overwrite it, leaving one digit.
+    expect(screen.getByLabelText('Verification code').props.value).toBeUndefined();
+  });
+
+  it('submits just the digits from pasted text', () => {
+    const onSubmit = jest.fn();
+    render(<VerificationCodeForm destination="sam@x.com" onSubmit={onSubmit} />);
+    fireEvent.changeText(screen.getByLabelText('Verification code'), 'Code: 123 456');
+    fireEvent.press(screen.getByText('Verify'));
+    expect(onSubmit).toHaveBeenCalledWith('123456');
+  });
+});

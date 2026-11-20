@@ -14,13 +14,24 @@ interface Props {
     visible: boolean;
     onClose: () => void;
     groupDetails: GroupDetails;
+    /** Owner or moderator: show Edit / notifications on each schedule and Add Schedule. */
+    canManage?: boolean;
+    onEditSchedule?: (scheduleId: string) => void;
+    onScheduleNotifications?: (scheduleId: string) => void;
+    onAddSchedule?: () => void;
 }
+
+// Same cap as the server and the old Settings list.
+export const MAX_ACTIVE_SCHEDULES = 5;
 
 const daysOfWeekFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 // The group's schedules (routines, location, capacity, RSVP window), opened from the Schedule tile
-// on Group Details. Content moved unchanged from the old collapsible "Details" card.
-export const ScheduleDetailsModal = ({ visible, onClose, groupDetails }: Props) => {
+// on Group Details. Owners and moderators also edit, add and set notifications for schedules here
+// (moved out of Group Settings, 2026-11-19).
+export const ScheduleDetailsModal = ({
+    visible, onClose, groupDetails, canManage = false, onEditSchedule, onScheduleNotifications, onAddSchedule,
+}: Props) => {
     const colors = useThemeColors();
     const { scheme } = useAppearance();
     const isDark = scheme === 'dark';
@@ -88,7 +99,7 @@ export const ScheduleDetailsModal = ({ visible, onClose, groupDetails }: Props) 
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
             <SafeAreaView style={{ flex: 1, backgroundColor: colors.backgroundAlt }} edges={['top', 'bottom', 'left', 'right']}>
                 <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
-                    <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Schedule Details</Text>
+                    <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Meetup Details</Text>
                     <PressableOpacity accessibilityLabel="Close" onPress={onClose} hitSlop={10} style={styles.closeBtn}>
                         <Feather name="x" size={24} color={colors.textSecondary} />
                     </PressableOpacity>
@@ -105,7 +116,30 @@ export const ScheduleDetailsModal = ({ visible, onClose, groupDetails }: Props) 
                         </View>
                     ) : activeSchedules.map((sch) => (
                         <View key={sch._id} style={[styles.card, { backgroundColor: colors.surface }]}>
-                            <Text style={[styles.scheduleNameLabel, { color: colors.textPrimary }]}>{sch.name}</Text>
+                            <View style={styles.scheduleHeader}>
+                                <Text style={[styles.scheduleNameLabel, { color: colors.textPrimary, marginBottom: 0, flex: 1 }]}>{sch.name}</Text>
+                                {canManage && (
+                                    <View style={styles.manageButtons}>
+                                        <PressableOpacity
+                                            accessibilityLabel={`Notifications for ${sch.name}`}
+                                            onPress={() => onScheduleNotifications?.(sch._id)}
+                                            hitSlop={6}
+                                            style={[styles.iconBtn, chipAmber]}
+                                        >
+                                            <Feather name="bell" size={16} color="#D97706" />
+                                        </PressableOpacity>
+                                        <PressableOpacity
+                                            accessibilityLabel={`Edit ${sch.name}`}
+                                            onPress={() => onEditSchedule?.(sch._id)}
+                                            hitSlop={6}
+                                            style={[styles.editBtn, { backgroundColor: colors.brand }]}
+                                        >
+                                            <Feather name="edit-2" size={14} color="#fff" />
+                                            <Text style={styles.editBtnText}>Edit</Text>
+                                        </PressableOpacity>
+                                    </View>
+                                )}
+                            </View>
 
                             {/* Routines */}
                             <View style={styles.infoRowTop}>
@@ -162,6 +196,17 @@ export const ScheduleDetailsModal = ({ visible, onClose, groupDetails }: Props) 
                             </View>
                         </View>
                     ))}
+
+                    {canManage && activeSchedules.length < MAX_ACTIVE_SCHEDULES && (
+                        <PressableOpacity
+                            onPress={() => onAddSchedule?.()}
+                            activeOpacity={0.75}
+                            style={[styles.addBtn, { borderColor: colors.brand }]}
+                        >
+                            <Feather name="plus" size={18} color={colors.brand} />
+                            <Text style={[styles.addBtnText, { color: colors.brand }]}>Add Schedule</Text>
+                        </PressableOpacity>
+                    )}
                 </ScrollView>
             </SafeAreaView>
         </Modal>
@@ -181,6 +226,13 @@ const styles = StyleSheet.create({
     routineBlock: { marginBottom: 8 },
     frequencyLabel: { fontSize: 14, fontWeight: '800', marginBottom: 4, textTransform: 'capitalize' },
     scheduleDetailText: { fontSize: 15, fontWeight: '600', marginBottom: 2 },
+    scheduleHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 },
+    manageButtons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    iconBtn: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+    editBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 34, borderRadius: 10 },
+    editBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+    addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', marginTop: 2 },
+    addBtnText: { fontSize: 15, fontWeight: '800' },
     iconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 });
 

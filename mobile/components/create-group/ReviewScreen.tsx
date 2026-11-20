@@ -114,7 +114,13 @@ export const ReviewScreen = ({ groupName, groupImage, members, schedules, timezo
                                         {schedule.bringItems.length > 0 && (
                                             <View style={s.reviewInlineRow}>
                                                 <Feather name="shopping-bag" size={13} color={colors.textFaint} />
-                                                <Text style={s.reviewInlineText}>Things to bring: {schedule.bringItems.map(i => i.name.trim()).join(", ")}</Text>
+                                                <Text style={s.reviewInlineText}>Food/Things to bring: {schedule.bringItems.map(i => i.name.trim()).join(", ")}</Text>
+                                            </View>
+                                        )}
+                                        {(schedule.questions?.length ?? 0) > 0 && (
+                                            <View style={s.reviewInlineRow}>
+                                                <Feather name="help-circle" size={13} color={colors.textFaint} />
+                                                <Text style={s.reviewInlineText}>RSVP questions: {schedule.questions!.map(q => q.prompt.trim()).join(" · ")}</Text>
                                             </View>
                                         )}
                                         {schedule.ridesEnabled && (

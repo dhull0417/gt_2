@@ -26,6 +26,7 @@ import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
 import { OfflineEmptyState } from '@/components/OfflineEmptyState';
 import { isOfflineEmpty } from '@/utils/offlineState';
 import { NotificationBell } from '@/components/NotificationBell';
+import { ActionSheet } from '@/components/ActionSheet';
 import { haptic } from '@/utils/haptics';
 import { tabScreenBottomPadding } from '@/utils/layout';
 import { MeetupCard } from '@/components/MeetupCard';
@@ -683,46 +684,33 @@ const DashboardScreen = () => {
           both firing off the same RSVP and showing the burst twice. */}
       {!isModalVisible && <RsvpResponseOverlay />}
 
-      {showAddChoicePicker && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setShowAddChoicePicker(false)}>
-          <PressableOpacity
-            style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', padding: 24 }}
-            activeOpacity={1}
-            onPress={() => setShowAddChoicePicker(false)}
-          >
-            <View style={{ width: '100%', maxWidth: 340, gap: 12 }}>
-              <PressableOpacity
-                activeOpacity={0.8}
-                style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
-                onPress={() => { setShowAddChoicePicker(false); router.push('/create-group'); }}
-              >
-                <Feather name="users" size={22} color={colors.brand} />
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginLeft: 14 }}>Create New Group</Text>
-              </PressableOpacity>
-
-              {meetupCapableGroups.length > 0 && (
-                <PressableOpacity
-                  activeOpacity={0.8}
-                  style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
-                  onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('existing'); setAddMeetupVisible(true); }}
-                >
-                  <Feather name="calendar" size={22} color={colors.brand} />
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginLeft: 14 }}>Add Meetup to Existing Group</Text>
-                </PressableOpacity>
-              )}
-
-              <PressableOpacity
-                activeOpacity={0.8}
-                style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
-                onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('new'); setAddMeetupVisible(true); }}
-              >
-                <Feather name="plus-circle" size={22} color={colors.brand} />
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginLeft: 14 }}>Create One-Time Meetup</Text>
-              </PressableOpacity>
-            </View>
-          </PressableOpacity>
-        </Modal>
-      )}
+      <ActionSheet
+        visible={showAddChoicePicker}
+        onClose={() => setShowAddChoicePicker(false)}
+        items={[
+          {
+            key: 'new-group',
+            label: 'Create New Group',
+            icon: <Feather name="users" size={18} color="#7C3AED" />,
+            iconBg: scheme === 'dark' ? '#2A1F45' : '#F5F3FF',
+            onPress: () => router.push('/create-group'),
+          },
+          ...(meetupCapableGroups.length > 0 ? [{
+            key: 'existing-group',
+            label: 'Add Meetup to Existing Group',
+            icon: <Feather name="calendar" size={18} color="#16A34A" />,
+            iconBg: scheme === 'dark' ? '#132A1E' : '#F0FDF4',
+            onPress: () => { setAddMeetupInitialMode('existing'); setAddMeetupVisible(true); },
+          }] : []),
+          {
+            key: 'one-time',
+            label: 'Create One-Time Meetup',
+            icon: <Feather name="plus-circle" size={18} color="#0EA5E9" />,
+            iconBg: scheme === 'dark' ? '#1A2A42' : '#F0F9FF',
+            onPress: () => { setAddMeetupInitialMode('new'); setAddMeetupVisible(true); },
+          },
+        ]}
+      />
 
       <AddMeetupWizard
         visible={addMeetupVisible}

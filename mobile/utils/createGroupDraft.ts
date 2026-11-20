@@ -6,6 +6,8 @@ import { DAYS_OF_WEEK, uid, getMaxAttendeesError } from "./scheduleConstants";
 import { buildRoutines, scheduleEndTimeError } from "./scheduleRoutines";
 import { getBringItemsError, getMinAttendeesError, type BringItemDraft } from "./editScheduleDraft";
 import { isLongFrequency, isLongDraftValid, emptyLongDraft, type LongDraft } from "./longInterval";
+import { scheduleIssues } from "./formIssues";
+import type { QuestionDraft } from "./questionDrafts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,6 +99,8 @@ export interface ScheduleData extends LongDraft {
     bringItems: BringItemDraft[];
     /** Premium: carpool coordination. */
     ridesEnabled: boolean;
+    /** Premium: RSVP questions written before it exists (saved right after it's created). */
+    questions?: QuestionDraft[];
 }
 
 
@@ -104,25 +108,8 @@ export interface ScheduleData extends LongDraft {
 // A tab with no frequency chosen is "empty" — always valid, contributes nothing
 // to the group (same as today's single-schedule Skip). Only a tab someone has
 // actually started configuring needs to be complete before Review is reachable.
-export const isScheduleTabValid = (sch: ScheduleData): boolean => {
-    if (!sch.frequency) return true;
-    if (!sch.name.trim()) return false;
-    if (scheduleEndTimeError(sch)) return false;
-    if (sch.maxAttendeesMode === "limited" && (sch.maxAttendeesInput === "" || getMaxAttendeesError(sch.maxAttendeesMode, sch.maxAttendeesInput))) return false;
-    if (sch.rsvpRestricted && sch.deadlineEnabled && getMinAttendeesError(sch.minAttendeesInput, sch.maxAttendeesMode, sch.maxAttendeesInput)) return false;
-    if (getBringItemsError(sch.bringItems)) return false;
-    if (sch.frequency === "daily") return sch.dailySameTime !== null;
-    if (sch.frequency === "weekly" || sch.frequency === "biweekly")
-        return sch.weekdayRows.length > 0 && sch.weekdayRows.every(r => r.day !== null);
-    if (sch.frequency === "monthly") {
-        if (!sch.monthlyMode) return false;
-        if (sch.monthlyMode === "date") return sch.monthlyDates.length > 0;
-        return sch.ordinalEntries.length > 0;
-    }
-    if (isLongFrequency(sch.frequency)) return isLongDraftValid(sch);
-    if (sch.frequency === "custom") return sch.builtRoutines.length > 0;
-    return false;
-};
+export const isScheduleTabValid = (sch: ScheduleData): boolean =>
+    scheduleIssues(sch, { requireName: true, emptyIsValid: true }).length === 0;
 
 export const defaultSchedule = (name = ""): ScheduleData => ({
     name,

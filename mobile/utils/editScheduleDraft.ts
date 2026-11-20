@@ -6,6 +6,7 @@ import { DAYS_OF_WEEK, FREQ_LABELS, uid, ordSfx } from "./scheduleConstants";
 import { buildRoutines } from "./scheduleRoutines";
 import { formatTimeRange } from "./timeString";
 import { isLongFrequency, emptyLongDraft, longDraftFromRoutine, longRoutineLabel, type LongDraft } from "./longInterval";
+import type { QuestionDraft } from "./questionDrafts";
 
 export { scheduleEndTimeError } from "./scheduleRoutines";
 
@@ -103,6 +104,8 @@ export interface ScheduleData extends LongDraft {
     minAttendeesInput: string; // Premium minimum headcount; "" = none
     bringItems: BringItemDraft[]; // Premium assignments: things to bring
     ridesEnabled: boolean; // Premium assignments: carpool coordination
+    /** Premium: RSVP questions written before the schedule exists (saved right after it's created). */
+    questions?: QuestionDraft[];
     rsvpRestricted: boolean;
     leadEnabled: boolean;
     leadDays: number;

@@ -28,25 +28,39 @@ const setup = (over: Partial<React.ComponentProps<typeof MeetupForm>> = {}, draf
 };
 
 describe('MeetupForm', () => {
-  it('create mode shows the schedule-style sections and Create Meetup', () => {
+  it('create mode shows calm sections of summary rows and Create Meetup', () => {
     setup();
     expect(screen.getByText('Add Meetup')).toBeTruthy();
-    for (const t of ['Description', 'Where', 'When', 'RSVP Rules', 'Capacity', 'Premium']) expect(screen.getByText(t)).toBeTruthy();
+    for (const t of ['When', 'Timezone', 'RSVP rules', 'Capacity', 'Food/Things to bring', 'Rides', 'RSVP Questions']) expect(screen.getByText(t)).toBeTruthy();
+    expect(screen.getByPlaceholderText('Add any extra details for this meetup...')).toBeTruthy();
     expect(screen.getByText('Create Meetup')).toBeTruthy();
   });
 
-  it('edit mode says Save and that changes are for this meetup only', () => {
-    setup({ mode: 'edit' });
+  it('edit mode says Save, and the timezone is fixed', () => {
+    setup({ mode: 'edit', timezoneEditable: false });
     expect(screen.getByText('Edit Meetup')).toBeTruthy();
     expect(screen.getByText('Changes apply to this meetup only')).toBeTruthy();
     expect(screen.getByText('Save')).toBeTruthy();
+    expect(screen.getByText("Set by the group")).toBeTruthy();
   });
 
-  it('a draft problem blocks saving and says why', () => {
+  it('a fresh form shows no problems', () => {
+    setup();
+    expect(screen.queryByText(/Fix \d/)).toBeNull();
+  });
+
+  it('missing info waits for Create, then blocks it and says exactly what to fix', () => {
     const { onSubmit } = setup({}, { ...draftForNew(undefined, '2099-01-05'), maxAttendeesMode: 'limited', maxAttendeesInput: '' });
-    expect(screen.getByText('How many people can come?')).toBeTruthy();
+    expect(screen.queryByText('Enter how many people can come')).toBeNull();
     fireEvent.press(screen.getByLabelText('Create Meetup'));
     expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText('Fix 1 thing above')).toBeTruthy();
+    expect(screen.getByText('Enter how many people can come')).toBeTruthy();
+  });
+
+  it('wrong input shows right away', () => {
+    setup({}, { ...draftForNew(undefined, '2099-01-05'), maxAttendeesMode: 'limited', maxAttendeesInput: '0' });
+    expect(screen.getByText('Enter a number between 1 and 200.')).toBeTruthy();
   });
 
   it('a valid draft submits', () => {
@@ -55,23 +69,29 @@ describe('MeetupForm', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it('Limit RSVPs updates the draft', () => {
+  it('RSVP rules opens its sheet; Set a window updates the draft', () => {
     const { onChange } = setup();
-    fireEvent.press(screen.getByText('Limit RSVPs'));
+    fireEvent.press(screen.getByText('RSVP rules'));
+    fireEvent.press(screen.getByTestId('rsvp-limit'));
     expect(onChange).toHaveBeenCalledWith({ rsvpRestricted: true });
   });
 
-  it('RSVP Questions waits until the meetup exists', () => {
-    setup();
-    fireEvent.press(screen.getByText('Premium'));
-    expect(screen.getByText('Set up after the meetup is created.')).toBeTruthy();
+  it('RSVP Questions can be written while adding the meetup', () => {
+    const { onChange } = setup();
+    fireEvent.press(screen.getByText('RSVP Questions'));
+    fireEvent.press(screen.getByText('Add question'));
+    expect(onChange.mock.calls[0][0].questions).toHaveLength(1);
   });
 
   it('RSVP Questions opens the questions for an existing meetup', () => {
     const questionsLink = jest.fn();
     setup({ mode: 'edit', questionsLink });
-    fireEvent.press(screen.getByText('Premium'));
-    fireEvent.press(screen.getByLabelText('RSVP Questions'));
+    fireEvent.press(screen.getByText('RSVP Questions'));
     expect(questionsLink).toHaveBeenCalledTimes(1);
+  });
+
+  it('without Premium, premium rows are locked', () => {
+    setup({ isPremium: false });
+    expect(screen.getAllByTestId('row-lock').length).toBeGreaterThanOrEqual(2);
   });
 });

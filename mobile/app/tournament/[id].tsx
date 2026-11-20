@@ -14,7 +14,7 @@ import { useApiClient, userApi, User } from '@/utils/api';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { useToast } from '@/contexts/ToastContext';
-import { Segmented, makeStyles, TEAM_COLORS } from '@/components/tournament/ui';
+import { Segmented, GroupCard, makeStyles, TEAM_COLORS } from '@/components/tournament/ui';
 import ResultSheet from '@/components/tournament/ResultSheet';
 import BracketView from '@/components/tournament/BracketView';
 import { tournamentApi, apiError, Tournament, TMatch, ResultBody } from '@/utils/tournamentApi';
@@ -130,9 +130,15 @@ export default function TournamentScreen() {
       : m.status === 'waiting' ? 'Waiting on earlier matches'
       : reportable ? 'Tap to enter the result' : 'Up next';
     return (
-      <PressableOpacity onPress={() => pressMatch(m)} disabled={!reportable} style={[styles.card, { marginBottom: 8 }, mineHere && { borderColor: colors.brand }]}>
-        <Text style={styles.cardTitle} numberOfLines={2}>{matchTitle(t, m, meId)}</Text>
-        <Text style={[styles.hint, m.status === 'done' && { color: colors.textSecondary, fontWeight: '600' }]}>{status}</Text>
+      <PressableOpacity onPress={() => pressMatch(m)} disabled={!reportable} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 52, paddingHorizontal: 14, paddingVertical: 10 }}>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {mineHere && <View testID="my-match-dot" style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand }} />}
+            <Text style={[styles.cardTitle, { flex: 1 }]} numberOfLines={2}>{matchTitle(t, m, meId)}</Text>
+          </View>
+          <Text style={[styles.hint, { marginTop: 2 }, m.status === 'done' && { color: colors.textSecondary, fontWeight: '600' }]}>{status}</Text>
+        </View>
+        {reportable && <Feather name="chevron-right" size={18} color={colors.textFaint} />}
       </PressableOpacity>
     );
   };
@@ -156,7 +162,7 @@ export default function TournamentScreen() {
         <Text style={styles.hint}>{FORMAT_LABEL[t.format]} · {t.teams.length} {t.mode === 'singles' ? 'players' : 'teams'}</Text>
 
         {t.status === 'finished' && t.champion && (
-          <View style={[styles.card, { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 12, borderColor: '#F59E0B' }]}>
+          <View style={[styles.card, { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
             <Feather name="award" size={26} color="#F59E0B" />
             <View style={{ flex: 1 }}>
               <Text style={styles.hint}>Champion</Text>
@@ -166,17 +172,24 @@ export default function TournamentScreen() {
         )}
 
         {(mine || next) && t.format !== 'none' && t.status !== 'finished' && (
-          <View style={[styles.card, { marginTop: 12 }]}>
-            {mine && t.mode === 'teams' && <Text style={styles.body}>You're on <Text style={{ fontWeight: '800' }}>{teamLabel(t, mine.key)}</Text></Text>}
-            <Text style={[styles.body, { marginTop: mine && t.mode === 'teams' ? 4 : 0 }]}>
-              {next ? <>Your next match: <Text style={{ fontWeight: '800' }}>{matchTitle(t, next, meId)}</Text></> : 'No match waiting for you right now.'}
-            </Text>
+          <GroupCard style={{ marginTop: 12 }}>
+            {mine && t.mode === 'teams' && (
+              <View style={{ paddingHorizontal: 14, paddingVertical: 12 }}>
+                <Text style={styles.body}>You're on <Text style={{ fontWeight: '800' }}>{teamLabel(t, mine.key)}</Text></Text>
+              </View>
+            )}
+            <View style={{ paddingHorizontal: 14, paddingVertical: 12 }}>
+              <Text style={styles.body}>
+                {next ? <>Your next match: <Text style={{ fontWeight: '800' }}>{matchTitle(t, next, meId)}</Text></> : 'No match waiting for you right now.'}
+              </Text>
+            </View>
             {next && meId && canReport(t, next, meId) && (
-              <PressableOpacity onPress={() => setOpen(next)} style={{ marginTop: 8 }}>
-                <Text style={styles.action}>Enter result</Text>
+              <PressableOpacity onPress={() => setOpen(next)} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, minHeight: 48 }}>
+                <Text style={[styles.action, { flex: 1, fontSize: 15 }]}>Enter result</Text>
+                <Feather name="chevron-right" size={18} color={colors.textFaint} />
               </PressableOpacity>
             )}
-          </View>
+          </GroupCard>
         )}
 
         {tabs.length > 1 && <View style={{ marginTop: 16 }}><Segmented value={current} onChange={setTab} options={tabs} /></View>}
@@ -184,7 +197,7 @@ export default function TournamentScreen() {
         {current === 'matches' && roundsOf(t).map((section) => (
           <View key={section.key}>
             <Text style={styles.sectionLabel}>{section.title}</Text>
-            {section.matches.map((m) => <MatchRow key={m.id} m={m} />)}
+            <GroupCard>{section.matches.map((m) => <MatchRow key={m.id} m={m} />)}</GroupCard>
           </View>
         ))}
 
@@ -208,18 +221,18 @@ export default function TournamentScreen() {
         {current === 'table' && t.format !== 'roundRobin' && <BracketView tournament={t} meId={meId} onPressMatch={pressMatch} />}
 
         {current === 'teams' && (
-          <View style={{ marginTop: 16 }}>
+          <GroupCard style={{ marginTop: 16 }}>
             {[...t.teams].sort((a, b) => a.seed - b.seed).map((team, i) => (
-              <View key={team.key} style={[styles.card, { marginBottom: 8 }]}>
+              <View key={team.key} style={{ paddingHorizontal: 14, paddingVertical: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <View style={[styles.teamDot, { backgroundColor: TEAM_COLORS[i % TEAM_COLORS.length] }]} />
                   <Text style={[styles.cardTitle, { flex: 1 }]}>{teamLabel(t, team.key, meId)}</Text>
                   {t.canManage && t.format !== 'none' && <Text style={styles.hint}>Seed {team.seed}</Text>}
                 </View>
-                {t.mode === 'teams' && <Text style={styles.hint}>{team.players.map((p) => playerLabel(t, p, meId)).join(', ')}</Text>}
+                {t.mode === 'teams' && <Text style={[styles.hint, { marginLeft: 18 }]}>{team.players.map((p) => playerLabel(t, p, meId)).join(', ')}</Text>}
               </View>
             ))}
-          </View>
+          </GroupCard>
         )}
       </ScrollView>
 

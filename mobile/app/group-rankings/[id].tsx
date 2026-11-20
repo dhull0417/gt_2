@@ -112,7 +112,7 @@ export default function GroupRankingsScreen() {
                         { text: 'Cancel', style: 'cancel' },
                         { text: 'Delete', style: 'destructive', onPress: () => run(() => tournamentApi.deleteRanking(api, id!, l._id)) },
                       ])}>
-                      <Feather name="trash-2" size={16} color={colors.textFaint} />
+                      <Feather name="trash-2" size={16} color={colors.danger} />
                     </PressableOpacity>
                   </View>
                 )}

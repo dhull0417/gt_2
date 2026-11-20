@@ -10,6 +10,7 @@ import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvp
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
 import { formatMeetupTimeRange, viewerZone } from '@/utils/meetupTime';
+import { cardAssignmentLines } from '@/utils/assignments';
 
 const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._id;
 
@@ -118,6 +119,8 @@ export const MeetupCard = ({
 
   const isReadOnly = isCancelled || isExpired;
   const hasRsvpResponse = isIn || isOut || isWaitlisted;
+  // Assignments glance under the name: group overview until you've picked, then your ride and your items.
+  const assignmentLines = !isReadOnly && currentUser ? cardAssignmentLines(meetup, currentUser._id) : [];
 
   // Tint matches detail modal: amber until responded, green (in), blue (waitlisted), red (out).
   // Light mode uses soft pastel fills; dark mode swaps in muted, low-saturation versions of the
@@ -159,6 +162,14 @@ export const MeetupCard = ({
                 >
                   {meetup.name}
                 </Text>
+                {assignmentLines.map((line, i) => (
+                  <View key={line.icon} style={{ flexDirection: 'row', alignItems: 'center', marginTop: i === 0 ? 3 : 1 }}>
+                    <Feather name={line.icon} size={12} color={colors.textMuted} style={{ marginRight: 5 }} />
+                    <Text numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, fontSize: 13, fontWeight: '600', color: colors.textMuted }}>
+                      {line.text}
+                    </Text>
+                  </View>
+                ))}
               </View>
               {!isReadOnly && (
                 isIn || isOut ? (
