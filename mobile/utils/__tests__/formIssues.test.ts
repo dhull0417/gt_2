@@ -1,4 +1,4 @@
-import { meetupIssues, scheduleIssues, visibleIssues, fixMessage, firstArea, issueFor, type Issue } from '../formIssues';
+import { meetupIssues, scheduleIssues, seriesStartDay, visibleIssues, fixMessage, firstArea, issueFor, type Issue } from '../formIssues';
 import { draftForNew, type MeetupDraft } from '../meetupFormDraft';
 import { defaultSchedule } from '../createGroupDraft';
 
@@ -105,5 +105,35 @@ describe('showing issues', () => {
     expect(firstArea([], ['when'])).toBeNull();
     expect(issueFor([missing, invalid], 'capacity')).toBe('Enter how many people can come');
     expect(issueFor([missing], 'when')).toBeNull();
+  });
+});
+
+describe('scheduleIssues: end date', () => {
+  const opts = { requireName: true, emptyIsValid: true };
+  const MSG = "End date can't be before the start date.";
+  const weekly = (over: any = {}) => sch({ frequency: 'weekly', weekdayRows: [row('r1', 2)], startDate: '2027-03-01', ...over });
+
+  it('no end date is fine', () => expect(scheduleIssues(weekly({ endDate: null }), opts)).toEqual([]));
+  it('an end date on the start date is fine', () => expect(scheduleIssues(weekly({ endDate: '2027-03-01' }), opts)).toEqual([]));
+  it('an end date before the start date is flagged on the end-date field', () => {
+    expect(scheduleIssues(weekly({ endDate: '2027-02-28' }), opts)).toEqual([
+      { area: 'when', field: 'endDate', kind: 'invalid', message: MSG },
+    ]);
+  });
+  it('biweekly compares against its rows’ first dates', () => {
+    const d = sch({ frequency: 'biweekly', startDate: '2026-11-20', weekdayRows: [row('r1', 2, { startDate: '2027-04-06' })] });
+    expect(scheduleIssues({ ...d, endDate: '2027-04-01' }, opts)).toEqual([{ area: 'when', field: 'endDate', kind: 'invalid', message: MSG }]);
+    expect(scheduleIssues({ ...d, endDate: '2027-04-06' }, opts)).toEqual([]);
+  });
+});
+
+describe('seriesStartDay', () => {
+  it('uses the schedule start for weekly', () => expect(seriesStartDay(sch({ frequency: 'weekly', startDate: '2027-03-01', weekdayRows: [row('r1', 2)] }))).toBe('2027-03-01'));
+  it('uses the earliest row first date for biweekly', () => {
+    expect(seriesStartDay(sch({ frequency: 'biweekly', startDate: '2026-11-20',
+      weekdayRows: [row('r1', 2, { startDate: '2027-04-13' }), row('r2', 5, { startDate: '2027-04-09' })] }))).toBe('2027-04-09');
+  });
+  it('uses the first date for yearly', () => {
+    expect(seriesStartDay(sch({ frequency: 'yearly', startDate: '2026-11-20', longFirstDate: '2027-06-01', longTime: '06:00 PM', longRepeatBy: 'date' }))).toBe('2027-06-01');
   });
 });

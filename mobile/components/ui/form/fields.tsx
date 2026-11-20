@@ -27,6 +27,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   chipTextOn: { color: '#fff', fontWeight: '800' },
   add: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'stretch', marginTop: 12, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: c.brand, backgroundColor: c.brandSoft },
   addLabel: { fontSize: 16, fontWeight: '800', color: c.brand },
+  clearLink: { alignSelf: 'flex-start', marginTop: 6, paddingVertical: 2 },
+  clearLinkText: { color: c.brand, fontSize: 13, fontWeight: '600' },
   addText: { fontSize: 14, fontWeight: '700', color: c.brand },
 });
 const useStyles = () => { const c = useThemeColors(); return useMemo(() => makeStyles(c), [c]); };
@@ -91,9 +93,11 @@ export function EndField({ start, value, onChange }: { start: string; value: str
 }
 
 /** A date that expands into an inline calendar when tapped. */
-export function DateField({ label, value, onChange, minDate, maxDate, placeholder = 'Pick a date', error, testID }: {
+export function DateField({ label, value, onChange, minDate, maxDate, placeholder = 'Pick a date', error, testID, onClear, clearLabel = 'Clear', clearA11yLabel }: {
   label: string; value: string | null; onChange: (iso: string) => void; minDate?: string; maxDate?: string;
   placeholder?: string; error?: string | null; testID?: string;
+  /** Optional fields: shows a small `clearLabel` link while a date is set. */
+  onClear?: () => void; clearLabel?: string; clearA11yLabel?: string;
 }) {
   const c = useThemeColors(); const s = useStyles();
   const [open, setOpen] = useState(false);
@@ -111,6 +115,12 @@ export function DateField({ label, value, onChange, minDate, maxDate, placeholde
             onChange={iso => { onChange(iso); setOpen(false); }} />
         </View>
       </Collapsible>
+      {value && onClear ? (
+        <PressableOpacity onPress={() => { onClear(); setOpen(false); }} style={s.clearLink}
+          accessibilityRole="button" accessibilityLabel={clearA11yLabel ?? `${clearLabel}: ${label}`}>
+          <Text style={s.clearLinkText}>{clearLabel}</Text>
+        </PressableOpacity>
+      ) : null}
       <FieldError message={error} />
     </View>
   );

@@ -1,4 +1,4 @@
-import { oneOffWhenSummary, recurrenceSummary, rsvpSummary, capacitySummary, bringSummary, clock } from '../formSummaries';
+import { oneOffWhenSummary, recurrenceSummary, endsLine, rsvpSummary, capacitySummary, bringSummary, clock } from '../formSummaries';
 import { defaultSchedule } from '../createGroupDraft';
 
 const sch = (over: any = {}) => ({ ...defaultSchedule('Dinner'), ...over });
@@ -76,4 +76,21 @@ describe('capacity and items', () => {
     expect(bringSummary([{ key: 'a', name: 'Chips', max: '' }])).toBe('Chips');
     expect(bringSummary([{ key: 'a', name: 'Chips', max: '' }, { key: 'b', name: 'Ice', max: '' }, { key: 'c', name: '', max: '' }])).toBe('3 items');
   });
+});
+
+describe('recurrenceSummary: end date', () => {
+  const y = new Date().getFullYear();
+  const weekly = (endDate: string | null) => sch({ frequency: 'weekly', weekdayRows: [row('a', 0, '06:00 PM')], endDate });
+  it('this year: "until Mar 15"', () => expect(recurrenceSummary(weekly(`${y}-03-15`))).toBe('Weekly · Sun · 6:00 PM · until Mar 15'));
+  it('another year adds the year', () => expect(recurrenceSummary(weekly(`${y + 1}-03-15`))).toBe(`Weekly · Sun · 6:00 PM · until Mar 15, ${y + 1}`));
+  it('no end date, no suffix', () => expect(recurrenceSummary(weekly(null))).toBe('Weekly · Sun · 6:00 PM'));
+  it('not set stays not set even with an end date', () => expect(recurrenceSummary(sch({ endDate: `${y}-03-15` }))).toBe('Not set'));
+});
+
+describe('endsLine', () => {
+  it('reads "Ends <date>" from a calendar date or a stored UTC-midnight timestamp', () => {
+    expect(endsLine('2027-03-15')).toBe('Ends Mar 15, 2027');
+    expect(endsLine('2027-03-15T00:00:00.000Z')).toBe('Ends Mar 15, 2027');
+  });
+  it('nothing when there is no end date', () => expect(endsLine(null)).toBeNull());
 });

@@ -12,7 +12,7 @@ import type { ThemeColors } from '@/constants/theme';
 import type { Frequency } from '@/utils/api';
 import { DAYS_OF_WEEK, ORDINAL_OCCURRENCES, uid } from '@/utils/scheduleConstants';
 import { isLongFrequency, repeatChoiceLabels, type LongFrequency, type RepeatBy } from '@/utils/longInterval';
-import { fieldIssue, type Issue } from '@/utils/formIssues';
+import { fieldIssue, seriesStartDay, type Issue } from '@/utils/formIssues';
 import { ordSfx } from '@/utils/scheduleConstants';
 import * as R from '@/utils/recurrenceDraft';
 import type { ScheduleData } from '@/utils/createGroupDraft';
@@ -283,6 +283,10 @@ export default function RecurrenceEditor<T extends ScheduleData>({ value: d, upd
 }) {
   const today = DateTime.now().toISODate()!;
   const maxDate = DateTime.now().plus({ months: 4 }).toISODate()!;
+  const endMaxDate = DateTime.now().plus({ years: 2 }).toISODate()!;
+  // Not before the series' real first day (biweekly / yearly rows carry their own).
+  const firstDay = seriesStartDay(d);
+  const endMin = firstDay && firstDay > today ? firstDay : today;
   const f = d.frequency;
   // Details grow in only right after a pick (not every time the sheet opens).
   const [picked, setPicked] = useState<Frequency | null>(null);
@@ -299,6 +303,12 @@ export default function RecurrenceEditor<T extends ScheduleData>({ value: d, upd
           {showStartDate && f !== 'biweekly' && !isLongFrequency(f) && (
             <DateField label="Starting" value={d.startDate} minDate={today} maxDate={maxDate} onChange={iso => update(p => ({ ...p, startDate: iso }))} />
           )}
+          {/* Seasons and leagues: no meetups are generated after this day (inclusive). */}
+          <DateField label="Ending (optional)" testID="end-date-field" value={d.endDate ?? null}
+            placeholder="No end date" clearLabel="No end date" clearA11yLabel="Remove end date"
+            minDate={endMin} maxDate={endMaxDate}
+            onChange={iso => update(p => ({ ...p, endDate: iso }))} onClear={() => update(p => ({ ...p, endDate: null }))}
+            error={fieldIssue(issues, 'endDate')} />
         </Collapsible>
       )}
       <FieldError message={fieldIssue(issues, 'endTime')} />

@@ -65,6 +65,8 @@ export interface ScheduleData extends LongDraft {
     location: string;
     description: string;
     startDate: string;
+    /** Optional, inclusive last day (ISO date); null = runs forever. */
+    endDate: string | null;
     frequency: Frequency | null;
     rsvpRestricted: boolean;
     leadEnabled: boolean;
@@ -116,6 +118,7 @@ export const defaultSchedule = (name = ""): ScheduleData => ({
     location: "",
     description: "",
     startDate: DateTime.now().toISODate()!,
+    endDate: null,
     frequency: null,
     rsvpRestricted: false,
     leadEnabled: false,
@@ -164,6 +167,7 @@ export const buildSchedulePayload = (d: ScheduleData) => {
     return {
         // A quarterly/semiannual/yearly series starts on its own first date.
         startDate: isLongFrequency(d.frequency) && d.longFirstDate ? d.longFirstDate : d.startDate,
+        endDate: d.endDate ?? null,
         routines,
         defaultLocation: d.location,
         defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,

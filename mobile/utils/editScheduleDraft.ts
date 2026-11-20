@@ -116,6 +116,8 @@ export interface ScheduleData extends LongDraft {
     deadlineTime: string;
     showDeadlineTimePicker: boolean;
     startDate: string;
+    /** Optional, inclusive last day (ISO date); null = runs forever. */
+    endDate: string | null;
     timezone: string;
     frequency: Frequency | null;
     showStartDatePicker: boolean;
@@ -156,6 +158,7 @@ export const defaultSchedule = (): ScheduleData => ({
     deadlineTime: "09:00 AM",
     showDeadlineTimePicker: false,
     startDate: DateTime.now().toISODate()!,
+    endDate: null,
     timezone: "America/Denver",
     frequency: null,
     showStartDatePicker: false,
@@ -207,6 +210,7 @@ export const buildSchedulePayload = (d: ScheduleData) => {
         name: d.name.trim(),
         // A quarterly/semiannual/yearly series starts on its own first date.
         startDate: isLongFrequency(d.frequency) && d.longFirstDate ? d.longFirstDate : d.startDate,
+        endDate: d.endDate ?? null,
         routines,
         defaultLocation: d.location.trim(),
         defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
@@ -314,6 +318,8 @@ export const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSched
         deadlineEnabled: sched.generationDeadlineDays != null,
         deadlineDays: sched.generationDeadlineDays ?? 2,
         deadlineTime: sched.generationDeadlineTime || "09:00 AM",
+        // Stored as a date-only UTC midnight: take the calendar day as-is (no zone shift).
+        endDate: sched.endDate ? String(sched.endDate).slice(0, 10) : null,
     };
 
     const routines = (sched.routines ?? []) as Routine[];

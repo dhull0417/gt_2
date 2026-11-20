@@ -381,3 +381,34 @@ describe('quarterly / semiannual / yearly drafts', () => {
     expect(built.snapshot).toMatchObject(long);
   });
 });
+
+describe('schedule end date in drafts and payloads', () => {
+  const weeklyRows = [{ id: 'r1', day: 2, time: '06:00 PM', startDate: null, showTimePicker: false }];
+
+  it('new drafts have no end date', () => {
+    expect(createDefault('League').endDate).toBeNull();
+    expect(editDefault().endDate).toBeNull();
+  });
+
+  it('create-group payload carries the end date, or null when there is none', () => {
+    const d = { ...createDefault('League'), frequency: 'weekly' as const, weekdayRows: weeklyRows };
+    expect(createPayload({ ...d, endDate: '2027-05-31' })!.endDate).toBe('2027-05-31');
+    expect(createPayload(d)!.endDate).toBeNull();
+  });
+
+  it('edit payload always sends the end date so clearing it reaches the server', () => {
+    const d = { ...editDefault(), name: 'League', frequency: 'weekly' as const,
+      weekdayRows: weeklyRows.map(r => ({ ...r, showDayPicker: false, showStartDatePicker: false })) };
+    expect(editPayload({ ...d, endDate: '2027-05-31' })!.endDate).toBe('2027-05-31');
+    expect(editPayload(d)!.endDate).toBeNull();
+  });
+
+  it('a saved end date loads as the same calendar day (stored as UTC midnight)', () => {
+    const d = scheduleFromNamedSchedule({ timezone: 'America/Denver' } as any, {
+      _id: 's1', name: 'League', active: true, endDate: '2027-05-31T00:00:00.000Z',
+      routines: [{ frequency: 'weekly', dayTimes: [{ day: 2, time: '06:00 PM' }] }],
+    } as any);
+    expect(d.endDate).toBe('2027-05-31');
+    expect(scheduleFromNamedSchedule({ timezone: 'America/Denver' } as any, { _id: 's1', name: 'L', active: true, routines: [] } as any).endDate).toBeNull();
+  });
+});

@@ -1,17 +1,25 @@
 // Lives under components/__tests__ so expo-router never sees a test file inside app/.
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react-native';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { DateTime } from 'luxon';
 import EditScheduleScreen from '../../app/group-edit-schedule/[id]';
 
 const mockCreateSchedule = jest.fn();
+const mockUpdateSchedule = jest.fn();
+const mockCountAfter = jest.fn();
+let mockSchedules: any[] = [];
 let mockParams: Record<string, string> = { id: 'g1', scheduleId: 'new' };
 jest.mock('expo-router', () => ({ useLocalSearchParams: () => mockParams, useRouter: () => ({ back: jest.fn(), push: jest.fn() }) }));
 jest.mock('@clerk/expo', () => ({ useAuth: () => ({ getToken: jest.fn() }) }));
 jest.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: jest.fn() }) }));
 jest.mock('../../hooks/useGetGroupDetails', () => ({
-  useGetGroupDetails: () => ({ isLoading: false, data: { _id: 'g1', name: 'Dinner Club', timezone: 'America/Denver', isPremium: true, owner: 'u1', schedules: [] } }),
+  useGetGroupDetails: () => ({ isLoading: false, data: { _id: 'g1', name: 'Dinner Club', timezone: 'America/Denver', isPremium: true, owner: 'u1', schedules: mockSchedules } }),
 }));
-jest.mock('../../utils/api', () => ({ useApiClient: () => ({}), groupApi: { createSchedule: (...a: any[]) => mockCreateSchedule(...a), updateSchedule: jest.fn(), deleteSchedule: jest.fn() } }));
+jest.mock('../../utils/api', () => ({ useApiClient: () => ({}), groupApi: {
+  createSchedule: (...a: any[]) => mockCreateSchedule(...a), updateSchedule: (...a: any[]) => mockUpdateSchedule(...a),
+  countMeetupsAfter: (...a: any[]) => mockCountAfter(...a), deleteSchedule: jest.fn(),
+} }));
 jest.mock('../../utils/groupRealtime', () => ({ broadcastGroupUpdate: jest.fn(), broadcastMeetupUpdate: jest.fn() }));
 jest.mock('@/contexts/ToastContext', () => ({ toast: { success: jest.fn() } }));
 jest.mock('@/utils/haptics', () => ({ haptic: new Proxy({}, { get: () => () => {} }) }));
@@ -54,5 +62,57 @@ describe('New Schedule', () => {
     fireEvent.changeText(screen.getByLabelText('Schedule name'), 'Sunday Dinner');
     expect(screen.queryByText('Give this schedule a name')).toBeNull();
     expect(screen.getByText('Fix 1 thing above')).toBeTruthy();
+  });
+});
+
+describe('Edit Schedule: end date', () => {
+  const today = DateTime.now().toISODate()!;
+  beforeEach(() => {
+    mockParams = { id: 'g1', scheduleId: 's1' };
+    mockSchedules = [{ _id: 's1', name: 'League', active: true, defaultLocation: '', defaultCapacity: 0, startDate: today,
+      routines: [{ frequency: 'weekly', dayTimes: [{ day: 2, time: '06:00 PM' }] }] }];
+    mockUpdateSchedule.mockReset().mockResolvedValue({});
+    mockCountAfter.mockReset();
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const setEndToToday = () => {
+    fireEvent.press(screen.getByTestId('row-when'));
+    fireEvent.press(screen.getByTestId('end-date-field'));
+    fireEvent.press(screen.getByText(String(DateTime.now().day)));
+  };
+  const answer = (label: string) =>
+    jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => { buttons?.find(b => b.text === label)?.onPress?.(); });
+
+  it('Delete sends removeAfterEnd: true', async () => {
+    mockCountAfter.mockResolvedValue(3);
+    answer('Delete');
+    render(<EditScheduleScreen />);
+    setEndToToday();
+    fireEvent.press(screen.getByLabelText('Save Changes'));
+    await waitFor(() => expect(mockUpdateSchedule).toHaveBeenCalled());
+    expect(mockCountAfter).toHaveBeenCalledWith({}, 'g1', 's1', today);
+    expect(mockUpdateSchedule.mock.calls[0][3]).toMatchObject({ endDate: today, removeAfterEnd: true });
+  });
+
+  it('Cancel does not save', async () => {
+    mockCountAfter.mockResolvedValue(3);
+    const alert = answer('Cancel');
+    render(<EditScheduleScreen />);
+    setEndToToday();
+    fireEvent.press(screen.getByLabelText('Save Changes'));
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(mockUpdateSchedule).not.toHaveBeenCalled();
+  });
+
+  it('nothing after the date: saves with removeAfterEnd: false and no dialog', async () => {
+    mockCountAfter.mockResolvedValue(0);
+    const alert = jest.spyOn(Alert, 'alert');
+    render(<EditScheduleScreen />);
+    setEndToToday();
+    fireEvent.press(screen.getByLabelText('Save Changes'));
+    await waitFor(() => expect(mockUpdateSchedule).toHaveBeenCalled());
+    expect(mockUpdateSchedule.mock.calls[0][3]).toMatchObject({ endDate: today, removeAfterEnd: false });
+    expect(alert).not.toHaveBeenCalled();
   });
 });

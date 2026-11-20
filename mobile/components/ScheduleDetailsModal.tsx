@@ -9,6 +9,7 @@ import { tzAbbr } from '@/utils/timezones';
 import { formatTimeRange } from '@/utils/timeString';
 import { FREQ_LABELS } from '@/utils/scheduleConstants';
 import { isLongFrequency, repeatChoiceLabels } from '@/utils/longInterval';
+import { endsLine } from '@/utils/formSummaries';
 
 interface Props {
     visible: boolean;
@@ -155,6 +156,9 @@ export const ScheduleDetailsModal = ({
                                             {renderScheduleLines(routine.frequency, routine.dayTimes, routine.rules, routine.repeatBy)}
                                         </View>
                                     ))}
+                                    {sch.endDate ? (
+                                        <Text style={[styles.scheduleDetailText, { color: colors.textSecondary }]}>{endsLine(sch.endDate)}</Text>
+                                    ) : null}
                                 </View>
                             </View>
 

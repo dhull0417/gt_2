@@ -11,6 +11,7 @@ import { getUserDisplayName } from "@/utils/groupDisplay";
 import { DAYS_OF_WEEK, FREQ_LABELS, ordSfx } from "@/utils/scheduleConstants";
 import { timezoneLabel } from "@/utils/timezones";
 import { buildLongRoutine, describeLongRoutine, isLongDraftValid, isLongFrequency } from "@/utils/longInterval";
+import { endsLine } from "@/utils/formSummaries";
 import { Feather } from "@expo/vector-icons";
 import { DateTime } from "luxon";
 
@@ -80,6 +81,12 @@ export const ReviewScreen = ({ groupName, groupImage, members, schedules, timezo
                                                 <Text style={s.reviewInlineText}>Starts {DateTime.fromISO(schedule.startDate).toLocaleString(DateTime.DATE_MED)}</Text>
                                             </View>
                                         )}
+                                        {schedule.endDate ? (
+                                            <View style={s.reviewInlineRow}>
+                                                <Feather name="flag" size={13} color={colors.textFaint} />
+                                                <Text style={s.reviewInlineText}>{endsLine(schedule.endDate)}</Text>
+                                            </View>
+                                        ) : null}
                                         <View style={s.reviewInlineRow}>
                                             <Feather name="users" size={13} color={colors.textFaint} />
                                             <Text style={s.reviewInlineText}>Max attendees: {maxAttendeesLabel}</Text>

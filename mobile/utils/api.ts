@@ -44,6 +44,7 @@ export interface Routine {
 export interface Schedule {
   frequency: Frequency;
   startDate?: string;    // ISO date string for when to start generating meetups
+  endDate?: string | null; // Optional, inclusive: no meetups are generated after this day
   routines?: Routine[];  // Used for 'Multiple Rules' (Project 7)
   days?: number[];       // Legacy/Support for simple schedules
 }
@@ -425,6 +426,10 @@ export interface Notification {
 export interface ScheduleInput {
   name: string;
   startDate?: string;
+  /** Optional, inclusive last day of the series; null clears it. */
+  endDate?: string | null;
+  /** Update only: the organizer's answer to "Delete meetups after <end date>?" (absent = Keep). */
+  removeAfterEnd?: boolean;
   routines?: Routine[];
   defaultLocation?: string;
   defaultCapacity?: number;
@@ -801,6 +806,11 @@ export const groupApi = {
   updateSchedule: async (api: AxiosInstance, groupId: string, scheduleId: string, data: Partial<ScheduleInput>): Promise<{ message: string; group: Group }> => {
     const response = await api.patch<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}`, data);
     return response.data;
+  },
+  /** How many of the series' regular upcoming meetups fall after `date` (YYYY-MM-DD). */
+  countMeetupsAfter: async (api: AxiosInstance, groupId: string, scheduleId: string, date: string): Promise<number> => {
+    const response = await api.get<{ count: number }>(`/api/groups/${groupId}/schedules/${scheduleId}/meetups-after`, { params: { date } });
+    return response.data.count;
   },
   updateSchedulePriority: async (
     api: AxiosInstance,

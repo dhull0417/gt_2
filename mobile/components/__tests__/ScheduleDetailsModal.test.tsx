@@ -27,6 +27,16 @@ describe('ScheduleDetailsModal', () => {
     expect(screen.queryByText('Paused')).toBeNull();
   });
 
+  it('shows when a schedule ends, and nothing when it runs forever', () => {
+    render(<ScheduleDetailsModal visible onClose={() => {}} groupDetails={group([
+      { _id: 's1', name: 'Spring League', defaultCapacity: 0, endDate: '2027-05-31T00:00:00.000Z',
+        routines: [{ frequency: 'weekly', dayTimes: [{ day: 2, time: '18:00' }] }] },
+      { _id: 's2', name: 'Forever', defaultCapacity: 0, routines: [{ frequency: 'weekly', dayTimes: [{ day: 3, time: '18:00' }] }] },
+    ])} />);
+    expect(screen.getAllByText(/^Ends /)).toHaveLength(1);
+    expect(screen.getByText('Ends May 31, 2027')).toBeTruthy();
+  });
+
   it('closes from the close button', () => {
     const onClose = jest.fn();
     render(<ScheduleDetailsModal visible onClose={onClose} groupDetails={group([])} />);

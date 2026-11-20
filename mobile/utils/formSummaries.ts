@@ -27,7 +27,22 @@ const LABEL: Record<string, string> = {
   quarterly: 'Quarterly', semiannual: 'Every 6 months', yearly: 'Yearly', custom: 'Custom',
 };
 
+/** "Mar 15" this year, "Mar 15, 2027" otherwise. `iso` is a calendar date (YYYY-MM-DD). */
+export const endDateShort = (iso: string) => {
+  const dt = DateTime.fromISO(iso.slice(0, 10));
+  return dt.toFormat(dt.year === DateTime.now().year ? 'LLL d' : 'LLL d, yyyy');
+};
+
+/** "Ends Mar 15, 2027" for review/details screens; the stored value is a date-only UTC midnight. */
+export const endsLine = (endDate: string | null | undefined): string | null =>
+  endDate ? `Ends ${DateTime.fromISO(String(endDate).slice(0, 10)).toLocaleString(DateTime.DATE_MED)}` : null;
+
 export const recurrenceSummary = (d: ScheduleData): string => {
+  const base = repeatSummary(d);
+  return d.frequency && d.endDate ? `${base} · until ${endDateShort(d.endDate)}` : base;
+};
+
+const repeatSummary = (d: ScheduleData): string => {
   const f = d.frequency;
   if (!f) return 'Not set';
   const label = LABEL[f] ?? f;

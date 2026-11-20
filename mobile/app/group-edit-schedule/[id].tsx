@@ -29,6 +29,7 @@ import { questionsSummary } from "@/utils/questionDrafts";
 import { scheduleIssues, visibleIssues, fixMessage, firstArea, issueFor, fieldIssue, type FormArea } from "@/utils/formIssues";
 import { recurrenceSummary, rsvpSummary, capacitySummary, bringSummary } from "@/utils/formSummaries";
 import { saveDraftQuestions } from "@/utils/questionDrafts";
+import { askDeleteAfterEnd, decideRemoveAfterEnd } from "@/utils/endDatePrompt";
 
 type Sheet = "when" | "rsvp" | "capacity" | "bring" | "questions" | "upsell" | null;
 const ORDER: FormArea[] = ["name", "where", "when", "timezone", "rsvp", "capacity", "bring", "questions"];
@@ -110,6 +111,15 @@ const EditScheduleScreen = () => {
         inFlightRef.current = true;
         setIsSaving(true);
         try {
+            // A new end date with meetups already after it: ask Delete or Keep first.
+            const removeAfterEnd = await decideRemoveAfterEnd({
+                isNew,
+                previous: originalRef.current?.endDate ?? null,
+                next: d.endDate ?? null,
+                countAfter: date => groupApi.countMeetupsAfter(api, id, scheduleId!, date),
+                ask: askDeleteAfterEnd,
+            });
+            if (removeAfterEnd === 'cancel') return;
             if (isNew) {
                 const created = await groupApi.createSchedule(api, id, payload);
                 // RSVP questions written before the schedule existed.
@@ -117,7 +127,7 @@ const EditScheduleScreen = () => {
                     (sid, questions) => groupApi.updateScheduleQuestions(api, id, sid, { questions }));
                 if (!ok) Alert.alert("Schedule created", "Your RSVP questions couldn't be saved. You can add them from this schedule's RSVP Questions.");
             } else {
-                await groupApi.updateSchedule(api, id, scheduleId!, payload);
+                await groupApi.updateSchedule(api, id, scheduleId!, { ...payload, removeAfterEnd });
             }
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["groupDetails", id] }),

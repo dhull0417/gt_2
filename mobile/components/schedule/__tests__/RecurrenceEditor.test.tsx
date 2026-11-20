@@ -4,6 +4,7 @@ import RecurrenceEditor from '../RecurrenceEditor';
 import { defaultSchedule, type ScheduleData } from '@/utils/createGroupDraft';
 import { scheduleIssues } from '@/utils/formIssues';
 import { SettingSheet } from '@/components/ui/form';
+import { DateTime } from 'luxon';
 
 jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
 jest.mock('@/contexts/AppearanceContext', () => {
@@ -145,5 +146,38 @@ describe('RecurrenceEditor', () => {
     fireEvent.press(screen.getByText('Same weekday'));
     expect(latest.longRepeatBy).toBe('weekday');
     expect(screen.queryByText('Same date')).toBeNull();
+  });
+});
+
+describe('RecurrenceEditor: end date', () => {
+  const today = DateTime.now().toISODate()!;
+  const weeklyRow = { id: 'r1', day: 2, time: '05:00 PM', startDate: null, showTimePicker: false };
+
+  it.each([
+    ['weekly', { frequency: 'weekly', weekdayRows: [weeklyRow] }],
+    ['biweekly', { frequency: 'biweekly', weekdayRows: [{ ...weeklyRow, startDate: today }] }],
+    ['yearly', { frequency: 'yearly' }],
+  ])('offers an optional end date for %s', (_name, initial) => {
+    render(<Host initial={initial as any} />);
+    expect(screen.getByText('Ending (optional)')).toBeTruthy();
+    expect(screen.getByText('No end date')).toBeTruthy();
+  });
+
+  it('picking a day sets the end date', () => {
+    render(<Host initial={{ frequency: 'weekly', weekdayRows: [weeklyRow], startDate: today }} />);
+    fireEvent.press(screen.getByTestId('end-date-field'));
+    fireEvent.press(screen.getByText(String(DateTime.now().day)));
+    expect(latest.endDate).toBe(today);
+  });
+
+  it('"No end date" clears it', () => {
+    render(<Host initial={{ frequency: 'weekly', weekdayRows: [weeklyRow], endDate: '2027-05-31' }} />);
+    fireEvent.press(screen.getByRole('button', { name: 'Remove end date' }));
+    expect(latest.endDate).toBeNull();
+  });
+
+  it('an end date before the start shows the problem under the field', () => {
+    render(<Host initial={{ frequency: 'weekly', weekdayRows: [weeklyRow], startDate: '2027-03-01', endDate: '2027-02-01' }} />);
+    expect(screen.getByText("End date can't be before the start date.")).toBeTruthy();
   });
 });

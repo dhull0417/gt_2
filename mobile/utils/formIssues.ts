@@ -9,6 +9,7 @@ import { isLongFrequency } from './longInterval';
 import type { MeetupDraft } from './meetupFormDraft';
 import type { ScheduleData } from './createGroupDraft';
 import { questionsProblems, type QuestionDraft } from './questionDrafts';
+import { buildRoutines } from './scheduleRoutines';
 
 export type FormArea = 'group' | 'name' | 'where' | 'when' | 'timezone' | 'rsvp' | 'capacity' | 'bring' | 'questions';
 /** `invalid`: shown as soon as it happens. `missing`: shown after the first Save/Review tap. */
@@ -80,6 +81,27 @@ const recurrenceIssues = (d: ScheduleData): Issue[] => {
   }
 };
 
+export const END_BEFORE_START = "End date can't be before the start date.";
+// Frequencies whose rows carry their own first date (mirrors the server's endDateProblem).
+const ROW_START = new Set(['biweekly', 'quarterly', 'semiannual', 'yearly']);
+
+/** The series' first day: its rows' earliest first date where rows have one, else the start date. */
+export const seriesStartDay = (d: ScheduleData): string | null => {
+  const rowDays = buildRoutines(d)
+    .filter(r => ROW_START.has(r.frequency))
+    .flatMap(r => (r.dayTimes || []).map((dt: { startDate?: string }) => dt.startDate?.slice(0, 10)))
+    .filter((x): x is string => !!x)
+    .sort();
+  return rowDays[0] ?? (d.frequency && isLongFrequency(d.frequency) ? d.longFirstDate : d.startDate) ?? null;
+};
+
+/** The end date can't come before the series' first day. */
+const endDateIssues = (d: ScheduleData): Issue[] => {
+  if (!d.endDate || !d.frequency) return [];
+  const start = seriesStartDay(d);
+  return start && d.endDate < start ? [{ area: 'when', field: 'endDate', kind: 'invalid', message: END_BEFORE_START }] : [];
+};
+
 /**
  * `emptyIsValid`: a create-group series tab nobody has started (no frequency) is fine and adds nothing.
  * `requireName`: the series needs a name (create-group fills it from the group name).
@@ -93,6 +115,7 @@ export const scheduleIssues = (d: ScheduleData, opts: { requireName: boolean; em
     const end = scheduleEndTimeError(d);
     if (end) issues.push({ area: 'when', field: 'endTime', kind: 'invalid', message: end });
   }
+  issues.push(...endDateIssues(d));
   issues.push(...capacityIssues(d.maxAttendeesMode, d.maxAttendeesInput));
   issues.push(...minimumIssues(d));
   issues.push(...bringIssues(d.bringItems));
