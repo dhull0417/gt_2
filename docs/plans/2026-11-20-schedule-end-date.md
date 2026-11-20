@@ -129,5 +129,5 @@
 - All tasks done test-first. Backend 607/607, mobile see final run below.
 - Task 12: the Delete/Keep decision lives in `mobile/utils/endDatePrompt.ts` (`decideRemoveAfterEnd`, `askDeleteAfterEnd`) so it's testable without the screen; the screen wires it in `handleSave`. Prompt copy has no count (owner's call); the title adds the year when it isn't this year.
 - Fresh review follow-ups, fixed: malformed `endDate` now 400s via `parseEndDate` (a timestamp keeps its calendar day); end-date picker minimum uses the series' real first day (`seriesStartDay`); "No end date" link has an accessibility label; a test-fixture type error.
-- Open (needs a product call): members who RSVP'd to meetups removed by Delete get only the schedule-wide "Ends" notice, not a per-meetup cancellation.
+- Decided: members who RSVP'd to meetups removed by Delete get only the schedule-wide "Ends" notice; no per-meetup cancellations (owner's call).
 - Known, per spec: a save that also changes the group timezone resets every upcoming series meetup, so Keep can't preserve post-end meetups in that one case.

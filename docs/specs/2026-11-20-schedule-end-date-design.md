@@ -71,8 +71,9 @@ meetups after the season, without having to remember to delete the schedule.
 8. **Display:** `recurrenceSummary` appends " · until Mar 15"; `ReviewScreen` shows
    "Ends Mar 15" beside "Starts …"; the schedule details modal shows it too.
 9. **Change notifications:** `changeSummary.js` mentions an added/changed/removed end date
-   ("Now ends Mar 15") like it does other schedule changes. Deleted meetups notify members
-   through the existing deletion path.
+   ("Now ends Mar 15") like it does other schedule changes. That "Ends" notice is the only
+   notification when the organizer chooses Delete — no per-meetup cancellation notices
+   (owner's decision, 2026-11-20).
 
 ## Approaches considered
 - **A (picked):** cleanup skips post-end meetups unless the save says delete. Kept meetups
