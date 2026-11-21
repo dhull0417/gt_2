@@ -7,11 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "groupthat",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "notification": {
-      "icon": "./assets/images/icon.png",
-      "color": "#4A90E2"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dallinhull.groupthat",
@@ -41,7 +36,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.dallinhull.groupthat",
       "permissions": [
         "CAMERA",
@@ -89,7 +83,13 @@
     "plugins": [
       "expo-router",
       "expo-apple-authentication",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#4A90E2"
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -108,7 +108,8 @@
               "exclude": [
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
               ]
-            }
+            },
+            "enableMinifyInReleaseBuilds": false
           },
           "ios": {
             "extraPods": [
@@ -126,7 +127,13 @@
       ],
       "expo-font",
       "expo-video",
-      "./plugins/withOptionalHardwareFeatures"
+      "./plugins/withOptionalHardwareFeatures",
+      "@react-native-community/datetimepicker",
+      "expo-image",
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-status-bar",
+      "@clerk/expo"
     ],
     "experiments": {
       "typedRoutes": true

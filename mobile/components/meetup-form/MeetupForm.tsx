@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import type { ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { DateTime } from "luxon";
@@ -55,7 +56,7 @@ export function MeetupForm({
     const colors = useThemeColors();
     const s = useMemo(() => makeStyles(colors), [colors]);
     const f = useFormStyles();
-    const scrollRef = useRef<ScrollView>(null);
+    const scrollRef = useRef<ScrollViewInstance>(null);
     const { register, scrollTo } = useIssueScroll(scrollRef);
     const [sheet, setSheet] = useState<Sheet>(null);
     const [locationOpen, setLocationOpen] = useState(false);

@@ -105,7 +105,7 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 9999,
   },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(17, 24, 39, 0.45)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(17, 24, 39, 0.45)' },
   centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
   card: {
     backgroundColor: 'white',

@@ -873,7 +873,7 @@ const GroupChatScreen = () => {
                   <Text style={{ textAlign: 'center', color: colors.textFaint, fontSize: 12, paddingVertical: 10 }}>
                     Start of the conversation
                   </Text>
-                ) : null
+                ) : undefined
               }
               // Keeps the message you were reading in place when an older page is added above it.
               maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
@@ -1018,7 +1018,7 @@ const GroupChatScreen = () => {
 
         {!chatContentReady && (
           <View
-            style={[styles.loadingContainer, { backgroundColor: colors.background }, StyleSheet.absoluteFillObject]}
+            style={[styles.loadingContainer, { backgroundColor: colors.background }, StyleSheet.absoluteFill]}
             pointerEvents={loadState.state === 'failed' || loadState.state === 'offline' ? 'auto' : 'none'}
           >
             {loadState.state === 'offline' ? (

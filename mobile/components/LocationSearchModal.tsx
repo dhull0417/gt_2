@@ -44,7 +44,7 @@ const LocationSearchModal = ({ visible, initialValue, placeholder, onDone, onCan
 
   if (asOverlay) {
     if (!visible) return null;
-    return <View style={StyleSheet.absoluteFillObject}>{content}</View>;
+    return <View style={StyleSheet.absoluteFill}>{content}</View>;
   }
 
   return (

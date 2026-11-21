@@ -27,123 +27,123 @@ function Host({ initial, attempted = false }: { initial?: Partial<ScheduleData>;
 }
 
 describe('RecurrenceEditor', () => {
-  it('weekly: pick frequency, add a day, choose Tuesday', () => {
-    render(<Host />);
-    fireEvent.press(screen.getByText('Weekly'));
+  it('weekly: pick frequency, add a day, choose Tuesday', async () => {
+    await render(<Host />);
+    await fireEvent.press(screen.getByText('Weekly'));
     expect(latest.frequency).toBe('weekly');
-    fireEvent.press(screen.getByText('Add a day'));
+    await fireEvent.press(screen.getByText('Add a day'));
     expect(latest.weekdayRows).toHaveLength(1);
     const id = latest.weekdayRows[0].id;
-    fireEvent.press(screen.getByTestId(`day-${id}-2`));
+    await fireEvent.press(screen.getByTestId(`day-${id}-2`));
     expect(latest.weekdayRows[0].day).toBe(2);
   });
 
-  it('a row missing its day is red after a submit attempt', () => {
+  it('a row missing its day is red after a submit attempt', async () => {
     const row = { id: 'r1', day: null, time: '05:00 PM', startDate: '2026-12-01', showTimePicker: false };
-    render(<Host initial={{ frequency: 'weekly', weekdayRows: [row] }} attempted />);
+    await render(<Host initial={{ frequency: 'weekly', weekdayRows: [row] }} attempted />);
     expect(screen.getByText('Pick a day for each row')).toBeTruthy();
-    fireEvent.press(screen.getByTestId('day-r1-4'));
+    await fireEvent.press(screen.getByTestId('day-r1-4'));
     expect(screen.queryByText('Pick a day for each row')).toBeNull();
   });
 
-  it('no frequency: the instruction shows only after an attempt', () => {
-    const { unmount } = render(<Host />);
+  it('no frequency: the instruction shows only after an attempt', async () => {
+    const { unmount } = await render(<Host />);
     expect(screen.queryByText('Pick how often')).toBeNull();
-    unmount();
-    render(<Host attempted />);
+    await unmount();
+    await render(<Host attempted />);
     expect(screen.getByText('Pick how often')).toBeTruthy();
   });
 
-  it('opening a time picker draws it over the sheet, not as another Modal', () => {
-    render(<Host initial={{ frequency: 'daily', dailySameTime: true }} />);
-    fireEvent.press(screen.getByLabelText('Time 5:00 PM'));
+  it('opening a time picker draws it over the sheet, not as another Modal', async () => {
+    await render(<Host initial={{ frequency: 'daily', dailySameTime: true }} />);
+    await fireEvent.press(screen.getByLabelText('Time 5:00 PM'));
     expect(screen.getByTestId('sheet-overlay')).toBeTruthy();
   });
 
-  it('monthly by date: add a date and pick the 15th', () => {
-    render(<Host />);
-    fireEvent.press(screen.getByText('Monthly'));
-    fireEvent.press(screen.getByTestId('monthly-date'));
-    fireEvent.press(screen.getByText('Add a date'));
-    fireEvent.press(screen.getByText('15'));
+  it('monthly by date: add a date and pick the 15th', async () => {
+    await render(<Host />);
+    await fireEvent.press(screen.getByText('Monthly'));
+    await fireEvent.press(screen.getByTestId('monthly-date'));
+    await fireEvent.press(screen.getByText('Add a date'));
+    await fireEvent.press(screen.getByText('15'));
     expect(latest.monthlyDates[0].date).toBe(15);
   });
 
-  it('custom: build a weekly rule', () => {
-    render(<Host />);
-    fireEvent.press(screen.getByText('Custom'));
-    fireEvent.press(screen.getByText('Add a rule'));
-    fireEvent.press(screen.getByText('Weekly'));
-    fireEvent.press(screen.getByText('Add a day'));
+  it('custom: build a weekly rule', async () => {
+    await render(<Host />);
+    await fireEvent.press(screen.getByText('Custom'));
+    await fireEvent.press(screen.getByText('Add a rule'));
+    await fireEvent.press(screen.getByText('Weekly'));
+    await fireEvent.press(screen.getByText('Add a day'));
     const id = latest.weekdayRows[0].id;
-    fireEvent.press(screen.getByTestId(`day-${id}-5`));
-    fireEvent.press(screen.getByText('Add rule'));
+    await fireEvent.press(screen.getByTestId(`day-${id}-5`));
+    await fireEvent.press(screen.getByText('Add rule'));
     expect(latest.builtRoutines).toHaveLength(1);
     expect(latest.builtRoutines[0].frequency).toBe('weekly');
     expect(latest.customBuilding).toBe(false);
   });
 
-  it('reselecting the current frequency keeps what was entered', () => {
+  it('reselecting the current frequency keeps what was entered', async () => {
     const row = { id: 'r1', day: 2, time: '05:00 PM', startDate: '2026-12-01', showTimePicker: false };
-    render(<Host initial={{ frequency: 'weekly', weekdayRows: [row] }} />);
-    fireEvent.press(screen.getByLabelText('Change from Weekly'));
-    fireEvent.press(screen.getByText('Weekly'));
+    await render(<Host initial={{ frequency: 'weekly', weekdayRows: [row] }} />);
+    await fireEvent.press(screen.getByLabelText('Change from Weekly'));
+    await fireEvent.press(screen.getByText('Weekly'));
     expect(latest.weekdayRows).toHaveLength(1);
   });
 
-  it('once a frequency is picked the other choices collapse, and Change brings them back', () => {
-    render(<Host />);
+  it('once a frequency is picked the other choices collapse, and Change brings them back', async () => {
+    await render(<Host />);
     expect(screen.getByText('Daily')).toBeTruthy();
-    fireEvent.press(screen.getByText('Weekly'));
+    await fireEvent.press(screen.getByText('Weekly'));
     expect(screen.queryByText('Daily')).toBeNull();
     expect(screen.queryByText('Monthly')).toBeNull();
     expect(screen.getByText('Weekly')).toBeTruthy();
-    fireEvent.press(screen.getByText('Change'));
+    await fireEvent.press(screen.getByText('Change'));
     expect(screen.getByText('Daily')).toBeTruthy();
-    fireEvent.press(screen.getByText('Monthly'));
+    await fireEvent.press(screen.getByText('Monthly'));
     expect(latest.frequency).toBe('monthly');
     expect(screen.queryByText('Daily')).toBeNull();
   });
 
-  it("a custom rule's type list collapses the same way", () => {
-    render(<Host />);
-    fireEvent.press(screen.getByText('Custom'));
-    fireEvent.press(screen.getByText('Add a rule'));
-    fireEvent.press(screen.getByText('Monthly'));
+  it("a custom rule's type list collapses the same way", async () => {
+    await render(<Host />);
+    await fireEvent.press(screen.getByText('Custom'));
+    await fireEvent.press(screen.getByText('Add a rule'));
+    await fireEvent.press(screen.getByText('Monthly'));
     expect(screen.queryByText('Daily')).toBeNull();
     expect(screen.getAllByText('Change')).toHaveLength(2);
   });
 
-  it('a weekday row collapses to the picked day, and Change reopens it', () => {
+  it('a weekday row collapses to the picked day, and Change reopens it', async () => {
     const row = { id: 'r1', day: null, time: '05:00 PM', startDate: '2026-12-01', showTimePicker: false };
-    render(<Host initial={{ frequency: 'weekly', weekdayRows: [row] }} />);
-    fireEvent.press(screen.getByTestId('day-r1-2'));
+    await render(<Host initial={{ frequency: 'weekly', weekdayRows: [row] }} />);
+    await fireEvent.press(screen.getByTestId('day-r1-2'));
     expect(screen.queryByTestId('day-r1-1')).toBeNull();
     expect(screen.getByText('Tuesday')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Change Tuesday'));
+    await fireEvent.press(screen.getByLabelText('Change Tuesday'));
     expect(screen.getByTestId('day-r1-1')).toBeTruthy();
   });
 
-  it('a monthly date collapses after picking, from the 31-day grid', () => {
-    render(<Host />);
-    fireEvent.press(screen.getByText('Monthly'));
-    fireEvent.press(screen.getByTestId('monthly-date'));
-    fireEvent.press(screen.getByText('Add a date'));
-    fireEvent.press(screen.getByText('15'));
+  it('a monthly date collapses after picking, from the 31-day grid', async () => {
+    await render(<Host />);
+    await fireEvent.press(screen.getByText('Monthly'));
+    await fireEvent.press(screen.getByTestId('monthly-date'));
+    await fireEvent.press(screen.getByText('Add a date'));
+    await fireEvent.press(screen.getByText('15'));
     expect(screen.queryByText('16')).toBeNull();
     expect(screen.getByText('The 15th')).toBeTruthy();
   });
 
-  it('a saved monthly date starts collapsed', () => {
+  it('a saved monthly date starts collapsed', async () => {
     const e = { id: 'm1', date: 3, time: '05:00 PM', expanded: false, showTimePicker: false };
-    render(<Host initial={{ frequency: 'monthly', monthlyMode: 'date', monthlyDates: [e] }} />);
+    await render(<Host initial={{ frequency: 'monthly', monthlyMode: 'date', monthlyDates: [e] }} />);
     expect(screen.queryByText('20')).toBeNull();
     expect(screen.getByText('The 3rd')).toBeTruthy();
   });
 
-  it('quarterly repeat-on collapses after picking', () => {
-    render(<Host initial={{ frequency: 'quarterly', longFirstDate: '2026-12-05' }} />);
-    fireEvent.press(screen.getByText('Same weekday'));
+  it('quarterly repeat-on collapses after picking', async () => {
+    await render(<Host initial={{ frequency: 'quarterly', longFirstDate: '2026-12-05' }} />);
+    await fireEvent.press(screen.getByText('Same weekday'));
     expect(latest.longRepeatBy).toBe('weekday');
     expect(screen.queryByText('Same date')).toBeNull();
   });
@@ -157,27 +157,27 @@ describe('RecurrenceEditor: end date', () => {
     ['weekly', { frequency: 'weekly', weekdayRows: [weeklyRow] }],
     ['biweekly', { frequency: 'biweekly', weekdayRows: [{ ...weeklyRow, startDate: today }] }],
     ['yearly', { frequency: 'yearly' }],
-  ])('offers an optional end date for %s', (_name, initial) => {
-    render(<Host initial={initial as any} />);
+  ])('offers an optional end date for %s', async (_name, initial) => {
+    await render(<Host initial={initial as any} />);
     expect(screen.getByText('Ending (optional)')).toBeTruthy();
     expect(screen.getByText('No end date')).toBeTruthy();
   });
 
-  it('picking a day sets the end date', () => {
-    render(<Host initial={{ frequency: 'weekly', weekdayRows: [weeklyRow], startDate: today }} />);
-    fireEvent.press(screen.getByTestId('end-date-field'));
-    fireEvent.press(screen.getByText(String(DateTime.now().day)));
+  it('picking a day sets the end date', async () => {
+    await render(<Host initial={{ frequency: 'weekly', weekdayRows: [weeklyRow], startDate: today }} />);
+    await fireEvent.press(screen.getByTestId('end-date-field'));
+    await fireEvent.press(screen.getByText(String(DateTime.now().day)));
     expect(latest.endDate).toBe(today);
   });
 
-  it('"No end date" clears it', () => {
-    render(<Host initial={{ frequency: 'weekly', weekdayRows: [weeklyRow], endDate: '2027-05-31' }} />);
-    fireEvent.press(screen.getByRole('button', { name: 'Remove end date' }));
+  it('"No end date" clears it', async () => {
+    await render(<Host initial={{ frequency: 'weekly', weekdayRows: [weeklyRow], endDate: '2027-05-31' }} />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Remove end date' }));
     expect(latest.endDate).toBeNull();
   });
 
-  it('an end date before the start shows the problem under the field', () => {
-    render(<Host initial={{ frequency: 'weekly', weekdayRows: [weeklyRow], startDate: '2027-03-01', endDate: '2027-02-01' }} />);
+  it('an end date before the start shows the problem under the field', async () => {
+    await render(<Host initial={{ frequency: 'weekly', weekdayRows: [weeklyRow], startDate: '2027-03-01', endDate: '2027-02-01' }} />);
     expect(screen.getByText("End date can't be before the start date.")).toBeTruthy();
   });
 });

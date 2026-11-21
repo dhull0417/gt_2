@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { TextInputInstance } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSignIn, useSignUp } from '@clerk/expo';
 import { Feather } from '@expo/vector-icons';
@@ -39,8 +40,8 @@ export default function EmailScreen() {
   const [pwStep, setPwStep] = useState<PasswordStep>(null);
   const [secondFactor, setSecondFactor] = useState<SecondFactor | null>(null);
   const [busy, setBusy] = useState(false);
-  const passwordRef = useRef<TextInput>(null);
-  const confirmRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInputInstance>(null);
+  const confirmRef = useRef<TextInputInstance>(null);
 
   const trimmed = email.trim();
   const isLoading = busy || code.isLoading;

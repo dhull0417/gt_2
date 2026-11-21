@@ -31,16 +31,16 @@ jest.mock('@clerk/expo', () => ({ useSignIn: () => ({ signIn: mockSignIn }) }));
 
 describe('Reset password', () => {
   it('lets someone retry a rejected password without re-using the code', async () => {
-    render(<ResetPasswordScreen />);
-    fireEvent.changeText(screen.getByLabelText('Verification code'), '123456');
-    fireEvent.changeText(screen.getByLabelText('New password'), 'weak');
-    fireEvent.changeText(screen.getByLabelText('Confirm new password'), 'weak');
-    fireEvent.press(screen.getByText('Save and sign in'));
+    await render(<ResetPasswordScreen />);
+    await fireEvent.changeText(screen.getByLabelText('Verification code'), '123456');
+    await fireEvent.changeText(screen.getByLabelText('New password'), 'weak');
+    await fireEvent.changeText(screen.getByLabelText('Confirm new password'), 'weak');
+    await fireEvent.press(screen.getByText('Save and sign in'));
     await waitFor(() => expect(mockSignIn.resetPasswordEmailCode.submitPassword).toHaveBeenCalledTimes(1));
 
-    fireEvent.changeText(screen.getByLabelText('New password'), 'a much stronger one');
-    fireEvent.changeText(screen.getByLabelText('Confirm new password'), 'a much stronger one');
-    fireEvent.press(screen.getByText('Save and sign in'));
+    await fireEvent.changeText(screen.getByLabelText('New password'), 'a much stronger one');
+    await fireEvent.changeText(screen.getByLabelText('Confirm new password'), 'a much stronger one');
+    await fireEvent.press(screen.getByText('Save and sign in'));
     await waitFor(() => expect(mockSignIn.finalize).toHaveBeenCalled());
     expect(mockSignIn.resetPasswordEmailCode.verifyCode).toHaveBeenCalledTimes(1);
   });

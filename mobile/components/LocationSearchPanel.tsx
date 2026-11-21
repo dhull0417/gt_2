@@ -224,7 +224,7 @@ const LocationSearchPanel = ({ initialValue, placeholder, onDone, onCancel }: Lo
             <View style={styles.centerState}><ActivityIndicator color={colors.textFaint} /></View>
           ) : (searchedQuery !== null && searchedQuery === text.trim()) ? (
             <View style={styles.centerState}><Text style={[styles.emptyText, { color: colors.textFaint }]}>No matches for "{text.trim()}"</Text></View>
-          ) : null
+          ) : undefined
         }
       />
 
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
   venueName: { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 2 },
   input: { fontSize: 16, color: '#111827', minHeight: 24, padding: 0 },
   locationOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(17,24,39,0.45)',
     alignItems: 'center',
     justifyContent: 'center',

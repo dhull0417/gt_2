@@ -4,7 +4,8 @@ import React, { useEffect } from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { useRouter } from 'expo-router';
+import type { BottomTabBarProps } from 'expo-router/tabs';
 import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
 import Animated, {
   Easing,
@@ -91,7 +92,8 @@ const AnimatedTabIcon = ({ name, focused }: { name: React.ComponentProps<typeof 
   );
 };
 
-export const AndroidTabBar = ({ state, descriptors, navigation }: BottomTabBarProps) => {
+export const AndroidTabBar = ({ state, descriptors, emitter, navigateToTab }: BottomTabBarProps) => {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
 
@@ -105,11 +107,11 @@ export const AndroidTabBar = ({ state, descriptors, navigation }: BottomTabBarPr
         const isFocused = state.index === index;
 
         const onPress = () => {
-          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+          const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (event.defaultPrevented) return;
 
           if (!isFocused) {
-            navigation.navigate(route.name, route.params);
+            navigateToTab(route.key);
             return;
           }
 
@@ -118,12 +120,12 @@ export const AndroidTabBar = ({ state, descriptors, navigation }: BottomTabBarPr
           // directly from chat, leaving it as the stack's only entry. Navigate to the
           // list explicitly so the tap always works.
           if (route.name === 'groups') {
-            navigation.navigate('groups', { screen: 'index' });
+            router.navigate('/groups');
           }
         };
 
         const onLongPress = () => {
-          navigation.emit({ type: 'tabLongPress', target: route.key });
+          emitter.emit({ type: 'tabLongPress', target: route.key });
         };
 
         return (

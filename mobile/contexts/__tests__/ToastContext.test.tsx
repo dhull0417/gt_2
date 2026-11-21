@@ -28,17 +28,17 @@ describe('ToastPortal', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
-  it('shows the toast inside the open modal, not behind it', () => {
-    render(<App modalOpen />);
-    act(() => { toast.error("You're offline."); });
+  it('shows the toast inside the open modal, not behind it', async () => {
+    await render(<App modalOpen />);
+    await act(() => { toast.error("You're offline."); });
     expect(within(screen.getByTestId('modal')).getByText("You're offline.")).toBeTruthy();
     expect(screen.getAllByText("You're offline.")).toHaveLength(1);
   });
 
-  it('falls back to the app root once the modal closes', () => {
-    const r = render(<App modalOpen />);
-    r.rerender(<App modalOpen={false} />);
-    act(() => { toast.error('Saved.'); });
+  it('falls back to the app root once the modal closes', async () => {
+    const r = await render(<App modalOpen />);
+    await r.rerender(<App modalOpen={false} />);
+    await act(() => { toast.error('Saved.'); });
     expect(screen.getAllByText('Saved.')).toHaveLength(1);
   });
 });

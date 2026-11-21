@@ -346,7 +346,7 @@ const GroupScreen = () => {
             <PressableOpacity onPress={() => router.push('/join/code')} style={{ alignSelf: 'center', marginTop: 16, padding: 8 }}>
               <Text style={{ color: colors.textMuted, fontWeight: '600', fontSize: 13 }}>Have an invite code?</Text>
             </PressableOpacity>
-          ) : null}
+          ) : undefined}
         />
       )}
       <GroupMuteSheet

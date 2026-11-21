@@ -168,13 +168,13 @@ export function ImageCropperHost() {
           <View style={styles.cropArea}>
             {request && (
               <GestureDetector gesture={composedGesture}>
-                <View style={StyleSheet.absoluteFillObject}>
+                <View style={StyleSheet.absoluteFill}>
                   {/* Full image, dimmed, unclipped — gives context on what's outside the crop. */}
-                  <View style={[StyleSheet.absoluteFillObject, styles.centerContent]} pointerEvents="none">
+                  <View style={[StyleSheet.absoluteFill, styles.centerContent]} pointerEvents="none">
                     <Animated.Image source={{ uri: request.uri }} style={[imageStyle, styles.dimmedImage]} />
                   </View>
                   {/* Same image again, clipped to the crop square, at full brightness. */}
-                  <View style={[StyleSheet.absoluteFillObject, styles.centerContent]} pointerEvents="none">
+                  <View style={[StyleSheet.absoluteFill, styles.centerContent]} pointerEvents="none">
                     <View style={[styles.cropSquare, { width: VIEW_SIZE, height: VIEW_SIZE }]}>
                       <Animated.Image source={{ uri: request.uri }} style={imageStyle} />
                     </View>
@@ -184,7 +184,7 @@ export function ImageCropperHost() {
             )}
 
             {processing && (
-              <View style={[StyleSheet.absoluteFillObject, styles.processingOverlay]}>
+              <View style={[StyleSheet.absoluteFill, styles.processingOverlay]}>
                 <ActivityIndicator size="large" color="#fff" />
                 <Text style={styles.processingText}>Processing photo…</Text>
               </View>

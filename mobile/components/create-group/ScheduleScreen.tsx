@@ -3,6 +3,7 @@
 // Spec: docs/specs/2026-11-19-calmer-meetup-forms-design.md
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import type { ScrollViewInstance } from 'react-native';
 import { Feather } from "@expo/vector-icons";
 import LocationField from "@/components/LocationField";
 import LocationSearchModal from "@/components/LocationSearchModal";
@@ -40,7 +41,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
     // only stores one Group.timezone), so it lives outside the schedules array.
     const [timezone, setTimezone] = useState(initialTimezone ?? deviceTimeZone());
     const [showTZPicker, setShowTZPicker] = useState(false);
-    const scrollViewRef = useRef<ScrollView>(null);
+    const scrollViewRef = useRef<ScrollViewInstance>(null);
     const { register, scrollTo } = useIssueScroll(scrollViewRef);
 
     // Starts with one blank series already in place so its fields are immediately visible.

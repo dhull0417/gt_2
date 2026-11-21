@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { TextInputInstance } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSignIn } from '@clerk/expo';
 import { AuthScreen } from '@/components/auth/AuthScreen';
@@ -25,8 +26,8 @@ const ResetPasswordScreen = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_S);
-  const passwordRef = useRef<TextInput>(null);
-  const confirmRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInputInstance>(null);
+  const confirmRef = useRef<TextInputInstance>(null);
 
   useEffect(() => {
     if (cooldown <= 0) return;

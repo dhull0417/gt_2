@@ -3,6 +3,7 @@
 // Spec: docs/specs/2026-11-19-calmer-meetup-forms-design.md
 import React, { useState, useMemo, useCallback, useRef, type ReactNode } from "react";
 import { View, Text, TextInput, ScrollView, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Switch } from "react-native";
+import type { ScrollViewInstance } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { timezoneOptions, tzAbbr } from '@/utils/timezones';
 import { toast } from '@/contexts/ToastContext';
@@ -81,7 +82,7 @@ const EditScheduleScreen = () => {
     const [sheet, setSheet] = useState<Sheet>(null);
     const [showTZPicker, setShowTZPicker] = useState(false);
     const [attempted, setAttempted] = useState(false);
-    const scrollRef = useRef<ScrollView>(null);
+    const scrollRef = useRef<ScrollViewInstance>(null);
     const { register, scrollTo } = useIssueScroll(scrollRef);
     const allIssues = scheduleIssues(d, { requireName: true, emptyIsValid: false });
     const issues = visibleIssues(allIssues, attempted);

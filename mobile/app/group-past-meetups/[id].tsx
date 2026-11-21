@@ -90,7 +90,7 @@ export default function GroupPastMeetupsScreen() {
               <Text style={{ color: colors.textMuted, fontSize: 16, marginTop: 12 }}>No past meetups yet</Text>
             </View>
           }
-          ListFooterComponent={query.isFetchingNextPage ? <ActivityIndicator style={{ marginVertical: 16 }} color={colors.brand} /> : null}
+          ListFooterComponent={query.isFetchingNextPage ? <ActivityIndicator style={{ marginVertical: 16 }} color={colors.brand} /> : undefined}
         />
       )}
     </SafeAreaView>

@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { Text, Modal, StyleSheet, ScrollView } from 'react-native';
+import type { ScrollViewInstance } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
@@ -25,7 +26,7 @@ const OptionPickerModal: React.FC<OptionPickerModalProps> = ({ title, options, s
     const isDark = scheme === 'dark';
     const activeRowBg = isDark ? '#1A2A42' : '#EEF6FF';
     const activeText = isDark ? '#93C5FD' : '#1D4ED8';
-    const scrollRef = useRef<ScrollView>(null);
+    const scrollRef = useRef<ScrollViewInstance>(null);
     const scrolledToSelected = useRef(false);
 
     return (

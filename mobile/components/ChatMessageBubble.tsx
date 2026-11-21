@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, Pressable, Alert, Platform } from 'react-native';
+import type { ViewInstance } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useMemo } from 'react';
 import { useEffect, useRef } from 'react';
@@ -127,7 +128,7 @@ function ChatMessageBubbleBase({
   const reactions = (!isDeleted && message.reactions) ? message.reactions : {};
   const reactionEntries = Object.entries(reactions).filter(([, users]) => users.length > 0);
 
-  const bubbleRef = useRef<View>(null);
+  const bubbleRef = useRef<ViewInstance>(null);
   const handleLongPress = () => {
     if (!canInteract) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

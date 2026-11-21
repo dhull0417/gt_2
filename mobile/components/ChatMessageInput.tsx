@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, TextInput, Text, StyleSheet, Image, ScrollView, Alert, Animated, LayoutAnimation, Platform, UIManager } from 'react-native';
+import type { TextInputInstance } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
@@ -55,7 +56,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   // Where to put the cursor once a picked @mention has been written into the text. Applied through the
   // ref after the new text renders, not via a controlled `selection` prop: on Android that prop can be
   // applied before the longer text lands, which jumps the cursor (or throws on an out-of-range index).
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const pendingCursor = useRef<number | null>(null);
   const [picked, setPicked] = useState<MentionMember[]>([]);
   const activeMention = useMemo(
@@ -365,7 +366,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   uploadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.45)',
     borderRadius: 10,
     justifyContent: 'center',
@@ -419,7 +420,7 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: '#B0C4E8' },
   // Fixed size so the search and Send layers can stack exactly on top of each other.
   morphBtn: { width: 64, height: 40, minWidth: 0, paddingHorizontal: 0, paddingVertical: 0, overflow: 'hidden', backgroundColor: 'transparent' },
-  morphLayer: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  morphLayer: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   sendBtnTimedOut: { alignItems: 'center', justifyContent: 'center' },
   sendLabel: { color: '#fff', fontWeight: '600', fontSize: 15 },
   suggestions: {

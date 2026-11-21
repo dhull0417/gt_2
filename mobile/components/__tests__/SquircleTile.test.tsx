@@ -10,22 +10,22 @@ jest.mock('@/contexts/AppearanceContext', () => ({
 const tint = { bg: '#EEF6FF', border: '#BFDBFE', fg: '#4A90E2' };
 
 describe('SquircleTile', () => {
-  it('shows the label and subtitle', () => {
-    render(<SquircleTile icon="users" label="Group Members" subtitle="14 members" tint={tint} onPress={() => {}} />);
+  it('shows the label and subtitle', async () => {
+    await render(<SquircleTile icon="users" label="Group Members" subtitle="14 members" tint={tint} onPress={() => {}} />);
     expect(screen.getByText('Group Members')).toBeTruthy();
     expect(screen.getByText('14 members')).toBeTruthy();
   });
 
-  it('is a square with continuous (squircle) corners', () => {
-    render(<SquircleTile icon="users" label="Members" tint={tint} onPress={() => {}} testID="tile" />);
+  it('is a square with continuous (squircle) corners', async () => {
+    await render(<SquircleTile icon="users" label="Members" tint={tint} onPress={() => {}} testID="tile" />);
     const style = StyleSheet.flatten(screen.getByTestId('tile').props.style);
     expect(style.borderCurve).toBe('continuous');
     expect(style.borderRadius).toBe(28);
     expect(style.aspectRatio).toBe(1);
   });
 
-  it('takes its fill and border from the tint, with no separate icon box', () => {
-    render(<SquircleTile icon="users" label="Members" tint={tint} onPress={() => {}} testID="tile" />);
+  it('takes its fill and border from the tint, with no separate icon box', async () => {
+    await render(<SquircleTile icon="users" label="Members" tint={tint} onPress={() => {}} testID="tile" />);
     const style = StyleSheet.flatten(screen.getByTestId('tile').props.style);
     expect(style.backgroundColor).toBe('#EEF6FF');
     expect(style.borderColor).toBe('#BFDBFE');
@@ -33,10 +33,10 @@ describe('SquircleTile', () => {
     expect(screen.queryByTestId('tile-icon-chip')).toBeNull();
   });
 
-  it('calls onPress when tapped', () => {
+  it('calls onPress when tapped', async () => {
     const onPress = jest.fn();
-    render(<SquircleTile icon="users" label="Members" tint={tint} onPress={onPress} />);
-    fireEvent.press(screen.getByText('Members'));
+    await render(<SquircleTile icon="users" label="Members" tint={tint} onPress={onPress} />);
+    await fireEvent.press(screen.getByText('Members'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

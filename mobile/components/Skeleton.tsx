@@ -95,5 +95,5 @@ export function SkeletonList({ kind, count = 4 }: { kind: 'meetup' | 'group' | '
 const styles = StyleSheet.create({
   card: { borderRadius: 16, borderWidth: 1, padding: 16, marginVertical: 8 },
   row: { flexDirection: 'row', alignItems: 'center' },
-  overlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 72 },
+  overlay: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 72 },
 });

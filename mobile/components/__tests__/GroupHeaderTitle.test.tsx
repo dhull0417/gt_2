@@ -18,8 +18,8 @@ const variants = {
 } as const;
 
 describe('GroupHeaderTitle', () => {
-  it.each(Object.entries(variants))('is the same fixed height: %s', (_label, props) => {
-    render(<GroupHeaderTitle name="Hiking Crew" imageUrl={null} {...props} />);
+  it.each(Object.entries(variants))('is the same fixed height: %s', async (_label, props) => {
+    await render(<GroupHeaderTitle name="Hiking Crew" imageUrl={null} {...props} />);
     const style = StyleSheet.flatten(screen.getByTestId('group-header-title').props.style);
     expect(style.height).toBe(GROUP_HEADER_TITLE_HEIGHT);
   });
@@ -29,8 +29,8 @@ describe('GroupHeaderTitle', () => {
     expect(GROUP_HEADER_TITLE_HEIGHT).toBeGreaterThanOrEqual(44);
   });
 
-  it('shows the name and subtitle', () => {
-    render(<GroupHeaderTitle name="Hiking Crew" subtitle="5 members" />);
+  it('shows the name and subtitle', async () => {
+    await render(<GroupHeaderTitle name="Hiking Crew" subtitle="5 members" />);
     expect(screen.getByText('Hiking Crew')).toBeTruthy();
     expect(screen.getByText('5 members')).toBeTruthy();
   });

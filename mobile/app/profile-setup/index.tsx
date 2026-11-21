@@ -1,4 +1,5 @@
 import { View, Text, TextInput, Alert, StyleSheet } from 'react-native';
+import type { TextInputInstance } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth, useUser } from '@clerk/expo';
@@ -33,8 +34,8 @@ const ProfileSetupScreen = () => {
     const [lastName, setLastName] = useState(currentUser?.lastName ?? clerkUser?.lastName ?? '');
     const [zipCode, setZipCode] = useState('');
     const [isSaving, setIsSaving] = useState(false);
-    const lastNameRef = useRef<TextInput>(null);
-    const zipRef = useRef<TextInput>(null);
+    const lastNameRef = useRef<TextInputInstance>(null);
+    const zipRef = useRef<TextInputInstance>(null);
 
     // Names can arrive after first render (the user record loads late); fill them in
     // unless the person has already started typing.

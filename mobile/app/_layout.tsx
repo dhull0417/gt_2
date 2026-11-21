@@ -5,8 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ClerkProvider, useAuth, useUser } from '@clerk/expo';
 import { resourceCache } from '@clerk/expo/resource-cache';
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, useRouter, useSegments } from 'expo-router';
 import { MutationCache, QueryClient, onlineManager, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
@@ -492,7 +491,9 @@ const AuthLayout = () => {
             notification: colors.danger,
           },
         }}>
-        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background } }}>
+        {/* SDK 58 makes native headers transparent (Liquid Glass) on iOS 26+, with content
+            running under them. Keep the solid headers these screens were designed with. */}
+        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerTransparent: false }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false, title: '' }} />
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
           <Stack.Screen name="profile-setup" options={{ presentation: 'modal', headerShown: false }} />

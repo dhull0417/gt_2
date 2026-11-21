@@ -39,27 +39,27 @@ jest.mock('react-native-safe-area-context', () => {
 describe('New Schedule', () => {
   beforeEach(() => mockCreateSchedule.mockReset());
 
-  it('a fresh form shows no problems', () => {
-    render(<EditScheduleScreen />);
+  it('a fresh form shows no problems', async () => {
+    await render(<EditScheduleScreen />);
     expect(screen.getByText('New Schedule')).toBeTruthy();
     expect(screen.queryByText(/Fix \d/)).toBeNull();
   });
 
-  it('Create with nothing filled in says exactly what is missing and does not save', () => {
-    render(<EditScheduleScreen />);
-    fireEvent.changeText(screen.getByLabelText('Schedule name'), '');
-    fireEvent.press(screen.getByLabelText('Create Schedule'));
+  it('Create with nothing filled in says exactly what is missing and does not save', async () => {
+    await render(<EditScheduleScreen />);
+    await fireEvent.changeText(screen.getByLabelText('Schedule name'), '');
+    await fireEvent.press(screen.getByLabelText('Create Schedule'));
     expect(mockCreateSchedule).not.toHaveBeenCalled();
     expect(screen.getByText('Give this schedule a name')).toBeTruthy();
     expect(screen.getByText('Pick how often')).toBeTruthy();
     expect(screen.getByText('Fix 2 things above')).toBeTruthy();
   });
 
-  it('fixing the problems clears them', () => {
-    render(<EditScheduleScreen />);
-    fireEvent.changeText(screen.getByLabelText('Schedule name'), '');
-    fireEvent.press(screen.getByLabelText('Create Schedule'));
-    fireEvent.changeText(screen.getByLabelText('Schedule name'), 'Sunday Dinner');
+  it('fixing the problems clears them', async () => {
+    await render(<EditScheduleScreen />);
+    await fireEvent.changeText(screen.getByLabelText('Schedule name'), '');
+    await fireEvent.press(screen.getByLabelText('Create Schedule'));
+    await fireEvent.changeText(screen.getByLabelText('Schedule name'), 'Sunday Dinner');
     expect(screen.queryByText('Give this schedule a name')).toBeNull();
     expect(screen.getByText('Fix 1 thing above')).toBeTruthy();
   });
@@ -76,10 +76,10 @@ describe('Edit Schedule: end date', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
-  const setEndToToday = () => {
-    fireEvent.press(screen.getByTestId('row-when'));
-    fireEvent.press(screen.getByTestId('end-date-field'));
-    fireEvent.press(screen.getByText(String(DateTime.now().day)));
+  const setEndToToday = async () => {
+    await fireEvent.press(screen.getByTestId('row-when'));
+    await fireEvent.press(screen.getByTestId('end-date-field'));
+    await fireEvent.press(screen.getByText(String(DateTime.now().day)));
   };
   const answer = (label: string) =>
     jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => { buttons?.find(b => b.text === label)?.onPress?.(); });
@@ -87,9 +87,9 @@ describe('Edit Schedule: end date', () => {
   it('Delete sends removeAfterEnd: true', async () => {
     mockCountAfter.mockResolvedValue(3);
     answer('Delete');
-    render(<EditScheduleScreen />);
-    setEndToToday();
-    fireEvent.press(screen.getByLabelText('Save Changes'));
+    await render(<EditScheduleScreen />);
+    await setEndToToday();
+    await fireEvent.press(screen.getByLabelText('Save Changes'));
     await waitFor(() => expect(mockUpdateSchedule).toHaveBeenCalled());
     expect(mockCountAfter).toHaveBeenCalledWith({}, 'g1', 's1', today);
     expect(mockUpdateSchedule.mock.calls[0][3]).toMatchObject({ endDate: today, removeAfterEnd: true });
@@ -98,9 +98,9 @@ describe('Edit Schedule: end date', () => {
   it('Cancel does not save', async () => {
     mockCountAfter.mockResolvedValue(3);
     const alert = answer('Cancel');
-    render(<EditScheduleScreen />);
-    setEndToToday();
-    fireEvent.press(screen.getByLabelText('Save Changes'));
+    await render(<EditScheduleScreen />);
+    await setEndToToday();
+    await fireEvent.press(screen.getByLabelText('Save Changes'));
     await waitFor(() => expect(alert).toHaveBeenCalled());
     expect(mockUpdateSchedule).not.toHaveBeenCalled();
   });
@@ -108,9 +108,9 @@ describe('Edit Schedule: end date', () => {
   it('nothing after the date: saves with removeAfterEnd: false and no dialog', async () => {
     mockCountAfter.mockResolvedValue(0);
     const alert = jest.spyOn(Alert, 'alert');
-    render(<EditScheduleScreen />);
-    setEndToToday();
-    fireEvent.press(screen.getByLabelText('Save Changes'));
+    await render(<EditScheduleScreen />);
+    await setEndToToday();
+    await fireEvent.press(screen.getByLabelText('Save Changes'));
     await waitFor(() => expect(mockUpdateSchedule).toHaveBeenCalled());
     expect(mockUpdateSchedule.mock.calls[0][3]).toMatchObject({ endDate: today, removeAfterEnd: false });
     expect(alert).not.toHaveBeenCalled();

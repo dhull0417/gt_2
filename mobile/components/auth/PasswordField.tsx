@@ -1,12 +1,13 @@
 import React, { forwardRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
+import type { TextInputInstance } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { TextField, type TextFieldProps } from '@/components/ui/TextField';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 
 /** TextField for passwords, with a show/hide toggle. `accessibilityLabel` names it for screen readers and tests. */
-export const PasswordField = forwardRef<TextInput, TextFieldProps>(function PasswordField({ containerStyle, style, ...rest }, ref) {
+export const PasswordField = forwardRef<TextInputInstance, TextFieldProps>(function PasswordField({ containerStyle, style, ...rest }, ref) {
   const colors = useThemeColors();
   const [visible, setVisible] = useState(false);
   return (

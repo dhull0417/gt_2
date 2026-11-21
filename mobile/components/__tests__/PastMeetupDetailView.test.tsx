@@ -20,8 +20,8 @@ const full: PastMeetupDetail = {
 };
 
 describe('PastMeetupDetailView', () => {
-  it('shows the name, place and who was in, out and undecided', () => {
-    render(<PastMeetupDetailView detail={full} onOpenTournament={() => {}} />);
+  it('shows the name, place and who was in, out and undecided', async () => {
+    await render(<PastMeetupDetailView detail={full} onOpenTournament={() => {}} />);
     expect(screen.getByText('Tuesday Hike')).toBeTruthy();
     expect(screen.getByText('Red Rocks')).toBeTruthy();
     expect(screen.getByText('In — 2')).toBeTruthy();
@@ -31,13 +31,13 @@ describe('PastMeetupDetailView', () => {
     expect(screen.queryByText(/Waitlist/)).toBeNull();
   });
 
-  it('shows the waitlist only when someone was on it', () => {
-    render(<PastMeetupDetailView detail={{ ...full, waitlist: [p('e', 'Eve')] }} onOpenTournament={() => {}} />);
+  it('shows the waitlist only when someone was on it', async () => {
+    await render(<PastMeetupDetailView detail={{ ...full, waitlist: [p('e', 'Eve')] }} onOpenTournament={() => {}} />);
     expect(screen.getByText('Waitlist — 1')).toBeTruthy();
   });
 
-  it('shows who brought what and the cars', () => {
-    render(<PastMeetupDetailView detail={full} onOpenTournament={() => {}} />);
+  it('shows who brought what and the cars', async () => {
+    await render(<PastMeetupDetailView detail={full} onOpenTournament={() => {}} />);
     expect(screen.getByText('Chips')).toBeTruthy();
     expect(screen.getByText('Ann, Bo')).toBeTruthy();
     expect(screen.getByText("Ann's car")).toBeTruthy();
@@ -45,18 +45,18 @@ describe('PastMeetupDetailView', () => {
     expect(screen.getByText('Needed a ride: Dee')).toBeTruthy();
   });
 
-  it('hides items, rides and tournament when there are none or they were not recorded', () => {
-    render(<PastMeetupDetailView detail={{ ...full, items: null, cars: [], needsRide: [], tournament: null, location: null }} onOpenTournament={() => {}} />);
+  it('hides items, rides and tournament when there are none or they were not recorded', async () => {
+    await render(<PastMeetupDetailView detail={{ ...full, items: null, cars: [], needsRide: [], tournament: null, location: null }} onOpenTournament={() => {}} />);
     expect(screen.queryByText('Brought')).toBeNull();
     expect(screen.queryByText('Rides')).toBeNull();
     expect(screen.queryByText('Tournament')).toBeNull();
   });
 
-  it('shows the champion and opens the results', () => {
+  it('shows the champion and opens the results', async () => {
     const onOpen = jest.fn();
-    render(<PastMeetupDetailView detail={full} onOpenTournament={onOpen} />);
+    await render(<PastMeetupDetailView detail={full} onOpenTournament={onOpen} />);
     expect(screen.getByText('Champion: Ann')).toBeTruthy();
-    fireEvent.press(screen.getByText('See results'));
+    await fireEvent.press(screen.getByText('See results'));
     expect(onOpen).toHaveBeenCalledWith('t1');
   });
 });

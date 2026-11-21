@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, type View, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
+import type { ViewInstance } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -7,7 +8,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export type PressableScaleProps = Omit<PressableProps, 'style'> & {
   style?: StyleProp<ViewStyle>;
   /** React 19 passes ref as a normal prop; forwarded to the underlying Pressable. */
-  ref?: React.Ref<View>;
+  ref?: React.Ref<ViewInstance>;
   /** Scale while pressed (1 = no change). */
   scaleTo?: number;
 };

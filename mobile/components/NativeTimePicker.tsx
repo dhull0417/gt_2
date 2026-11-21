@@ -58,7 +58,7 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, on
     );
 
     if (asOverlay) {
-        return <View style={StyleSheet.absoluteFillObject}>{content}</View>;
+        return <View style={StyleSheet.absoluteFill}>{content}</View>;
     }
 
     return (

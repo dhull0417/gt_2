@@ -113,9 +113,9 @@ export function ChatActionPanel({
   };
 
   return (
-    <View style={StyleSheet.absoluteFillObject}>
-      <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose}>
-        <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
+    <View style={StyleSheet.absoluteFill}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
+        <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
       </Pressable>
 
       <Animated.View style={[styles.panel, { top, left, width: panelWidth, backgroundColor: colors.surface }, panelStyle]}>

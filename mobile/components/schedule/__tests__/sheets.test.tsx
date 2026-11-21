@@ -17,93 +17,93 @@ jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
 const base = { visible: true, onClose: () => {} };
 
 describe('CapacitySheet', () => {
-  it('Set a limit shows the input, and its issue in red', () => {
+  it('Set a limit shows the input, and its issue in red', async () => {
     const onChange = jest.fn();
     const issue: Issue = { area: 'capacity', field: 'capacityInput', kind: 'missing', message: 'Enter how many people can come' };
-    const { rerender } = render(<CapacitySheet {...base} issues={[]} mode="unlimited" input="" onChange={onChange} />);
-    fireEvent.press(screen.getByTestId('capacity-limited'));
+    const { rerender } = await render(<CapacitySheet {...base} issues={[]} mode="unlimited" input="" onChange={onChange} />);
+    await fireEvent.press(screen.getByTestId('capacity-limited'));
     expect(onChange).toHaveBeenCalledWith({ maxAttendeesMode: 'limited' });
-    rerender(<CapacitySheet {...base} issues={[issue]} mode="limited" input="" onChange={onChange} />);
+    await rerender(<CapacitySheet {...base} issues={[issue]} mode="limited" input="" onChange={onChange} />);
     expect(screen.getByText('Enter how many people can come')).toBeTruthy();
-    fireEvent.changeText(screen.getByLabelText('Max attendees'), '12');
+    await fireEvent.changeText(screen.getByLabelText('Max attendees'), '12');
     expect(onChange).toHaveBeenLastCalledWith({ maxAttendeesInput: '12' });
   });
 });
 
 describe('BringItemsSheet', () => {
   const issue = { area: 'bring' as const, field: 'item:a', kind: 'missing' as const, message: 'Give every item a name, or remove the empty row.' };
-  it('is titled Food/Things to bring', () => {
-    render(<BringItemsSheet {...base} issues={[]} showIssues={false} items={[]} onChange={() => {}} />);
+  it('is titled Food/Things to bring', async () => {
+    await render(<BringItemsSheet {...base} issues={[]} showIssues={false} items={[]} onChange={() => {}} />);
     expect(screen.getByText('Food/Things to bring')).toBeTruthy();
   });
-  it('an empty item is not red while typing; Done reveals it and keeps the sheet open', () => {
+  it('an empty item is not red while typing; Done reveals it and keeps the sheet open', async () => {
     const onClose = jest.fn();
-    render(<BringItemsSheet visible onClose={onClose} issues={[issue]} showIssues={false} items={[{ key: 'a', name: '', max: '' }]} onChange={() => {}} />);
+    await render(<BringItemsSheet visible onClose={onClose} issues={[issue]} showIssues={false} items={[{ key: 'a', name: '', max: '' }]} onChange={() => {}} />);
     expect(screen.queryByText(issue.message)).toBeNull();
-    fireEvent.press(screen.getByText('Done'));
+    await fireEvent.press(screen.getByText('Done'));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByText(issue.message)).toBeTruthy();
   });
-  it('Done closes when every item is fine', () => {
+  it('Done closes when every item is fine', async () => {
     const onClose = jest.fn();
-    render(<BringItemsSheet visible onClose={onClose} issues={[]} showIssues={false} items={[{ key: 'a', name: 'Chips', max: '' }]} onChange={() => {}} />);
-    fireEvent.press(screen.getByText('Done'));
+    await render(<BringItemsSheet visible onClose={onClose} issues={[]} showIssues={false} items={[{ key: 'a', name: 'Chips', max: '' }]} onChange={() => {}} />);
+    await fireEvent.press(screen.getByText('Done'));
     expect(onClose).toHaveBeenCalled();
   });
-  it('after a Save attempt the problem shows straight away', () => {
-    render(<BringItemsSheet {...base} issues={[issue]} showIssues items={[{ key: 'a', name: '', max: '' }]} onChange={() => {}} />);
+  it('after a Save attempt the problem shows straight away', async () => {
+    await render(<BringItemsSheet {...base} issues={[issue]} showIssues items={[{ key: 'a', name: '', max: '' }]} onChange={() => {}} />);
     expect(screen.getByText(issue.message)).toBeTruthy();
   });
-  it('adds an item', () => {
+  it('adds an item', async () => {
     const onChange = jest.fn();
-    render(<BringItemsSheet {...base} issues={[]} showIssues={false} items={[]} onChange={onChange} />);
-    fireEvent.press(screen.getByText('Add item to bring'));
+    await render(<BringItemsSheet {...base} issues={[]} showIssues={false} items={[]} onChange={onChange} />);
+    await fireEvent.press(screen.getByText('Add item to bring'));
     expect(onChange.mock.calls[0][0]).toHaveLength(1);
   });
 });
 
 describe('RsvpRulesSheet', () => {
   const value = { rsvpRestricted: false, leadEnabled: false, leadDays: 5, leadTime: '09:00 AM', deadlineEnabled: false, deadlineDays: 2, deadlineTime: '09:00 AM', minAttendeesInput: '', maxAttendeesMode: 'unlimited' as const, maxAttendeesInput: '' };
-  it('Set a window limits RSVPs', () => {
+  it('Set a window limits RSVPs', async () => {
     const onChange = jest.fn();
-    render(<RsvpRulesSheet {...base} issues={[]} value={value} onChange={onChange} isPremium />);
-    fireEvent.press(screen.getByTestId('rsvp-limit'));
+    await render(<RsvpRulesSheet {...base} issues={[]} value={value} onChange={onChange} isPremium />);
+    await fireEvent.press(screen.getByTestId('rsvp-limit'));
     expect(onChange).toHaveBeenCalledWith({ rsvpRestricted: true });
   });
-  it('shows the minimum issue', () => {
-    render(<RsvpRulesSheet {...base} value={{ ...value, rsvpRestricted: true, deadlineEnabled: true, minAttendeesInput: '9' }} onChange={() => {}} isPremium
+  it('shows the minimum issue', async () => {
+    await render(<RsvpRulesSheet {...base} value={{ ...value, rsvpRestricted: true, deadlineEnabled: true, minAttendeesInput: '9' }} onChange={() => {}} isPremium
       issues={[{ area: 'rsvp', field: 'minAttendees', kind: 'invalid', message: "Can't be more than the max attendees." }]} />);
     expect(screen.getByText("Can't be more than the max attendees.")).toBeTruthy();
   });
 });
 
 describe('OneOffWhenSheet', () => {
-  it('shows an end-time issue', () => {
-    render(<OneOffWhenSheet {...base} asOverlay date="2026-12-05" time="05:00 PM" endTime="05:00 PM" minDate="2026-11-19" onChange={() => {}}
+  it('shows an end-time issue', async () => {
+    await render(<OneOffWhenSheet {...base} asOverlay date="2026-12-05" time="05:00 PM" endTime="05:00 PM" minDate="2026-11-19" onChange={() => {}}
       issues={[{ area: 'when', field: 'endTime', kind: 'invalid', message: "End time can't be the same as the start time." }]} />);
     expect(screen.getAllByText("End time can't be the same as the start time.").length).toBeGreaterThan(0);
   });
 });
 
 describe('QuestionsSheet', () => {
-  it('adds a question', () => {
+  it('adds a question', async () => {
     const onChange = jest.fn();
-    render(<QuestionsSheet visible onClose={() => {}} showIssues={false} drafts={[]} onChange={onChange} savedLater="group" />);
-    fireEvent.press(screen.getByText('Add question'));
+    await render(<QuestionsSheet visible onClose={() => {}} showIssues={false} drafts={[]} onChange={onChange} savedLater="group" />);
+    await fireEvent.press(screen.getByText('Add question'));
     expect(onChange.mock.calls[0][0]).toHaveLength(1);
   });
-  it('a blank question is only flagged when Done is tapped, and the sheet stays open', () => {
+  it('a blank question is only flagged when Done is tapped, and the sheet stays open', async () => {
     const onClose = jest.fn();
-    render(<QuestionsSheet visible onClose={onClose} showIssues={false} drafts={[blankQuestion()]} onChange={() => {}} savedLater="group" />);
+    await render(<QuestionsSheet visible onClose={onClose} showIssues={false} drafts={[blankQuestion()]} onChange={() => {}} savedLater="group" />);
     expect(screen.queryByText('Type the question, or remove it')).toBeNull();
-    fireEvent.press(screen.getByText('Done'));
+    await fireEvent.press(screen.getByText('Done'));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByText('Type the question, or remove it')).toBeTruthy();
   });
-  it('Done closes when every question is complete', () => {
+  it('Done closes when every question is complete', async () => {
     const onClose = jest.fn();
-    render(<QuestionsSheet visible onClose={onClose} showIssues={false} drafts={[{ ...blankQuestion(), prompt: 'Diet?' }]} onChange={() => {}} savedLater="group" />);
-    fireEvent.press(screen.getByText('Done'));
+    await render(<QuestionsSheet visible onClose={onClose} showIssues={false} drafts={[{ ...blankQuestion(), prompt: 'Diet?' }]} onChange={() => {}} savedLater="group" />);
+    await fireEvent.press(screen.getByText('Done'));
     expect(onClose).toHaveBeenCalled();
   });
 });

@@ -158,7 +158,7 @@ export default function TournamentScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}>
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => { refetch(); }} tintColor={colors.brand} />}>
         <Text style={styles.hint}>{FORMAT_LABEL[t.format]} · {t.teams.length} {t.mode === 'singles' ? 'players' : 'teams'}</Text>
 
         {t.status === 'finished' && t.champion && (

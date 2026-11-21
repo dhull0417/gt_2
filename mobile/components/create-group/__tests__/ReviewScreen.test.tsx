@@ -18,12 +18,12 @@ const show = (schedules: any[]) => render(
 );
 
 describe('ReviewScreen: end date', () => {
-  it('shows when the schedule ends', () => {
-    show([weekly({ endDate: '2027-05-31' })]);
+  it('shows when the schedule ends', async () => {
+    await show([weekly({ endDate: '2027-05-31' })]);
     expect(screen.getByText('Ends May 31, 2027')).toBeTruthy();
   });
-  it('shows nothing when the schedule runs forever', () => {
-    show([weekly()]);
+  it('shows nothing when the schedule runs forever', async () => {
+    await show([weekly()]);
     expect(screen.queryByText(/^Ends /)).toBeNull();
   });
 });

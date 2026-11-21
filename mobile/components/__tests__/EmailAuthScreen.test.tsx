@@ -31,17 +31,17 @@ const typeEmail = () => fireEvent.changeText(screen.getByLabelText('Email'), '  
 describe('Email sign-in screen', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('offers a code and a password', () => {
-    render(<EmailScreen />);
+  it('offers a code and a password', async () => {
+    await render(<EmailScreen />);
     expect(screen.getByText('Continue with code')).toBeTruthy();
     expect(screen.getByText('Continue with password')).toBeTruthy();
   });
 
   it('sends a code to the trimmed email and shows the code step', async () => {
     (startCode as jest.Mock).mockResolvedValue({ ok: true, mode: 'signIn' });
-    render(<EmailScreen />);
-    typeEmail();
-    fireEvent.press(screen.getByText('Continue with code'));
+    await render(<EmailScreen />);
+    await typeEmail();
+    await fireEvent.press(screen.getByText('Continue with code'));
     await waitFor(() => expect(screen.getByLabelText('Verification code')).toBeTruthy());
     expect((startCode as jest.Mock).mock.calls[0][0]).toBe('email');
     expect((startCode as jest.Mock).mock.calls[0][1]).toBe('sam@x.com');
@@ -49,29 +49,29 @@ describe('Email sign-in screen', () => {
 
   it('shows the password field for an account that has one', async () => {
     (lookupForPassword as jest.Mock).mockResolvedValue('existing');
-    render(<EmailScreen />);
-    typeEmail();
-    fireEvent.press(screen.getByText('Continue with password'));
+    await render(<EmailScreen />);
+    await typeEmail();
+    await fireEvent.press(screen.getByText('Continue with password'));
     await waitFor(() => expect(screen.getByLabelText('Password')).toBeTruthy());
     expect(screen.getByText('Forgot password?')).toBeTruthy();
   });
 
   it('asks a new account to create a password', async () => {
     (lookupForPassword as jest.Mock).mockResolvedValue('new');
-    render(<EmailScreen />);
-    typeEmail();
-    fireEvent.press(screen.getByText('Continue with password'));
+    await render(<EmailScreen />);
+    await typeEmail();
+    await fireEvent.press(screen.getByText('Continue with password'));
     await waitFor(() => expect(screen.getByLabelText('Confirm password')).toBeTruthy());
   });
 
   it('explains when the account has no password and offers a code', async () => {
     (lookupForPassword as jest.Mock).mockResolvedValue('no-password');
     (startCode as jest.Mock).mockResolvedValue({ ok: true, mode: 'signIn' });
-    render(<EmailScreen />);
-    typeEmail();
-    fireEvent.press(screen.getByText('Continue with password'));
+    await render(<EmailScreen />);
+    await typeEmail();
+    await fireEvent.press(screen.getByText('Continue with password'));
     await waitFor(() => expect(screen.getByText(/doesn't have a password/)).toBeTruthy());
-    fireEvent.press(screen.getByText('Email me a code'));
+    await fireEvent.press(screen.getByText('Email me a code'));
     await waitFor(() => expect(screen.getByLabelText('Verification code')).toBeTruthy());
   });
 });

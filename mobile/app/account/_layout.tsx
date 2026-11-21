@@ -17,6 +17,7 @@ const AccountLayout = () => {
                 headerStyle: { backgroundColor: colors.surface },
                 headerTintColor: colors.textPrimary,
                 headerTitleStyle: { color: colors.textPrimary },
+                headerTransparent: false, // solid header on iOS 26+ (see app/_layout.tsx)
             }}
         >
             <Stack.Screen

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
+import type { TextInputInstance } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
@@ -28,7 +29,7 @@ export function VerificationCodeForm({ destination, onSubmit, onResend, isLoadin
   const [code, setCode] = useState('');
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_S);
   const [resending, setResending] = useState(false);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const isEmail = destination.includes('@');
 
   useEffect(() => { inputRef.current?.focus(); }, []);

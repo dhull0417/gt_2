@@ -49,18 +49,18 @@ describe('Profile setup', () => {
   });
 
   it('prefills the name and saves name and zip, then opens the app', async () => {
-    render(<ProfileSetupScreen />);
+    await render(<ProfileSetupScreen />);
     expect(screen.getByLabelText('First name').props.value).toBe('Sam');
-    fireEvent.changeText(screen.getByLabelText('Zip code'), '84 060x');
-    fireEvent.press(screen.getByText('Save & continue'));
+    await fireEvent.changeText(screen.getByLabelText('Zip code'), '84 060x');
+    await fireEvent.press(screen.getByText('Save & continue'));
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)'));
     expect(userApi.updateProfile).toHaveBeenCalledWith({}, { firstName: 'Sam', lastName: 'Lee', zipCode: '84060' });
   });
 
-  it('requires a 5-digit zip code', () => {
-    render(<ProfileSetupScreen />);
-    fireEvent.changeText(screen.getByLabelText('Zip code'), '123');
-    fireEvent.press(screen.getByText('Save & continue'));
+  it('requires a 5-digit zip code', async () => {
+    await render(<ProfileSetupScreen />);
+    await fireEvent.changeText(screen.getByLabelText('Zip code'), '123');
+    await fireEvent.press(screen.getByText('Save & continue'));
     expect(Alert.alert).toHaveBeenCalledWith('Zip Code Needed', expect.any(String));
     expect(userApi.updateProfile).not.toHaveBeenCalled();
   });
@@ -68,23 +68,23 @@ describe('Profile setup', () => {
   it('lets an Apple user with no name add one, without requiring it', async () => {
     mockClerkUser = { externalAccounts: [{ provider: 'oauth_apple' }] };
     mockCurrentUser = { firstName: '', lastName: '' };
-    render(<ProfileSetupScreen />);
+    await render(<ProfileSetupScreen />);
     expect(screen.getByText(/Add your name/)).toBeTruthy();
-    fireEvent.changeText(screen.getByLabelText('Zip code'), '84060');
-    fireEvent.press(screen.getByText('Save & continue'));
+    await fireEvent.changeText(screen.getByLabelText('Zip code'), '84060');
+    await fireEvent.press(screen.getByText('Save & continue'));
     await waitFor(() => expect(userApi.updateProfile).toHaveBeenCalledWith({}, { zipCode: '84060' }));
   });
 
-  it('hides the name fields for an Apple user who already has a name', () => {
+  it('hides the name fields for an Apple user who already has a name', async () => {
     mockClerkUser = { externalAccounts: [{ provider: 'oauth_apple' }] };
     mockCurrentUser = { firstName: 'Sam', lastName: 'Lee' };
-    render(<ProfileSetupScreen />);
+    await render(<ProfileSetupScreen />);
     expect(screen.queryByLabelText('First name')).toBeNull();
   });
 
   it('signs out from setup', async () => {
-    render(<ProfileSetupScreen />);
-    fireEvent.press(screen.getByLabelText('Sign out'));
+    await render(<ProfileSetupScreen />);
+    await fireEvent.press(screen.getByLabelText('Sign out'));
     await waitFor(() => expect(mockSignOut).toHaveBeenCalled());
     expect(mockClear).toHaveBeenCalled();
   });

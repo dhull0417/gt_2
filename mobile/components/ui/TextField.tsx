@@ -1,5 +1,6 @@
 import React, { forwardRef } from 'react';
 import { StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
+import type { TextInputInstance } from 'react-native';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { fontSize, fontWeight, radius } from '@/constants/theme';
 
@@ -12,7 +13,7 @@ export type TextFieldProps = TextInputProps & {
 };
 
 /** Themed text input with optional label, helper text and error state. Forwards its ref to the TextInput. */
-export const TextField = forwardRef<TextInput, TextFieldProps>(function TextField(
+export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function TextField(
   { label, error, helperText, containerStyle, style, accessibilityLabel, ...rest },
   ref
 ) {

@@ -26,9 +26,9 @@ describe('Phone sign-in screen', () => {
 
   it('sends the code to the normalized number and offers resend and autofill', async () => {
     (startCode as jest.Mock).mockResolvedValue({ ok: true, mode: 'signUp' });
-    render(<PhoneLogin />);
-    fireEvent.changeText(screen.getByLabelText('Phone number'), '(801) 555-1234');
-    fireEvent.press(screen.getByText('Send code'));
+    await render(<PhoneLogin />);
+    await fireEvent.changeText(screen.getByLabelText('Phone number'), '(801) 555-1234');
+    await fireEvent.press(screen.getByText('Send code'));
     await waitFor(() => expect(screen.getByLabelText('Verification code')).toBeTruthy());
     expect((startCode as jest.Mock).mock.calls[0].slice(0, 2)).toEqual(['phone', '+18015551234']);
     expect(screen.getByLabelText('Verification code').props.textContentType).toBe('oneTimeCode');
@@ -37,9 +37,9 @@ describe('Phone sign-in screen', () => {
 
   it('stays on the number step when the code cannot be sent', async () => {
     (startCode as jest.Mock).mockResolvedValue({ ok: false, message: 'Too many attempts' });
-    render(<PhoneLogin />);
-    fireEvent.changeText(screen.getByLabelText('Phone number'), '8015551234');
-    fireEvent.press(screen.getByText('Send code'));
+    await render(<PhoneLogin />);
+    await fireEvent.changeText(screen.getByLabelText('Phone number'), '8015551234');
+    await fireEvent.press(screen.getByText('Send code'));
     await waitFor(() => expect(startCode).toHaveBeenCalled());
     expect(screen.queryByLabelText('Verification code')).toBeNull();
   });

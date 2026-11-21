@@ -221,7 +221,7 @@ export default function ChatSearchScreen() {
               )}
             </View>
           }
-          ListFooterComponent={photos.isFetchingNextPage ? <ActivityIndicator style={{ margin: 16 }} /> : null}
+          ListFooterComponent={photos.isFetchingNextPage ? <ActivityIndicator style={{ margin: 16 }} /> : undefined}
           renderItem={({ item }) => (
             <PressableOpacity onPress={() => setViewer(item)} activeOpacity={0.8}>
               <Image source={{ uri: item.image_url! }} style={{ width: size, height: size }} contentFit="cover" recyclingKey={item.id} />

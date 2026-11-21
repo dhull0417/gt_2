@@ -5,6 +5,7 @@ import {
   View, Text, StyleSheet, Modal, Pressable, ScrollView, useWindowDimensions, Platform,
   LayoutAnimation, UIManager, Keyboard, TextInput,
 } from 'react-native';
+import type { ScrollViewInstance, ViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
@@ -159,8 +160,8 @@ export function SettingSheet({ visible, title, onClose, onDone, children, asOver
   const keyboard = useKeyboardHeight();
   const [area, setArea] = useState({ base: 0, now: 0 });
   const pad = keyboardPadding({ keyboard, base: area.base, now: area.now });
-  const scrollRef = useRef<ScrollView>(null);
-  const contentRef = useRef<View>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const contentRef = useRef<ViewInstance>(null);
   // When the keyboard opens, bring the field being typed in into view inside the (now shorter) sheet.
   useEffect(() => {
     if (!keyboard) return;

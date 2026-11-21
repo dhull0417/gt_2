@@ -1,6 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
-import type { Router } from 'expo-router';
+import type { useRouter } from 'expo-router';
 import { encodePendingInvite, decodePendingInvite, type PendingInvite } from './inviteLink';
+
+type Router = ReturnType<typeof useRouter>;
 
 /** An invite waiting for the person to sign in (or picked up after a fresh install). */
 export const PENDING_INVITE_KEY = 'GROUPTHAT_PENDING_INVITE';

@@ -28,18 +28,18 @@ describe('Welcome screen', () => {
   const original = Platform.OS;
   afterEach(() => { (Platform as any).OS = original; });
 
-  it('keeps Phone under More options on iPhone and reveals it on tap', () => {
+  it('keeps Phone under More options on iPhone and reveals it on tap', async () => {
     (Platform as any).OS = 'ios';
-    render(<Welcome />);
+    await render(<Welcome />);
     expect(screen.queryByText('Continue with Phone')).toBeNull();
-    fireEvent.press(screen.getByText('More options'));
+    await fireEvent.press(screen.getByText('More options'));
     expect(screen.getByText('Continue with Phone')).toBeTruthy();
     expect(screen.getByText('Fewer options')).toBeTruthy();
   });
 
-  it('shows Phone straight away on Android, with no toggle', () => {
+  it('shows Phone straight away on Android, with no toggle', async () => {
     (Platform as any).OS = 'android';
-    render(<Welcome />);
+    await render(<Welcome />);
     expect(screen.getByText('Continue with Phone')).toBeTruthy();
     expect(screen.queryByText('More options')).toBeNull();
   });

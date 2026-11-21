@@ -9,7 +9,7 @@ const AddMembersLayout = () => {
     const colors = useThemeColors();
 
     return (
-        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background } }}>
+        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerTransparent: false /* solid header on iOS 26+ (see app/_layout.tsx) */ }}>
             <Stack.Screen
                 name="[id]"
                 options={{

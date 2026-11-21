@@ -1,6 +1,6 @@
 import { View, Text, FlatList, RefreshControl, Modal, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Reanimated, { FadeIn, useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
+import Reanimated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,6 +22,7 @@ import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
 import { SkeletonList } from '@/components/Skeleton';
+import { FadeUp, FadeUpScreen } from '@/components/ui/FadeUp';
 import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
 import { OfflineEmptyState } from '@/components/OfflineEmptyState';
 import { isOfflineEmpty } from '@/utils/offlineState';
@@ -100,12 +101,6 @@ const capMeetupsByFrequency = (list: Meetup[]): Meetup[] => {
 };
 
 // --- Components ---
-
-// Fades a card in when it newly appears in a filtered list (e.g. switching RSVP tabs)
-// instead of having it pop in abruptly.
-const FadeInCard = ({ children }: { children: React.ReactNode }) => (
-  <Reanimated.View entering={FadeIn.duration(250)}>{children}</Reanimated.View>
-);
 
 type RsvpFilter = 'all' | 'undecided' | 'in' | 'out';
 
@@ -399,7 +394,12 @@ const DashboardScreen = () => {
     return rows;
   }, [filteredUpcomingMeetups, groupedMeetups]);
 
-  const renderRow = ({ item }: { item: Row }) => {
+  // Header sections take cascade slots 0–3, so list rows start at 4.
+  const renderRow = ({ item, index }: { item: Row; index: number }) => (
+    <FadeUp index={index + 4}>{renderRowContent(item)}</FadeUp>
+  );
+
+  const renderRowContent = (item: Row) => {
     if (item.kind === 'day') return <DayHeader label={item.label} />;
     if (item.kind === 'pastHeader') {
       return (
@@ -422,17 +422,15 @@ const DashboardScreen = () => {
       );
     }
     return (
-      <FadeInCard>
-        <MeetupCard
-          meetup={meetup}
-          onPress={() => handleOpenModal(meetup)}
-          showRsvpButtons={true}
-          onRsvp={(status, guestCount, mute) => handleDashboardRsvp(meetup, status, guestCount, mute)}
-          isRsvping={isRsvpBusyFor(meetup._id)}
-          rsvpQueued={isRsvpQueuedFor(meetup._id)}
-          currentUser={currentUser}
-        />
-      </FadeInCard>
+      <MeetupCard
+        meetup={meetup}
+        onPress={() => handleOpenModal(meetup)}
+        showRsvpButtons={true}
+        onRsvp={(status, guestCount, mute) => handleDashboardRsvp(meetup, status, guestCount, mute)}
+        isRsvping={isRsvpBusyFor(meetup._id)}
+        rsvpQueued={isRsvpQueuedFor(meetup._id)}
+        currentUser={currentUser}
+      />
     );
   };
 
@@ -441,116 +439,124 @@ const DashboardScreen = () => {
 
   const listHeader = (
     <View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 }}>
-        {/* Shrinks to fit: on narrow Android phones or with a larger system font, the title pushed
-            the group filter button off the edge of the screen. */}
-        <Text
-          style={{ fontSize: 32, fontWeight: '900', color: colors.brand, letterSpacing: -1, flexShrink: 1 }}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.6}
-        >
-          Upcoming Meetups
-        </Text>
-        {uniqueGroups.length > 1 && (
-          <PressableOpacity
-            onPress={() => setFilterOpen(prev => !prev)}
-            style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, position: 'relative' }}
+      <FadeUp index={0}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 }}>
+          {/* Shrinks to fit: on narrow Android phones or with a larger system font, the title pushed
+              the group filter button off the edge of the screen. */}
+          <Text
+            style={{ fontSize: 32, fontWeight: '900', color: colors.brand, letterSpacing: -1, flexShrink: 1 }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
           >
-            <Feather name="sliders" size={18} color={colors.brand} />
-            {hiddenGroupIds.size > 0 && (
-              <View style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentCoral }} />
-            )}
-          </PressableOpacity>
-        )}
-      </View>
+            Upcoming Meetups
+          </Text>
+          {uniqueGroups.length > 1 && (
+            <PressableOpacity
+              onPress={() => setFilterOpen(prev => !prev)}
+              style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, position: 'relative' }}
+            >
+              <Feather name="sliders" size={18} color={colors.brand} />
+              {hiddenGroupIds.size > 0 && (
+                <View style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentCoral }} />
+              )}
+            </PressableOpacity>
+          )}
+        </View>
+      </FadeUp>
 
-      <View style={{ flexDirection: 'row', paddingHorizontal: 8, marginTop: 12, marginBottom: 10, gap: 8 }}>
-        {FILTER_TABS.map(tab => (
-          <FilterPill
-            key={tab.key}
-            label={tab.label}
-            active={rsvpFilter === tab.key}
-            onPress={() => setRsvpFilter(tab.key)}
-          />
-        ))}
-      </View>
+      <FadeUp index={1}>
+        <View style={{ flexDirection: 'row', paddingHorizontal: 8, marginTop: 12, marginBottom: 10, gap: 8 }}>
+          {FILTER_TABS.map(tab => (
+            <FilterPill
+              key={tab.key}
+              label={tab.label}
+              active={rsvpFilter === tab.key}
+              onPress={() => setRsvpFilter(tab.key)}
+            />
+          ))}
+        </View>
+      </FadeUp>
 
       {!hintDismissed && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, marginBottom: 8, gap: 6 }}>
-          <Text style={{ fontSize: 13, color: colors.textFaint, fontWeight: '500' }}>
-            Tap
-          </Text>
-          <View style={{
-            width: 36, height: 36, borderRadius: 10,
-            alignItems: 'center', justifyContent: 'center',
-            borderWidth: 1, backgroundColor: hintBg, borderColor: hintBorder,
-          }}>
-            <Feather name="calendar" size={18} color={colors.warning} />
+        <FadeUp index={2}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, marginBottom: 8, gap: 6 }}>
+            <Text style={{ fontSize: 13, color: colors.textFaint, fontWeight: '500' }}>
+              Tap
+            </Text>
+            <View style={{
+              width: 36, height: 36, borderRadius: 10,
+              alignItems: 'center', justifyContent: 'center',
+              borderWidth: 1, backgroundColor: hintBg, borderColor: hintBorder,
+            }}>
+              <Feather name="calendar" size={18} color={colors.warning} />
+            </View>
+            <Text style={{ flex: 1, fontSize: 13, color: colors.textFaint, fontWeight: '500' }}>
+              in your Group Chat to see more meetups!
+            </Text>
+            <PressableOpacity
+              accessibilityLabel="Dismiss hint"
+              hitSlop={10}
+              onPress={() => { setHintDismissed(true); AsyncStorage.setItem(HINT_DISMISSED_KEY, '1').catch(() => {}); }}
+            >
+              <Feather name="x" size={16} color={colors.textFaint} />
+            </PressableOpacity>
           </View>
-          <Text style={{ flex: 1, fontSize: 13, color: colors.textFaint, fontWeight: '500' }}>
-            in your Group Chat to see more meetups!
-          </Text>
-          <PressableOpacity
-            accessibilityLabel="Dismiss hint"
-            hitSlop={10}
-            onPress={() => { setHintDismissed(true); AsyncStorage.setItem(HINT_DISMISSED_KEY, '1').catch(() => {}); }}
-          >
-            <Feather name="x" size={16} color={colors.textFaint} />
-          </PressableOpacity>
-        </View>
+        </FadeUp>
       )}
 
       {filterOpen && uniqueGroups.length > 1 && (
-        <View style={{ paddingHorizontal: 8, paddingBottom: 4 }}>
-          <PressableOpacity
-            onPress={toggleAll}
-            activeOpacity={0.7}
-            haptic={false}
-            style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10, borderBottomWidth: 0.5, borderBottomColor: colors.border, marginBottom: 2 }}
-          >
-            <Text style={{ flex: 1, fontSize: 15, color: colors.textPrimary, fontWeight: '700' }}>All</Text>
-            <View style={{
-              width: 20, height: 20, borderRadius: 5,
-              borderWidth: 1.5,
-              borderColor: hiddenGroupIds.size === 0 ? colors.brand : colors.borderStrong,
-              backgroundColor: hiddenGroupIds.size === 0 ? colors.brand : 'transparent',
-              justifyContent: 'center', alignItems: 'center',
-            }}>
-              {hiddenGroupIds.size === 0 && <Feather name="check" size={12} color="#fff" />}
-            </View>
-          </PressableOpacity>
-          {uniqueGroups.map(group => {
-            const isVisible = !hiddenGroupIds.has(group._id);
-            const color = hashGroupColor(group._id);
-            return (
-              <PressableOpacity
-                key={group._id}
-                onPress={() => toggleGroup(group._id)}
-                activeOpacity={0.7}
-                haptic={false}
-                style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10 }}
-              >
-                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
-                <Text style={{ flex: 1, fontSize: 15, color: colors.textSecondary, fontWeight: '500' }}>{group.name}</Text>
-                <View style={{
-                  width: 20, height: 20, borderRadius: 5,
-                  borderWidth: 1.5,
-                  borderColor: isVisible ? colors.brand : colors.borderStrong,
-                  backgroundColor: isVisible ? colors.brand : 'transparent',
-                  justifyContent: 'center', alignItems: 'center',
-                }}>
-                  {isVisible && <Feather name="check" size={12} color="#fff" />}
-                </View>
-              </PressableOpacity>
-            );
-          })}
-        </View>
+        <FadeUp index={3}>
+          <View style={{ paddingHorizontal: 8, paddingBottom: 4 }}>
+            <PressableOpacity
+              onPress={toggleAll}
+              activeOpacity={0.7}
+              haptic={false}
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10, borderBottomWidth: 0.5, borderBottomColor: colors.border, marginBottom: 2 }}
+            >
+              <Text style={{ flex: 1, fontSize: 15, color: colors.textPrimary, fontWeight: '700' }}>All</Text>
+              <View style={{
+                width: 20, height: 20, borderRadius: 5,
+                borderWidth: 1.5,
+                borderColor: hiddenGroupIds.size === 0 ? colors.brand : colors.borderStrong,
+                backgroundColor: hiddenGroupIds.size === 0 ? colors.brand : 'transparent',
+                justifyContent: 'center', alignItems: 'center',
+              }}>
+                {hiddenGroupIds.size === 0 && <Feather name="check" size={12} color="#fff" />}
+              </View>
+            </PressableOpacity>
+            {uniqueGroups.map(group => {
+              const isVisible = !hiddenGroupIds.has(group._id);
+              const color = hashGroupColor(group._id);
+              return (
+                <PressableOpacity
+                  key={group._id}
+                  onPress={() => toggleGroup(group._id)}
+                  activeOpacity={0.7}
+                  haptic={false}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10 }}
+                >
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
+                  <Text style={{ flex: 1, fontSize: 15, color: colors.textSecondary, fontWeight: '500' }}>{group.name}</Text>
+                  <View style={{
+                    width: 20, height: 20, borderRadius: 5,
+                    borderWidth: 1.5,
+                    borderColor: isVisible ? colors.brand : colors.borderStrong,
+                    backgroundColor: isVisible ? colors.brand : 'transparent',
+                    justifyContent: 'center', alignItems: 'center',
+                  }}>
+                    {isVisible && <Feather name="check" size={12} color="#fff" />}
+                  </View>
+                </PressableOpacity>
+              );
+            })}
+          </View>
+        </FadeUp>
       )}
 
       {/* Empty states: never leave the screen blank */}
       {meetups?.length === 0 ? (
-        <View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
+        <FadeUp index={3}><View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
           <Text style={{ fontSize: 16, color: colors.brand, marginBottom: 14, textAlign: 'center' }}>
             You have no upcoming meetups.
           </Text>
@@ -560,30 +566,30 @@ const DashboardScreen = () => {
           >
             <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Create a group</Text>
           </PressableOpacity>
-        </View>
+        </View></FadeUp>
       ) : hasHiddenAll ? (
-        <View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
+        <FadeUp index={3}><View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
           <Text style={{ fontSize: 14, color: colors.textFaint, fontWeight: '500', marginBottom: 12, textAlign: 'center' }}>
             All your groups are hidden by the filter.
           </Text>
           <PressableOpacity onPress={toggleAll} style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 20 }}>
             <Text style={{ color: '#fff', fontWeight: '700' }}>Show all groups</Text>
           </PressableOpacity>
-        </View>
+        </View></FadeUp>
       ) : noUpcomingAtAll ? (
-        <View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
+        <FadeUp index={3}><View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
           <Text style={{ fontSize: 14, color: colors.textFaint, fontWeight: '500', textAlign: 'center' }}>
             Nothing coming up. Open a group chat and tap the calendar to schedule the next one.
           </Text>
-        </View>
+        </View></FadeUp>
       ) : filteredUpcomingMeetups.length === 0 ? (
-        <View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
+        <FadeUp index={3}><View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
           <Text style={{ fontSize: 14, color: colors.textFaint, fontWeight: '500' }}>
             {rsvpFilter === 'in' ? "You're not marked In for any upcoming meetup." :
              rsvpFilter === 'out' ? "You're not marked Out for any upcoming meetup." :
              "Nothing undecided — you're all caught up."}
           </Text>
-        </View>
+        </View></FadeUp>
       ) : null}
     </View>
   );
@@ -617,18 +623,22 @@ const DashboardScreen = () => {
           </PressableOpacity>
         </View>
       ) : (
-        <FlatList
-          data={listRows}
-          keyExtractor={(row) => row.key}
-          renderItem={renderRow}
-          ListHeaderComponent={listHeader}
-          ListFooterComponent={<View style={{ height: 40 }} />}
-          contentContainerStyle={{ padding: 16, flexGrow: 1, paddingBottom: tabScreenBottomPadding(insets.bottom) }}
-          refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
-          initialNumToRender={8}
-          windowSize={9}
-          removeClippedSubviews={false}
-        />
+        // Mounted with the loaded list (not during the skeleton) so the cascade clock starts
+        // when real content first appears; replays on every later focus.
+        <FadeUpScreen>
+          <FlatList
+            data={listRows}
+            keyExtractor={(row) => row.key}
+            renderItem={renderRow}
+            ListHeaderComponent={listHeader}
+            ListFooterComponent={<View style={{ height: 40 }} />}
+            contentContainerStyle={{ padding: 16, flexGrow: 1, paddingBottom: tabScreenBottomPadding(insets.bottom) }}
+            refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
+            initialNumToRender={8}
+            windowSize={9}
+            removeClippedSubviews={false}
+          />
+        </FadeUpScreen>
       )}
 
       {/* Fully unmounted (not just visible={false}) between opens — on Android,

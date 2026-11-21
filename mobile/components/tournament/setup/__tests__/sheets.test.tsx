@@ -19,42 +19,42 @@ describe('ChoiceSheet', () => {
     { value: 'roundRobin', label: 'Round robin', sub: 'Everyone plays everyone' },
     { value: 'double', label: 'Double elim', sub: 'Out after two losses', disabled: true, note: 'Matches of 2 only' },
   ];
-  it('picking an enabled option applies it and closes', () => {
+  it('picking an enabled option applies it and closes', async () => {
     const onPick = jest.fn(); const onClose = jest.fn();
-    render(<ChoiceSheet visible title="Format" value="double" options={options} onPick={onPick} onClose={onClose} />);
-    fireEvent.press(screen.getByText('Round robin'));
+    await render(<ChoiceSheet visible title="Format" value="double" options={options} onPick={onPick} onClose={onClose} />);
+    await fireEvent.press(screen.getByText('Round robin'));
     expect(onPick).toHaveBeenCalledWith('roundRobin');
     expect(onClose).toHaveBeenCalled();
   });
-  it('a disabled option shows its note and does nothing', () => {
+  it('a disabled option shows its note and does nothing', async () => {
     const onPick = jest.fn(); const onClose = jest.fn();
-    render(<ChoiceSheet visible title="Format" value="roundRobin" options={options} onPick={onPick} onClose={onClose} />);
+    await render(<ChoiceSheet visible title="Format" value="roundRobin" options={options} onPick={onPick} onClose={onClose} />);
     expect(screen.getByText('Matches of 2 only')).toBeTruthy();
-    fireEvent.press(screen.getByText('Double elim'));
+    await fireEvent.press(screen.getByText('Double elim'));
     expect(onPick).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
 });
 
 describe('TeamSplitSheet', () => {
-  it('explains an uneven split and steps the value', () => {
+  it('explains an uneven split and steps the value', async () => {
     const onValue = jest.fn();
-    render(<TeamSplitSheet visible onClose={() => {}} splitBy="size" value={3} totalPlayers={7} ranked={false} onSplitBy={() => {}} onValue={onValue} />);
+    await render(<TeamSplitSheet visible onClose={() => {}} splitBy="size" value={3} totalPlayers={7} ranked={false} onSplitBy={() => {}} onValue={onValue} />);
     expect(screen.getByText(/7 players can't be split evenly into teams of 3/)).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('More players per team'));
+    await fireEvent.press(screen.getByLabelText('More players per team'));
     expect(onValue).toHaveBeenCalledWith(4);
   });
 });
 
 describe('PlayersSheet', () => {
-  it('toggles an undecided member', () => {
+  it('toggles an undecided member', async () => {
     const onToggle = jest.fn();
-    render(<PlayersSheet visible onClose={() => {}} inRows={[{ id: 'a', label: 'Ana', sub: "I'm In" }]} undecided={[{ id: 'b', label: 'Ben' }]} extra={[]} onToggle={onToggle} />);
-    fireEvent.press(screen.getByText('Ben'));
+    await render(<PlayersSheet visible onClose={() => {}} inRows={[{ id: 'a', label: 'Ana', sub: "I'm In" }]} undecided={[{ id: 'b', label: 'Ben' }]} extra={[]} onToggle={onToggle} />);
+    await fireEvent.press(screen.getByText('Ben'));
     expect(onToggle).toHaveBeenCalledWith('b');
   });
-  it('hides the add section when nobody is undecided', () => {
-    render(<PlayersSheet visible onClose={() => {}} inRows={[{ id: 'a', label: 'Ana', sub: "I'm In" }]} undecided={[]} extra={[]} onToggle={() => {}} />);
+  it('hides the add section when nobody is undecided', async () => {
+    await render(<PlayersSheet visible onClose={() => {}} inRows={[{ id: 'a', label: 'Ana', sub: "I'm In" }]} undecided={[]} extra={[]} onToggle={() => {}} />);
     expect(screen.queryByText("Also add (haven't answered)")).toBeNull();
   });
 });
@@ -66,29 +66,29 @@ describe('RankingSheet', () => {
     onEditRanking: jest.fn(), newListName: '', onNewListName: () => {}, onSaveList: () => {}, saving: false,
     balance: true, finale: false, onBalance: () => {}, onFinale: () => {},
   };
-  it('switching it on reports true', () => {
+  it('switching it on reports true', async () => {
     const onToggle = jest.fn();
-    render(<RankingSheet {...props} on={false} onToggle={onToggle} />);
-    fireEvent(screen.getByLabelText('Use a strength ranking'), 'valueChange', true);
+    await render(<RankingSheet {...props} on={false} onToggle={onToggle} />);
+    await fireEvent(screen.getByLabelText('Use a strength ranking'), 'valueChange', true);
     expect(onToggle).toHaveBeenCalledWith(true);
   });
-  it('hides the ranking tools when off', () => {
-    render(<RankingSheet {...props} on={false} />);
+  it('hides the ranking tools when off', async () => {
+    await render(<RankingSheet {...props} on={false} />);
     expect(screen.queryByText('Spring')).toBeNull();
     expect(screen.queryByText(/Edit ranking/)).toBeNull();
   });
-  it('Balance only for teams, Finale not for Just teams', () => {
-    const { rerender } = render(<RankingSheet {...props} mode="singles" />);
+  it('Balance only for teams, Finale not for Just teams', async () => {
+    const { rerender } = await render(<RankingSheet {...props} mode="singles" />);
     expect(screen.queryByText('Balance teams')).toBeNull();
     expect(screen.getByText('Build to a finale')).toBeTruthy();
-    rerender(<RankingSheet {...props} format="none" />);
+    await rerender(<RankingSheet {...props} format="none" />);
     expect(screen.getByText('Balance teams')).toBeTruthy();
     expect(screen.queryByText('Build to a finale')).toBeNull();
   });
-  it('Edit ranking calls through', () => {
+  it('Edit ranking calls through', async () => {
     const onEditRanking = jest.fn();
-    render(<RankingSheet {...props} onEditRanking={onEditRanking} />);
-    fireEvent.press(screen.getByText('Edit ranking (5)'));
+    await render(<RankingSheet {...props} onEditRanking={onEditRanking} />);
+    await fireEvent.press(screen.getByText('Edit ranking (5)'));
     expect(onEditRanking).toHaveBeenCalled();
   });
 });
