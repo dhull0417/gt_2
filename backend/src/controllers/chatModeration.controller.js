@@ -1,4 +1,5 @@
-// Chat moderation: owners/moderators delete anyone's message and time people out of a group's chat.
+// Chat moderation: owners delete anyone's message, moderators regular members' messages; both time
+// people out of a group's chat (moderators: regular members only).
 // Roles are checked here against Mongo; Supabase only enforces what we write to it.
 // Spec: docs/specs/2026-11-16-chat-moderation-design.md
 import asyncHandler from "express-async-handler";
@@ -132,6 +133,12 @@ export const modDeleteMessage = asyncHandler(async (req, res) => {
     }
     // A message id from another group is treated exactly like a missing one.
     if (!message || !sameId(message.group_id, group._id)) return res.status(404).json({ error: "Message not found." });
+    // Owner deletes anyone's; a moderator only regular members'. Someone who has left or deleted their
+    // account holds no role, so a moderator may delete their messages.
+    const sender = await User.findOne({ clerkId: message.sender_id }).select("_id").lean();
+    if (sender && !canManageMember(requester._id, sender._id, group)) {
+        return res.status(403).json({ error: "Moderators can't delete the owner's or other moderators' messages." });
+    }
     if (message.deleted_at) return res.status(200).json({ message: "Deleted." });
 
     try {

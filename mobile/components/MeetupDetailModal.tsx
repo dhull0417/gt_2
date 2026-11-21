@@ -42,13 +42,13 @@ import { getMeetupStatus, isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvp
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRsvp } from '@/hooks/useRsvp';
 import { AssignmentsSheet } from '@/components/MeetupAssignments';
-import { assignmentsActive, summarizeAssignments, canEditOwnAssignments } from '@/utils/assignments';
+import { assignmentsActive, summarizeAssignments } from '@/utils/assignments';
 import { ridersOf } from '@/utils/rides';
 import { showTourneySetup } from '@/utils/meetupActions';
 import { tournamentApi } from '@/utils/tournamentApi';
-import MeetupQuestions from '@/components/MeetupQuestions';
+import MeetupConfirmSheet from '@/components/MeetupConfirmSheet';
 import MeetupTournamentCard from '@/components/MeetupTournamentCard';
-import { questionsActive, hasAnsweredAny } from '@/utils/questions';
+import { shouldPromptAfterIn, tileTapAction } from '@/utils/confirmTabs';
 import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
@@ -103,8 +103,10 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
     const [dmTargetUser, setDmTargetUser] = useState<User | null>(null);
     // Member an owner/moderator is editing assignments for.
     const [assignTarget, setAssignTarget] = useState<User | null>(null);
-    // Your own assignments sheet (opened from your tile in the In grid).
-    const [selfAssignOpen, setSelfAssignOpen] = useState(false);
+    // Your own Bring / Rides / Questions sheet (pops after tapping In; also opened from your tile).
+    const [selfConfirmOpen, setSelfConfirmOpen] = useState(false);
+    // Member whose Bring / Rides / Questions picks are being looked at (tapped their tile).
+    const [reviewUser, setReviewUser] = useState<User | null>(null);
     // Driver whose riders are shown in the "Riding with…" sheet.
     const [ridersDriverId, setRidersDriverId] = useState<string | null>(null);
     const [isCreatingDM, setIsCreatingDM] = useState(false);
@@ -136,7 +138,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
     const isRsvping = meetup ? isRsvpBusyFor(meetup._id) : false;
     const rsvpQueued = meetup ? isRsvpQueuedFor(meetup._id) : false;
 
-    const [questionsSignal, setQuestionsSignal] = useState(0);
     // Same query as MeetupTournamentCard: decides whether ⋯ offers "Set up Teams & Tourneys".
     const { data: tournament } = useQuery({
         queryKey: ['tournamentForMeetup', meetup?._id],
@@ -274,12 +275,9 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                 queryClient.invalidateQueries({ queryKey: ['meetups'] });
                 if (data.meetup) setMeetup(data.meetup);
                 setManualRsvpEdit(false);
-                // Newly "In": ask the meetup's questions right away. (Assignments don't pop up; you
-                // open them from your tile.)
-                if (status === 'in' && data.meetup && questionsActive(data.meetup)
-                    && !hasAnsweredAny(data.meetup, currentUser._id)
-                    && !data.meetup.waitlist?.some((u: any) => (typeof u === 'string' ? u : u._id) === currentUser._id)) {
-                    setQuestionsSignal((n) => n + 1);
+                // Newly "In": the Bring / Rides / Questions sheet, while any of them is unpicked.
+                if (status === 'in' && data.meetup && shouldPromptAfterIn(data.meetup, currentUser._id)) {
+                    setSelfConfirmOpen(true);
                 }
             },
             // The reason ("deadline passed", "full") is shown once by the global RSVP error toast.
@@ -597,13 +595,17 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
     };
 
     const renderUserTile = (user: User, key: string, opts?: { waitlistPosition?: number }) => {
-        const isSelf = user._id === currentUser._id;
-        // Your own tile opens your assignments (when you can have any); anyone else's opens the person sheet.
-        const selfEditable = isSelf && canEditOwnAssignments(meetup, currentUser._id, isReadOnly);
-        const Wrapper = isSelf && !selfEditable ? View : PressableOpacity;
-        const wrapperProps = isSelf
-            ? (selfEditable ? { onPress: () => setSelfAssignOpen(true), activeOpacity: 0.7, accessibilityLabel: 'Edit my assignments' } : {})
-            : { onPress: () => setDmTargetUser(user), activeOpacity: 0.7 };
+        // Tiles open Bring / Rides / Questions picks (yours to edit, anyone else's to look at);
+        // without picks, someone else's tile opens the person sheet.
+        const action = tileTapAction(meetup, currentUser._id, user._id, isReadOnly);
+        const Wrapper = action === 'none' ? View : PressableOpacity;
+        const wrapperProps = action === 'edit'
+            ? { onPress: () => setSelfConfirmOpen(true), activeOpacity: 0.7, accessibilityLabel: 'Edit my picks' }
+            : action === 'review'
+                ? { onPress: () => setReviewUser(user), activeOpacity: 0.7, accessibilityLabel: `See ${getUserDisplayName(user)}'s picks` }
+                : action === 'person'
+                    ? { onPress: () => setDmTargetUser(user), activeOpacity: 0.7 }
+                    : {};
         return (
             <Wrapper key={key} style={styles.gridItem} {...wrapperProps}>
                 <View style={styles.gridAvatarWrap}>
@@ -1138,18 +1140,6 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                     onOpen={leaveTo}
                 />
 
-                <MeetupQuestions
-                    meetup={meetup}
-                    currentUserId={currentUser._id}
-                    canAnswer={(isIn || isWaitlisted) && !isReadOnly}
-                    openSignal={questionsSignal}
-                    onUpdated={(m) => {
-                        setMeetup(m);
-                        queryClient.invalidateQueries({ queryKey: ['meetups'] });
-                        broadcastMeetupUpdate(getToken, meetupGroupId);
-                    }}
-                />
-
                 <Animated.View layout={LinearTransition.duration(300)} style={{ marginBottom: 40, marginTop: 8 }}>
                     {renderSectionHeader('In', goingUsers.length + totalGuestsForInTab, colors.accentTeal,
                         <Text style={[styles.sectionHeaderText, { color: colors.accentTeal, marginBottom: 0 }]}>
@@ -1383,11 +1373,11 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                 </Pressable>
             </Modal>
 
-            <AssignmentsSheet
-                visible={selfAssignOpen}
+            <MeetupConfirmSheet
+                visible={selfConfirmOpen}
                 meetup={meetup}
                 currentUserId={currentUser._id}
-                onClose={() => setSelfAssignOpen(false)}
+                onClose={() => setSelfConfirmOpen(false)}
                 onUpdated={(m) => {
                     setMeetup(m);
                     queryClient.invalidateQueries({ queryKey: ['meetups'] });
@@ -1395,6 +1385,24 @@ const MeetupDetailModal = ({ meetup: initialMeetup, onClose, onNavigate }: Meetu
                 }}
                 onStale={() => queryClient.invalidateQueries({ queryKey: ['meetups'] })}
             />
+
+            {reviewUser && (
+                <MeetupConfirmSheet
+                    visible
+                    mode="review"
+                    meetup={meetup}
+                    currentUserId={currentUser._id}
+                    subject={{ id: reviewUser._id, name: getUserDisplayName(reviewUser) }}
+                    onClose={() => setReviewUser(null)}
+                    // Message, Remind, Mark In/Out, Edit Assignments: the person sheet.
+                    onMoreOptions={reviewUser._id === currentUser._id ? undefined : () => {
+                        const target = reviewUser;
+                        setReviewUser(null);
+                        // Let this sheet finish dismissing before presenting the next (iOS).
+                        setTimeout(() => setDmTargetUser(target), 350);
+                    }}
+                />
+            )}
 
             {assignTarget && (
                 <AssignmentsSheet

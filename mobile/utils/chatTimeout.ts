@@ -81,6 +81,24 @@ export function canTimeOut(
   return targetId !== ownerId && !modIds.includes(targetId);
 }
 
+/**
+ * Whether I may delete someone else's message as owner/moderator. Mirrors the backend rule: owner →
+ * anyone's; moderator → regular members' only. senderId undefined = the sender is no longer in the
+ * group, which counts as a regular member.
+ */
+export function canModDeleteFrom(
+  meId: string | undefined,
+  senderId: string | undefined,
+  group: { owner: IdLike; moderators?: IdLike[]; isDM?: boolean } | null | undefined,
+): boolean {
+  if (!meId || !group || group.isDM) return false;
+  const ownerId = idOf(group.owner);
+  const modIds = (group.moderators ?? []).map(idOf);
+  if (meId === ownerId) return true;
+  if (!modIds.includes(meId)) return false;
+  return !senderId || (senderId !== ownerId && !modIds.includes(senderId));
+}
+
 /** "for 1 hour" / "until a moderator lifts it", for the Notifications screen entry. */
 export function timeoutNoticeLength(duration: string | undefined): string {
   if (duration === 'indefinite') return 'until a moderator lifts it';

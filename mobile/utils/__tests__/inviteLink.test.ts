@@ -1,5 +1,5 @@
 import {
-  parseInviteUrl, parseInstallReferrer, buildShareLink, normalizeInviteCode,
+  parseInviteUrl, parseInstallReferrer, buildShareLink, normalizeInviteCode, formatInviteCode,
   encodePendingInvite, decodePendingInvite,
 } from '../inviteLink';
 
@@ -63,10 +63,24 @@ describe('buildShareLink', () => {
   });
 });
 
+describe('formatInviteCode', () => {
+  it('splits an 8-character code in two, and the result types back in', () => {
+    expect(formatInviteCode('K7P2QXMR')).toBe('K7P2 QXMR');
+    expect(normalizeInviteCode(formatInviteCode('K7P2QXMR'))).toBe('K7P2QXMR');
+    expect(formatInviteCode('K7P2QX')).toBe('K7P2QX');
+    expect(formatInviteCode(null)).toBe('');
+  });
+});
+
 describe('normalizeInviteCode', () => {
   it('accepts codes typed in any case or with spaces/dashes', () => {
+    expect(normalizeInviteCode(' k7p2-qxmr ')).toBe('K7P2QXMR');
+    expect(normalizeInviteCode('K7P2QXMR')).toBe('K7P2QXMR');
+    // 6-character codes made before the switch to 8 still work.
     expect(normalizeInviteCode(' k7p-2qx ')).toBe('K7P2QX');
-    expect(normalizeInviteCode('K7P2QX')).toBe('K7P2QX');
+    expect(normalizeInviteCode('K7P2QXM')).toBeNull();
+    expect(normalizeInviteCode('K7P2QXMRA')).toBeNull();
+    expect(normalizeInviteCode('123456')).toBeNull();
   });
   it('rejects codes with characters the server never uses', () => {
     expect(normalizeInviteCode('K7P2Q0')).toBeNull();

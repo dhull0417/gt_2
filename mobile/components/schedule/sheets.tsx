@@ -51,7 +51,7 @@ export function OneOffWhenSheet({ visible, onClose, asOverlay, issues, date, tim
 }
 
 // ── RSVP rules ────────────────────────────────────────────────────────────────
-function Stepper({ value, label, onStep }: { value: string; label: string; onStep: (by: 1 | -1) => void }) {
+export function Stepper({ value, label, onStep }: { value: string; label: string; onStep: (by: 1 | -1) => void }) {
   const c = useThemeColors(); const s = useStyles();
   return (
     <View style={s.stepper}>

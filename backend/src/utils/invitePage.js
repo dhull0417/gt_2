@@ -8,7 +8,7 @@
 //   in-app browsers (Instagram, Messenger...) block automatic jumps, so they get buttons.
 import {
   APP_STORE_URL, APP_STORE_ID, PLAY_STORE_URL, ANDROID_PACKAGE, DEAD_INVITE_MESSAGES,
-  INVITE_BASE_URL, inviteLinkFor, playStoreUrl,
+  INVITE_BASE_URL, inviteLinkFor, playStoreUrl, formatInviteCode,
 } from "./invites.js";
 
 const IN_APP_BROWSER_RE = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|Snapchat|musical_ly|Bytedance|Line\/|LinkedInApp|GSA\//i;
@@ -115,7 +115,7 @@ export const renderInvitePage = (invite, device) => {
   const description = `${members ? `${members} \u00b7 ` : ''}Plan meetups, RSVP and chat with your group on GroupThat.`;
 
   const avatar = groupImage ? `<img class="avatar" src="${esc(groupImage)}" alt="">` : `<img class="logo" src="/logo.png" alt="GroupThat">`;
-  const codeLine = code ? `<p class="code">Or open GroupThat and enter code <b>${esc(code)}</b></p>` : '';
+  const codeLine = code ? `<p class="code">Or open GroupThat and enter code <b>${esc(formatInviteCode(code))}</b></p>` : '';
   const hint = device.inApp ? `<p class="hint">${esc(IN_APP_HINT)}</p>` : '';
 
   return `${head({ title, description, image: groupImage || DEFAULT_OG_IMAGE, url: link, banner: link })}

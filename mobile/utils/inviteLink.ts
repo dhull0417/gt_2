@@ -13,8 +13,9 @@ export type PendingInvite = { token: string; meetupId: string | null; source: In
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-// Same alphabet as the server (no 0/O, 1/I/L).
-const CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
+// Same alphabet and lengths as the server (no 0/O, 1/I/L). Codes are 8 characters so they aren't
+// confused with 6-digit verification codes; 6 is still accepted for codes made before the switch.
+const CODE_RE = /^(?:[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}|[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6})$/;
 const ORIGIN_RE = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/;
 const escapeRe = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -75,13 +76,20 @@ export function buildShareLink(link: string, opts: { meetupId?: string | null; r
   return `${link}${link.includes('?') ? '&' : '?'}${params.join('&')}`;
 }
 
-/** "k7p-2qx" -> "K7P2QX"; null when it can't be an invite code. */
+/** "k7p2-qxmr" -> "K7P2QXMR"; null when it can't be an invite code. */
 export function normalizeInviteCode(input: string | null | undefined): string | null {
   const code = String(input ?? '').toUpperCase().replace(/[\s-]/g, '');
   return CODE_RE.test(code) ? code : null;
 }
 
 export const isInviteCode = (s: string) => normalizeInviteCode(s) !== null;
+
+/** "K7P2QXMR" -> "K7P2 QXMR" for display, so it reads less like a 6-digit verification code.
+ *  The space is ignored when the code is typed back in. Older 6-character codes are left as-is. */
+export function formatInviteCode(code: string | null | undefined): string {
+  const c = String(code ?? '');
+  return c.length === 8 ? `${c.slice(0, 4)} ${c.slice(4)}` : c;
+}
 
 export function encodePendingInvite(p: PendingInvite): string {
   return JSON.stringify({ token: p.token, meetupId: p.meetupId ?? null, source: p.source });

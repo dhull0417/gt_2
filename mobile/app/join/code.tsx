@@ -7,7 +7,7 @@ import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { normalizeInviteCode, parseInviteUrl } from '@/utils/inviteLink';
 
-/** Type a 6-character invite code (or paste a whole invite link) to open that invite. */
+/** Type an 8-character invite code (or paste a whole invite link) to open that invite. */
 export default function InviteCodeScreen() {
     const colors = useThemeColors();
     const router = useRouter();
@@ -21,7 +21,7 @@ export default function InviteCodeScreen() {
             return;
         }
         const code = normalizeInviteCode(value);
-        if (!code) { setError('Invite codes are 6 letters and numbers, like K7P2QX.'); return; }
+        if (!code) { setError('Invite codes are 8 letters and numbers, like K7P2QXMR.'); return; }
         router.replace({ pathname: '/join/[token]', params: { token: code, s: 'code' } });
     };
 
@@ -38,7 +38,7 @@ export default function InviteCodeScreen() {
                     <TextInput
                         value={value}
                         onChangeText={(t) => { setValue(t); setError(''); }}
-                        placeholder="K7P2QX"
+                        placeholder="K7P2QXMR"
                         placeholderTextColor={colors.textMuted}
                         autoCapitalize="characters"
                         autoCorrect={false}

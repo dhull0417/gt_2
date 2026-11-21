@@ -1,19 +1,18 @@
 import { useId, useState } from "react";
 import { View } from "react-native";
-import Svg, { Circle, Defs, LinearGradient, Polygon, Stop, Text as SvgText } from "react-native-svg";
+import Svg, { Circle, Defs, LinearGradient, Path, Stop, Text as SvgText } from "react-native-svg";
 import { useAppearance } from "@/contexts/AppearanceContext";
+import { CROWN_PATH } from "@/components/ui/CrownIcon";
 import { premiumColors, PREMIUM_RAINBOW, PREMIUM_RAINBOW_DEEP } from "./premiumColors";
 
 const CHIP = 38;
 const GAP = 14;
 const ICON = 21;
 const FONT_SIZE = 16;
-// Feather's "star" outline, in its 24×24 box.
-const STAR_POINTS = "12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2";
 
 /**
  * Icon chip + label for the Premium row on Profile, with one rainbow gradient running across the
- * star and the words. Drawn as SVG so the gradient can fill text without a native module.
+ * crown and the words. Drawn as SVG so the gradient can fill text without a native module.
  * Light mode uses deeper shades of the Premium rainbow so the words stay readable on white.
  */
 export function PremiumRainbowLabel({ label }: { label: string }) {
@@ -23,11 +22,11 @@ export function PremiumRainbowLabel({ label }: { label: string }) {
     const stops = isDark ? PREMIUM_RAINBOW : PREMIUM_RAINBOW_DEEP;
     const [width, setWidth] = useState(0);
     const gradientId = `premiumLabel-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-    // The star sits in its own 24×24 box (like the Feather icon), centered in the chip.
-    // Its gradient is the label's gradient mapped into that box, so the colors still run on from star to words.
+    // The crown sits in its own 24×24 box (like the Feather icon), centered in the chip.
+    // Its gradient is the label's gradient mapped into that box, so the colors still run on from crown to words.
     const k = ICON / 24;
     const iconOffset = (CHIP - ICON) / 2;
-    const starGradientId = `${gradientId}-star`;
+    const crownGradientId = `${gradientId}-crown`;
 
     return (
         <View
@@ -60,14 +59,14 @@ export function PremiumRainbowLabel({ label }: { label: string }) {
                 <View pointerEvents="none" style={{ position: "absolute", left: 0, top: 0, width: CHIP, height: CHIP, alignItems: "center", justifyContent: "center" }}>
                     <Svg width={ICON} height={ICON} viewBox="0 0 24 24">
                         <Defs>
-                            <LinearGradient id={starGradientId} gradientUnits="userSpaceOnUse" x1={-iconOffset / k} y1={0} x2={(width - iconOffset) / k} y2={0}>
+                            <LinearGradient id={crownGradientId} gradientUnits="userSpaceOnUse" x1={-iconOffset / k} y1={0} x2={(width - iconOffset) / k} y2={0}>
                                 {stops.map((c, i) => <Stop key={c} offset={i / (stops.length - 1)} stopColor={c} />)}
                             </LinearGradient>
                         </Defs>
-                        <Polygon
-                            points={STAR_POINTS}
+                        <Path
+                            d={CROWN_PATH}
                             fill="none"
-                            stroke={`url(#${starGradientId})`}
+                            stroke={`url(#${crownGradientId})`}
                             strokeWidth={2}
                             strokeLinejoin="round"
                             strokeLinecap="round"

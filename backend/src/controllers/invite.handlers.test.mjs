@@ -99,7 +99,7 @@ test('generateInviteLink: members get a stable link with a code; managers also g
   const r1 = await call(C.generateInviteLink, { as: P.a, params: { groupId: gid() } });
   assert.equal(r1.statusCode, 200);
   assert.match(r1.body.link, /^https:\/\/invite\.groupthatapp\.com\/join\/[a-f0-9]{32}$/);
-  assert.match(r1.body.code, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/);
+  assert.match(r1.body.code, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/);
   assert.equal(r1.body.canManage, false);
   assert.equal(r1.body.stats, undefined);
   assert.equal(tokens[0].expiresAt, null);
@@ -115,7 +115,16 @@ test('generateInviteLink makes an old expiring token permanent and gives it a co
   const r = await call(C.generateInviteLink, { as: P.a, params: { groupId: gid() } });
   assert.equal(r.body.token, old.token);
   assert.equal(old.expiresAt, null);
-  assert.match(old.code, /^[A-Z2-9]{6}$/);
+  assert.match(old.code, /^[A-Z2-9]{8}$/);
+});
+
+test('generateInviteLink swaps an old 6-character code for an 8-character one, same link', async () => {
+  const old = seedToken({ code: 'K7P2QX' });
+  const r = await call(C.generateInviteLink, { as: P.a, params: { groupId: gid() } });
+  assert.equal(r.body.token, old.token);
+  assert.match(r.body.code, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/);
+  assert.equal(old.code, r.body.code);
+  assert.equal(tokens.length, 1);
 });
 
 test('generateInviteLink refuses non-members', async () => {

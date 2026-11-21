@@ -69,7 +69,18 @@ const AccountLayout = () => {
             <Stack.Screen name="update-phone" options={{ headerTitle: 'Phone Number', presentation: 'modal' }} />
             <Stack.Screen
                 name="notifications"
-                options={{ headerTitle: 'Notifications' }}
+                options={{
+                    headerTitle: 'Notifications',
+                    headerLeft: () => (
+                        <PressableOpacity accessibilityLabel="Close"
+                            onPress={() => router.back()}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                            <Feather name="x" size={24} color={colors.textSecondary} style={{ transform: [{ translateX: 2 }] }} />
+                        </PressableOpacity>
+                    ),
+                }}
             />
             <Stack.Screen
                 name="delete-account"

@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
-import Animated, { LinearTransition } from 'react-native-reanimated';
+import Animated, { LinearTransition, type SharedValue } from 'react-native-reanimated';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +20,8 @@ import { Feather } from '@expo/vector-icons';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { NotificationBell } from '@/components/NotificationBell';
 import { SkeletonList } from '@/components/Skeleton';
+import { FadeUp, FadeUpScreen } from '@/components/ui/FadeUp';
+import { SwipeRowActions } from '@/components/SwipeRowActions';
 import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
 import { OfflineEmptyState } from '@/components/OfflineEmptyState';
 import { isOfflineEmpty } from '@/utils/offlineState';
@@ -40,7 +42,7 @@ const ACTION_WIDTH = 76;
 const SwipeRow = ({ id, registry, renderRightActions, children }: {
   id: string;
   registry: React.RefObject<Map<string, React.RefObject<SwipeableMethods | null>>>;
-  renderRightActions: () => React.ReactNode;
+  renderRightActions: (progress: SharedValue<number>) => React.ReactNode;
   children: React.ReactNode;
 }) => {
   const ref = useRef<SwipeableMethods>(null);
@@ -187,8 +189,8 @@ const GroupScreen = () => {
     setMuteSheetGroup(group);
   };
 
-  const renderRightActions = (group: Group, muteState: MuteState, isPinned: boolean) => () => (
-    <View style={{ flexDirection: 'row', alignItems: 'stretch', marginVertical: 8, marginLeft: 8, gap: 8 }}>
+  const renderRightActions = (group: Group, muteState: MuteState, isPinned: boolean) => (progress: SharedValue<number>) => (
+    <SwipeRowActions progress={progress} style={{ flexDirection: 'row', alignItems: 'stretch', marginVertical: 8, marginLeft: 8, gap: 8 }}>
       <PressableOpacity
         haptic={false}
         onPress={() => togglePin(group)}
@@ -207,10 +209,10 @@ const GroupScreen = () => {
         <Feather name={muteState.state === 'none' ? 'bell-off' : 'bell'} size={20} color="#fff" />
         <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 }}>{muteState.state === 'none' ? 'Mute' : 'Muted'}</Text>
       </PressableOpacity>
-    </View>
+    </SwipeRowActions>
   );
 
-  const renderGroup = ({ item: group }: { item: Group }) => {
+  const renderGroup = ({ item: group, index }: { item: Group; index: number }) => {
     const muteState = muteStateFor(currentUser, group._id);
     const isPinned = pinnedSet.has(group._id);
     const displayName = group.isDM ? getDMDisplayName(group, currentUser?.clerkId) : group.name;
@@ -226,60 +228,63 @@ const GroupScreen = () => {
 
     return (
       <Animated.View layout={LinearTransition.duration(220)}>
-        <SwipeRow
-          id={group._id}
-          registry={swipeRefs}
-          renderRightActions={renderRightActions(group, muteState, isPinned)}
-        >
-          <PressableOpacity
-            className="relative bg-white dark:bg-gray-900 px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800"
-            onPress={() => handleOpenGroupDetail(group)}
-            haptic="tap"
+        {/* Fade-up sits inside the layout view so a reorder (new message) slides, not replays. */}
+        <FadeUp index={index}>
+          <SwipeRow
+            id={group._id}
+            registry={swipeRefs}
+            renderRightActions={renderRightActions(group, muteState, isPinned)}
           >
-            {isUnread && !unreadInfo && (
-              <View className="absolute top-3 right-3 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-gray-900" />
-            )}
-            <View className="flex-row items-center">
-              <View style={{ marginRight: 12 }}>
-                <GroupAvatar name={displayName} imageUrl={getGroupImage(group, currentUser?.clerkId)} size={44} borderRadius={12} />
-              </View>
-              <View className="flex-1">
-                <View className="flex-row items-center">
-                  {isPinned && <Feather name="bookmark" size={13} color={colors.brand} style={{ marginRight: 5 }} />}
-                  <Text className="text-lg font-bold text-gray-800 dark:text-gray-100 flex-1" numberOfLines={1}>
-                    {displayName}
-                  </Text>
-                  {muteState.state === 'full' && <Feather name="bell-off" size={14} color={colors.textFaint} style={{ marginLeft: 6 }} accessibilityLabel="Muted" />}
-                  {muteState.state === 'partial' && <Feather name="bell" size={14} color={colors.textFaint} style={{ marginLeft: 6, opacity: 0.7 }} accessibilityLabel="Some notifications muted" />}
-                  {!!timeLabel && (
-                    <Text style={{ marginLeft: 8, fontSize: 12, color: isUnread ? colors.brand : colors.textFaint, fontWeight: isUnread ? '700' : '500' }}>
-                      {timeLabel}
+            <PressableOpacity
+              className="relative bg-white dark:bg-gray-900 px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800"
+              onPress={() => handleOpenGroupDetail(group)}
+              haptic="tap"
+            >
+              {isUnread && !unreadInfo && (
+                <View className="absolute top-3 right-3 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-gray-900" />
+              )}
+              <View className="flex-row items-center">
+                <View style={{ marginRight: 12 }}>
+                  <GroupAvatar name={displayName} imageUrl={getGroupImage(group, currentUser?.clerkId)} size={44} borderRadius={12} />
+                </View>
+                <View className="flex-1">
+                  <View className="flex-row items-center">
+                    {isPinned && <Feather name="bookmark" size={13} color={colors.brand} style={{ marginRight: 5 }} />}
+                    <Text className="text-lg font-bold text-gray-800 dark:text-gray-100 flex-1" numberOfLines={1}>
+                      {displayName}
                     </Text>
+                    {muteState.state === 'full' && <Feather name="bell-off" size={14} color={colors.textFaint} style={{ marginLeft: 6 }} accessibilityLabel="Muted" />}
+                    {muteState.state === 'partial' && <Feather name="bell" size={14} color={colors.textFaint} style={{ marginLeft: 6, opacity: 0.7 }} accessibilityLabel="Some notifications muted" />}
+                    {!!timeLabel && (
+                      <Text style={{ marginLeft: 8, fontSize: 12, color: isUnread ? colors.brand : colors.textFaint, fontWeight: isUnread ? '700' : '500' }}>
+                        {timeLabel}
+                      </Text>
+                    )}
+                  </View>
+                  {group.lastMessage ? (
+                    <Text className="text-sm text-gray-500 dark:text-gray-400 mt-0.5" numberOfLines={1}>
+                      <Text style={{ color: colors.brand, fontWeight: '600' }}>{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
+                    </Text>
+                  ) : (
+                    <Text className="text-sm text-gray-400 dark:text-gray-500 italic mt-0.5">No messages yet</Text>
                   )}
                 </View>
-                {group.lastMessage ? (
-                  <Text className="text-sm text-gray-500 dark:text-gray-400 mt-0.5" numberOfLines={1}>
-                    <Text style={{ color: colors.brand, fontWeight: '600' }}>{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
-                  </Text>
-                ) : (
-                  <Text className="text-sm text-gray-400 dark:text-gray-500 italic mt-0.5">No messages yet</Text>
+                {unreadInfo && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 8 }}>
+                    {unreadInfo.mentioned > 0 && (
+                      <View style={{ backgroundColor: colors.brand, borderRadius: 10, minWidth: 20, height: 20, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>@</Text>
+                      </View>
+                    )}
+                    <View style={{ backgroundColor: '#EF4444', borderRadius: 10, minWidth: 20, height: 20, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>{unreadInfo.unread > 99 ? '99+' : unreadInfo.unread}</Text>
+                    </View>
+                  </View>
                 )}
               </View>
-              {unreadInfo && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 8 }}>
-                  {unreadInfo.mentioned > 0 && (
-                    <View style={{ backgroundColor: colors.brand, borderRadius: 10, minWidth: 20, height: 20, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>@</Text>
-                    </View>
-                  )}
-                  <View style={{ backgroundColor: '#EF4444', borderRadius: 10, minWidth: 20, height: 20, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>{unreadInfo.unread > 99 ? '99+' : unreadInfo.unread}</Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          </PressableOpacity>
-        </SwipeRow>
+            </PressableOpacity>
+          </SwipeRow>
+        </FadeUp>
       </Animated.View>
     );
   };
@@ -315,39 +320,46 @@ const GroupScreen = () => {
           </PressableOpacity>
         </View>
       ) : (
-        <FlatList
-          data={sortedGroups ?? []}
-          keyExtractor={(g) => g._id}
-          renderItem={renderGroup}
-          style={{ paddingHorizontal: 16 }}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: tabScreenBottomPadding(insets.bottom) }}
-          refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
-          ListEmptyComponent={
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 64 }}>
-              <Text className="text-center text-gray-500 dark:text-gray-400" style={{ fontSize: 16, marginBottom: 16 }}>You have no groups yet.</Text>
-              <PressableOpacity
-                onPress={() => router.push('/create-group')}
-                haptic="press"
-                style={{ backgroundColor: colors.brand, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 }}
-              >
-                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Create a group</Text>
-              </PressableOpacity>
-              <PressableOpacity onPress={handleTrySample} disabled={creatingSample} style={{ marginTop: 18, padding: 8 }}>
-                {creatingSample
-                  ? <ActivityIndicator color={colors.brand} />
-                  : <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>or look around a sample group</Text>}
-              </PressableOpacity>
-              <PressableOpacity onPress={() => router.push('/join/code')} style={{ marginTop: 6, padding: 8 }}>
-                <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>Have an invite code?</Text>
-              </PressableOpacity>
-            </View>
-          }
-          ListFooterComponent={(sortedGroups?.length ?? 0) > 0 ? (
-            <PressableOpacity onPress={() => router.push('/join/code')} style={{ alignSelf: 'center', marginTop: 16, padding: 8 }}>
-              <Text style={{ color: colors.textMuted, fontWeight: '600', fontSize: 13 }}>Have an invite code?</Text>
-            </PressableOpacity>
-          ) : undefined}
-        />
+        // Mounted with the loaded list so the cascade starts when real rows appear.
+        <FadeUpScreen>
+          <FlatList
+            data={sortedGroups ?? []}
+            keyExtractor={(g) => g._id}
+            renderItem={renderGroup}
+            style={{ paddingHorizontal: 16 }}
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: tabScreenBottomPadding(insets.bottom) }}
+            refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
+            ListEmptyComponent={
+              <FadeUp index={0} style={{ flex: 1 }}>
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 64 }}>
+                <Text className="text-center text-gray-500 dark:text-gray-400" style={{ fontSize: 16, marginBottom: 16 }}>You have no groups yet.</Text>
+                <PressableOpacity
+                  onPress={() => router.push('/create-group')}
+                  haptic="press"
+                  style={{ backgroundColor: colors.brand, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Create a group</Text>
+                </PressableOpacity>
+                <PressableOpacity onPress={handleTrySample} disabled={creatingSample} style={{ marginTop: 18, padding: 8 }}>
+                  {creatingSample
+                    ? <ActivityIndicator color={colors.brand} />
+                    : <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>or look around a sample group</Text>}
+                </PressableOpacity>
+                <PressableOpacity onPress={() => router.push('/join/code')} style={{ marginTop: 6, padding: 8 }}>
+                  <Text style={{ color: colors.accentCoral, fontWeight: '800', fontSize: 17 }}>Have an invite code?</Text>
+                </PressableOpacity>
+              </View>
+              </FadeUp>
+            }
+            ListFooterComponent={(sortedGroups?.length ?? 0) > 0 ? (
+              <FadeUp index={sortedGroups?.length}>
+                <PressableOpacity onPress={() => router.push('/join/code')} style={{ alignSelf: 'center', marginTop: 16, padding: 8 }}>
+                  <Text style={{ color: colors.accentCoral, fontWeight: '800', fontSize: 17 }}>Have an invite code?</Text>
+                </PressableOpacity>
+              </FadeUp>
+            ) : undefined}
+          />
+        </FadeUpScreen>
       )}
       <GroupMuteSheet
         visible={!!muteSheetGroup}

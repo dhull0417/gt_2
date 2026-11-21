@@ -3,18 +3,26 @@ import { Text } from 'react-native';
 import { act, render, screen, fireEvent } from '@testing-library/react-native';
 import { Pressable } from 'react-native';
 import { withDelay, withTiming, useReducedMotion } from 'react-native-reanimated';
-import { fadeUpDelay, FADE_UP, FadeUp, FadeUpContext, FadeUpScreen, useFadeUpReplay } from '../FadeUp';
+import { fadeUpDelay, FADE_UP, FadeUp, FadeUpContext, FadeUpScreen, useFadeUpReplay, markAppRevealed, resetAppRevealedForTests } from '../FadeUp';
 
-let focusCallback: (() => void) | undefined;
+let focusCallback: (() => void | (() => void)) | undefined;
+let blurCleanup: (() => void) | undefined;
 jest.mock('expo-router', () => ({
   useFocusEffect: (cb: () => void) => { focusCallback = cb; },
 }));
-const focus = () => act(async () => { focusCallback?.(); });
+const focus = () => act(async () => {
+  const cleanup = focusCallback?.();
+  blurCleanup = typeof cleanup === 'function' ? cleanup : undefined;
+});
+const blur = () => act(async () => { blurCleanup?.(); blurCleanup = undefined; });
 
 jest.mock('react-native-reanimated', () => {
   const mock = require('react-native-reanimated/mock');
+  const { useRef } = require('react');
   return {
     ...mock,
+    // The stock mock makes a new shared value every render; keep one per component like the real hook.
+    useSharedValue: (init: number) => useRef({ value: init }).current,
     withTiming: jest.fn((toValue: number) => toValue),
     withDelay: jest.fn((_ms: number, anim: unknown) => anim),
     useReducedMotion: jest.fn(() => false),
@@ -25,6 +33,8 @@ const timingCalls = () => (withTiming as jest.Mock).mock.calls.length;
 const flat = (s: any): any => (Array.isArray(s) ? Object.assign({}, ...s.map(flat)) : s || {});
 
 beforeEach(() => {
+  resetAppRevealedForTests();
+  markAppRevealed(); // splash already gone, unless a test says otherwise
   (withTiming as jest.Mock).mockClear();
   (useReducedMotion as jest.Mock).mockReturnValue(false);
 });
@@ -87,19 +97,35 @@ describe('FadeUp', () => {
 });
 
 describe('FadeUpScreen', () => {
-  it('does not replay on the first focus (mount already animated)', async () => {
+  it('animates on the first focus of a screen that was built before it was shown (preloaded tab)', async () => {
     await render(<FadeUpScreen><FadeUp><Text>card</Text></FadeUp></FadeUpScreen>);
-    const after = timingCalls();
+    expect(timingCalls()).toBe(0); // built off-screen: nothing plays unseen
     await focus();
-    expect(timingCalls()).toBe(after);
+    expect(timingCalls()).toBeGreaterThan(0);
+  });
+
+  it('waits for the splash screen to go before the first fade-up', async () => {
+    resetAppRevealedForTests();
+    const Screen = ({ label }: { label: string }) => (
+      <FadeUpScreen><FadeUp testID="f"><Text>{label}</Text></FadeUp></FadeUpScreen>
+    );
+    const { rerender } = await render(<Screen label="a" />);
+    await focus(); // focused, but still behind the splash
+    await rerender(<Screen label="b" />);
+    expect(timingCalls()).toBe(0);
+    expect(flat(screen.getByTestId('f').props.style).opacity).toBe(0);
+    await act(async () => { markAppRevealed(); });
+    expect(timingCalls()).toBeGreaterThan(0);
   });
 
   it('replays every later focus', async () => {
     await render(<FadeUpScreen><FadeUp><Text>card</Text></FadeUp></FadeUpScreen>);
     await focus();
+    await blur();
     const after = timingCalls();
     await focus();
     expect(timingCalls()).toBeGreaterThan(after);
+    await blur();
     const again = timingCalls();
     await focus();
     expect(timingCalls()).toBeGreaterThan(again);
@@ -130,6 +156,7 @@ describe('scrolled-in rows', () => {
       </FadeUpScreen>
     );
     const { rerender } = await render(<Screen late={false} />);
+    await focus();
     expect((withDelay as jest.Mock).mock.calls.at(-1)[0]).toBe(150);
     now = 3000; // user scrolls two seconds later
     await rerender(<Screen late />);
@@ -141,8 +168,45 @@ describe('scrolled-in rows', () => {
     jest.spyOn(Date, 'now').mockImplementation(() => now);
     await render(<FadeUpScreen><FadeUp index={4}><Text>card</Text></FadeUp></FadeUpScreen>);
     await focus();
+    await blur();
     now = 9000;
     await focus();
     expect((withDelay as jest.Mock).mock.calls.at(-1)[0]).toBe(200);
+  });
+});
+
+describe('leaving the screen', () => {
+  const Screen = ({ label }: { label: string }) => (
+    <FadeUpScreen><FadeUp testID="f"><Text>{label}</Text></FadeUp></FadeUpScreen>
+  );
+
+  it('hides content on blur so coming back never shows a stale visible frame', async () => {
+    const { rerender } = await render(<Screen label="a" />);
+    await focus();
+    await rerender(<Screen label="a2" />);
+    expect(flat(screen.getByTestId('f').props.style).opacity).toBe(1); // animated in
+    await blur();
+    await rerender(<Screen label="b" />); // re-read the style while away
+    expect(flat(screen.getByTestId('f').props.style).opacity).toBe(0);
+  });
+
+  it('fades back in on return', async () => {
+    const { rerender } = await render(<Screen label="a" />);
+    await focus();
+    await blur();
+    const before = timingCalls();
+    await focus();
+    await rerender(<Screen label="b" />);
+    expect(timingCalls()).toBeGreaterThan(before);
+    expect(flat(screen.getByTestId('f').props.style).opacity).toBe(1);
+  });
+
+  it('stays visible on blur when Reduce Motion is on', async () => {
+    (useReducedMotion as jest.Mock).mockReturnValue(true);
+    const { rerender } = await render(<Screen label="a" />);
+    await focus();
+    await blur();
+    await rerender(<Screen label="b" />);
+    expect(flat(screen.getByTestId('f').props.style).opacity).toBe(1);
   });
 });

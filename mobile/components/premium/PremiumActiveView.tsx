@@ -1,8 +1,9 @@
 import { useId, useState } from "react";
 import { Linking, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Defs, LinearGradient, Polygon, Rect, Stop, Text as SvgText } from "react-native-svg";
+import Svg, { Defs, LinearGradient, Path, Rect, Stop, Text as SvgText } from "react-native-svg";
 import { Feather } from "@expo/vector-icons";
+import { CROWN_PATH } from "@/components/ui/CrownIcon";
 import { PressableOpacity } from "@/components/ui/PressableOpacity";
 import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
 import { premiumColors, PREMIUM_RAINBOW, PREMIUM_RAINBOW_DEEP } from "@/components/schedule/premiumColors";
@@ -13,8 +14,6 @@ const MANAGE_URL = Platform.OS === "ios"
     ? "https://apps.apple.com/account/subscriptions"
     : "https://play.google.com/store/account/subscriptions";
 
-// Feather's "star" outline, in its 24×24 box.
-const STAR_POINTS = "12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2";
 const HERO_RADIUS = 24;
 const EDGE = 2.5;
 
@@ -83,12 +82,12 @@ export function PremiumActiveView({ onClose }: { onClose: () => void }) {
                             </Svg>
                         )}
 
-                        <View style={[styles.starChip, { backgroundColor: pc.chipBg, borderColor: pc.chipBorder }]}>
+                        <View style={[styles.crownChip, { backgroundColor: pc.chipBg, borderColor: pc.chipBorder }]}>
                             <Svg width={36} height={36} viewBox="0 0 24 24">
                                 <Defs>
-                                    <LinearGradient id={`${id}-star`} x1="0" y1="0" x2="1" y2="1">{stops(deep)}</LinearGradient>
+                                    <LinearGradient id={`${id}-crown`} x1="0" y1="0" x2="1" y2="1">{stops(deep)}</LinearGradient>
                                 </Defs>
-                                <Polygon points={STAR_POINTS} fill="none" stroke={`url(#${id}-star)`} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                                <Path d={CROWN_PATH} fill="none" stroke={`url(#${id}-crown)`} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
                             </Svg>
                         </View>
 
@@ -141,12 +140,12 @@ export function PremiumActiveView({ onClose }: { onClose: () => void }) {
 }
 
 const styles = StyleSheet.create({
-    topBar: { flexDirection: "row", justifyContent: "flex-end", paddingHorizontal: 16, paddingTop: 8 },
+    topBar: { flexDirection: "row", justifyContent: "flex-start", paddingHorizontal: 16, paddingTop: 8 },
     closeBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
     scroll: { paddingHorizontal: 20, paddingBottom: 48, paddingTop: 8 },
     heroEdge: { borderRadius: HERO_RADIUS, padding: EDGE, overflow: "hidden" },
     heroInner: { borderRadius: HERO_RADIUS - EDGE, paddingVertical: 28, paddingHorizontal: 22, alignItems: "center", overflow: "hidden" },
-    starChip: { width: 72, height: 72, borderRadius: 36, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+    crownChip: { width: 72, height: 72, borderRadius: 36, borderWidth: 1, alignItems: "center", justifyContent: "center" },
     heroText: { fontSize: 15, lineHeight: 22, textAlign: "center", marginTop: 6 },
     sectionLabel: { fontSize: 12, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 28, marginBottom: 10, marginLeft: 4 },
     list: { borderRadius: 18, borderWidth: 1, overflow: "hidden" },

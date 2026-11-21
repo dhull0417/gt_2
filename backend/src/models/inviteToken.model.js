@@ -6,7 +6,7 @@ import mongoose from "mongoose";
 // expiresAt is a date, so permanent tokens are kept.
 const inviteTokenSchema = new mongoose.Schema({
   token: { type: String, required: true, unique: true, index: true },
-  // 6-character code people can type into the app (see utils/invites.js).
+  // 8-character code people can type into the app (older ones are 6) (see utils/invites.js).
   code: { type: String, unique: true, sparse: true },
   groupId: { type: mongoose.Schema.Types.ObjectId, ref: "Group", required: true, index: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },

@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
-import { Feather } from "@expo/vector-icons";
+import { CrownIcon } from "@/components/ui/CrownIcon";
 import { useAppearance } from "@/contexts/AppearanceContext";
 import { premiumColors, PREMIUM_RAINBOW } from "./premiumColors";
 
@@ -38,7 +38,7 @@ export function PremiumPill({ label = "Premium", icon = true }: { label?: string
                 </Svg>
             )}
             <View style={[styles.pill, { backgroundColor: pc.chipBg }]}>
-                {icon && <Feather name="star" size={10} color={pc.pillText} />}
+                {icon && <CrownIcon size={10} color={pc.pillText} />}
                 <Text style={[styles.text, { color: pc.pillText }]}>{label}</Text>
             </View>
         </View>

@@ -1,5 +1,8 @@
 import type { Meetup } from '@/utils/api';
 
+/** Longest answer to a custom RSVP question (the server enforces the same limit). */
+export const MAX_ANSWER_LENGTH = 70;
+
 /** Custom RSVP questions only apply while the group's owner has Premium (absent = unknown, treat as on). */
 export const questionsActive = (meetup: Meetup): boolean =>
   meetup.group?.isPremium !== false && (meetup.questions?.length ?? 0) > 0;

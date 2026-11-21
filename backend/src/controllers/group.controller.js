@@ -1359,6 +1359,24 @@ export const deleteGroup = asyncHandler(async (req, res) => {
 // Invite links live in invite.controller.js.
 
 const TIME_RE = /^(0?[1-9]|1[0-2]):[0-5]\d (AM|PM)$/;
+const MAX_OPEN_DAYS = 365;
+const clockMinutes = (t) => {
+    const [, h, m, ap] = t.match(/^(\d+):(\d+) (AM|PM)$/);
+    return ((Number(h) % 12) + (ap === "PM" ? 12 : 0)) * 60 + Number(m);
+};
+/** Why an RSVP open time (days before + clock time) can't be used, or null. It may not be after the series' deadline. */
+const openTimeProblem = (schedule, days, time) => {
+    if (!Number.isInteger(days) || days < 0 || days > MAX_OPEN_DAYS) {
+        return `RSVPs can open between the day of and ${MAX_OPEN_DAYS} days before.`;
+    }
+    if (typeof time !== "string" || !TIME_RE.test(time)) return "Choose what time RSVPs open.";
+    const dl = schedule.generationDeadlineDays;
+    if (dl != null) {
+        const afterDeadline = days < dl || (days === dl && clockMinutes(time) > clockMinutes(schedule.generationDeadlineTime || "09:00 AM"));
+        if (afterDeadline) return "RSVPs can't open after the latest time to RSVP.";
+    }
+    return null;
+};
 
 /**
  * @desc    Set a series' priority RSVP (Premium): who gets a head start, in what
@@ -1370,7 +1388,7 @@ const TIME_RE = /^(0?[1-9]|1[0-2]):[0-5]\d (AM|PM)$/;
 export const updateSchedulePriority = asyncHandler(async (req, res) => {
     const { groupId, scheduleId } = req.params;
     const { userId: clerkId } = getAuth(req);
-    const { enabled, order, tiers, quiet } = req.body;
+    const { enabled, order, tiers, quiet, openDays, openTime } = req.body;
 
     const group = await Group.findById(groupId);
     const user = await User.findOne({ clerkId });
@@ -1379,6 +1397,7 @@ export const updateSchedulePriority = asyncHandler(async (req, res) => {
 
     const target = group.schedules.id(scheduleId);
     if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
+    const scheduleBefore = scheduleSnapshot(target, group.timezone);
 
     if (!enabled) {
         target.priorityEnabled = false;
@@ -1386,7 +1405,12 @@ export const updateSchedulePriority = asyncHandler(async (req, res) => {
         if (!(await groupHasPremium(group))) {
             return res.status(403).json({ error: "premium_required", message: "Priority RSVP requires GroupThat Premium." });
         }
-        if (target.generationLeadDays == null) {
+        // The Priority RSVP screen also sets when RSVPs open (when Group 1 starts). Older app builds don't send it.
+        if (openDays !== undefined) {
+            const openError = openTimeProblem(target, openDays, openTime);
+            if (openError) return res.status(400).json({ error: openError });
+        }
+        if (target.generationLeadDays == null && openDays === undefined) {
             return res.status(400).json({ error: "Set when RSVPs open for this series to use priority RSVP." });
         }
         if (!Array.isArray(tiers) || tiers.length < 1 || tiers.length > MAX_PRIORITY_TIERS) {
@@ -1433,10 +1457,33 @@ export const updateSchedulePriority = asyncHandler(async (req, res) => {
         target.priorityOrder = cleanOrder;
         target.priorityTiers = cleanTiers;
         target.priorityQuiet = q;
+        if (openDays !== undefined) {
+            target.generationLeadDays = openDays;
+            target.generationLeadTime = openTime;
+        }
     }
 
     await group.save();
     await refreshPriorityTiers(group, target);
+
+    // A new open time is a series change members should hear about, same as from the series' own Save.
+    try {
+        const changes = scheduleChanges(scheduleBefore, scheduleSnapshot(target, group.timezone));
+        if (changes.length > 0) {
+            const membersToNotify = await User.find({ _id: { $in: group.members } });
+            await notifyAndPersist(membersToNotify, {
+                title: `Schedule Updated: ${target.name} (${group.name})`,
+                body: pushBody(changes),
+                data: { groupId: group._id.toString(), type: 'schedule_updated' },
+                type: 'schedule-updated',
+                sender: user._id,
+                group: group._id,
+                meta: { changes, scheduleName: target.name },
+            });
+        }
+    } catch (err) {
+        console.error("Update Schedule Priority Notify Error:", err);
+    }
 
     res.status(200).json({ message: "Priority RSVP updated.", group: withLegacyScheduleMirror(group.toObject()) });
 });

@@ -16,6 +16,9 @@ import { usePurchasesSetup } from '@/hooks/usePurchases';
 import * as SecureStore from 'expo-secure-store';
 import { User, useApiClient, userApi, meetupApi, groupApi, notificationApi } from '@/utils/api';
 import * as SplashScreen from 'expo-splash-screen';
+import { useFonts } from 'expo-font';
+import { Feather, FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { markAppRevealed } from '@/components/ui/FadeUp';
 import { useEffect, useState } from 'react';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useAppBadge } from '@/hooks/useAppBadge';
@@ -235,6 +238,12 @@ export default function RootLayout() {
 
 const AuthLayout = () => {
   const { isLoaded, isSignedIn, getToken } = useAuth();
+  // Icon fonts load before the splash hides; otherwise icons draw as blank boxes for the
+  // first frames and pop in mid fade-up. A font error doesn't hold the app.
+  const [iconFontsLoaded, iconFontsError] = useFonts({
+    ...Feather.font, ...Ionicons.font, ...MaterialIcons.font, ...FontAwesome5.font,
+  });
+  const iconFontsReady = iconFontsLoaded || !!iconFontsError;
   const { user: clerkUser } = useUser();
   const segments = useSegments();
   const router = useRouter();
@@ -420,10 +429,12 @@ const AuthLayout = () => {
   }, [isLoaded, isSignedIn, currentUser, currentUserSettled, currentUserLoadFailed, segments, router, clerkUser]);
 
   useEffect(() => {
-    if (isLoaded && ((isSignedIn && (currentUserSettled || currentUserLoadFailed)) || !isSignedIn)) {
-      SplashScreen.hideAsync();
+    if (iconFontsReady && isLoaded && ((isSignedIn && (currentUserSettled || currentUserLoadFailed)) || !isSignedIn)) {
+      // Fade-up entrances wait for this: tabs are built behind the splash and would otherwise
+      // play their entrance unseen.
+      SplashScreen.hideAsync().catch(() => {}).finally(markAppRevealed);
     }
-  }, [isLoaded, isSignedIn, isSuccess, currentUserLoadFailed, noBackendUser]);
+  }, [iconFontsReady, isLoaded, isSignedIn, isSuccess, currentUserLoadFailed, noBackendUser]);
 
   // Fresh install from an invite link: pick the invite up from the Play install referrer (Android)
   // or the clipboard the invite page filled (iOS). Once per install; see utils/deferredInvite.ts.

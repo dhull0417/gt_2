@@ -39,7 +39,7 @@ export function ChatDayBubble({ label }: Props) {
   return (
     <View style={styles.wrap} pointerEvents="box-none">
       <Pressable onPress={handlePress} onPressIn={handlePressIn} onPressOut={handlePressOut} hitSlop={6}>
-        <Animated.View style={[styles.shadowWrap, animatedStyle]}>
+        <Animated.View testID="day-bubble-shadow" style={[styles.shadowWrap, animatedStyle]}>
           <BlurView intensity={50} tint={scheme === 'dark' ? 'dark' : 'light'} style={styles.pill}>
             <View style={[styles.tint, scheme === 'dark' && styles.tintDark]} />
             <Text style={[styles.label, scheme === 'dark' && styles.labelDark]}>{label}</Text>
@@ -52,13 +52,12 @@ export function ChatDayBubble({ label }: Props) {
 
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', paddingVertical: 8 },
+  // boxShadow, not shadowColor/shadowOpacity: the pill is translucent (blur), so legacy shadows
+  // can't be computed efficiently on iOS and RN 0.88 logs an advice warning for every render.
+  // boxShadow draws from the rounded shape instead. Blur 12px ≈ the old shadowRadius 6.
   shadowWrap: {
     borderRadius: 999,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 3,
+    boxShadow: '0px 3px 12px rgba(0, 0, 0, 0.12)',
   },
   pill: {
     borderRadius: 999,

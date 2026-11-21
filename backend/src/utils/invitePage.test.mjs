@@ -69,6 +69,8 @@ test('desktop shows both stores and the invite code, and no QR code', () => {
   assert.match(html, /data-initial="desktop"/);
   assert.match(html, /Open this link on your phone/);
   assert.match(html, /K7P2QX/);
+  // 8-character codes are shown as two groups of four.
+  assert.match(renderInvitePage(base({ code: 'K7P2QXMR' }), deviceInfo(UA.desktop)), /<b>K7P2 QXMR<\/b>/);
   assert.doesNotMatch(html, /qr/i);
 });
 

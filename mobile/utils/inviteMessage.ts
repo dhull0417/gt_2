@@ -1,4 +1,4 @@
-import { buildShareLink } from './inviteLink';
+import { buildShareLink, formatInviteCode } from './inviteLink';
 
 /**
  * The one invite text used everywhere (group details, create group, add members, meetup sheet,
@@ -12,7 +12,7 @@ export function buildInviteMessage(opts: {
   meetupId?: string | null;
   referrerId?: string | null;
   recipientFirstName?: string;
-  /** The 6-character code, for anyone whose link doesn't carry through the install. */
+  /** The invite code, for anyone whose link doesn't carry through the install. */
   code?: string | null;
 }): string {
   const hello = opts.recipientFirstName ? `Hey ${opts.recipientFirstName}! ` : '';
@@ -21,5 +21,5 @@ export function buildInviteMessage(opts: {
     : `${hello}Join my group "${opts.groupName ?? ''}" on GroupThat`;
   const link = buildShareLink(opts.link, { meetupId: opts.meetupId, referrerId: opts.referrerId });
   if (!opts.code) return `${what} 👉\n${link}`;
-  return `${what}!\n\nINVITE CODE:\n\n${opts.code}\n\n👉 ${link}`;
+  return `${what}!\n\nINVITE CODE:\n\n${formatInviteCode(opts.code)}\n\n👉 ${link}`;
 }

@@ -10,7 +10,8 @@ indefinitely).
 
 ## Goals
 
-1. **Mod delete.** In a group chat (not DMs), owners and moderators can delete anyone's message.
+1. **Mod delete.** In a group chat (not DMs), the owner can delete anyone's message; moderators can
+   delete regular members' messages (not the owner's or other moderators'). (Changed 2026-11-21.)
    It is wiped like a normal delete (text, photo, reply preview, mentions) and shows the same
    "message deleted" placeholder. Nobody is told a mod did it.
 2. **Timeouts.** An owner/moderator can time someone out of one group's chat for one of the nine
@@ -36,7 +37,8 @@ indefinitely).
 
 ## Who may do what
 
-- Delete any message in the group: owner, moderators.
+- Delete any message in the group: owner. Delete regular members' messages: moderators (also
+  messages from people who have since left the group).
 - Time out: the owner may time out anyone except themself. A moderator may time out regular members
   only (not the owner, not other moderators). Nobody times themself out. Same rule for ending one.
 - DMs: neither feature.
@@ -124,8 +126,9 @@ indefinitely).
   "until Tue 3:15 PM" within a week, otherwise "until Nov 30"; "Indefinitely" when open-ended.
 
 ## Decisions marked as Claude's call
-- Mods may delete the owner's and other mods' messages (you approved "anyone's message"); the
-  stricter owner-vs-mod rule applies only to timeouts.
+- ~~Mods may delete the owner's and other mods' messages.~~ Reversed 2026-11-21: deletes now follow
+  the same owner-vs-mod rule as timeouts (backend 403 "Moderators can't delete the owner's or other
+  moderators' messages."; the app hides Delete for those messages).
 - Rollback-on-Supabase-failure for timeouts; 503 when Supabase isn't configured.
 - Group-list preview becomes "Message deleted" for a mod-deleted last message.
 - No realtime subscription for timeouts; focus/push/error refetch is enough.

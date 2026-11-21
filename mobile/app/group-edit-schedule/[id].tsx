@@ -8,7 +8,7 @@ import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { timezoneOptions, tzAbbr } from '@/utils/timezones';
 import { toast } from '@/contexts/ToastContext';
 import { haptic } from '@/utils/haptics';
-import { ScheduleData, defaultSchedule, buildSchedulePayload, scheduleFromNamedSchedule } from '@/utils/editScheduleDraft';
+import { ScheduleData, defaultSchedule, buildSchedulePayload, scheduleFromNamedSchedule, syncSavedLead } from '@/utils/editScheduleDraft';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
@@ -34,6 +34,12 @@ import { askDeleteAfterEnd, decideRemoveAfterEnd } from "@/utils/endDatePrompt";
 
 type Sheet = "when" | "rsvp" | "capacity" | "bring" | "questions" | "upsell" | null;
 const ORDER: FormArea[] = ["name", "where", "when", "timezone", "rsvp", "capacity", "bring", "questions"];
+
+// The unsaved RSVP rules, for the Priority RSVP screen's "RSVPs open" card (route params are strings).
+const rsvpRulesParams = (d: ScheduleData) =>
+    d.rsvpRestricted && d.leadEnabled
+        ? { leadDays: String(d.leadDays), leadTime: d.leadTime, deadlineDays: d.deadlineEnabled ? String(d.deadlineDays) : "", deadlineTime: d.deadlineEnabled ? d.deadlineTime : "" }
+        : {};
 
 const EditScheduleScreen = () => {
     const { id, scheduleId: rawScheduleId } = useLocalSearchParams<{ id: string; scheduleId?: string }>();
@@ -77,6 +83,20 @@ const EditScheduleScreen = () => {
             setD(initial);
         }
     }, [group, targetSchedule, isNew]);
+
+    // The Priority RSVP screen can save a new RSVP open time while this screen sits behind it.
+    // Pick it up when the group refetches, so this screen's Save can't put the old one back.
+    const savedLeadDays = targetSchedule?.generationLeadDays;
+    const savedLeadTime = targetSchedule?.generationLeadTime;
+    React.useEffect(() => {
+        if (!initialized.current || !originalRef.current) return;
+        setD(prev => {
+            const synced = syncSavedLead(prev, originalRef.current!, { generationLeadDays: savedLeadDays, generationLeadTime: savedLeadTime });
+            if (!synced) return prev;
+            originalRef.current = synced.baseline;
+            return synced.draft;
+        });
+    }, [savedLeadDays, savedLeadTime]);
 
     const upd = useCallback((patch: Partial<ScheduleData>) => setD(prev => ({ ...prev, ...patch })), []);
     const [sheet, setSheet] = useState<Sheet>(null);
@@ -284,7 +304,7 @@ const EditScheduleScreen = () => {
                             {!isPremium ? <SummaryRow label="Priority RSVP" value="" onPress={() => setSheet("upsell")} locked />
                                 : <SummaryRow label="Priority RSVP" value={targetSchedule?.priorityEnabled ? "On" : "Off"}
                                     disabledReason={isNew ? "Set up after the schedule is created" : undefined}
-                                    onPress={() => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId! } })} />}
+                                    onPress={() => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId!, ...rsvpRulesParams(d) } })} />}
                             {!isPremium ? <SummaryRow label="RSVP Questions" value="" onPress={() => setSheet("upsell")} locked />
                                 : isNew
                                     ? <SummaryRow label="RSVP Questions" value={questionsSummary(d.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} />

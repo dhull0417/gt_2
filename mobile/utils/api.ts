@@ -816,7 +816,7 @@ export const groupApi = {
     api: AxiosInstance,
     groupId: string,
     scheduleId: string,
-    data: { enabled: boolean; order?: string[]; tiers?: PriorityTierDef[]; quiet?: { enabled: boolean; start: string; end: string } },
+    data: { enabled: boolean; order?: string[]; tiers?: PriorityTierDef[]; quiet?: { enabled: boolean; start: string; end: string }; openDays?: number; openTime?: string },
   ): Promise<{ message: string; group: Group }> => {
     const response = await api.put<{ message: string; group: Group }>(`/api/groups/${groupId}/schedules/${scheduleId}/priority`, data);
     return response.data;

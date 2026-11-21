@@ -18,7 +18,7 @@ import { flags } from "../utils/featureFlags.js";
 import { evaluateMinimumHeadcount, evaluateDueMeetups } from "../utils/minimumHeadcount.js";
 import { meetupChanges, pushBody } from "../utils/changeSummary.js";
 import { applyEndTimeEdit, isMeetupOver } from "../utils/meetupEndTime.js";
-import { pruneAnswers, parseQuestions, MAX_ANSWER_LENGTH } from "../utils/rsvpQuestions.js";
+import { pruneAnswers, parseQuestions, answerTooLong, ANSWER_TOO_LONG } from "../utils/rsvpQuestions.js";
 import { guestCountFn, normalizeRides, applyAssignment, setRideRole, autoAssign, guestIncreaseBlocked } from "../utils/rides.js";
 import { notifyRideChanges } from "../utils/rideNotify.js";
 import { coordsForZip } from "../utils/zipDistance.js";
@@ -1221,7 +1221,7 @@ export const setAnswers = asyncHandler(async (req, res) => {
             const q = byId.get(String(a?.question));
             if (!q) return res.status(400).json({ error: "That question no longer exists." });
             const value = typeof a.value === 'string' ? a.value.trim() : '';
-            if (value.length > MAX_ANSWER_LENGTH) return res.status(400).json({ error: `Answers can be at most ${MAX_ANSWER_LENGTH} characters.` });
+            if (answerTooLong(value)) return res.status(400).json({ error: ANSWER_TOO_LONG });
             if (value && pruneAnswers([{ question: q._id, value }], [q]).length === 0) {
                 return res.status(400).json({ error: `Pick one of the choices for "${q.prompt}".` });
             }

@@ -1,5 +1,5 @@
 import {
-  TIMEOUT_OPTIONS, isTimeoutActive, formatTimeoutRemaining, formatTimeoutEnd, isTimedOutError, canTimeOut,
+  TIMEOUT_OPTIONS, isTimeoutActive, formatTimeoutRemaining, formatTimeoutEnd, isTimedOutError, canTimeOut, canModDeleteFrom,
 } from '../chatTimeout';
 
 const NOW = Date.parse('2026-11-16T15:00:00Z');
@@ -84,6 +84,27 @@ describe('canTimeOut', () => {
     expect(canTimeOut('a', 'b', group)).toBe(false);
     expect(canTimeOut('o', 'a', { ...group, isDM: true })).toBe(false);
     expect(canTimeOut(undefined, 'a', group)).toBe(false);
+  });
+});
+
+describe('canModDeleteFrom', () => {
+  const group = { owner: 'o', moderators: [{ _id: 'm1' }, 'm2'], isDM: false };
+  it('owner can delete moderators\' and members\' messages', () => {
+    expect(canModDeleteFrom('o', 'm1', group)).toBe(true);
+    expect(canModDeleteFrom('o', 'a', group)).toBe(true);
+  });
+  it('moderators only regular members\' messages', () => {
+    expect(canModDeleteFrom('m1', 'a', group)).toBe(true);
+    expect(canModDeleteFrom('m1', 'm2', group)).toBe(false);
+    expect(canModDeleteFrom('m1', 'o', group)).toBe(false);
+  });
+  it('a sender no longer in the group counts as a regular member', () => {
+    expect(canModDeleteFrom('m1', undefined, group)).toBe(true);
+  });
+  it('members never, no DMs, not signed in never', () => {
+    expect(canModDeleteFrom('a', 'b', group)).toBe(false);
+    expect(canModDeleteFrom('o', 'a', { ...group, isDM: true })).toBe(false);
+    expect(canModDeleteFrom(undefined, 'a', group)).toBe(false);
   });
 });
 

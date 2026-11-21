@@ -77,7 +77,7 @@ import { runBackInterceptor } from '@/utils/backInterceptors';
 import { ChatTimeoutSheet } from '@/components/ChatTimeoutSheet';
 import { useChatModeration } from '@/hooks/useChatModeration';
 import { useNow } from '@/hooks/useNow';
-import { canTimeOut, formatTimeoutRemaining, isTimeoutActive } from '@/utils/chatTimeout';
+import { canModDeleteFrom, canTimeOut, formatTimeoutRemaining, isTimeoutActive } from '@/utils/chatTimeout';
 
 interface ChatDaySection {
   key: string;
@@ -559,7 +559,9 @@ const GroupChatScreen = () => {
   }, [selectedMessage, groupDetails]);
   const canTimeOutSelected = !!selectedSender && canTimeOut(currentUser?._id, selectedSender._id, effectiveGroup as any);
   // Someone else's message only (my own goes through the normal delete), and not while I'm timed out.
-  const canModDelete = !isDM && canManageGroup && !timedOut && !isOwnSelected && !isDeletedSelected && selectedMessage?.kind !== 'system';
+  // Moderators can't delete the owner's or other moderators' messages (the backend enforces it too).
+  const canModDelete = !isDM && canManageGroup && !timedOut && !isOwnSelected && !isDeletedSelected && selectedMessage?.kind !== 'system'
+    && canModDeleteFrom(currentUser?._id, selectedSender?._id, effectiveGroup as any);
 
   const handleSend = async (text: string, image?: PendingImage, mentions?: string[]) => {
     if (!id) return;
@@ -838,6 +840,11 @@ const GroupChatScreen = () => {
               ref={sectionListRef}
               style={{ flex: 1 }}
               sections={sections}
+              // Render the whole first page in one pass. With the default (10 rows, oldest first),
+              // the first-paint jump to the bottom landed on row ~10 of a long history, then the
+              // list visibly stepped down as later batches rendered. Each section adds a header and
+              // footer row, hence the * 2. Only read on first render.
+              initialNumToRender={Math.max(10, messages.length + sections.length * 2 + 2)}
               keyExtractor={(item) => item.client_id ?? item.id}
               renderItem={({ item }) => item.kind === 'system' ? (
                 <ChatSystemMessage text={item.content} />

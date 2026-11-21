@@ -15,7 +15,7 @@ import { notifyAndPersist } from "../utils/push.notifications.js";
 import { onInviteRedeemed } from "../utils/email/lifecycle.js";
 import { postSystemMessage } from "../utils/systemMessage.js";
 import {
-  generateInviteCode, generateInviteToken, isInviteCode, normalizeInviteCode, inviteStatus,
+  generateInviteCode, generateInviteToken, isInviteCode, isLegacyInviteCode, normalizeInviteCode, inviteStatus,
   DEAD_INVITE_MESSAGES, TOKEN_RE, inviteLinkFor,
 } from "../utils/invites.js";
 
@@ -27,7 +27,7 @@ const canManage = (group, userId) => sameId(group.owner, userId) || (group.moder
 export const MAX_USES_LIMIT = 1000;
 const STATS_DAYS = 30;
 
-/** Looks an invite up by its token or its 6-character code (any state). */
+/** Looks an invite up by its token or its 8-character code (or a 6-character one from before). */
 export const findInvite = async (tokenOrCode) => {
   const raw = String(tokenOrCode ?? '').trim();
   if (isInviteCode(raw)) return InviteToken.findOne({ code: normalizeInviteCode(raw) });
@@ -35,13 +35,14 @@ export const findInvite = async (tokenOrCode) => {
   return null;
 };
 
-/** Gives a token a code, retrying on the (rare) duplicate. */
+/** Gives a token a code (or swaps an old 6-character one for 8), retrying on the (rare) duplicate. */
 const ensureCode = async (invite) => {
-  if (invite.code) return invite;
+  if (invite.code && !isLegacyInviteCode(invite.code)) return invite;
+  const unchanged = invite.code ? invite.code : { $exists: false };
   for (let i = 0; i < 5; i++) {
     try {
       const code = generateInviteCode();
-      const updated = await InviteToken.findOneAndUpdate({ _id: invite._id, code: { $exists: false } }, { $set: { code } }, { new: true });
+      const updated = await InviteToken.findOneAndUpdate({ _id: invite._id, code: unchanged }, { $set: { code } }, { new: true });
       if (updated) return updated;
       return (await InviteToken.findById(invite._id)) ?? invite;
     } catch (err) {
@@ -165,7 +166,7 @@ const deadInvite = (res, status) => res.status(status === 'missing' ? 404 : 410)
 
 /**
  * @route GET /api/groups/invite/:token?m=<meetupId>&r=<userId> — what the person is about to join.
- * `:token` may also be the 6-character code.
+ * `:token` may also be the invite code.
  */
 export const getInvitePreview = asyncHandler(async (req, res) => {
   const { userId: clerkId } = getAuth(req);
@@ -242,7 +243,7 @@ export const recordInviteEvent = async (event) => {
 
 /**
  * @route POST /api/groups/join/:token  @body { meetupId?, source?, supportsApproval? }
- * `:token` may also be the 6-character code. Groups that approve new members get a join request
+ * `:token` may also be the invite code. Groups that approve new members get a join request
  * instead; app builds that can't show "waiting for approval" (no supportsApproval) are told to update.
  */
 export const redeemInviteToken = asyncHandler(async (req, res) => {

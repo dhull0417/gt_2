@@ -15,7 +15,7 @@ import { useApiClient, groupApi, InviteLinkInfo, User } from '@/utils/api';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { buildInviteMessage } from '@/utils/inviteMessage';
 import { shareInvite, prefetchShareImage } from '@/utils/shareInvite';
-import { buildShareLink } from '@/utils/inviteLink';
+import { formatInviteCode, buildShareLink } from '@/utils/inviteLink';
 import { getErrorMessage } from '@/utils/networkError';
 import { haptic } from '@/utils/haptics';
 
@@ -113,7 +113,7 @@ export default function GroupInviteScreen() {
                     {invite.code ? (
                         <PressableOpacity onPress={() => copy(invite.code!, 'Code')} style={styles.codeBox} accessibilityLabel={`Invite code ${invite.code}. Tap to copy.`}>
                             <Text style={styles.codeLabel}>INVITE CODE</Text>
-                            <Text style={styles.code}>{invite.code}</Text>
+                            <Text style={styles.code}>{formatInviteCode(invite.code)}</Text>
                         </PressableOpacity>
                     ) : null}
 

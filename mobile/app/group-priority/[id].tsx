@@ -22,6 +22,10 @@ import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
 import { UpgradeButton } from '@/components/UpgradeButton';
 import { formatInstantTime, viewerZone } from '@/utils/meetupTime';
+import { TimeField } from '@/components/ui/form';
+import { Stepper } from '@/components/schedule/sheets';
+import { setLeadTime, stepLead, type RsvpRulesValue } from '@/utils/rsvpRules';
+import { priorityOpenStart, type RsvpRulesParams } from '@/utils/priorityOpenTime';
 
 const ROW_H = 60;
 const DIV_H = 56;
@@ -54,7 +58,7 @@ const formatWindow = (text: string) => {
 export default function GroupPriorityScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { id, scheduleId } = useLocalSearchParams<{ id: string; scheduleId: string }>();
+  const { id, scheduleId, ...rulesParams } = useLocalSearchParams<{ id: string; scheduleId: string } & RsvpRulesParams>();
   const router = useRouter();
   const api = useApiClient();
   const queryClient = useQueryClient();
@@ -67,12 +71,14 @@ export default function GroupPriorityScreen() {
   const schedule = useMemo(() => group?.schedules?.find((s) => s._id === scheduleId) ?? null, [group, scheduleId]);
 
   const [enabled, setEnabled] = useState(false);
-  const [tiers, setTiers] = useState<TierDraft[]>([{ key: newKey(), size: '5', hours: '12' }]);
+  const [tiers, setTiers] = useState<TierDraft[]>([{ key: newKey(), size: '3', hours: '2' }]);
   const [quietEnabled, setQuietEnabled] = useState(false);
   const [quietStart, setQuietStart] = useState('10:00 PM');
   const [quietEnd, setQuietEnd] = useState('08:00 AM');
   const [picker, setPicker] = useState<'start' | 'end' | null>(null);
   const [orderIds, setOrderIds] = useState<string[]>([]);
+  // When RSVPs open (Group 1's start), saved with the priority setup.
+  const [open, setOpen] = useState<RsvpRulesValue | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -87,6 +93,7 @@ export default function GroupPriorityScreen() {
   useEffect(() => {
     if (!group || !schedule || loaded) return;
     setEnabled(!!schedule.priorityEnabled);
+    setOpen(priorityOpenStart(schedule, rulesParams));
     if (schedule.priorityTiers?.length) {
       setTiers(schedule.priorityTiers.map((t) => ({ key: newKey(), size: String(t.size), hours: minutesToHoursText(t.windowMinutes) })));
     }
@@ -125,7 +132,6 @@ export default function GroupPriorityScreen() {
     };
   }, [allMeetups, scheduleId]);
 
-  const noRsvpWindow = schedule ? schedule.generationLeadDays == null : false;
   const isPremium = group?.isPremium === true;
 
   // ── Layout: which slots belong to which group, and where dividers sit ───────
@@ -147,7 +153,7 @@ export default function GroupPriorityScreen() {
           <View style={styles.divider}>
             <Text style={styles.dividerTitle}>Group {k + 1}</Text>
             <Text style={styles.dividerSub}>
-              {count} {count === 1 ? 'person' : 'people'} · {formatWindow(t.hours)}{quietEnabled ? ' awake time' : ''} {k === 0 ? 'from the earliest RSVP time' : 'once the group above is done'}
+              {count} {count === 1 ? 'person' : 'people'} · {formatWindow(t.hours)}{quietEnabled ? ' awake time' : ''} {k === 0 ? 'from when RSVPs open' : 'once the group above is done'}
             </Text>
             {preview?.groups[k] ? <Text style={styles.dividerSub}>Opens {preview.groups[k]}</Text> : null}
           </View>
@@ -199,6 +205,7 @@ export default function GroupPriorityScreen() {
             order: orderIds,
             tiers: tiers.map<PriorityTierDef>((t) => ({ size: parseInt(t.size, 10), windowMinutes: parseHours(t.hours)! })),
             quiet: { enabled: quietEnabled, start: quietStart, end: quietEnd },
+            ...(open ? { openDays: open.leadDays, openTime: open.leadTime } : {}),
           }
         : { enabled: false };
       await groupApi.updateSchedulePriority(api, id, scheduleId, body);
@@ -238,7 +245,7 @@ export default function GroupPriorityScreen() {
   const header = (
     <View>
       <Text style={styles.sub}>
-        Give some members a head start on RSVPing to "{schedule.name}". The series' earliest RSVP time is when Group 1 can start. Each group then gets its own window before the next group opens, and everyone else opens after the last group's window. Rank members below, then choose how many people are in each group and how long each group's window lasts.
+        Give some members a head start on RSVPing to "{schedule.name}". Group 1 can start when RSVPs open. Each group then gets its own window before the next group opens, and everyone else opens after the last group's window. Set when RSVPs open, choose how many people are in each group and how long each group's window lasts, then rank members below.
       </Text>
 
       {!isPremium ? (
@@ -250,13 +257,6 @@ export default function GroupPriorityScreen() {
             <UpgradeButton owner={group?.owner} />
           </View>
         </View>
-      ) : noRsvpWindow ? (
-        <View style={styles.lockRow}>
-          <Feather name="info" size={16} color={colors.textFaint} style={{ marginTop: 1 }} />
-          <Text style={[styles.lockText, { flex: 1 }]}>
-            Turn on "Limit RSVPs" and set when RSVPs open in this series' settings first. Priority groups open ahead of that time.
-          </Text>
-        </View>
       ) : (
         <>
           <View style={[styles.card, { marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
@@ -266,6 +266,29 @@ export default function GroupPriorityScreen() {
 
           {enabled && (
             <>
+              {open && (
+                <>
+                  <Text style={styles.sectionLabel}>RSVPs open</Text>
+                  <View style={styles.card}>
+                    <Stepper
+                      label="When RSVPs open"
+                      value={open.leadDays === 0 ? 'Day of' : `${open.leadDays} day${open.leadDays === 1 ? '' : 's'} before`}
+                      onStep={(by) => setOpen((cur) => (cur ? { ...cur, ...stepLead(cur, by) } : cur))}
+                    />
+                    <TimeField
+                      label="At"
+                      value={open.leadTime}
+                      onChange={(t) => {
+                        const r = setLeadTime(open, t);
+                        if (r.alert) Alert.alert(r.alert.title, r.alert.message);
+                        setOpen((cur) => (cur ? { ...cur, ...r.patch } : cur));
+                      }}
+                    />
+                  </View>
+                  <Text style={styles.hint}>Group 1 can start RSVPing at this time. This is the series' RSVP open time, so it changes there too.</Text>
+                </>
+              )}
+
               <Text style={styles.sectionLabel}>Groups</Text>
               <View style={styles.card}>
                 {tiers.map((t, k) => (
@@ -300,7 +323,7 @@ export default function GroupPriorityScreen() {
                 ))}
                 {tiers.length < MAX_TIERS && (
                   <PressableOpacity
-                    onPress={() => setTiers((cur) => [...cur, { key: newKey(), size: '1', hours: '1' }])}
+                    onPress={() => setTiers((cur) => [...cur, { key: newKey(), size: '3', hours: '2' }])}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 12 }}
                   >
                     <Feather name="plus-circle" size={16} color={colors.brand} />
@@ -344,7 +367,7 @@ export default function GroupPriorityScreen() {
     </View>
   );
 
-  const showList = enabled && isPremium && !noRsvpWindow;
+  const showList = enabled && isPremium;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -353,10 +376,10 @@ export default function GroupPriorityScreen() {
           <Feather name="arrow-left" size={24} color={colors.textMuted} />
         </PressableOpacity>
         <Text style={styles.headerTitle}>Priority RSVP</Text>
-        <PressableOpacity onPress={save} disabled={saving || !isPremium || noRsvpWindow} style={{ minWidth: 40, alignItems: 'flex-end' }}>
+        <PressableOpacity onPress={save} disabled={saving || !isPremium} style={{ minWidth: 40, alignItems: 'flex-end' }}>
           {saving
             ? <ActivityIndicator size="small" color={colors.brand} />
-            : <Text style={[styles.saveText, (!isPremium || noRsvpWindow) && { opacity: 0.4 }]}>Save</Text>}
+            : <Text style={[styles.saveText, !isPremium && { opacity: 0.4 }]}>Save</Text>}
         </PressableOpacity>
       </View>
 

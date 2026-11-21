@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, StyleSheet } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import { Feather } from '@expo/vector-icons';
+import { CrownIcon } from '@/components/ui/CrownIcon';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@clerk/expo';
@@ -35,7 +35,7 @@ export function UpgradeButton({ owner, style }: { owner?: string | { _id: string
       accessibilityLabel="Get Premium"
       style={[styles.btn, { backgroundColor: colors.brand }, style]}
     >
-      <Feather name="star" size={14} color="white" />
+      <CrownIcon size={14} color="white" />
       <Text style={styles.text}>Get Premium</Text>
     </PressableOpacity>
   );

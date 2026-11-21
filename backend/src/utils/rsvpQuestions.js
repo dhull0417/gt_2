@@ -2,7 +2,10 @@ import mongoose from "mongoose";
 import Meetup from "../models/meetup.model.js";
 
 export const MAX_QUESTIONS = 5;
-export const MAX_ANSWER_LENGTH = 300;
+export const MAX_ANSWER_LENGTH = 70;
+export const ANSWER_TOO_LONG = "Answer must be 70 characters or less.";
+/** Whether an answer (already trimmed) is over the limit. */
+export const answerTooLong = (value) => value.length > MAX_ANSWER_LENGTH;
 const TYPES = ["text", "choice", "yesno"];
 
 /**

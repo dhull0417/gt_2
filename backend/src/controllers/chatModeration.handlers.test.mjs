@@ -208,11 +208,37 @@ test('ending follows the same permission rule and rolls back on failure', async 
 
 const msg = (over = {}) => ({ id: 'm1', group_id: String(group._id), sender_id: P.owner.clerkId, image_url: null, deleted_at: null, created_at: '2026-11-16T14:00:00Z', ...over });
 
-test('a moderator deletes anyone\'s message, even the owner\'s', async () => {
-  sb.message = msg();
+test('a moderator deletes a regular member\'s message', async () => {
+  sb.message = msg({ sender_id: P.a.clerkId });
   const res = await modDelete(P.mod);
   assert.equal(res.statusCode, 200);
   assert.deepEqual(sb.calls.map((c) => c[0]), ['get', 'moddel', 'latest']);
+});
+
+test('a moderator cannot delete the owner\'s message', async () => {
+  sb.message = msg({ sender_id: P.owner.clerkId });
+  const res = await modDelete(P.mod);
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.error, "Moderators can't delete the owner's or other moderators' messages.");
+  assert.ok(!sb.calls.some((c) => c[0] === 'moddel'));
+});
+
+test('a moderator cannot delete another moderator\'s message', async () => {
+  sb.message = msg({ sender_id: P.mod2.clerkId });
+  assert.equal((await modDelete(P.mod)).statusCode, 403);
+  assert.ok(!sb.calls.some((c) => c[0] === 'moddel'));
+});
+
+test('the owner deletes a moderator\'s message', async () => {
+  sb.message = msg({ sender_id: P.mod.clerkId });
+  assert.equal((await modDelete(P.owner)).statusCode, 200);
+  assert.ok(sb.calls.some((c) => c[0] === 'moddel'));
+});
+
+test('a moderator deletes a message from someone who has left or deleted their account', async () => {
+  sb.message = msg({ sender_id: 'c-gone' });
+  assert.equal((await modDelete(P.mod)).statusCode, 200);
+  assert.ok(sb.calls.some((c) => c[0] === 'moddel'));
 });
 
 test('a message from another group is 404 and nothing is written', async () => {

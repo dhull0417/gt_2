@@ -2,6 +2,7 @@ import { View, Text, ScrollView, ActivityIndicator, Image, Alert, Modal, Linking
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useCallback, useMemo, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FadeUp, FadeUpScreen } from '@/components/ui/FadeUp';
 import { tabScreenBottomPadding } from '@/utils/layout';
 import { useAuth } from '@clerk/expo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -158,7 +159,7 @@ const HomeScreen = () => {
     {
       id: 'premium',
       label: currentUser?.isPremium ? 'GroupThat Premium (Active)' : 'Get GroupThat Premium',
-      icon: 'star' as const,
+      icon: 'award' as const,
       color: colors.warning,
       onPress: () => router.push('/paywall'),
     },
@@ -219,111 +220,124 @@ const HomeScreen = () => {
               </PressableOpacity>
             </View>
         ) : (
-          <>
-            <View className="items-center p-6 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-              <PressableOpacity onPress={handleChangePhoto} disabled={photoUploading} className="relative">
-                {photoUploading ? (
-                  <View style={styles.avatar} className="border-4 border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 items-center justify-center">
-                    <ActivityIndicator color={colors.brand} />
+          // Mounted once the profile has loaded, so the cascade starts with real content.
+          <FadeUpScreen>
+            <FadeUp index={0}>
+              <View className="items-center p-6 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+                <PressableOpacity onPress={handleChangePhoto} disabled={photoUploading} className="relative">
+                  {photoUploading ? (
+                    <View style={styles.avatar} className="border-4 border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 items-center justify-center">
+                      <ActivityIndicator color={colors.brand} />
+                    </View>
+                  ) : currentUser.profilePicture ? (
+                    <Image
+                      source={{ uri: currentUser.profilePicture }}
+                      style={styles.avatar}
+                      className="border-4 border-gray-200 dark:border-gray-700"
+                    />
+                  ) : (
+                    <View style={styles.avatar} className="border-4 border-gray-200 dark:border-gray-700 bg-indigo-100 dark:bg-indigo-900 items-center justify-center">
+                      <Text className="text-[82px] font-bold text-indigo-600 dark:text-indigo-300">
+                        {(currentUser.firstName?.[0] ?? '?').toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View className="absolute bottom-0 right-0 rounded-full p-3.5" style={{ backgroundColor: colors.brand }}>
+                    <Feather name="camera" size={14} color="white" />
                   </View>
-                ) : currentUser.profilePicture ? (
-                  <Image
-                    source={{ uri: currentUser.profilePicture }}
-                    style={styles.avatar}
-                    className="border-4 border-gray-200 dark:border-gray-700"
-                  />
-                ) : (
-                  <View style={styles.avatar} className="border-4 border-gray-200 dark:border-gray-700 bg-indigo-100 dark:bg-indigo-900 items-center justify-center">
-                    <Text className="text-[82px] font-bold text-indigo-600 dark:text-indigo-300">
-                      {(currentUser.firstName?.[0] ?? '?').toUpperCase()}
-                    </Text>
-                  </View>
-                )}
-                <View className="absolute bottom-0 right-0 rounded-full p-3.5" style={{ backgroundColor: colors.brand }}>
-                  <Feather name="camera" size={14} color="white" />
-                </View>
-              </PressableOpacity>
-              <Text style={styles.name}>
-                  {getUserDisplayName(currentUser)}
-              </Text>
-              <Text className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
-                  {currentUser.email}
-              </Text>
-              {currentUser.createdAt && (
-                <Text className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
-                    Joined: {new Date(currentUser.createdAt).toLocaleDateString()}
+                </PressableOpacity>
+                <Text style={styles.name}>
+                    {getUserDisplayName(currentUser)}
                 </Text>
-              )}
-            </View>
+                <Text className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
+                    {currentUser.email}
+                </Text>
+                {currentUser.createdAt && (
+                  <Text className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
+                      Joined: {new Date(currentUser.createdAt).toLocaleDateString()}
+                  </Text>
+                )}
+              </View>
+            </FadeUp>
 
             <View className="px-4 mt-8">
-                <Text style={styles.sectionLabel}>Appearance</Text>
-                <View style={[styles.card, { flexDirection: 'row', padding: 4 }]}>
-                  {APPEARANCE_OPTIONS.map((option) => {
-                    const active = preference === option.key;
-                    return (
-                      <PressableOpacity
-                        key={option.key}
-                        onPress={() => setPreference(option.key)}
-                        activeOpacity={0.8}
-                        style={[
-                          styles.appearanceSegment,
-                          active && { backgroundColor: colors.brand },
-                        ]}
-                      >
-                        <Feather name={option.icon} size={16} color={active ? 'white' : colors.textMuted} />
-                        <Text style={[styles.appearanceSegmentLabel, active && { color: 'white' }]}>
-                          {option.label}
-                        </Text>
-                      </PressableOpacity>
-                    );
-                  })}
-                </View>
+                <FadeUp index={1}>
+                  <Text style={styles.sectionLabel}>Appearance</Text>
+                  <View style={[styles.card, { flexDirection: 'row', padding: 4 }]}>
+                    {APPEARANCE_OPTIONS.map((option) => {
+                      const active = preference === option.key;
+                      return (
+                        <PressableOpacity
+                          key={option.key}
+                          onPress={() => setPreference(option.key)}
+                          activeOpacity={0.8}
+                          style={[
+                            styles.appearanceSegment,
+                            active && { backgroundColor: colors.brand },
+                          ]}
+                        >
+                          <Feather name={option.icon} size={16} color={active ? 'white' : colors.textMuted} />
+                          <Text style={[styles.appearanceSegmentLabel, active && { color: 'white' }]}>
+                            {option.label}
+                          </Text>
+                        </PressableOpacity>
+                      );
+                    })}
+                  </View>
+                </FadeUp>
 
-                <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Account</Text>
+                <FadeUp index={2}>
+                  <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Account</Text>
+                </FadeUp>
                 {ACTIONS.map((action, index) => (
-                  <PressableOpacity
-                    key={action.id}
-                    onPress={action.onPress}
-                    disabled={action.loading}
-                    activeOpacity={0.7}
-                    style={[styles.card, styles.row, index < ACTIONS.length - 1 && { marginBottom: 12 }]}
-                  >
-                    {action.id === 'premium' ? (
-                      <PremiumRainbowLabel label={action.label} />
-                    ) : (
-                      <>
-                        <View style={[styles.rowIcon, { backgroundColor: action.color + '18' }]}>
-                          <Feather name={action.icon} size={18} color={action.color} />
-                        </View>
-                        <Text style={styles.rowLabel}>{action.label}</Text>
-                      </>
-                    )}
-                    {action.loading
-                      ? <ActivityIndicator size="small" color={colors.textFaint} />
-                      : <Feather name="chevron-right" size={18} color={colors.textFaint} />}
-                  </PressableOpacity>
+                  <FadeUp key={action.id} index={3 + index}>
+                    <PressableOpacity
+                      key={action.id}
+                      onPress={action.onPress}
+                      disabled={action.loading}
+                      activeOpacity={0.7}
+                      style={[styles.card, styles.row, index < ACTIONS.length - 1 && { marginBottom: 12 }]}
+                    >
+                      {action.id === 'premium' ? (
+                        <PremiumRainbowLabel label={action.label} />
+                      ) : (
+                        <>
+                          <View style={[styles.rowIcon, { backgroundColor: action.color + '18' }]}>
+                            <Feather name={action.icon} size={18} color={action.color} />
+                          </View>
+                          <Text style={styles.rowLabel}>{action.label}</Text>
+                        </>
+                      )}
+                      {action.loading
+                        ? <ActivityIndicator size="small" color={colors.textFaint} />
+                        : <Feather name="chevron-right" size={18} color={colors.textFaint} />}
+                    </PressableOpacity>
+                  </FadeUp>
                 ))}
 
-                <PressableOpacity
-                    onPress={async () => { await unregisterPushToken(api); queryClient.clear(); signOut(); }}
-                    style={[styles.signOutBtn, { marginTop: 28 }]}
-                    activeOpacity={0.85}
-                >
-                    <Feather name="log-out" size={18} color="white" />
-                    <Text style={styles.signOutText}>Sign Out</Text>
-                </PressableOpacity>
-
-                <View style={{ alignItems: 'center', marginTop: 24 }}>
-                  <PressableOpacity onPress={() => Linking.openURL('https://groupthatapp.com/privacy-policy/').catch(() => {})}>
-                    <Text style={{ color: colors.textFaint, fontSize: 13, textDecorationLine: 'underline' }}>Privacy Policy</Text>
+                <FadeUp index={3 + ACTIONS.length}>
+                  <PressableOpacity
+                      onPress={async () => { await unregisterPushToken(api); queryClient.clear(); signOut(); }}
+                      style={[styles.signOutBtn, { marginTop: 28 }]}
+                      activeOpacity={0.85}
+                  >
+                      <Feather name="log-out" size={18} color="white" />
+                      <Text style={styles.signOutText}>Sign Out</Text>
                   </PressableOpacity>
-                  <Text style={{ color: colors.textFaint, fontSize: 12, marginTop: 8 }}>
-                    GroupThat {Constants.expoConfig?.version ?? ''}
-                  </Text>
-                </View>
+                </FadeUp>
+
+                <FadeUp index={4 + ACTIONS.length}>
+                  <View style={{ alignItems: 'center', marginTop: 24 }}>
+                    <PressableOpacity onPress={() => Linking.openURL('https://groupthatapp.com/privacy-policy/').catch(() => {})}>
+                      <Text style={{ color: colors.textFaint, fontSize: 13, textDecorationLine: 'underline' }}>Privacy Policy</Text>
+                    </PressableOpacity>
+                    <Text style={{ color: colors.textFaint, fontSize: 12, marginTop: 8 }}>
+                      GroupThat {Constants.expoConfig?.version ?? ''}
+                    </Text>
+                  </View>
+                </FadeUp>
             </View>
-          </>
+          </FadeUpScreen>
         )}
       </ScrollView>
 

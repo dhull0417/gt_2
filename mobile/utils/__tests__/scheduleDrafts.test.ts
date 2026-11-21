@@ -9,6 +9,7 @@ import {
   getMinAttendeesError,
   apiRoutineToBuiltRoutine,
   scheduleFromNamedSchedule,
+  syncSavedLead,
 } from '../editScheduleDraft';
 import { premiumSectionSummary } from '../premiumSection';
 
@@ -410,5 +411,32 @@ describe('schedule end date in drafts and payloads', () => {
     } as any);
     expect(d.endDate).toBe('2027-05-31');
     expect(scheduleFromNamedSchedule({ timezone: 'America/Denver' } as any, { _id: 's1', name: 'L', active: true, routines: [] } as any).endDate).toBeNull();
+  });
+});
+
+describe('syncSavedLead (open time saved from the Priority RSVP screen)', () => {
+  const base = () => ({ ...editDefault(), rsvpRestricted: true, leadEnabled: true, leadDays: 2, leadTime: '08:00 AM' });
+
+  it('does nothing when the saved open time matches what the screen loaded', () => {
+    expect(syncSavedLead(base(), base(), { generationLeadDays: 2, generationLeadTime: '08:00 AM' })).toBeNull();
+  });
+
+  it('keeps an unsaved open time when the priority screen was left without saving', () => {
+    const draft = { ...base(), leadDays: 6 };
+    expect(syncSavedLead(draft, base(), { generationLeadDays: 2, generationLeadTime: '08:00 AM' })).toBeNull();
+  });
+
+  it('adopts a newly saved open time into the draft and the baseline, keeping other edits', () => {
+    const draft = { ...base(), name: 'Edited name' };
+    const r = syncSavedLead(draft, { ...base(), rsvpRestricted: false, leadEnabled: false }, { generationLeadDays: 3, generationLeadTime: '7:00 PM' });
+    expect(r).not.toBeNull();
+    for (const d of [r!.draft, r!.baseline]) {
+      expect(d).toMatchObject({ rsvpRestricted: true, leadEnabled: true, leadDays: 3, leadTime: '7:00 PM' });
+    }
+    expect(r!.draft.name).toBe('Edited name');
+  });
+
+  it('ignores a series with no open time', () => {
+    expect(syncSavedLead(base(), base(), { generationLeadDays: null })).toBeNull();
   });
 });

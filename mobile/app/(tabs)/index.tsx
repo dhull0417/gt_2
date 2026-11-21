@@ -14,10 +14,8 @@ import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import AddMeetupWizard from '@/components/AddMeetupWizard';
 import { useFocusEffect, useRouter, useLocalSearchParams, Link } from 'expo-router';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
-import { AssignmentsSheet } from '@/components/MeetupAssignments';
-import { assignmentsActive } from '@/utils/assignments';
-import { QuestionsSheet } from '@/components/MeetupQuestions';
-import { questionsActive, hasAnsweredAny } from '@/utils/questions';
+import MeetupConfirmSheet from '@/components/MeetupConfirmSheet';
+import { shouldPromptAfterIn } from '@/utils/confirmTabs';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
@@ -158,11 +156,8 @@ const DashboardScreen = () => {
   const colors = useThemeColors();
   const { openMeetupId } = useLocalSearchParams<{ openMeetupId?: string }>();
   const [selectedMeetup, setSelectedMeetup] = useState<Meetup | null>(null);
-  // Meetup whose items-to-bring / rides sheet is open (shown right after "I'm In" on a card).
-  const [assignmentsMeetup, setAssignmentsMeetup] = useState<Meetup | null>(null);
-  const [questionsMeetup, setQuestionsMeetup] = useState<Meetup | null>(null);
-  // Questions queued to open after the assignments sheet closes.
-  const pendingQuestions = React.useRef<Meetup | null>(null);
+  // Meetup whose Bring / Rides / Questions sheet is open (shown right after "I'm In" on a card).
+  const [confirmMeetup, setConfirmMeetup] = useState<Meetup | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
 
   const meetupsQuery = useGetMeetups();
@@ -188,6 +183,9 @@ const DashboardScreen = () => {
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [hintDismissed, setHintDismissed] = useState(false);
+  // The list waits for these saved settings, so the hint and hidden groups are right on the
+  // first frame instead of popping out mid fade-up and jumping the cards.
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   // Realtime + the 5-minute stale time already keep this fresh; only refetch on focus when it's a bit old.
   useFocusEffect(useCallback(() => {
@@ -199,7 +197,7 @@ const DashboardScreen = () => {
     AsyncStorage.multiGet([HIDDEN_GROUPS_KEY, HINT_DISMISSED_KEY]).then(([[, hidden], [, hint]]) => {
       try { if (hidden) setHiddenGroupIds(new Set(JSON.parse(hidden))); } catch {}
       if (hint === '1') setHintDismissed(true);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setPrefsLoaded(true));
   }, []);
 
   // Offline, this says so and stops instead of spinning until the connection is back.
@@ -321,18 +319,9 @@ const DashboardScreen = () => {
     rsvp({ meetupId: meetup._id, status, skipResponsePopup: mute }, {
       onSuccess: (data: any) => {
         const updated: Meetup | undefined = data?.meetup;
-        if (status === 'in' && updated && assignmentsActive(updated)) {
-          const me = currentUser._id;
-          const onWaitlist = updated.waitlist?.some(u => getUserId(u) === me);
-          const alreadyChose = updated.bringClaims?.some(c => c.user === me) || updated.rides?.some(r => r.user === me);
-          if (!onWaitlist && !alreadyChose) {
-            setAssignmentsMeetup(updated);
-            pendingQuestions.current = questionsActive(updated) && !hasAnsweredAny(updated, me) ? updated : null;
-          }
-        } else if (status === 'in' && updated && questionsActive(updated)) {
-          const me = currentUser._id;
-          const onWaitlist = updated.waitlist?.some(u => getUserId(u) === me);
-          if (!onWaitlist && !hasAnsweredAny(updated, me)) setQuestionsMeetup(updated);
+        // Newly "In": one tabbed sheet for Stuff to bring / Rides / Questions, while any is unpicked.
+        if (status === 'in' && updated && shouldPromptAfterIn(updated, currentUser._id)) {
+          setConfirmMeetup(updated);
         }
         if (status === 'in' && guestCount > 0) {
           meetupApi.setGuestCount(api, meetup._id, guestCount)
@@ -611,7 +600,7 @@ const DashboardScreen = () => {
         </PressableOpacity>
       </View>
 
-      {isLoading ? (
+      {isLoading || !prefsLoaded ? (
         <View style={{ flex: 1, padding: 16 }}><SkeletonList kind="meetup" count={3} /></View>
       ) : isOfflineEmpty(meetupsQuery) ? (
         <OfflineEmptyState message="Connect to the internet to load your meetups." onRetry={handlePullRefresh} />
@@ -656,36 +645,18 @@ const DashboardScreen = () => {
       )}
 
       {/* Unmounted when closed, for the same Android reason as above. */}
-      {assignmentsMeetup && currentUser && (
-        <AssignmentsSheet
+      {confirmMeetup && currentUser && (
+        <MeetupConfirmSheet
           visible
-          meetup={assignmentsMeetup}
+          // The live copy, so a refresh (e.g. an item someone just took) reaches the open sheet.
+          meetup={meetups?.find(m => m._id === confirmMeetup._id) ?? confirmMeetup}
           currentUserId={currentUser._id}
-          onClose={() => {
-            setAssignmentsMeetup(null);
-            if (pendingQuestions.current) {
-              setQuestionsMeetup(pendingQuestions.current);
-              pendingQuestions.current = null;
-            }
-          }}
+          onClose={() => setConfirmMeetup(null)}
           onUpdated={() => {
             queryClient.invalidateQueries({ queryKey: ['meetups'] });
-            broadcastMeetupUpdate(getToken, assignmentsMeetup.group._id);
+            broadcastMeetupUpdate(getToken, confirmMeetup.group._id);
           }}
           onStale={() => queryClient.invalidateQueries({ queryKey: ['meetups'] })}
-        />
-      )}
-
-      {questionsMeetup && currentUser && (
-        <QuestionsSheet
-          visible
-          meetup={questionsMeetup}
-          currentUserId={currentUser._id}
-          onClose={() => setQuestionsMeetup(null)}
-          onUpdated={() => {
-            queryClient.invalidateQueries({ queryKey: ['meetups'] });
-            broadcastMeetupUpdate(getToken, questionsMeetup.group._id);
-          }}
         />
       )}
 

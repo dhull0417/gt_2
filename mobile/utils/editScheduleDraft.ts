@@ -402,3 +402,22 @@ export const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSched
 
     return { ...base, ...common, timezone: tz, startDate };
 };
+
+/**
+ * The Priority RSVP screen can save a new RSVP open time for the series. When this screen
+ * regains focus, adopt a saved open time that differs from the one it loaded (into both the
+ * draft and the baseline), so its own Save can't put the old one back. Other edits are kept.
+ * Returns null when nothing changed.
+ */
+export const syncSavedLead = (
+    draft: ScheduleData,
+    baseline: ScheduleData,
+    saved: { generationLeadDays?: number | null; generationLeadTime?: string },
+): { draft: ScheduleData; baseline: ScheduleData } | null => {
+    if (saved.generationLeadDays == null) return null;
+    const leadTime = saved.generationLeadTime || "09:00 AM";
+    const loaded = baseline.rsvpRestricted && baseline.leadEnabled;
+    if (loaded && baseline.leadDays === saved.generationLeadDays && baseline.leadTime === leadTime) return null;
+    const patch = { rsvpRestricted: true, leadEnabled: true, leadDays: saved.generationLeadDays, leadTime };
+    return { draft: { ...draft, ...patch }, baseline: { ...baseline, ...patch } };
+};
