@@ -68,7 +68,7 @@
               "host": "invite.groupthatapp.com",
               "pathPrefix": "/join"
             },
-{
+            {
               "scheme": "https",
               "host": "invite.groupthatapp.com",
               "pathPrefix": "/go"
@@ -125,7 +125,8 @@
         }
       ],
       "expo-font",
-      "expo-video"
+      "expo-video",
+      "./plugins/withOptionalHardwareFeatures"
     ],
     "experiments": {
       "typedRoutes": true
