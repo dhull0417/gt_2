@@ -12,6 +12,10 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
 jest.mock('@/components/UpgradeButton', () => ({ UpgradeButton: () => null }));
+let mockOwner = true;
+const mockPush = jest.fn();
+jest.mock('@/hooks/useIsGroupOwner', () => ({ useIsGroupOwner: () => mockOwner }));
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock('@/components/LocationSearchModal', () => () => null);
 jest.mock('@/components/NativeTimePicker', () => () => null);
 
@@ -90,8 +94,62 @@ describe('MeetupForm', () => {
     expect(questionsLink).toHaveBeenCalledTimes(1);
   });
 
-  it('without Premium, premium rows are locked', async () => {
-    await setup({ isPremium: false });
-    expect(screen.getAllByTestId('row-lock').length).toBeGreaterThanOrEqual(2);
+});
+
+describe('MeetupForm without Premium', () => {
+  const rides = { ...draftForNew(undefined, '2099-01-05'), ridesEnabled: true };
+  beforeEach(() => { mockOwner = true; mockPush.mockClear(); });
+
+  it('Premium rows are open to set up when adding a meetup', async () => {
+    const { onChange } = await setup({ isPremium: false });
+    expect(screen.queryAllByTestId('row-lock').length).toBe(0);
+    await fireEvent.press(screen.getByText('RSVP Questions'));
+    await fireEvent.press(screen.getByText('Add question'));
+    expect(onChange.mock.calls[0][0].questions).toHaveLength(1);
+    expect(screen.getByText('Set these up now. Premium is needed to save them.')).toBeTruthy();
+  });
+
+  it('with no Premium feature in use, Create Meetup works as normal', async () => {
+    const { onSubmit } = await setup({ isPremium: false });
+    await fireEvent.press(screen.getByLabelText('Create Meetup'));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('owner: a Premium feature in use turns Create Meetup into Premium, which opens the paywall', async () => {
+    const { onSubmit } = await setup({ isPremium: false }, rides);
+    expect(screen.queryByLabelText('Create Meetup')).toBeNull();
+    expect(screen.getByText('Premium is needed to save these settings.')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Premium'));
+    expect(mockPush).toHaveBeenCalledWith('/paywall');
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('non-owner: the button is a disabled Owner needs Premium', async () => {
+    mockOwner = false;
+    const { onSubmit } = await setup({ isPremium: false }, rides);
+    expect(screen.getByText('The group owner needs Premium to save these settings.')).toBeTruthy();
+    const btn = screen.getByLabelText('Owner needs Premium');
+    expect(btn.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
+    await fireEvent.press(btn);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('a Premium group is unaffected: Create Meetup submits with rides on', async () => {
+    const { onSubmit } = await setup({ isPremium: true }, rides);
+    await fireEvent.press(screen.getByLabelText('Create Meetup'));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('editing an unrelated field of a meetup that already has Premium settings still shows Save', async () => {
+    const { onSubmit } = await setup({ isPremium: false, mode: 'edit', timezoneEditable: false }, rides);
+    await fireEvent.press(screen.getByLabelText('Save'));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText('Premium')).toBeNull();
+  });
+
+  it('editing an existing meetup: RSVP Questions stays locked (it lives on its own screen)', async () => {
+    await setup({ isPremium: false, mode: 'edit', questionsLink: jest.fn() });
+    expect(screen.getAllByTestId('row-lock').length).toBe(1);
   });
 });

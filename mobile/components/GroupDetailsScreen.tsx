@@ -109,23 +109,23 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
             />
           )}
         </View>
+
+        {/* No header bar: a back button at the top-left of the page, always back to chat — its only
+            meaningful parent, regardless of nav stack. Inside the ScrollView so it scrolls away with
+            the content instead of staying pinned to the screen corner. */}
+        <PressableOpacity
+          accessibilityLabel="Go back"
+          onPress={handleOpenChat}
+          hitSlop={8}
+          style={{
+            position: 'absolute', top: 8, left: 12, width: 40, height: 40, borderRadius: 20,
+            alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
+            shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+          }}
+        >
+          <Feather name="chevron-left" size={26} color="#FF7A6E" style={{ marginLeft: -2 }} />
+        </PressableOpacity>
       </ScrollView>
-
-      {/* No header bar: a floating back button over the top-left, always back to chat — its only
-          meaningful parent, regardless of nav stack. */}
-      <PressableOpacity
-        accessibilityLabel="Go back"
-        onPress={handleOpenChat}
-        hitSlop={8}
-        style={{
-          position: 'absolute', top: insets.top + 8, left: 12, width: 40, height: 40, borderRadius: 20,
-          alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
-          shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3,
-        }}
-      >
-        <Feather name="chevron-left" size={26} color="#FF7A6E" style={{ marginLeft: -2 }} />
-      </PressableOpacity>
-
     </SafeAreaView>
   );
 };

@@ -13,16 +13,19 @@ import { makeStyles } from "@/components/create-group/styles";
 import { PressableOpacity } from "@/components/ui/PressableOpacity";
 import { GroupCard, SummaryRow, SettingSheet, useFormStyles, useIssueScroll } from "@/components/ui/form";
 import RecurrenceEditor from "@/components/schedule/RecurrenceEditor";
-import { RsvpRulesSheet, CapacitySheet, BringItemsSheet, PremiumUpsellSheet, QuestionsSheet } from "@/components/schedule/sheets";
+import { RsvpRulesSheet, CapacitySheet, BringItemsSheet, QuestionsSheet } from "@/components/schedule/sheets";
+import { PremiumPreviewNote } from "@/components/schedule/PremiumPreviewNote";
+import { PremiumSubmitButton } from "@/components/PremiumSubmitButton";
 import { questionsSummary } from "@/utils/questionDrafts";
 import { usePremium } from "@/hooks/usePremium";
+import { submitHint, submitMode, usesPremiumFeatures } from "@/utils/premiumGate";
 import { useThemeColors } from "@/contexts/AppearanceContext";
 import { defaultSchedule, type ScheduleData } from "@/utils/createGroupDraft";
 import { scheduleIssues, visibleIssues, fixMessage, firstArea, issueFor, type FormArea } from "@/utils/formIssues";
 import { recurrenceSummary, rsvpSummary, capacitySummary, bringSummary } from "@/utils/formSummaries";
 import { deviceTimeZone, timezoneOptions, tzAbbr } from "@/utils/timezones";
 
-type Sheet = "when" | "rsvp" | "capacity" | "bring" | "questions" | "upsell" | null;
+type Sheet = "when" | "rsvp" | "capacity" | "bring" | "questions" | null;
 const ORDER: FormArea[] = ["where", "when", "timezone", "rsvp", "capacity", "bring", "questions"];
 
 export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, onNext, onBack, onSkip }: {
@@ -34,7 +37,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
     onSkip: () => void;
 }) => {
     const colors = useThemeColors();
-    const { isPremium, userId } = usePremium();
+    const { isPremium } = usePremium();
     const s = useMemo(() => makeStyles(colors), [colors]);
     const f = useFormStyles();
     // One shared timezone for the whole group — not per-schedule (the backend
@@ -73,9 +76,11 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
         onNext(schedules.filter(sch => sch.frequency), timezone);
     };
 
-    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) => isPremium
-        ? <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />
-        : <SummaryRow label={label} value={value} onPress={() => setSheet("upsell")} locked />;
+    // Premium settings are open to everyone so they can see how they work; saving them needs Premium
+    // (see premiumGate). You are the owner of the group you're creating.
+    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) =>
+        <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />;
+    const footerMode = submitMode({ usesPremium: usesPremiumFeatures(d), isPremium, isOwner: true });
 
     return (
         <View style={s.screen}>
@@ -140,6 +145,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
 
                     <View onLayout={register("bring", "questions")}>
                         <Text style={f.sectionLabel}>Premium</Text>
+                        {!isPremium && <PremiumPreviewNote />}
                         <GroupCard>
                             {premiumRow("Food/Things to bring", bringSummary(d.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"))}
                             {premiumRow("Rides", d.ridesEnabled ? "On" : "Off", () => upd({ ridesEnabled: !d.ridesEnabled }),
@@ -156,24 +162,34 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                 <PressableOpacity style={[s.skipBtn, { marginLeft: 12 }]} onPress={onSkip}>
                     <Text style={s.skipBtnText}>Skip</Text>
                 </PressableOpacity>
-                <Text style={{ flex: 1, textAlign: "right", marginRight: 10, color: colors.danger, fontSize: 13, fontWeight: "700" }} numberOfLines={2}>
-                    {attempted ? fixMessage(issues.length) : ""}
-                </Text>
-                <PressableOpacity style={s.reviewBtnGhost} onPress={review} accessibilityLabel="Review">
-                    <Text style={s.reviewBtnGhostText}>Review</Text>
-                    <Feather name="arrow-right" size={16} color={colors.brand} style={{ marginLeft: 4 }} />
-                </PressableOpacity>
+                {footerMode !== "confirm" ? (
+                    <>
+                        <Text style={{ flex: 1, textAlign: "right", marginRight: 10, color: colors.textMuted, fontSize: 13, fontWeight: "600" }} numberOfLines={2}>
+                            {submitHint(footerMode)}
+                        </Text>
+                        <PremiumSubmitButton mode={footerMode} style={s.primaryBtn} />
+                    </>
+                ) : (
+                    <>
+                        <Text style={{ flex: 1, textAlign: "right", marginRight: 10, color: colors.danger, fontSize: 13, fontWeight: "700" }} numberOfLines={2}>
+                            {attempted ? fixMessage(issues.length) : ""}
+                        </Text>
+                        <PressableOpacity style={s.reviewBtnGhost} onPress={review} accessibilityLabel="Review">
+                            <Text style={s.reviewBtnGhostText}>Review</Text>
+                            <Feather name="arrow-right" size={16} color={colors.brand} style={{ marginLeft: 4 }} />
+                        </PressableOpacity>
+                    </>
+                )}
             </View>
 
             <SettingSheet visible={sheet === "when"} title="When" onClose={close} tall>
                 <RecurrenceEditor value={d} update={setD} issues={issues} />
             </SettingSheet>
-            <RsvpRulesSheet visible={sheet === "rsvp"} onClose={close} issues={issues} value={d} onChange={upd} isPremium={isPremium} owner={userId} />
+            <RsvpRulesSheet visible={sheet === "rsvp"} onClose={close} issues={issues} value={d} onChange={upd} />
             <CapacitySheet visible={sheet === "capacity"} onClose={close} issues={issues} mode={d.maxAttendeesMode} input={d.maxAttendeesInput} onChange={upd} />
             <BringItemsSheet visible={sheet === "bring"} onClose={close} issues={allIssues} showIssues={attempted} items={d.bringItems} onChange={bringItems => upd({ bringItems })} />
             <QuestionsSheet visible={sheet === "questions"} onClose={close} showIssues={attempted} savedLater="group"
                 drafts={d.questions ?? []} onChange={questions => upd({ questions })} />
-            <PremiumUpsellSheet visible={sheet === "upsell"} onClose={close} note="Get Premium to turn these on for your group." owner={userId} />
 
             <LocationSearchModal
                 visible={isLocationSearchOpen}

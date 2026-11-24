@@ -10,6 +10,10 @@ import OptionPickerModal from "@/components/OptionPickerModal";
 import { makeStyles } from "@/components/create-group/styles";
 import { GroupCard, SummaryRow, FieldError, useFormStyles, useIssueScroll } from "@/components/ui/form";
 import { OneOffWhenSheet, RsvpRulesSheet, CapacitySheet, BringItemsSheet, PremiumUpsellSheet, QuestionsSheet } from "@/components/schedule/sheets";
+import { PremiumPreviewNote } from "@/components/schedule/PremiumPreviewNote";
+import { PremiumSubmitButton } from "@/components/PremiumSubmitButton";
+import { useIsGroupOwner } from "@/hooks/useIsGroupOwner";
+import { submitHint, submitMode, usesPremiumFeatures } from "@/utils/premiumGate";
 import { questionsSummary } from "@/utils/questionDrafts";
 import { PressableOpacity } from "@/components/ui/PressableOpacity";
 import { useThemeColors } from "@/contexts/AppearanceContext";
@@ -78,9 +82,14 @@ export function MeetupForm({
         onSubmit();
     };
 
-    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) => isPremium
-        ? <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />
-        : <SummaryRow label={label} value={value} onPress={() => setSheet("upsell")} locked />;
+    // Premium settings are open to everyone so they can see how they work; saving them needs Premium
+    // (see premiumGate). Editing compares with the draft as it was opened, so a group whose Premium
+    // lapsed can still save an unrelated change.
+    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) =>
+        <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />;
+    const isOwner = useIsGroupOwner(owner);
+    const baseline = useRef(mode === "edit" ? draft : undefined);
+    const footerMode = submitMode({ usesPremium: usesPremiumFeatures(draft, baseline.current), isPremium, isOwner });
 
     return (
         <Modal
@@ -162,26 +171,33 @@ export function MeetupForm({
 
                         <View onLayout={register("bring", "questions")}>
                             <Text style={f.sectionLabel}>Premium</Text>
+                            {!isPremium && <PremiumPreviewNote />}
                             <GroupCard>
                                 {premiumRow("Food/Things to bring", bringSummary(draft.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"))}
                                 {premiumRow("Rides", draft.ridesEnabled ? "On" : "Off", () => onChange({ ridesEnabled: !draft.ridesEnabled }),
                                     <Switch accessibilityLabel="Coordinate rides" value={draft.ridesEnabled} onValueChange={v => onChange({ ridesEnabled: v })}
                                         trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />)}
-                                {!isPremium
-                                    ? <SummaryRow label="RSVP Questions" value="" onPress={() => setSheet("upsell")} locked />
-                                    : questionsLink
-                                        // An existing meetup: its questions (and answers) live on their own screen.
+                                {questionsLink
+                                    // An existing meetup: its questions (and answers) live on their own screen, which needs Premium.
+                                    ? (isPremium
                                         ? <SummaryRow label="RSVP Questions" value="Manage" onPress={questionsLink} />
-                                        : <SummaryRow label="RSVP Questions" value={questionsSummary(draft.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} />}
+                                        : <SummaryRow label="RSVP Questions" value="" onPress={() => setSheet("upsell")} locked />)
+                                    : <SummaryRow label="RSVP Questions" value={questionsSummary(draft.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} />}
                             </GroupCard>
                         </View>
                     </ScrollView>
 
                     <View style={s.screenFooter}>
-                        <Text style={{ flex: 1, marginRight: 12, color: colors.danger, fontSize: 13, fontWeight: "700" }} numberOfLines={2}>
-                            {attempted ? fixMessage(issues.length) : ""}
-                        </Text>
-                        <PressableOpacity
+                        {footerMode !== "confirm" ? (
+                            <Text style={{ flex: 1, marginRight: 12, color: colors.textMuted, fontSize: 13, fontWeight: "600" }} numberOfLines={2}>
+                                {submitHint(footerMode)}
+                            </Text>
+                        ) : (
+                            <Text style={{ flex: 1, marginRight: 12, color: colors.danger, fontSize: 13, fontWeight: "700" }} numberOfLines={2}>
+                                {attempted ? fixMessage(issues.length) : ""}
+                            </Text>
+                        )}
+                        {footerMode !== "confirm" ? <PremiumSubmitButton mode={footerMode} style={s.primaryBtn} /> : <PressableOpacity
                             style={[s.primaryBtn, saving && s.primaryBtnDisabled]}
                             onPress={submit}
                             disabled={saving}
@@ -195,14 +211,14 @@ export function MeetupForm({
                                     <Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} />
                                 </>
                             )}
-                        </PressableOpacity>
+                        </PressableOpacity>}
                     </View>
                 </KeyboardAvoidingView>
 
                 <OneOffWhenSheet asOverlay visible={sheet === "when"} onClose={close} issues={issues}
                     date={draft.date} time={draft.time} endTime={draft.endTime} minDate={today} onChange={onChange} />
                 <RsvpRulesSheet asOverlay visible={sheet === "rsvp"} onClose={close} issues={issues}
-                    value={draft} onChange={onChange} isPremium={isPremium} owner={owner} />
+                    value={draft} onChange={onChange} />
                 <CapacitySheet asOverlay visible={sheet === "capacity"} onClose={close} issues={issues}
                     mode={draft.maxAttendeesMode} input={draft.maxAttendeesInput} onChange={onChange} />
                 <BringItemsSheet asOverlay visible={sheet === "bring"} onClose={close} issues={allIssues} showIssues={attempted}

@@ -83,7 +83,7 @@ export const GroupDetailsView = ({
         amber: tint('#FFFBEB', '#FDE68A', '#3A2E12', '#5C4A1E', '#D97706'),
         purple: tint('#F5F3FF', '#DDD6FE', '#241B3D', '#3B2E63', '#7C3AED'),
         gray: tint('#F3F4F6', '#E5E7EB', '#262A33', '#3A3F4B', colors.textSecondary),
-        rose: tint('#FFF1F2', '#FECDD3', '#3A1520', '#5F2333', '#E11D48'),
+        green: tint('#F0FDF4', '#BBF7D0', '#12301E', '#1F5A36', '#16A34A'),
         slate: tint('#EEF2F7', '#CBD5E1', '#1E2633', '#334155', isDark ? '#94A3B8' : '#475569'),
     };
 
@@ -112,7 +112,7 @@ export const GroupDetailsView = ({
             onPress: () => router.push({ pathname: '/group-members/[id]', params: { id: groupDetails._id } }),
         },
         schedule: {
-            icon: 'clock', label: canManage ? 'Edit Meetup Details' : 'Meetup Details', tint: tints.rose,
+            icon: 'clock', label: canManage ? 'Edit Meetup Details' : 'Meetup Details', tint: tints.green,
             subtitle: scheduleSummary(groupDetails.schedules),
             onPress: () => setScheduleOpen(true),
         },

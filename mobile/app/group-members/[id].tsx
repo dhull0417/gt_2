@@ -21,7 +21,10 @@ import { OfflineEmptyState } from '@/components/OfflineEmptyState';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { GroupMembersList } from '@/components/GroupMembersList';
 import { ChatTimeoutSheet } from '@/components/ChatTimeoutSheet';
-import { ToastPortal } from '@/contexts/ToastContext';
+import { ToastPortal, toast } from '@/contexts/ToastContext';
+import { useAuth } from '@clerk/expo';
+import { getErrorMessage } from '@/utils/networkError';
+import { broadcastGroupUpdate } from '@/utils/groupRealtime';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useRemoveMember } from '@/hooks/useRemoveMember';
@@ -40,6 +43,7 @@ export default function GroupMembersScreen() {
   const api = useApiClient();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { getToken } = useAuth();
 
   const detailsQuery = useGetGroupDetails(id ?? null);
   const { data: groupDetails, isError, refetch } = detailsQuery;
@@ -87,6 +91,89 @@ export default function GroupMembersScreen() {
     } finally {
       setIsCreatingDM(false);
     }
+  };
+
+  // Owner-only actions in the member sheet: grant/revoke moderator, and transfer ownership.
+  const [roleBusy, setRoleBusy] = useState(false);
+  const isOwner = !!currentUser && String((groupDetails?.owner as any)?._id ?? groupDetails?.owner) === currentUser._id;
+  const isTargetMod = (m: User | null) =>
+    !!m && (groupDetails?.moderators ?? []).some((x: any) => (typeof x === 'string' ? x : x?._id) === m._id);
+
+  // Meetups embed a snapshot of the group for permission checks, so refresh them as well.
+  const refreshAfterRoleChange = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+    queryClient.invalidateQueries({ queryKey: ['meetups'] });
+    broadcastGroupUpdate(getToken, id!);
+  };
+
+  const performToggleModerator = async (member: User, wasMod: boolean) => {
+    if (!id) return;
+    setRoleBusy(true);
+    try {
+      await groupApi.toggleModerator(api, id, member._id);
+      await refreshAfterRoleChange();
+      toast.success(wasMod ? 'Moderator removed.' : 'Moderator added.');
+      setDmTargetMember(null);
+    } catch (error: any) {
+      Alert.alert('Error', getErrorMessage(error, 'Could not update moderators.'));
+    } finally {
+      setRoleBusy(false);
+    }
+  };
+
+  const handleToggleModerator = () => {
+    const member = dmTargetMember;
+    if (!member || !id || !requireOnline('change moderators')) return;
+    const wasMod = isTargetMod(member);
+    const name = getUserDisplayName(member);
+    Alert.alert(
+      wasMod ? 'Remove Moderator' : 'Make Moderator',
+      wasMod
+        ? `Are you sure you want to remove ${name} as a moderator? They will lose the ability to manage members and meetups.`
+        : `Are you sure you want to make ${name} a moderator? They will be able to manage members and meetups.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: wasMod ? 'Remove' : 'Make Moderator',
+          style: wasMod ? 'destructive' : 'default',
+          onPress: () => performToggleModerator(member, wasMod),
+        },
+      ]
+    );
+  };
+
+  const handleTransferOwnership = () => {
+    const member = dmTargetMember;
+    if (!member || !id || !requireOnline('transfer ownership')) return;
+    const name = getUserDisplayName(member);
+    Alert.alert(
+      'Transfer Ownership',
+      `Are you sure you want to make ${name} the new owner? You will become a moderator.` +
+        // Premium is tied to the owner's subscription, so it does not follow the group.
+        (groupDetails?.isPremium
+          ? `\n\nHeads up: this group's Premium features are covered by your subscription. Once ${name} is the owner, they will be paused for this group unless the new owner has their own Premium subscription. Your data is kept.`
+          : ''),
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Transfer',
+          style: 'destructive',
+          onPress: async () => {
+            setRoleBusy(true);
+            try {
+              await groupApi.transferOwnership(api, { groupId: id, newOwnerId: member._id });
+              await refreshAfterRoleChange();
+              toast.success('Ownership transferred.');
+              setDmTargetMember(null);
+            } catch (error: any) {
+              Alert.alert('Error', getErrorMessage(error, 'Failed to transfer ownership.'));
+            } finally {
+              setRoleBusy(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleRemoveMember = (memberIdToRemove: string) => {
@@ -210,6 +297,30 @@ export default function GroupMembersScreen() {
                     : <Text style={dmStyles.dmBtnText}>Send DM</Text>
                   }
                 </PressableOpacity>
+                {isOwner && (
+                  <>
+                    <PressableOpacity
+                      style={[dmStyles.timeoutBtn, { backgroundColor: colors.backgroundAlt }]}
+                      onPress={handleToggleModerator}
+                      disabled={roleBusy}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="shield" size={16} color={isTargetMod(dmTargetMember) ? colors.danger : colors.brand} />
+                      <Text style={[dmStyles.timeoutBtnText, { color: isTargetMod(dmTargetMember) ? colors.danger : colors.brand }]}>
+                        {isTargetMod(dmTargetMember) ? 'Remove moderator' : 'Make moderator'}
+                      </Text>
+                    </PressableOpacity>
+                    <PressableOpacity
+                      style={[dmStyles.timeoutBtn, { backgroundColor: colors.backgroundAlt }]}
+                      onPress={handleTransferOwnership}
+                      disabled={roleBusy}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="star" size={16} color={colors.textSecondary} />
+                      <Text style={[dmStyles.timeoutBtnText, { color: colors.textSecondary }]}>Transfer ownership</Text>
+                    </PressableOpacity>
+                  </>
+                )}
                 {canTimeOutDmTarget && (
                   <PressableOpacity
                     style={[dmStyles.timeoutBtn, { backgroundColor: colors.backgroundAlt }]}

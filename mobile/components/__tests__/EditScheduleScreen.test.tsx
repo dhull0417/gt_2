@@ -10,11 +10,15 @@ const mockUpdateSchedule = jest.fn();
 const mockCountAfter = jest.fn();
 let mockSchedules: any[] = [];
 let mockParams: Record<string, string> = { id: 'g1', scheduleId: 'new' };
-jest.mock('expo-router', () => ({ useLocalSearchParams: () => mockParams, useRouter: () => ({ back: jest.fn(), push: jest.fn() }) }));
+let mockGroupPremium = true;
+let mockOwner = true;
+const mockPush = jest.fn();
+jest.mock('expo-router', () => ({ useLocalSearchParams: () => mockParams, useRouter: () => ({ back: jest.fn(), push: mockPush }) }));
+jest.mock('@/hooks/useIsGroupOwner', () => ({ useIsGroupOwner: () => mockOwner }));
 jest.mock('@clerk/expo', () => ({ useAuth: () => ({ getToken: jest.fn() }) }));
 jest.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: jest.fn() }) }));
 jest.mock('../../hooks/useGetGroupDetails', () => ({
-  useGetGroupDetails: () => ({ isLoading: false, data: { _id: 'g1', name: 'Dinner Club', timezone: 'America/Denver', isPremium: true, owner: 'u1', schedules: mockSchedules } }),
+  useGetGroupDetails: () => ({ isLoading: false, data: { _id: 'g1', name: 'Dinner Club', timezone: 'America/Denver', isPremium: mockGroupPremium, owner: 'u1', schedules: mockSchedules } }),
 }));
 jest.mock('../../utils/api', () => ({ useApiClient: () => ({}), groupApi: {
   createSchedule: (...a: any[]) => mockCreateSchedule(...a), updateSchedule: (...a: any[]) => mockUpdateSchedule(...a),
@@ -114,5 +118,70 @@ describe('Edit Schedule: end date', () => {
     await waitFor(() => expect(mockUpdateSchedule).toHaveBeenCalled());
     expect(mockUpdateSchedule.mock.calls[0][3]).toMatchObject({ endDate: today, removeAfterEnd: false });
     expect(alert).not.toHaveBeenCalled();
+  });
+});
+
+describe('Edit Schedule without Premium', () => {
+  beforeEach(() => {
+    mockGroupPremium = false; mockOwner = true; mockPush.mockClear();
+    mockParams = { id: 'g1', scheduleId: 'new' }; mockSchedules = [];
+    mockCreateSchedule.mockReset(); mockUpdateSchedule.mockReset().mockResolvedValue({});
+  });
+  afterAll(() => { mockGroupPremium = true; mockOwner = true; });
+
+  it('new schedule: Premium rows are open to set up; only Priority RSVP stays locked', async () => {
+    await render(<EditScheduleScreen />);
+    expect(screen.getAllByTestId('row-lock').length).toBe(1);
+    await fireEvent.press(screen.getByText('RSVP Questions'));
+    expect(screen.getByText('Add question')).toBeTruthy();
+    expect(screen.getByText('Set these up now. Premium is needed to save them.')).toBeTruthy();
+  });
+
+  it('new schedule with nothing Premium: still Create Schedule', async () => {
+    await render(<EditScheduleScreen />);
+    expect(screen.getByLabelText('Create Schedule')).toBeTruthy();
+    expect(screen.queryByLabelText('Premium')).toBeNull();
+  });
+
+  it('owner: a Premium feature in use turns Create Schedule into Premium, which opens the paywall', async () => {
+    await render(<EditScheduleScreen />);
+    await fireEvent(screen.getByLabelText('Coordinate rides'), 'valueChange', true);
+    expect(screen.queryByLabelText('Create Schedule')).toBeNull();
+    expect(screen.getByText('Premium is needed to save these settings.')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Premium'));
+    expect(mockPush).toHaveBeenCalledWith('/paywall');
+    expect(mockCreateSchedule).not.toHaveBeenCalled();
+  });
+
+  it('non-owner: the button is a disabled Owner needs Premium', async () => {
+    mockOwner = false;
+    await render(<EditScheduleScreen />);
+    await fireEvent(screen.getByLabelText('Coordinate rides'), 'valueChange', true);
+    expect(screen.getByText('The group owner needs Premium to save these settings.')).toBeTruthy();
+    const btn = screen.getByLabelText('Owner needs Premium');
+    expect(btn.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
+    await fireEvent.press(btn);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('existing schedule that already has Premium settings (lapsed group): an unrelated edit still saves', async () => {
+    const today = DateTime.now().toISODate()!;
+    mockParams = { id: 'g1', scheduleId: 's1' };
+    mockSchedules = [{ _id: 's1', name: 'League', active: true, defaultLocation: '', defaultCapacity: 0, startDate: today, defaultRidesEnabled: true,
+      routines: [{ frequency: 'weekly', dayTimes: [{ day: 2, time: '06:00 PM' }] }] }];
+    await render(<EditScheduleScreen />);
+    await fireEvent.changeText(screen.getByLabelText('Schedule name'), 'League 2');
+    expect(screen.queryByLabelText('Premium')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Save Changes'));
+    await waitFor(() => expect(mockUpdateSchedule).toHaveBeenCalled());
+  });
+
+  it('existing schedule: Priority RSVP and RSVP Questions stay locked', async () => {
+    const today = DateTime.now().toISODate()!;
+    mockParams = { id: 'g1', scheduleId: 's1' };
+    mockSchedules = [{ _id: 's1', name: 'League', active: true, defaultLocation: '', defaultCapacity: 0, startDate: today,
+      routines: [{ frequency: 'weekly', dayTimes: [{ day: 2, time: '06:00 PM' }] }] }];
+    await render(<EditScheduleScreen />);
+    expect(screen.getAllByTestId('row-lock').length).toBe(2);
   });
 });

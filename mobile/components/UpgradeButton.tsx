@@ -3,10 +3,9 @@ import { Text, StyleSheet } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { CrownIcon } from '@/components/ui/CrownIcon';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@clerk/expo';
 import { useThemeColors } from '@/contexts/AppearanceContext';
-import { useApiClient, userApi, type User } from '@/utils/api';
+import { useIsGroupOwner } from '@/hooks/useIsGroupOwner';
+import { usePremium } from '@/hooks/usePremium';
 
 /**
  * "Get Premium" button for Premium lock rows. Premium belongs to the group's OWNER, so only the
@@ -14,18 +13,12 @@ import { useApiClient, userApi, type User } from '@/utils/api';
  * Pass group.owner (id or populated user); renders nothing for anyone else.
  */
 export function UpgradeButton({ owner, style }: { owner?: string | { _id: string } | null; style?: object }) {
-  const ownerId = typeof owner === 'string' ? owner : owner?._id;
   const colors = useThemeColors();
   const router = useRouter();
-  const api = useApiClient();
-  const { isSignedIn } = useAuth();
-  const { data: me } = useQuery<User, Error>({
-    queryKey: ['currentUser'],
-    queryFn: () => userApi.getCurrentUser(api),
-    enabled: !!isSignedIn,
-  });
+  const isOwner = useIsGroupOwner(owner);
+  const { isPremium } = usePremium();
 
-  if (!ownerId || !me || me._id !== ownerId || me.isPremium) return null;
+  if (!isOwner || isPremium) return null;
 
   return (
     <PressableOpacity

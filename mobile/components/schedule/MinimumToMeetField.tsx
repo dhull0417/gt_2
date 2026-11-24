@@ -1,7 +1,6 @@
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import InfoBubble from "@/components/InfoBubble";
-import { UpgradeButton } from "@/components/UpgradeButton";
 import { useThemeColors } from "@/contexts/AppearanceContext";
 import { PremiumPill } from "./PremiumPill";
 
@@ -9,10 +8,7 @@ import { PremiumPill } from "./PremiumPill";
  * Premium minimum headcount, shown inside RSVP Rules under the RSVP times. The minimum is
  * checked when RSVPs close, so it only takes a value once a latest RSVP time is set.
  */
-export function MinimumToMeetField({ isPremium, owner, deadlineOn, value, onChange, error }: {
-    isPremium: boolean;
-    /** Group owner (id or populated user); only they see the Get Premium button. */
-    owner?: string | { _id: string } | null;
+export function MinimumToMeetField({ deadlineOn, value, onChange, error }: {
     /** Whether "Latest time to RSVP" is on. */
     deadlineOn: boolean;
     value: string;
@@ -31,14 +27,7 @@ export function MinimumToMeetField({ isPremium, owner, deadlineOn, value, onChan
                 <View style={{ marginLeft: "auto" }}><PremiumPill /></View>
             </View>
 
-            {!isPremium ? (
-                <View>
-                    <Text style={[styles.help, { color: colors.textMuted }]}>
-                        Cancel a meetup automatically if too few people are in by the RSVP deadline.
-                    </Text>
-                    <UpgradeButton owner={owner} />
-                </View>
-            ) : !deadlineOn ? (
+            {!deadlineOn ? (
                 <Text style={[styles.help, { color: colors.textMuted }]}>
                     Turn on "Latest time to RSVP" to set a minimum.
                 </Text>

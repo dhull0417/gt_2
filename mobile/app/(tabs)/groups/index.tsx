@@ -327,7 +327,7 @@ const GroupScreen = () => {
             keyExtractor={(g) => g._id}
             renderItem={renderGroup}
             style={{ paddingHorizontal: 16 }}
-            contentContainerStyle={{ flexGrow: 1, paddingBottom: tabScreenBottomPadding(insets.bottom) }}
+            contentContainerStyle={{ flexGrow: 1, paddingTop: 8, paddingBottom: tabScreenBottomPadding(insets.bottom) }}
             refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
             ListEmptyComponent={
               <FadeUp index={0} style={{ flex: 1 }}>
@@ -346,7 +346,7 @@ const GroupScreen = () => {
                     : <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>or look around a sample group</Text>}
                 </PressableOpacity>
                 <PressableOpacity onPress={() => router.push('/join/code')} style={{ marginTop: 6, padding: 8 }}>
-                  <Text style={{ color: colors.accentCoral, fontWeight: '800', fontSize: 17 }}>Have an invite code?</Text>
+                  <Text style={{ color: colors.brand, fontWeight: '800', fontSize: 17 }}>Have an invite code?</Text>
                 </PressableOpacity>
               </View>
               </FadeUp>
@@ -354,7 +354,7 @@ const GroupScreen = () => {
             ListFooterComponent={(sortedGroups?.length ?? 0) > 0 ? (
               <FadeUp index={sortedGroups?.length}>
                 <PressableOpacity onPress={() => router.push('/join/code')} style={{ alignSelf: 'center', marginTop: 16, padding: 8 }}>
-                  <Text style={{ color: colors.accentCoral, fontWeight: '800', fontSize: 17 }}>Have an invite code?</Text>
+                  <Text style={{ color: colors.brand, fontWeight: '800', fontSize: 17 }}>Have an invite code?</Text>
                 </PressableOpacity>
               </FadeUp>
             ) : undefined}

@@ -868,6 +868,11 @@ export const groupApi = {
     const response = await api.patch(`/api/groups/${groupId}/moderators`, { moderatorIds });
     return response.data;
   },
+  /** Owner only: makes a member a moderator, or removes their moderator status if they are one. */
+  toggleModerator: async (api: AxiosInstance, groupId: string, userIdToToggle: string): Promise<{ message: string }> => {
+    const response = await api.patch(`/api/groups/${groupId}/moderator`, { userIdToToggle });
+    return response.data;
+  },
   transferOwnership: async (api: AxiosInstance, { groupId, newOwnerId }: TransferOwnershipPayload): Promise<{ message: string }> => {
     // Longer than the client default: the server notifies the new owner before replying.
     const response = await api.post(`/api/groups/${groupId}/transfer-ownership`, { newOwnerId }, { timeout: 15000 });

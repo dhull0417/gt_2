@@ -66,14 +66,25 @@ describe('RsvpRulesSheet', () => {
   const value = { rsvpRestricted: false, leadEnabled: false, leadDays: 5, leadTime: '09:00 AM', deadlineEnabled: false, deadlineDays: 2, deadlineTime: '09:00 AM', minAttendeesInput: '', maxAttendeesMode: 'unlimited' as const, maxAttendeesInput: '' };
   it('Set a window limits RSVPs', async () => {
     const onChange = jest.fn();
-    await render(<RsvpRulesSheet {...base} issues={[]} value={value} onChange={onChange} isPremium />);
+    await render(<RsvpRulesSheet {...base} issues={[]} value={value} onChange={onChange} />);
     await fireEvent.press(screen.getByTestId('rsvp-limit'));
     expect(onChange).toHaveBeenCalledWith({ rsvpRestricted: true });
   });
   it('shows the minimum issue', async () => {
-    await render(<RsvpRulesSheet {...base} value={{ ...value, rsvpRestricted: true, deadlineEnabled: true, minAttendeesInput: '9' }} onChange={() => {}} isPremium
+    await render(<RsvpRulesSheet {...base} value={{ ...value, rsvpRestricted: true, deadlineEnabled: true, minAttendeesInput: '9' }} onChange={() => {}}
       issues={[{ area: 'rsvp', field: 'minAttendees', kind: 'invalid', message: "Can't be more than the max attendees." }]} />);
     expect(screen.getByText("Can't be more than the max attendees.")).toBeTruthy();
+  });
+  it('lets anyone type a minimum once the RSVP deadline is on (Premium is only needed to save it)', async () => {
+    const onChange = jest.fn();
+    await render(<RsvpRulesSheet {...base} issues={[]} onChange={onChange} value={{ ...value, rsvpRestricted: true, deadlineEnabled: true }} />);
+    await fireEvent.changeText(screen.getByLabelText('Minimum to meet'), '5');
+    expect(onChange).toHaveBeenCalledWith({ minAttendeesInput: '5' });
+  });
+  it('asks to turn on the RSVP deadline first when it is off', async () => {
+    await render(<RsvpRulesSheet {...base} issues={[]} onChange={() => {}} value={{ ...value, rsvpRestricted: true, deadlineEnabled: false }} />);
+    expect(screen.getByText('Turn on "Latest time to RSVP" to set a minimum.')).toBeTruthy();
+    expect(screen.queryByLabelText('Minimum to meet')).toBeNull();
   });
 });
 

@@ -62,9 +62,9 @@ export function Stepper({ value, label, onStep }: { value: string; label: string
   );
 }
 
-export function RsvpRulesSheet({ visible, onClose, asOverlay, issues, value: d, onChange, isPremium, owner }: SheetBase & {
+export function RsvpRulesSheet({ visible, onClose, asOverlay, issues, value: d, onChange }: SheetBase & {
   value: RsvpRulesValue & { maxAttendeesMode: 'unlimited' | 'limited'; maxAttendeesInput: string };
-  onChange: (patch: RsvpRulesPatch) => void; isPremium: boolean; owner?: string | { _id: string } | null;
+  onChange: (patch: RsvpRulesPatch) => void;
 }) {
   const c = useThemeColors(); const s = useStyles();
   const sw = { trackColor: { true: c.brand, false: c.borderStrong }, thumbColor: '#fff', ios_backgroundColor: c.borderStrong };
@@ -104,7 +104,7 @@ export function RsvpRulesSheet({ visible, onClose, asOverlay, issues, value: d, 
             </>
           ) : <Text style={s.help}>People can RSVP right up until the meetup starts.</Text>}
           <View style={s.divider} />
-          <MinimumToMeetField isPremium={isPremium} owner={owner} deadlineOn={d.deadlineEnabled}
+          <MinimumToMeetField deadlineOn={d.deadlineEnabled}
             value={d.minAttendeesInput} onChange={v => onChange({ minAttendeesInput: v })} error={fieldIssue(issues, 'minAttendees')} />
         </>
       )}

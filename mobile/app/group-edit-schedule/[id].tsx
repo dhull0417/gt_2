@@ -26,6 +26,10 @@ import type { ThemeColors } from "@/constants/theme";
 import { GroupCard, SummaryRow, SettingSheet, FieldError, useFormStyles, useIssueScroll } from "@/components/ui/form";
 import RecurrenceEditor from "@/components/schedule/RecurrenceEditor";
 import { RsvpRulesSheet, CapacitySheet, BringItemsSheet, PremiumUpsellSheet, QuestionsSheet } from "@/components/schedule/sheets";
+import { PremiumPreviewNote } from "@/components/schedule/PremiumPreviewNote";
+import { PremiumSubmitButton } from "@/components/PremiumSubmitButton";
+import { useIsGroupOwner } from "@/hooks/useIsGroupOwner";
+import { submitHint, submitMode, usesPremiumFeatures } from "@/utils/premiumGate";
 import { questionsSummary } from "@/utils/questionDrafts";
 import { scheduleIssues, visibleIssues, fixMessage, firstArea, issueFor, fieldIssue, type FormArea } from "@/utils/formIssues";
 import { recurrenceSummary, rsvpSummary, capacitySummary, bringSummary } from "@/utils/formSummaries";
@@ -108,6 +112,7 @@ const EditScheduleScreen = () => {
     const issues = visibleIssues(allIssues, attempted);
     const close = () => setSheet(null);
     const isPremium = group?.isPremium === true;
+    const isOwner = useIsGroupOwner(group?.owner);
 
     const hasChanged = useMemo(() => {
         if (!originalRef.current) return false;
@@ -216,9 +221,14 @@ const EditScheduleScreen = () => {
         );
     }
 
-    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) => isPremium
-        ? <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />
-        : <SummaryRow label={label} value={value} onPress={() => setSheet("upsell")} locked />;
+    // Premium settings are open to everyone so they can see how they work; saving them needs Premium
+    // (see premiumGate). An existing schedule compares with how it was opened, so a group whose
+    // Premium lapsed can still save an unrelated change.
+    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) =>
+        <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />;
+    const footerMode = submitMode({
+        usesPremium: usesPremiumFeatures(d, isNew ? undefined : originalRef.current ?? undefined), isPremium, isOwner,
+    });
     const questionCount = targetSchedule?.defaultQuestions?.length ?? 0;
     const nameError = fieldIssue(issues, "name");
 
@@ -295,6 +305,7 @@ const EditScheduleScreen = () => {
 
                     <View onLayout={register("bring", "questions")}>
                         <Text style={f.sectionLabel}>Premium</Text>
+                        {!isPremium && <PremiumPreviewNote />}
                         <GroupCard>
                             {premiumRow("Food/Things to bring", bringSummary(d.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"))}
                             {premiumRow("Rides", d.ridesEnabled ? "On" : "Off", () => upd({ ridesEnabled: !d.ridesEnabled }),
@@ -305,9 +316,9 @@ const EditScheduleScreen = () => {
                                 : <SummaryRow label="Priority RSVP" value={targetSchedule?.priorityEnabled ? "On" : "Off"}
                                     disabledReason={isNew ? "Set up after the schedule is created" : undefined}
                                     onPress={() => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId!, ...rsvpRulesParams(d) } })} />}
-                            {!isPremium ? <SummaryRow label="RSVP Questions" value="" onPress={() => setSheet("upsell")} locked />
-                                : isNew
-                                    ? <SummaryRow label="RSVP Questions" value={questionsSummary(d.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} />
+                            {isNew
+                                ? <SummaryRow label="RSVP Questions" value={questionsSummary(d.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} />
+                                : !isPremium ? <SummaryRow label="RSVP Questions" value="" onPress={() => setSheet("upsell")} locked />
                                     : <SummaryRow label="RSVP Questions" value={questionCount ? `${questionCount} question${questionCount === 1 ? "" : "s"}` : "None"}
                                         onPress={() => router.push({ pathname: "/group-questions/[id]", params: { id: id!, scheduleId: scheduleId! } })} />}
                         </GroupCard>
@@ -323,10 +334,14 @@ const EditScheduleScreen = () => {
                                 : <Feather name="trash-2" size={18} color={colors.danger} />}
                         </PressableOpacity>
                     )}
-                    <Text style={[s.hint, attempted && issues.length > 0 && { color: colors.danger, fontWeight: "700" }]} numberOfLines={2}>
-                        {attempted && issues.length ? fixMessage(issues.length) : unchanged ? "No changes yet" : ""}
-                    </Text>
-                    <PressableOpacity
+                    {footerMode !== "confirm" ? (
+                        <Text style={s.hint} numberOfLines={2}>{submitHint(footerMode)}</Text>
+                    ) : (
+                        <Text style={[s.hint, attempted && issues.length > 0 && { color: colors.danger, fontWeight: "700" }]} numberOfLines={2}>
+                            {attempted && issues.length ? fixMessage(issues.length) : unchanged ? "No changes yet" : ""}
+                        </Text>
+                    )}
+                    {footerMode !== "confirm" ? <PremiumSubmitButton mode={footerMode} style={s.primaryBtn} /> : <PressableOpacity
                         style={[s.primaryBtn, (unchanged || isSaving) && { opacity: 0.5 }]}
                         onPress={handleSave}
                         disabled={unchanged || isSaving}
@@ -335,13 +350,13 @@ const EditScheduleScreen = () => {
                         {isSaving
                             ? <ActivityIndicator color="#fff" size="small" />
                             : <><Text style={s.primaryBtnText}>{isNew ? "Create Schedule" : "Save Changes"}</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>}
-                    </PressableOpacity>
+                    </PressableOpacity>}
                 </View>
 
                 <SettingSheet visible={sheet === "when"} title="When" onClose={close} tall>
                     <RecurrenceEditor value={d} update={fn => setD(prev => fn(prev))} issues={issues} />
                 </SettingSheet>
-                <RsvpRulesSheet visible={sheet === "rsvp"} onClose={close} issues={issues} value={d} onChange={upd} isPremium={isPremium} owner={group?.owner} />
+                <RsvpRulesSheet visible={sheet === "rsvp"} onClose={close} issues={issues} value={d} onChange={upd} />
                 <CapacitySheet visible={sheet === "capacity"} onClose={close} issues={issues} mode={d.maxAttendeesMode} input={d.maxAttendeesInput} onChange={upd} />
                 <BringItemsSheet visible={sheet === "bring"} onClose={close} issues={allIssues} showIssues={attempted} items={d.bringItems} onChange={bringItems => upd({ bringItems })} />
                 <QuestionsSheet visible={sheet === "questions"} onClose={close} showIssues={attempted} savedLater="schedule"

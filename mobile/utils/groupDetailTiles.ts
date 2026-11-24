@@ -9,7 +9,7 @@ export type DetailTileKey = 'invite' | 'calendar' | 'meetups' | 'past' | 'member
 // DMs get no tiles (no invites, meetups or schedule). Settings is for owners and moderators only.
 export function buildDetailTiles({ isDM, canManage }: { isDM: boolean; canManage: boolean }): DetailTileKey[] {
   if (isDM) return [];
-  const tiles: DetailTileKey[] = ['invite', 'members', 'meetups', 'calendar', 'schedule', 'past'];
+  const tiles: DetailTileKey[] = ['invite', 'members', 'schedule', 'meetups', 'calendar', 'past'];
   if (canManage) tiles.push('settings');
   return tiles;
 }
