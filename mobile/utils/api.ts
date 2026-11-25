@@ -747,11 +747,6 @@ export const groupApi = {
     const response = await api.delete(`/api/chat/${groupId}/timeouts/${userId}`);
     return response.data;
   },
-  /** A sample group (with a sample meetup) so a new person can look around before making their own. */
-  createDemoGroup: async (api: AxiosInstance): Promise<{ group: Group; meetupId?: string; alreadyExisted?: boolean }> => {
-    const response = await api.post<{ group: Group; meetupId?: string; alreadyExisted?: boolean }>("/api/groups/demo");
-    return response.data;
-  },
   createGroup: async (api: AxiosInstance, payload: CreateGroupPayload): Promise<CreateGroupResponse> => {
     const response = await api.post<CreateGroupResponse>("/api/groups/create", payload);
     return response.data;

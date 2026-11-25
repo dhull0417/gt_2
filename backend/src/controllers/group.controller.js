@@ -3,23 +3,17 @@ import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import Meetup from "../models/meetup.model.js";
 import Notification from "../models/notification.model.js";
-import InviteToken from "../models/inviteToken.model.js";
-import PendingInvite from "../models/pendingInvite.model.js";
-import InviteEvent from "../models/inviteEvent.model.js";
-import Poll from "../models/poll.model.js";
-import AttendanceRecord from "../models/attendanceRecord.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
 import { DateTime } from "luxon";
-import { resolveZone } from "../utils/email/lifecycle.js";
 import { generateMeetupsForGroup, generateMeetupsForSchedule, reconcileScheduleMeetups } from "../utils/meetupGeneration.js";
 import { endDateProblem, parseEndDate } from "../utils/scheduleEndDate.js";
 import { promoteWaitlist } from "../utils/waitlist.js";
 import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
-import { deleteTournamentsForGroup, deleteUnfinishedTournaments } from "../utils/tournament/cleanup.js";
-import { addChatMembers, removeChatMember, removeAllChatMembers, purgeGroupChat, deleteGroupChatTimeouts, clearOwnerChatTimeout } from "../utils/supabaseAdmin.js";
+import { deleteUnfinishedTournaments } from "../utils/tournament/cleanup.js";
+import { addChatMembers, removeChatMember, clearOwnerChatTimeout } from "../utils/supabaseAdmin.js";
 import { activeTimeout, pruneExpired } from "../utils/chatTimeout.js";
 import { scheduleChanges, scheduleSnapshot, pushBody } from "../utils/changeSummary.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
@@ -35,6 +29,7 @@ import { isLegacyClient } from "../middleware/clientInfo.middleware.js";
 import { validateRoutineEndTimes, preserveLegacyEndTimes, validateEndTime, computeEndsAt } from "../utils/meetupEndTime.js";
 import { validateLongIntervalRoutines, keepLongIntervalRoutinesForLegacy } from "../utils/longIntervalValidation.js";
 import { minHeadcountProblem, MIN_HEADCOUNT_PREMIUM_REQUIRED, ASSIGNMENTS_PREMIUM_REQUIRED, parseBringItems, withExistingIds, parseMeetupSettings, ownRsvpWindow } from "../utils/meetupSettings.js";
+import { deleteGroupAndData } from "../utils/groupCleanup.js";
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(String(id)) && String(new mongoose.Types.ObjectId(String(id))) === String(id);
 
@@ -312,62 +307,20 @@ export const createGroup = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Sample groups were removed (2026-11-25). Older app builds still offer "look around a
+ *          sample group" and show this error in a toast. Creates nothing. Delete once no builds
+ *          older than 1.5 remain.
+ * @route   POST /api/groups/demo
+ */
+export const sampleGroupsRemoved = (req, res) =>
+    res.status(410).json({ error: "Sample groups are no longer available. Create a group or use an invite code." });
+
+/**
  * @desc    LEGACY shim: applies the edit to the group's first active schedule
  *          (creating one if none exist), for pre-multi-schedule clients.
  *          Current clients use createSchedule/updateSchedule instead.
  * @route   PATCH /api/groups/:groupId/schedule
  */
-/**
- * @desc    Creates a sample group (with one sample meetup) so someone with no invite can try the
- *          app straight away. A person gets at most one; asking again returns it.
- * @route   POST /api/groups/demo
- */
-export const createDemoGroup = asyncHandler(async (req, res) => {
-    const { userId: clerkId } = getAuth(req);
-    const owner = await User.findOne({ clerkId });
-    if (!owner) return res.status(404).json({ error: "User not found." });
-
-    const existing = await Group.findOne({ owner: owner._id, isDemo: true });
-    if (existing) return res.status(200).json({ group: withLegacyScheduleMirror(existing.toObject()), alreadyExisted: true });
-
-    const timezone = (owner.timezone && resolveZone(owner.timezone)) || "America/Denver";
-    const group = await Group.create({
-        name: "Sample Group",
-        image: "",
-        timezone,
-        owner: owner._id,
-        members: [owner._id],
-        schedules: [],
-        isDemo: true,
-        defaultLocation: "",
-    });
-    await User.updateOne({ _id: owner._id }, { $addToSet: { groups: group._id } });
-    await addChatMembers(group._id, [owner.clerkId]);
-
-    // A sample meetup the coming Saturday at 10:00 AM (a week later if that is too close).
-    let when = DateTime.now().setZone(timezone).set({ hour: 10, minute: 0, second: 0, millisecond: 0 });
-    while (when.weekday !== 6 || when < DateTime.now().plus({ days: 2 })) when = when.plus({ days: 1 });
-    const meetup = await Meetup.create({
-        group: group._id,
-        schedule: null,
-        name: "Sample Meetup",
-        date: when.toJSDate(),
-        startsAt: when.toJSDate(),
-        time: "10:00 AM",
-        timezone,
-        location: "Anywhere you like",
-        description: "This is a sample meetup. Tap I'm In, try the chat, then invite your real group from Group Settings. You can delete this group any time.",
-        members: [owner._id],
-        undecided: [owner._id],
-        capacity: 0,
-        isOverride: true,
-        createdBy: owner._id,
-    });
-    await postSystemMessage(group._id, "Welcome to GroupThat! This sample group is yours to play with.");
-
-    res.status(201).json({ group: withLegacyScheduleMirror(group.toObject()), meetupId: meetup._id });
-});
-
 export const updateGroupSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const { schedule, timezone, defaultCapacity, defaultLocation } = req.body;
@@ -1321,25 +1274,8 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     // Tell the other members first (the notification keeps the group's name, since the group itself is about to go).
     const others = await User.find({ _id: { $in: group.members, $ne: requester._id } });
 
-    // Everything that belongs to the group goes with it.
-    await Meetup.deleteMany({ group: groupId });
-    await Poll.deleteMany({ group: groupId });
-    await InviteToken.deleteMany({ groupId });
-    await PendingInvite.deleteMany({ groupId });
-    await InviteEvent.deleteMany({ groupId });
-    await AttendanceRecord.deleteMany({ group: groupId });
-    await deleteTournamentsForGroup(groupId);
-    await Notification.deleteMany({ group: groupId });
-    await User.updateMany(
-        { _id: { $in: group.members } },
-        { $pull: { groups: groupId, mutedGroups: groupId, mutedUntilNextMeetup: groupId, groupMutes: { group: groupId } }, $unset: { [`lastReadAt.${groupId}`]: "" } }
-    );
-    await Group.findByIdAndDelete(groupId);
-
-    // Chat messages, shared photos and the chat membership copy (no-ops until Supabase is configured on the server).
-    await purgeGroupChat(groupId);
-    await removeAllChatMembers(groupId);
-    await deleteGroupChatTimeouts(groupId);
+    // Everything that belongs to the group goes with it, chat included.
+    await deleteGroupAndData(group);
 
     if (others.length > 0 && !group.isDM) {
         try {

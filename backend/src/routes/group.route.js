@@ -1,7 +1,7 @@
 import express from "express";
 import {
   createGroup,
-  createDemoGroup,
+  sampleGroupsRemoved,
   getGroups,
   getGroupDetails,
   addMember,
@@ -80,7 +80,7 @@ const recentReactionPushes = new Map();
 // --- Group Management ---
 router.get("/", protectRoute, getGroups);
 router.post("/create", protectRoute, createGroup);
-router.post("/demo", protectRoute, createDemoGroup);
+router.post("/demo", protectRoute, sampleGroupsRemoved);
 
 // find/create 1-on-1 DM group; must precede /:groupId (wildcard collision)
 router.post("/dm", protectRoute, async (req, res) => {

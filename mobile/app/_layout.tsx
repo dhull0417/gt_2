@@ -48,6 +48,7 @@ import type { Meetup } from '@/utils/api';
 import { ToastProvider } from '@/contexts/ToastContext';
 import { AppearanceProvider, useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import "../global.css";
+import { TourGateProvider } from '@/contexts/TourGateContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -490,6 +491,9 @@ const AuthLayout = () => {
         {/* Navigation theme follows the app theme, so every nested stack's screen background is dark in
             dark mode. Without it a stack with no contentStyle (e.g. create-group) showed a white card
             behind screens as they animated in. */}
+        {/* First-visit tours wait while the welcome video, the name prompt or the can't-load
+            screen is up (see contexts/TourGateContext.tsx). */}
+        <TourGateProvider blocked={showWelcomeModal || showUpdateNameModal || !!currentUserLoadFailed}>
         <ThemeProvider value={{
           ...(scheme === 'dark' ? DarkTheme : DefaultTheme),
           colors: {
@@ -543,6 +547,7 @@ const AuthLayout = () => {
           <Stack.Screen name="sso-callback" options={{ headerShown: false }} />
         </Stack>
         </ThemeProvider>
+        </TourGateProvider>
       </View>
       </SafeAreaInsetsContext.Provider>
       </ScreenTopOffsetProvider>

@@ -7,7 +7,13 @@ import type { User } from '@/utils/api';
 // after redesigning its screen, bump the key: 'group-details' -> 'group-details-v2'.
 export const TOURS = {
   groupDetails: 'group-details',
+  meetupsEmpty: 'meetups-empty',
+  groupsEmpty: 'groups-empty',
 } as const;
+
+// TESTING ONLY: shows every tour each time its screen is opened, ignoring seenTours.
+// Set back to false before a release.
+export const TOURS_ALWAYS_SHOW = true;
 
 export type TourKey = (typeof TOURS)[keyof typeof TOURS];
 

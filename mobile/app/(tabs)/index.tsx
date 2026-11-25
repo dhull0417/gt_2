@@ -36,6 +36,9 @@ import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
 import { toast } from '@/contexts/ToastContext';
 import { muteStateFor, restoreRequest } from '@/utils/groupMute';
 import { runBackInterceptor } from '@/utils/backInterceptors';
+import { ScreenTour, TourTarget } from '@/components/tour/ScreenTour';
+import { meetupsEmptyTourSteps, meetupsEmptyTourEnabled } from '@/utils/emptyScreenTours';
+import { TOURS } from '@/utils/screenTours';
 
 type GroupedMeetups = {
   'Upcoming': Meetup[];
@@ -455,6 +458,7 @@ const DashboardScreen = () => {
       </FadeUp>
 
       <FadeUp index={1}>
+        <TourTarget target="filters" fill>
         <View style={{ flexDirection: 'row', paddingHorizontal: 8, marginTop: 12, marginBottom: 10, gap: 8 }}>
           {FILTER_TABS.map(tab => (
             <FilterPill
@@ -465,6 +469,7 @@ const DashboardScreen = () => {
             />
           ))}
         </View>
+        </TourTarget>
       </FadeUp>
 
       {!hintDismissed && (
@@ -549,12 +554,14 @@ const DashboardScreen = () => {
           <Text style={{ fontSize: 16, color: colors.brand, marginBottom: 14, textAlign: 'center' }}>
             You have no upcoming meetups.
           </Text>
+          <TourTarget target="create-group" style={{ alignSelf: 'center' }}>
           <PressableOpacity
             onPress={() => router.push('/create-group')}
             style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 }}
           >
             <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Create a group</Text>
           </PressableOpacity>
+          </TourTarget>
         </View></FadeUp>
       ) : hasHiddenAll ? (
         <FadeUp index={3}><View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
@@ -589,15 +596,24 @@ const DashboardScreen = () => {
       edges={['left', 'right']}
       style={{ paddingTop: contentTopInset }}
     >
+      {/* First-visit tour, only while there are no meetups at all (utils/emptyScreenTours.ts). */}
+      <ScreenTour
+        tourKey={TOURS.meetupsEmpty}
+        steps={meetupsEmptyTourSteps}
+        enabled={meetupsEmptyTourEnabled({ loaded: !isLoading && prefsLoaded && !isOfflineEmpty(meetupsQuery) && !isError, meetups })}
+        user={currentUser}
+      >
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-        <NotificationBell />
+        <TourTarget target="bell" style={{ alignSelf: 'center' }}><View><NotificationBell /></View></TourTarget>
         <Text className="text-xl font-black text-gray-900 dark:text-gray-100">Meetups</Text>
+        <TourTarget target="add" style={{ alignSelf: 'center' }}>
         <PressableOpacity
           onPress={() => setShowAddChoicePicker(true)}
           style={{ alignItems: 'center', justifyContent: 'center' }}
         >
           <Feather name="plus-circle" size={26} color={colors.brand} />
         </PressableOpacity>
+        </TourTarget>
       </View>
 
       {isLoading || !prefsLoaded ? (
@@ -705,6 +721,7 @@ const DashboardScreen = () => {
           },
         }}
       />
+      </ScreenTour>
     </SafeAreaView>
   );
 };

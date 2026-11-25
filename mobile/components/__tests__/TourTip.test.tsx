@@ -2,11 +2,12 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react-native';
 import { TourTip } from '../tour/TourTip';
 
+jest.mock('expo-haptics', () => ({ impactAsync: jest.fn(), ImpactFeedbackStyle: { Light: 'light' } }));
 jest.mock('@/contexts/AppearanceContext', () => ({
   useThemeColors: () => ({ surface: '#fff', textPrimary: '#111', textMuted: '#666', border: '#eee', brand: '#4A90E2' }),
 }));
 
-const base = { goTo: jest.fn(), pause: jest.fn(), resume: jest.fn(), previous: jest.fn() };
+const base = { goTo: jest.fn(), pause: jest.fn(), resume: jest.fn(), previous: jest.fn(), icon: 'users' as const, tint: { bg: '#F5F3FF', border: '#DDD6FE', fg: '#7C3AED' } };
 
 describe('TourTip', () => {
   it('shows the title, description and step count', async () => {
@@ -14,7 +15,8 @@ describe('TourTip', () => {
       title="Group Members" body="See everyone in the group." />);
     expect(screen.getByText('Group Members')).toBeTruthy();
     expect(screen.getByText('See everyone in the group.')).toBeTruthy();
-    expect(screen.getByText('2 of 6')).toBeTruthy();
+    expect(screen.getByLabelText('Step 2 of 6')).toBeTruthy();
+    expect(screen.getAllByTestId(/^tour-dot-/)).toHaveLength(6);
   });
 
   it('Next moves on and Skip ends the tour', async () => {

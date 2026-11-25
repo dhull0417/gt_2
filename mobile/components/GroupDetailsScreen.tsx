@@ -22,6 +22,7 @@ import { Feather } from '@expo/vector-icons';
 import { GroupDetailsView } from '@/components/GroupDetailsView';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { tabScreenBottomPadding } from '@/utils/layout';
+import { scrollIntoViewForTour } from '@/utils/scrollIntoViewForTour';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 
 interface GroupDetailsScreenProps {
@@ -76,23 +77,24 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
     router.dismissTo({ pathname: '/group-chat/[id]', params: { id } });
   };
 
-  // For the first-visit tour: scroll a tile on screen before it's highlighted. The tour measures
-  // where things are on the screen, so a tile below the fold has to be scrolled up first.
+  // For the first-visit tour: scroll a tile on screen before it's highlighted. The tour places its
+  // highlight from one measurement of where the tile is on screen, so the scroll has to have fully
+  // stopped first; otherwise the highlight lands where the tile was mid-scroll (below it).
   const scrollRef = useRef<ScrollViewInstance>(null);
   const scrollY = useRef(0);
-  const scrollIntoView = useCallback((node: ViewInstance | null) => new Promise<void>((resolve) => {
-    if (!node) return resolve();
-    node.measureInWindow((_x: number, y: number, _w: number, h: number) => {
-      const windowH = Dimensions.get('window').height;
-      const top = insets.top + 16;
-      const bottom = windowH - insets.bottom - 16;
-      if (y >= top && y + h <= bottom) return resolve();
-      // Put the tile a little above the middle, leaving room for the tip below or above it.
-      const delta = y + h / 2 - windowH * 0.4;
-      scrollRef.current?.scrollTo({ y: Math.max(0, scrollY.current + delta), animated: true });
-      setTimeout(resolve, 350);
-    });
-  }), [insets.top, insets.bottom]);
+  const contentH = useRef(0);
+  const viewportH = useRef(0);
+  const scrollIntoView = useCallback((node: ViewInstance | null, beforeScroll?: () => Promise<void>) =>
+    scrollIntoViewForTour({
+      node,
+      scrollTo: (y) => scrollRef.current?.scrollTo({ y, animated: true }),
+      getScrollY: () => scrollY.current,
+      maxScrollY: contentH.current > 0 && viewportH.current > 0 ? contentH.current - viewportH.current : undefined,
+      windowH: Dimensions.get('window').height,
+      insetTop: insets.top,
+      insetBottom: insets.bottom,
+      beforeScroll,
+    }), [insets.top, insets.bottom]);
 
   // Android back returns to the chat when Details was opened from it, like the on-screen arrow.
   useAndroidBack(from === 'chat', handleOpenChat);
@@ -105,6 +107,8 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
       <ScrollView
         ref={scrollRef}
         onScroll={(e) => { scrollY.current = e.nativeEvent.contentOffset.y; }}
+        onLayout={(e) => { viewportH.current = e.nativeEvent.layout.height; }}
+        onContentSizeChange={(_w, h) => { contentH.current = h; }}
         scrollEventThrottle={16}
         style={{ backgroundColor: colors.backgroundAlt }}
         className="flex-1"

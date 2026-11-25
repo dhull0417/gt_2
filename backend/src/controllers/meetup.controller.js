@@ -39,7 +39,10 @@ export const getMeetups = asyncHandler(async (req, res) => {
 
     // No server-side visibility window — the mobile dashboard caps how many of
     // each series it shows; the group calendar shows everything.
-    const memberFilter = { members: user._id };
+    // Only groups the person is in right now: leaving / being removed hides that
+    // group's past and cancelled meetups too, and rejoining brings them back.
+    const currentGroupIds = await Group.find({ members: user._id }).distinct('_id');
+    const memberFilter = { members: user._id, group: { $in: currentGroupIds } };
 
     const { since } = req.query;
 

@@ -127,7 +127,7 @@ const buildContext = async (user, key, { groupId } = {}) => {
   if (key === "O1") {
     const group = groupId
       ? await Group.findById(groupId).select("name").lean()
-      : await Group.findOne({ owner: user._id, isDM: { $ne: true }, isDemo: { $ne: true } }).sort({ createdAt: 1 }).select("name").lean();
+      : await Group.findOne({ owner: user._id, isDM: { $ne: true } }).sort({ createdAt: 1 }).select("name").lean();
     if (group) {
       ctx.groupName = group.name;
       ctx.urls.shareInvite = `${base}/go/group/${group._id}`;

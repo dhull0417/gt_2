@@ -33,7 +33,7 @@ const RsvpCounts = ({ meetup, colors }: { meetup: Meetup; colors: ThemeColors })
     return (
       <>
         <View className="flex-row items-center justify-between mt-3 flex-wrap">
-            <View className="flex-row items-center flex-wrap">
+            <View className="flex-row items-center">
                 <View className="flex-row items-center mr-4">
                     <View className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: colors.accentTeal }} />
                     <Text className="text-gray-600 dark:text-gray-300 font-medium">

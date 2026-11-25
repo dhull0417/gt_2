@@ -4,7 +4,6 @@ import {
   FlatList,
   RefreshControl,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { LinearTransition, type SharedValue } from 'react-native-reanimated';
@@ -14,7 +13,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
-import { Group, User, useApiClient, userApi, groupApi } from '@/utils/api';
+import { Group, User, useApiClient, userApi } from '@/utils/api';
 import { getDMDisplayName } from '@/utils/groupDisplay';
 import { Feather } from '@expo/vector-icons';
 import { GroupAvatar } from '@/components/GroupAvatar';
@@ -35,6 +34,9 @@ import { toast } from '@/contexts/ToastContext';
 import { getGroupImage } from '@/utils/groupDisplay';
 import { GroupMuteSheet } from '@/components/GroupMuteSheet';
 import { muteStateFor, type MuteState } from '@/utils/groupMute';
+import { ScreenTour, TourTarget } from '@/components/tour/ScreenTour';
+import { groupsEmptyTourSteps, groupsEmptyTourEnabled } from '@/utils/emptyScreenTours';
+import { TOURS } from '@/utils/screenTours';
 
 const ACTION_WIDTH = 76;
 
@@ -76,24 +78,6 @@ const GroupScreen = () => {
   const contentTopInset = useSafeAreaInsets().top;
   const colors = useThemeColors();
   const { promptNotifications } = useLocalSearchParams<{ promptNotifications?: string }>();
-  const [creatingSample, setCreatingSample] = useState(false);
-
-  // M7: a ready-made group so someone brand new can poke around (RSVP, chat) before committing to their own.
-  const handleTrySample = async () => {
-    setCreatingSample(true);
-    try {
-      const { group } = await groupApi.createDemoGroup(api);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['groups'] }),
-        queryClient.invalidateQueries({ queryKey: ['meetups'] }),
-      ]);
-      router.push({ pathname: '/group-chat/[id]', params: { id: group._id } });
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error || "Couldn't set up the sample group. Try again.");
-    } finally {
-      setCreatingSample(false);
-    }
-  };
   const swipeRefs = useRef(new Map<string, React.RefObject<SwipeableMethods | null>>());
   const closeAllSwipes = () => swipeRefs.current.forEach((r) => r.current?.close());
 
@@ -297,15 +281,24 @@ const GroupScreen = () => {
       edges={['left', 'right']}
       style={{ paddingTop: contentTopInset }}
     >
+      {/* First-visit tour, only while there are no groups (utils/emptyScreenTours.ts). */}
+      <ScreenTour
+        tourKey={TOURS.groupsEmpty}
+        steps={groupsEmptyTourSteps}
+        enabled={groupsEmptyTourEnabled({ loaded: !showSkeleton && !isOfflineEmpty(groupsQuery) && !isErrorGroups, groups: sortedGroups })}
+        user={currentUser}
+      >
       <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
         <NotificationBell />
         <Text className="text-xl font-black text-gray-900 dark:text-gray-100">Groups</Text>
+        <TourTarget target="add" style={{ alignSelf: 'center' }}>
         <PressableOpacity
           onPress={() => router.push('/create-group')}
           style={{ alignItems: 'center', justifyContent: 'center' }}
         >
           <Feather name="plus-circle" size={26} color={colors.brand} />
         </PressableOpacity>
+        </TourTarget>
       </View>
 
       {showSkeleton ? (
@@ -333,6 +326,7 @@ const GroupScreen = () => {
               <FadeUp index={0} style={{ flex: 1 }}>
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 64 }}>
                 <Text className="text-center text-gray-500 dark:text-gray-400" style={{ fontSize: 16, marginBottom: 16 }}>You have no groups yet.</Text>
+                <TourTarget target="create-group" style={{ alignSelf: 'center' }}>
                 <PressableOpacity
                   onPress={() => router.push('/create-group')}
                   haptic="press"
@@ -340,14 +334,12 @@ const GroupScreen = () => {
                 >
                   <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Create a group</Text>
                 </PressableOpacity>
-                <PressableOpacity onPress={handleTrySample} disabled={creatingSample} style={{ marginTop: 18, padding: 8 }}>
-                  {creatingSample
-                    ? <ActivityIndicator color={colors.brand} />
-                    : <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>or look around a sample group</Text>}
-                </PressableOpacity>
-                <PressableOpacity onPress={() => router.push('/join/code')} style={{ marginTop: 6, padding: 8 }}>
+                </TourTarget>
+                <TourTarget target="invite-code" style={{ alignSelf: 'center', marginTop: 18 }}>
+                <PressableOpacity onPress={() => router.push('/join/code')} style={{ padding: 8 }}>
                   <Text style={{ color: colors.brand, fontWeight: '800', fontSize: 17 }}>Have an invite code?</Text>
                 </PressableOpacity>
+                </TourTarget>
               </View>
               </FadeUp>
             }
@@ -371,6 +363,7 @@ const GroupScreen = () => {
         currentUser={currentUser}
         onClose={() => setMuteSheetGroup(null)}
       />
+      </ScreenTour>
     </SafeAreaView>
   );
 };

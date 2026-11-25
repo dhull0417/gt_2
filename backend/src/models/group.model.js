@@ -165,8 +165,6 @@ const groupSchema = new mongoose.Schema({
   },
   // Stats: show the joke awards (Hall of Shame) to every member, not just organizers.
   statsRevealJokes: { type: Boolean, default: false },
-  // A sample group created for new people to explore (see createDemoGroup). Safe to delete.
-  isDemo: { type: Boolean, default: false },
   dmParticipants: [{
     userId: { type: String },
     name: { type: String },

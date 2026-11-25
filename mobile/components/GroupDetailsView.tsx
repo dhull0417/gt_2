@@ -7,6 +7,7 @@ import {
     StyleSheet,
     ActivityIndicator,
     Alert,
+    Platform,
 } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SquircleTile, type SquircleTint } from '@/components/ui/SquircleTile';
@@ -15,12 +16,14 @@ import { GroupDetails, User, useApiClient } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import { GroupAvatar } from './GroupAvatar';
 import { getDMDisplayName } from '@/utils/groupDisplay';
-import type { ViewInstance } from 'react-native';
+import type { LayoutRectangle, ViewInstance } from 'react-native';
 import { AttachStep, SpotlightTourProvider, type SpotlightTour, type TourStep } from 'react-native-spotlight-tour';
 import { TourTip } from '@/components/tour/TourTip';
+import { TourGlow } from '@/components/tour/TourGlow';
 import { useScreenTour } from '@/hooks/useScreenTour';
 import { TOURS } from '@/utils/screenTours';
 import { groupDetailsTourSteps } from '@/utils/groupDetailsTour';
+import { squirclePath } from '@/utils/squirclePath';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
@@ -43,8 +46,20 @@ interface GroupDetailsViewProps {
     currentUser: User;
     onLeaveSuccess: () => void;
     /** Scrolls the page so this view is on screen; resolves once it has. Used by the first-visit tour. */
-    scrollIntoView?: (node: ViewInstance | null) => Promise<void>;
+    scrollIntoView?: (node: ViewInstance | null, beforeScroll?: () => Promise<void>) => Promise<void>;
 }
+
+// The patched library fades the highlight out in 150ms; wait a touch longer before scrolling.
+const HIGHLIGHT_FADE_OUT_MS = 170;
+
+// The tour's cut-out around a tile: the tile's own squircle (see SquircleTile), grown by
+// TOUR_SPOT_PADDING / 2 on every side, with the corner radius grown by the same amount so the
+// outline runs parallel to the tile's. Continuous (squircle) corners on iOS, plain on Android,
+// matching how the tile itself draws. Module-level so the function stays the same between renders.
+const TILE_RADIUS = 28;
+const TOUR_SPOT_PADDING = 6;
+const tourSpotPath = (rect: LayoutRectangle) =>
+    squirclePath(rect, TILE_RADIUS + TOUR_SPOT_PADDING / 2, Platform.OS === 'ios');
 
 // Group photo + name, the next meetup, then a 2-wide grid of squircle tiles that each open
 // their own place (invite screen, members page, schedule modal, ...). DMs show their members instead.
@@ -135,19 +150,38 @@ export const GroupDetailsView = ({
     // First-visit tour: highlights each tile in turn, once per person (see utils/screenTours.ts).
     const tourRef = useRef<SpotlightTour>(null);
     const tileRefs = useRef<Partial<Record<DetailTileKey, ViewInstance | null>>>({});
+    const [tourTile, setTourTile] = useState<DetailTileKey | null>(null);
     const startTour = useCallback(() => tourRef.current?.start(), []);
+    const endTour = useCallback(() => setTourTile(null), []);
+    // Before the page scrolls to the next tile: fade the highlight out (and stop the glow), so the
+    // spot it was cut at doesn't stay lit while the page slides under it. changeSpot is exposed by
+    // our patch to the library (patches/react-native-spotlight-tour+4.0.0.patch); off-screen and
+    // zero-sized means nothing is lit and the tip stays hidden until the next step measures its tile.
+    const hideHighlight = useCallback(async () => {
+        setTourTile(null);
+        (tourRef.current as (SpotlightTour & { changeSpot?: (s: LayoutRectangle) => void }) | null)
+            ?.changeSpot?.({ x: -1000, y: -1000, width: 0, height: 0 });
+        await new Promise((r) => setTimeout(r, HIGHLIGHT_FADE_OUT_MS));
+    }, []);
     const { markSeen: markTourSeen } = useScreenTour({
         key: TOURS.groupDetails, user: currentUser, enabled: tiles.length > 0, start: startTour,
     });
     const tourSteps = useMemo<TourStep[]>(() => {
         const steps = groupDetailsTourSteps(tiles, canManage);
         return steps.map((step) => ({
-            before: () => scrollIntoView?.(tileRefs.current[step.tile] ?? null),
-            render: (props) => <TourTip {...props} title={step.title} body={step.body} total={steps.length} />,
+            before: async () => {
+                await scrollIntoView?.(tileRefs.current[step.tile] ?? null, hideHighlight);
+                setTourTile(step.tile);
+            },
+            render: (props) => (
+                <TourTip {...props} title={step.title} body={step.body} total={steps.length}
+                    icon={tileProps[step.tile].icon} tint={tileProps[step.tile].tint} />
+            ),
         }));
-        // tiles is rebuilt every render; its contents only change with isDM/canManage.
+        // tiles and tileProps are rebuilt every render; what the steps use only changes with
+        // isDM, canManage and the colour scheme.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isDM, canManage, scrollIntoView]);
+    }, [isDM, canManage, isDark, scrollIntoView, hideHighlight]);
 
     // Schedule editing (owners/moderators) lives in the Schedule Details sheet. Close the sheet first:
     // a screen pushed while a page-sheet Modal is up opens underneath it.
@@ -182,10 +216,10 @@ export const GroupDetailsView = ({
         <SpotlightTourProvider
             ref={tourRef}
             steps={tourSteps}
-            onStop={markTourSeen}
-            shape={{ type: 'rectangle', padding: 6 }}
-            motion="slide"
-            overlayOpacity={0.6}
+            onStop={() => { endTour(); markTourSeen(); }}
+            shape={{ type: 'rectangle', padding: TOUR_SPOT_PADDING, path: tourSpotPath }}
+            motion="fade"
+            overlayOpacity={0.72}
             arrow={{ color: colors.surface }}
         >
         <View style={styles.container}>
@@ -224,6 +258,7 @@ export const GroupDetailsView = ({
                         <AttachStep key={key} index={i} fill style={styles.tile}>
                             <View ref={(el) => { tileRefs.current[key] = el; }}>
                                 <SquircleTile testID={`tile-${key}`} {...tileProps[key]} />
+                                <TourGlow active={tourTile === key} color={tileProps[key].tint.fg} borderRadius={TILE_RADIUS} />
                             </View>
                         </AttachStep>
                     ))}
