@@ -163,7 +163,7 @@ export const GroupDetailsView = ({
             ?.changeSpot?.({ x: -1000, y: -1000, width: 0, height: 0 });
         await new Promise((r) => setTimeout(r, HIGHLIGHT_FADE_OUT_MS));
     }, []);
-    const { markSeen: markTourSeen } = useScreenTour({
+    useScreenTour({
         key: TOURS.groupDetails, user: currentUser, enabled: tiles.length > 0, start: startTour,
     });
     const tourSteps = useMemo<TourStep[]>(() => {
@@ -216,7 +216,7 @@ export const GroupDetailsView = ({
         <SpotlightTourProvider
             ref={tourRef}
             steps={tourSteps}
-            onStop={() => { endTour(); markTourSeen(); }}
+            onStop={endTour}
             shape={{ type: 'rectangle', padding: TOUR_SPOT_PADDING, path: tourSpotPath }}
             motion="fade"
             overlayOpacity={0.72}

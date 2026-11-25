@@ -27,14 +27,17 @@ import { GroupCard, SummaryRow, SettingSheet, FieldError, useFormStyles, useIssu
 import RecurrenceEditor from "@/components/schedule/RecurrenceEditor";
 import { RsvpRulesSheet, CapacitySheet, BringItemsSheet, PremiumUpsellSheet, QuestionsSheet } from "@/components/schedule/sheets";
 import { PremiumPreviewNote } from "@/components/schedule/PremiumPreviewNote";
+import { PremiumHighlight } from "@/components/schedule/PremiumHighlight";
+import { PRIORITY_INFO, RIDES_INFO } from "@/utils/premiumInfo";
 import { PremiumSubmitButton } from "@/components/PremiumSubmitButton";
 import { useIsGroupOwner } from "@/hooks/useIsGroupOwner";
-import { submitHint, submitMode, usesPremiumFeatures } from "@/utils/premiumGate";
+import { premiumHighlights, submitHint, submitMode, usesPremiumFeatures } from "@/utils/premiumGate";
 import { questionsSummary } from "@/utils/questionDrafts";
 import { scheduleIssues, visibleIssues, fixMessage, firstArea, issueFor, fieldIssue, type FormArea } from "@/utils/formIssues";
 import { recurrenceSummary, rsvpSummary, capacitySummary, bringSummary } from "@/utils/formSummaries";
 import { saveDraftQuestions } from "@/utils/questionDrafts";
 import { askDeleteAfterEnd, decideRemoveAfterEnd } from "@/utils/endDatePrompt";
+import { priorityOnBody } from "@/utils/priorityDefaults";
 
 type Sheet = "when" | "rsvp" | "capacity" | "bring" | "questions" | "upsell" | null;
 const ORDER: FormArea[] = ["name", "where", "when", "timezone", "rsvp", "capacity", "bring", "questions"];
@@ -116,7 +119,8 @@ const EditScheduleScreen = () => {
 
     const hasChanged = useMemo(() => {
         if (!originalRef.current) return false;
-        return JSON.stringify(buildSchedulePayload(d)) !== JSON.stringify(buildSchedulePayload(originalRef.current));
+        return JSON.stringify(buildSchedulePayload(d)) !== JSON.stringify(buildSchedulePayload(originalRef.current))
+            || !!d.priorityEnabled !== !!originalRef.current.priorityEnabled;
     }, [d]);
 
     // Nothing to save on an unchanged existing schedule; otherwise Save is always tappable and
@@ -124,6 +128,29 @@ const EditScheduleScreen = () => {
     const unchanged = !isNew && !hasChanged;
 
     // ── Save ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Priority RSVP is saved through its own endpoint once the schedule exists. Turning it on keeps
+     * any groups and ranking set up before; a first-time setup starts with the top 3 members getting
+     * a 2-hour head start, which the owner can change on the Priority RSVP screen.
+     */
+    const savePriority = async (sid: string) => {
+        const before = !isNew && !!originalRef.current?.priorityEnabled;
+        if (!!d.priorityEnabled === before) return true;
+        try {
+            if (!d.priorityEnabled) {
+                await groupApi.updateSchedulePriority(api, id!, sid, { enabled: false });
+            } else {
+                await groupApi.updateSchedulePriority(api, id!, sid,
+                    priorityOnBody(group?.owner, (group?.members ?? []).map(m => m._id), targetSchedule));
+            }
+            return true;
+        } catch (err: any) {
+            const data = err?.response?.data;
+            Alert.alert("Schedule saved", `Priority RSVP couldn't be turned ${d.priorityEnabled ? "on" : "off"}: ${data?.message || data?.error || "please try again."}`);
+            return false;
+        }
+    };
 
     const handleSave = async () => {
         if (allIssues.length) {
@@ -152,8 +179,10 @@ const EditScheduleScreen = () => {
                 const ok = await saveDraftQuestions([d.questions], [created.scheduleId],
                     (sid, questions) => groupApi.updateScheduleQuestions(api, id, sid, { questions }));
                 if (!ok) Alert.alert("Schedule created", "Your RSVP questions couldn't be saved. You can add them from this schedule's RSVP Questions.");
+                await savePriority(created.scheduleId);
             } else {
                 await groupApi.updateSchedule(api, id, scheduleId!, { ...payload, removeAfterEnd });
+                await savePriority(scheduleId!);
             }
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["groupDetails", id] }),
@@ -224,11 +253,13 @@ const EditScheduleScreen = () => {
     // Premium settings are open to everyone so they can see how they work; saving them needs Premium
     // (see premiumGate). An existing schedule compares with how it was opened, so a group whose
     // Premium lapsed can still save an unrelated change.
-    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) =>
-        <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />;
+    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null, highlight = false,
+        info?: { title: string; description: string }) =>
+        <PremiumHighlight active={highlight}><SummaryRow label={label} value={value} onPress={open} right={right} error={error} info={info} /></PremiumHighlight>;
     const footerMode = submitMode({
         usesPremium: usesPremiumFeatures(d, isNew ? undefined : originalRef.current ?? undefined), isPremium, isOwner,
     });
+    const hl = premiumHighlights(d, footerMode);
     const questionCount = targetSchedule?.defaultQuestions?.length ?? 0;
     const nameError = fieldIssue(issues, "name");
 
@@ -298,7 +329,7 @@ const EditScheduleScreen = () => {
                     <View onLayout={register("rsvp", "capacity")}>
                         <Text style={f.sectionLabel}>RSVPs</Text>
                         <GroupCard>
-                            <SummaryRow label="RSVP rules" value={rsvpSummary(d)} onPress={() => setSheet("rsvp")} error={issueFor(issues, "rsvp")} />
+                            <PremiumHighlight active={hl.minimum}><SummaryRow label="RSVP rules" value={rsvpSummary(d)} onPress={() => setSheet("rsvp")} error={issueFor(issues, "rsvp")} /></PremiumHighlight>
                             <SummaryRow label="Capacity" value={capacitySummary(d.maxAttendeesMode, d.maxAttendeesInput)} onPress={() => setSheet("capacity")} error={issueFor(issues, "capacity")} />
                         </GroupCard>
                     </View>
@@ -307,17 +338,21 @@ const EditScheduleScreen = () => {
                         <Text style={f.sectionLabel}>Premium</Text>
                         {!isPremium && <PremiumPreviewNote />}
                         <GroupCard>
-                            {premiumRow("Food/Things to bring", bringSummary(d.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"))}
+                            {premiumRow("Food/Things to bring", bringSummary(d.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"), hl.bring)}
                             {premiumRow("Rides", d.ridesEnabled ? "On" : "Off", () => upd({ ridesEnabled: !d.ridesEnabled }),
                                 <Switch accessibilityLabel="Coordinate rides" value={d.ridesEnabled} onValueChange={v => upd({ ridesEnabled: v })}
-                                    trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />)}
-                            {/* Priority RSVP and questions rank members and edit open meetups, so they need a saved series. */}
-                            {!isPremium ? <SummaryRow label="Priority RSVP" value="" onPress={() => setSheet("upsell")} locked />
-                                : <SummaryRow label="Priority RSVP" value={targetSchedule?.priorityEnabled ? "On" : "Off"}
-                                    disabledReason={isNew ? "Set up after the schedule is created" : undefined}
-                                    onPress={() => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId!, ...rsvpRulesParams(d) } })} />}
+                                    trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />, undefined, hl.rides, RIDES_INFO)}
+                            {premiumRow("Priority RSVP", d.priorityEnabled ? "On" : "Off", () => upd({ priorityEnabled: !d.priorityEnabled }),
+                                <Switch accessibilityLabel="Priority RSVP" value={!!d.priorityEnabled} onValueChange={v => upd({ priorityEnabled: v })}
+                                    trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />,
+                                undefined, hl.priority, PRIORITY_INFO)}
+                            {/* Who's in each priority group is set on its own screen, which ranks members of a saved series. */}
+                            {d.priorityEnabled && (isNew || !originalRef.current?.priorityEnabled
+                                ? <SummaryRow label="Priority groups" value="" onPress={() => {}} disabledReason="Set up after saving" />
+                                : <SummaryRow label="Priority groups" value="Set up"
+                                    onPress={() => router.push({ pathname: "/group-priority/[id]", params: { id: id!, scheduleId: scheduleId!, ...rsvpRulesParams(d) } })} />)}
                             {isNew
-                                ? <SummaryRow label="RSVP Questions" value={questionsSummary(d.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} />
+                                ? <PremiumHighlight active={hl.questions}><SummaryRow label="RSVP Questions" value={questionsSummary(d.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} /></PremiumHighlight>
                                 : !isPremium ? <SummaryRow label="RSVP Questions" value="" onPress={() => setSheet("upsell")} locked />
                                     : <SummaryRow label="RSVP Questions" value={questionCount ? `${questionCount} question${questionCount === 1 ? "" : "s"}` : "None"}
                                         onPress={() => router.push({ pathname: "/group-questions/[id]", params: { id: id!, scheduleId: scheduleId! } })} />}

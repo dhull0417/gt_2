@@ -11,9 +11,10 @@ export const TOURS = {
   groupsEmpty: 'groups-empty',
 } as const;
 
-// TESTING ONLY: shows every tour each time its screen is opened, ignoring seenTours.
-// Set back to false before a release.
-export const TOURS_ALWAYS_SHOW = true;
+// TESTING ONLY: tours listed here show every time their screen is opened, ignoring seenTours.
+// Empty this list before a release. Tours not listed show once per person.
+export const TOURS_ALWAYS_SHOW: readonly string[] = [TOURS.groupDetails];
+export const alwaysShows = (key: string) => TOURS_ALWAYS_SHOW.includes(key);
 
 export type TourKey = (typeof TOURS)[keyof typeof TOURS];
 

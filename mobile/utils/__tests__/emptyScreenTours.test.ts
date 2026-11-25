@@ -47,3 +47,8 @@ it('the new tour keys are ones the server accepts', () => {
   expect(TOURS.groupsEmpty).toBe('groups-empty');
   for (const key of Object.values(TOURS)) expect(key).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
 });
+
+it('the Meetups tour opens with the welcome card wording', () => {
+  const { meetupsWelcome } = require('../emptyScreenTours');
+  expect(meetupsWelcome).toEqual({ body: 'Ready for your life to get a little easier?', cta: "Let's show you around" });
+});

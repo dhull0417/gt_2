@@ -29,7 +29,10 @@ import { ImageCropperHost } from '@/components/ImageCropperHost';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsOnline } from '@/hooks/useIsOnline';
-import { WelcomeModal } from '@/components/WelcomeModal';
+import { WelcomeModal, WELCOME_VIDEO_ENABLED } from '@/components/WelcomeModal';
+import { decideFirstRun, INTRO_TOUR_KEY } from '@/utils/firstRun';
+import { useFirstRunIntro } from '@/hooks/useFirstRunIntro';
+import { hasSeenTour } from '@/utils/screenTours';
 import { UpdateNameModal } from '@/components/UpdateNameModal';
 import { setClerkTokenGetter, getClerkToken } from '@/utils/authToken';
 import { registerChatMutationDefaults, SEND_MESSAGE_MUTATION_KEY, type SendMessageVariables } from '@/utils/chatMutations';
@@ -352,7 +355,20 @@ const AuthLayout = () => {
   // Driven by currentUser.hasSeenWelcome, not local state — AuthLayout stays mounted across
   // sign-out/sign-in, so a useState flag would leak into the next user's session. Closing
   // writes to the query cache instead, which sign-out already clears.
-  const showWelcomeModal = !!currentUser && !currentUser.hasSeenWelcome && inTabsGroup;
+  const showWelcomeModal = WELCOME_VIDEO_ENABLED && !!currentUser && !currentUser.hasSeenWelcome && inTabsGroup;
+
+  // First run: a new account sees the Meetups tour first, then account setup (utils/firstRun.ts).
+  // Incomplete = missing zip, or a name for non-Apple accounts (Apple users may have none).
+  const profileIncomplete = !currentUser
+    || (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()))
+    || !currentUser.zipCode?.trim();
+  const { introRunning, introEnded, fallbackElapsed, onTourEvent } = useFirstRunIntro({
+    userId: currentUser?._id, profileIncomplete, inTabs: inTabsGroup,
+  });
+  const firstRun = decideFirstRun({
+    hasUser: !!currentUser, profileIncomplete, seenIntro: hasSeenTour(currentUser, INTRO_TOUR_KEY),
+    introRunning, introEnded, fallbackElapsed,
+  });
 
   // Apple only grants a name on the account's very first authorization ever, so a
   // returning/re-created Apple account can reach the tabs with nothing on file (the
@@ -362,7 +378,8 @@ const AuthLayout = () => {
   const [nameModalDismissed, setNameModalDismissed] = useState(false);
   const needsNameUpdate = !!currentUser && isAppleUser
     && !currentUser.firstName?.trim() && !currentUser.lastName?.trim();
-  const showUpdateNameModal = needsNameUpdate && inTabsGroup && !showWelcomeModal && !nameModalDismissed;
+  // Only after account setup: setup itself asks Apple users for a missing name first.
+  const showUpdateNameModal = needsNameUpdate && firstRun === 'app' && inTabsGroup && !showWelcomeModal && !nameModalDismissed;
 
   const markWelcomeSeen = useMutation({
     mutationFn: () => userApi.updateProfile(api, { hasSeenWelcome: true }),
@@ -411,23 +428,22 @@ const AuthLayout = () => {
     ].includes(segments[0]);
 
     if (isSignedIn) {
-      // No Mongo user yet always routes through profile-setup — its Save triggers syncUser.
-      // Also gates on zipCode: Apple users can already have a Mongo user with a name at this
-      // point (useAppleAuth syncs it as soon as Apple grants one, before profile-setup ever
-      // runs), which would otherwise let them skip straight past the zip code step.
-      const profileIncomplete = !currentUser
-        || (!isAppleUser && (!currentUser.firstName?.trim() || !currentUser.lastName?.trim()))
-        || !currentUser.zipCode?.trim();
-      if (profileIncomplete && segments[0] !== 'profile-setup') {
+      // firstRun (above): 'setup' sends an incomplete profile to profile-setup (no Mongo user yet
+      // also lands here; its Save triggers syncUser). The zip gate also catches Apple users, who can
+      // already have a named Mongo user before profile-setup. 'intro' keeps a new account on the
+      // tabs until the Meetups tour ends (or never starts in time), then 'setup'.
+      if (firstRun === 'setup' && segments[0] !== 'profile-setup') {
         router.replace('/profile-setup');
-      } else if (!profileIncomplete && !inTabsGroup && !inAllowedModalGroup) {
+      } else if (firstRun === 'intro' && !inTabsGroup) {
+        router.replace('/(tabs)');
+      } else if (firstRun === 'app' && !inTabsGroup && !inAllowedModalGroup) {
         router.replace('/(tabs)');
       }
     } else if (!isSignedIn && !inAuthGroup && !inSsoCallback && segments[0] !== 'join') {
       // 'join' stays open signed out: the invite screen saves the invite and offers sign-in.
       router.replace('/(auth)');
     }
-  }, [isLoaded, isSignedIn, currentUser, currentUserSettled, currentUserLoadFailed, segments, router, clerkUser]);
+  }, [isLoaded, isSignedIn, currentUser, currentUserSettled, currentUserLoadFailed, segments, router, clerkUser, firstRun]);
 
   useEffect(() => {
     if (iconFontsReady && isLoaded && ((isSignedIn && (currentUserSettled || currentUserLoadFailed)) || !isSignedIn)) {
@@ -492,8 +508,8 @@ const AuthLayout = () => {
             dark mode. Without it a stack with no contentStyle (e.g. create-group) showed a white card
             behind screens as they animated in. */}
         {/* First-visit tours wait while the welcome video, the name prompt or the can't-load
-            screen is up (see contexts/TourGateContext.tsx). */}
-        <TourGateProvider blocked={showWelcomeModal || showUpdateNameModal || !!currentUserLoadFailed}>
+            screen is up, and report starting and ending for the first run (contexts/TourGateContext.tsx). */}
+        <TourGateProvider blocked={showWelcomeModal || showUpdateNameModal || !!currentUserLoadFailed} onTourEvent={onTourEvent}>
         <ThemeProvider value={{
           ...(scheme === 'dark' ? DarkTheme : DefaultTheme),
           colors: {

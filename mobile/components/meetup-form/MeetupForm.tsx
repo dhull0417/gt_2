@@ -11,9 +11,11 @@ import { makeStyles } from "@/components/create-group/styles";
 import { GroupCard, SummaryRow, FieldError, useFormStyles, useIssueScroll } from "@/components/ui/form";
 import { OneOffWhenSheet, RsvpRulesSheet, CapacitySheet, BringItemsSheet, PremiumUpsellSheet, QuestionsSheet } from "@/components/schedule/sheets";
 import { PremiumPreviewNote } from "@/components/schedule/PremiumPreviewNote";
+import { PremiumHighlight } from "@/components/schedule/PremiumHighlight";
+import { RIDES_INFO } from "@/utils/premiumInfo";
 import { PremiumSubmitButton } from "@/components/PremiumSubmitButton";
 import { useIsGroupOwner } from "@/hooks/useIsGroupOwner";
-import { submitHint, submitMode, usesPremiumFeatures } from "@/utils/premiumGate";
+import { premiumHighlights, submitHint, submitMode, usesPremiumFeatures } from "@/utils/premiumGate";
 import { questionsSummary } from "@/utils/questionDrafts";
 import { PressableOpacity } from "@/components/ui/PressableOpacity";
 import { useThemeColors } from "@/contexts/AppearanceContext";
@@ -85,11 +87,13 @@ export function MeetupForm({
     // Premium settings are open to everyone so they can see how they work; saving them needs Premium
     // (see premiumGate). Editing compares with the draft as it was opened, so a group whose Premium
     // lapsed can still save an unrelated change.
-    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) =>
-        <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />;
+    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null, highlight = false,
+        info?: { title: string; description: string }) =>
+        <PremiumHighlight active={highlight}><SummaryRow label={label} value={value} onPress={open} right={right} error={error} info={info} /></PremiumHighlight>;
     const isOwner = useIsGroupOwner(owner);
     const baseline = useRef(mode === "edit" ? draft : undefined);
     const footerMode = submitMode({ usesPremium: usesPremiumFeatures(draft, baseline.current), isPremium, isOwner });
+    const hl = premiumHighlights(draft, footerMode);
 
     return (
         <Modal
@@ -163,7 +167,7 @@ export function MeetupForm({
                         <View onLayout={register("rsvp", "capacity")}>
                             <Text style={f.sectionLabel}>RSVPs</Text>
                             <GroupCard>
-                                <SummaryRow label="RSVP rules" value={rsvpSummary(draft)} onPress={() => setSheet("rsvp")} error={issueFor(issues, "rsvp")} />
+                                <PremiumHighlight active={hl.minimum}><SummaryRow label="RSVP rules" value={rsvpSummary(draft)} onPress={() => setSheet("rsvp")} error={issueFor(issues, "rsvp")} /></PremiumHighlight>
                                 <SummaryRow label="Capacity" value={capacitySummary(draft.maxAttendeesMode, draft.maxAttendeesInput)}
                                     onPress={() => setSheet("capacity")} error={issueFor(issues, "capacity")} />
                             </GroupCard>
@@ -173,16 +177,16 @@ export function MeetupForm({
                             <Text style={f.sectionLabel}>Premium</Text>
                             {!isPremium && <PremiumPreviewNote />}
                             <GroupCard>
-                                {premiumRow("Food/Things to bring", bringSummary(draft.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"))}
+                                {premiumRow("Food/Things to bring", bringSummary(draft.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"), hl.bring)}
                                 {premiumRow("Rides", draft.ridesEnabled ? "On" : "Off", () => onChange({ ridesEnabled: !draft.ridesEnabled }),
                                     <Switch accessibilityLabel="Coordinate rides" value={draft.ridesEnabled} onValueChange={v => onChange({ ridesEnabled: v })}
-                                        trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />)}
+                                        trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />, undefined, hl.rides, RIDES_INFO)}
                                 {questionsLink
                                     // An existing meetup: its questions (and answers) live on their own screen, which needs Premium.
                                     ? (isPremium
                                         ? <SummaryRow label="RSVP Questions" value="Manage" onPress={questionsLink} />
                                         : <SummaryRow label="RSVP Questions" value="" onPress={() => setSheet("upsell")} locked />)
-                                    : <SummaryRow label="RSVP Questions" value={questionsSummary(draft.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} />}
+                                    : <PremiumHighlight active={hl.questions}><SummaryRow label="RSVP Questions" value={questionsSummary(draft.questions ?? [])} onPress={() => setSheet("questions")} error={issueFor(issues, "questions")} /></PremiumHighlight>}
                             </GroupCard>
                         </View>
                     </ScrollView>

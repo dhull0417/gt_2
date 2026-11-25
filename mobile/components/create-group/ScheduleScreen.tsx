@@ -15,10 +15,12 @@ import { GroupCard, SummaryRow, SettingSheet, useFormStyles, useIssueScroll } fr
 import RecurrenceEditor from "@/components/schedule/RecurrenceEditor";
 import { RsvpRulesSheet, CapacitySheet, BringItemsSheet, QuestionsSheet } from "@/components/schedule/sheets";
 import { PremiumPreviewNote } from "@/components/schedule/PremiumPreviewNote";
+import { PremiumHighlight } from "@/components/schedule/PremiumHighlight";
+import { PRIORITY_INFO, RIDES_INFO } from "@/utils/premiumInfo";
 import { PremiumSubmitButton } from "@/components/PremiumSubmitButton";
 import { questionsSummary } from "@/utils/questionDrafts";
 import { usePremium } from "@/hooks/usePremium";
-import { submitHint, submitMode, usesPremiumFeatures } from "@/utils/premiumGate";
+import { premiumHighlights, submitHint, submitMode, usesPremiumFeatures } from "@/utils/premiumGate";
 import { useThemeColors } from "@/contexts/AppearanceContext";
 import { defaultSchedule, type ScheduleData } from "@/utils/createGroupDraft";
 import { scheduleIssues, visibleIssues, fixMessage, firstArea, issueFor, type FormArea } from "@/utils/formIssues";
@@ -78,9 +80,11 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
 
     // Premium settings are open to everyone so they can see how they work; saving them needs Premium
     // (see premiumGate). You are the owner of the group you're creating.
-    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null) =>
-        <SummaryRow label={label} value={value} onPress={open} right={right} error={error} />;
+    const premiumRow = (label: string, value: string, open: () => void, right?: ReactNode, error?: string | null, highlight = false,
+        info?: { title: string; description: string }) =>
+        <PremiumHighlight active={highlight}><SummaryRow label={label} value={value} onPress={open} right={right} error={error} info={info} /></PremiumHighlight>;
     const footerMode = submitMode({ usesPremium: usesPremiumFeatures(d), isPremium, isOwner: true });
+    const hl = premiumHighlights(d, footerMode);
 
     return (
         <View style={s.screen}>
@@ -138,7 +142,7 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                     <View onLayout={register("rsvp", "capacity")}>
                         <Text style={f.sectionLabel}>RSVPs</Text>
                         <GroupCard>
-                            <SummaryRow label="RSVP rules" value={rsvpSummary(d)} onPress={() => setSheet("rsvp")} error={issueFor(issues, "rsvp")} />
+                            <PremiumHighlight active={hl.minimum}><SummaryRow label="RSVP rules" value={rsvpSummary(d)} onPress={() => setSheet("rsvp")} error={issueFor(issues, "rsvp")} /></PremiumHighlight>
                             <SummaryRow label="Capacity" value={capacitySummary(d.maxAttendeesMode, d.maxAttendeesInput)} onPress={() => setSheet("capacity")} error={issueFor(issues, "capacity")} />
                         </GroupCard>
                     </View>
@@ -147,12 +151,16 @@ export const ScheduleScreen = ({ groupName, initialSchedules, initialTimezone, o
                         <Text style={f.sectionLabel}>Premium</Text>
                         {!isPremium && <PremiumPreviewNote />}
                         <GroupCard>
-                            {premiumRow("Food/Things to bring", bringSummary(d.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"))}
+                            {premiumRow("Food/Things to bring", bringSummary(d.bringItems), () => setSheet("bring"), undefined, issueFor(issues, "bring"), hl.bring)}
                             {premiumRow("Rides", d.ridesEnabled ? "On" : "Off", () => upd({ ridesEnabled: !d.ridesEnabled }),
                                 <Switch accessibilityLabel="Coordinate rides" value={d.ridesEnabled} onValueChange={v => upd({ ridesEnabled: v })}
-                                    trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />)}
-                            <SummaryRow label="Priority RSVP" value="" onPress={() => {}} disabledReason="Set up after the group is created" />
-                            {premiumRow("RSVP Questions", questionsSummary(d.questions ?? []), () => setSheet("questions"), undefined, issueFor(issues, "questions"))}
+                                    trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />, undefined, hl.rides, RIDES_INFO)}
+                            {/* Turned on once the group exists, with the owner as the only priority group; nothing to rank here. */}
+                            {premiumRow("Priority RSVP", d.priorityEnabled ? "On" : "Off", () => upd({ priorityEnabled: !d.priorityEnabled }),
+                                <Switch accessibilityLabel="Priority RSVP" value={!!d.priorityEnabled} onValueChange={v => upd({ priorityEnabled: v })}
+                                    trackColor={{ true: colors.brand, false: colors.borderStrong }} thumbColor="#fff" ios_backgroundColor={colors.borderStrong} />,
+                                undefined, hl.priority, PRIORITY_INFO)}
+                            {premiumRow("RSVP Questions", questionsSummary(d.questions ?? []), () => setSheet("questions"), undefined, issueFor(issues, "questions"), hl.questions)}
                         </GroupCard>
                     </View>
                 </>

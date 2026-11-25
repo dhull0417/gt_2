@@ -101,6 +101,8 @@ export interface ScheduleData extends LongDraft {
     bringItems: BringItemDraft[];
     /** Premium: carpool coordination. */
     ridesEnabled: boolean;
+    /** Premium: Priority RSVP on/off. Turned on right after the group is created. */
+    priorityEnabled?: boolean;
     /** Premium: RSVP questions written before it exists (saved right after it's created). */
     questions?: QuestionDraft[];
 }

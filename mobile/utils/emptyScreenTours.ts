@@ -21,6 +21,9 @@ export const meetupsEmptyTourSteps: EmptyTourStep[] = [
   { target: 'bell', title: 'Notifications', body: 'Invites, reminders and meetup changes show up here.', icon: 'bell', radius: 18, circle: true },
 ];
 
+// The card before the first Meetups highlight (the title is "Welcome to GroupThat!", in brand colours).
+export const meetupsWelcome = { body: 'Ready for your life to get a little easier?', cta: "Let's show you around" };
+
 export const groupsEmptyTourSteps: EmptyTourStep[] = [
   { target: 'create-group', title: 'Create a group', body: 'Make a group, then invite your friends with a link or code.', icon: 'users', radius: 14 },
   { target: 'invite-code', title: 'Have an invite code?', body: "Got a code from a friend? Enter it here to join their group.", icon: 'key', radius: 10 },

@@ -1,21 +1,21 @@
 import { useId, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
+import Svg, { Rect } from "react-native-svg";
 import { CrownIcon } from "@/components/ui/CrownIcon";
 import { useAppearance } from "@/contexts/AppearanceContext";
-import { premiumColors, PREMIUM_RAINBOW } from "./premiumColors";
+import { GoldShine } from "@/components/premium/GoldShine";
+import { premiumColors } from "./premiumColors";
 
 const EDGE_WIDTH = 1.5;
 const RADIUS = 999;
 
-/** Small "PREMIUM" tag shown next to a Premium setting's label, with the same rainbow edge as the Premium card. */
+/** Small "PREMIUM" tag shown next to a Premium setting's label, with a gold edge the shine sweeps across. */
 export function PremiumPill({ label = "Premium", icon = true }: { label?: string; icon?: boolean }) {
     const { scheme } = useAppearance();
-    const isDark = scheme === "dark";
-    const pc = premiumColors(isDark);
-    // Measured so the gradient fills the pill exactly; SVG gradient ids are document-wide, so each pill needs its own.
+    const pc = premiumColors(scheme === "dark");
+    // Measured so the gold fills the pill exactly; SVG ids are document-wide, so each pill needs its own.
     const [size, setSize] = useState({ width: 0, height: 0 });
-    const gradientId = `premiumPill-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+    const id = `premiumPill-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
     return (
         <View
@@ -27,14 +27,13 @@ export function PremiumPill({ label = "Premium", icon = true }: { label?: string
         >
             {size.width > 0 && (
                 <Svg style={StyleSheet.absoluteFill} width={size.width} height={size.height} pointerEvents="none">
-                    <Defs>
-                        <LinearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-                            {PREMIUM_RAINBOW.map((c, i) => (
-                                <Stop key={c} offset={i / (PREMIUM_RAINBOW.length - 1)} stopColor={c} stopOpacity={isDark ? 0.85 : 1} />
-                            ))}
-                        </LinearGradient>
-                    </Defs>
-                    <Rect x={0} y={0} width={size.width} height={size.height} rx={size.height / 2} ry={size.height / 2} fill={`url(#${gradientId})`} />
+                    <GoldShine
+                        id={id}
+                        width={size.width}
+                        height={size.height}
+                        tone="edge"
+                        shape={paint => <Rect x={0} y={0} width={size.width} height={size.height} rx={size.height / 2} ry={size.height / 2} fill={paint} />}
+                    />
                 </Svg>
             )}
             <View style={[styles.pill, { backgroundColor: pc.chipBg }]}>

@@ -1,4 +1,4 @@
-import { hasSeenTour, withTourSeen, TOURS } from '../screenTours';
+import { hasSeenTour, withTourSeen, TOURS, alwaysShows } from '../screenTours';
 import { groupDetailsTourSteps } from '../groupDetailsTour';
 import { buildDetailTiles } from '../groupDetailTiles';
 
@@ -57,5 +57,12 @@ describe('groupDetailsTourSteps', () => {
   });
   it('has no steps for a DM', () => {
     expect(groupDetailsTourSteps(buildDetailTiles({ isDM: true, canManage: false }), false)).toEqual([]);
+  });
+});
+
+describe('which tours replay on every visit (testing)', () => {
+  it('the empty-screen tours show only the first time', () => {
+    expect(alwaysShows(TOURS.meetupsEmpty)).toBe(false);
+    expect(alwaysShows(TOURS.groupsEmpty)).toBe(false);
   });
 });

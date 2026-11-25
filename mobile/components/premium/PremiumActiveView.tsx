@@ -1,12 +1,14 @@
 import { useId, useState } from "react";
 import { Linking, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Defs, LinearGradient, Path, Rect, Stop, Text as SvgText } from "react-native-svg";
+import Svg, { Defs, Path, RadialGradient, Rect, Stop, Text as SvgText } from "react-native-svg";
 import { Feather } from "@expo/vector-icons";
 import { CROWN_PATH } from "@/components/ui/CrownIcon";
 import { PressableOpacity } from "@/components/ui/PressableOpacity";
 import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
-import { premiumColors, PREMIUM_RAINBOW, PREMIUM_RAINBOW_DEEP } from "@/components/schedule/premiumColors";
+import { premiumColors, premiumGold } from "@/components/schedule/premiumColors";
+import { GoldShine } from "./GoldShine";
+import { GoldSparkles } from "./GoldSparkles";
 
 type FeatherName = keyof typeof Feather.glyphMap;
 
@@ -42,10 +44,7 @@ export function PremiumActiveView({ onClose }: { onClose: () => void }) {
     const [hero, setHero] = useState({ width: 0, height: 0 });
     const [titleWidth, setTitleWidth] = useState(0);
     const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
-    const deep = isDark ? PREMIUM_RAINBOW : PREMIUM_RAINBOW_DEEP;
-
-    const stops = (colorsList: string[], opacity = 1) =>
-        colorsList.map((c, i) => <Stop key={c} offset={i / (colorsList.length - 1)} stopColor={c} stopOpacity={opacity} />);
+    const gold = premiumGold(isDark);
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["top", "left", "right"]}>
@@ -56,7 +55,7 @@ export function PremiumActiveView({ onClose }: { onClose: () => void }) {
             </View>
 
             <ScrollView contentContainerStyle={styles.scroll}>
-                {/* Hero: rainbow edge with a soft rainbow wash inside. */}
+                {/* Hero: gold edge and a warm glow inside, with the shine sweeping across and a few sparkles. */}
                 <View
                     style={styles.heroEdge}
                     onLayout={e => {
@@ -66,42 +65,57 @@ export function PremiumActiveView({ onClose }: { onClose: () => void }) {
                 >
                     {hero.width > 0 && (
                         <Svg style={StyleSheet.absoluteFill} width={hero.width} height={hero.height} pointerEvents="none">
-                            <Defs>
-                                <LinearGradient id={`${id}-edge`} x1="0" y1="0" x2="1" y2="1">{stops(PREMIUM_RAINBOW, isDark ? 0.85 : 1)}</LinearGradient>
-                            </Defs>
-                            <Rect x={0} y={0} width={hero.width} height={hero.height} rx={HERO_RADIUS} ry={HERO_RADIUS} fill={`url(#${id}-edge)`} />
+                            <GoldShine
+                                id={`${id}-edge`}
+                                width={hero.width}
+                                height={hero.height}
+                                tone="edge"
+                                shape={paint => <Rect x={0} y={0} width={hero.width} height={hero.height} rx={HERO_RADIUS} ry={HERO_RADIUS} fill={paint} />}
+                            />
                         </Svg>
                     )}
                     <View style={[styles.heroInner, { backgroundColor: colors.surface }]}>
                         {hero.width > 0 && (
                             <Svg style={StyleSheet.absoluteFill} width={hero.width - EDGE * 2} height={hero.height - EDGE * 2} pointerEvents="none">
                                 <Defs>
-                                    <LinearGradient id={`${id}-wash`} x1="0" y1="0" x2="1" y2="1">{stops(PREMIUM_RAINBOW, isDark ? 0.14 : 0.22)}</LinearGradient>
+                                    <RadialGradient id={`${id}-glow`} cx="50%" cy="0%" rx="70%" ry="80%" fx="50%" fy="0%">
+                                        <Stop offset="0" stopColor={gold.glow} />
+                                        <Stop offset="1" stopColor={gold.glow} stopOpacity={0} />
+                                    </RadialGradient>
                                 </Defs>
-                                <Rect x={0} y={0} width={hero.width - EDGE * 2} height={hero.height - EDGE * 2} rx={HERO_RADIUS - EDGE} ry={HERO_RADIUS - EDGE} fill={`url(#${id}-wash)`} />
+                                <Rect x={0} y={0} width={hero.width - EDGE * 2} height={hero.height - EDGE * 2} rx={HERO_RADIUS - EDGE} ry={HERO_RADIUS - EDGE} fill={`url(#${id}-glow)`} />
                             </Svg>
                         )}
+                        <GoldSparkles />
 
                         <View style={[styles.crownChip, { backgroundColor: pc.chipBg, borderColor: pc.chipBorder }]}>
                             <Svg width={36} height={36} viewBox="0 0 24 24">
-                                <Defs>
-                                    <LinearGradient id={`${id}-crown`} x1="0" y1="0" x2="1" y2="1">{stops(deep)}</LinearGradient>
-                                </Defs>
-                                <Path d={CROWN_PATH} fill="none" stroke={`url(#${id}-crown)`} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                                <GoldShine
+                                    id={`${id}-crown`}
+                                    width={24}
+                                    height={24}
+                                    tone="text"
+                                    shape={paint => <Path d={CROWN_PATH} fill="none" stroke={paint} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
+                                />
                             </Svg>
                         </View>
 
-                        {/* Gradient title, drawn as SVG so the rainbow can fill the words. */}
+                        {/* Gold title, drawn as SVG so the gradient and shine can fill the words. */}
                         <View style={{ alignSelf: "stretch", height: 40, marginTop: 14 }} onLayout={e => setTitleWidth(Math.round(e.nativeEvent.layout.width))}
                             accessible accessibilityRole="header" accessibilityLabel="You're Premium">
                             {titleWidth > 0 && (
                                 <Svg width={titleWidth} height={40}>
-                                    <Defs>
-                                        <LinearGradient id={`${id}-title`} gradientUnits="userSpaceOnUse" x1={titleWidth * 0.18} y1={0} x2={titleWidth * 0.82} y2={0}>{stops(deep)}</LinearGradient>
-                                    </Defs>
-                                    <SvgText x={titleWidth / 2} y={30} textAnchor="middle" fontSize={30} fontWeight="900" fill={`url(#${id}-title)`}>
-                                        You're Premium
-                                    </SvgText>
+                                    <GoldShine
+                                        id={`${id}-title`}
+                                        width={titleWidth}
+                                        height={40}
+                                        tone="text"
+                                        shape={paint => (
+                                            <SvgText x={titleWidth / 2} y={30} textAnchor="middle" fontSize={30} fontWeight="900" fill={paint}>
+                                                You're Premium
+                                            </SvgText>
+                                        )}
+                                    />
                                 </Svg>
                             )}
                         </View>

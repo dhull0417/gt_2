@@ -9,6 +9,8 @@ export type PremiumDraft = {
     minAttendeesInput: string;
     rsvpRestricted: boolean;
     deadlineEnabled: boolean;
+    /** Priority RSVP (schedules only). */
+    priorityEnabled?: boolean;
 };
 
 /** Mirrors what actually gets saved: a minimum only counts with an RSVP window and a deadline. */
@@ -23,6 +25,7 @@ export const premiumFeaturesInUse = (d: PremiumDraft) => ({
     rides: d.ridesEnabled,
     questions: (d.questions ?? []).some(q => q.prompt.trim() !== ''),
     minimum: minimumValue(d) > 0,
+    priority: !!d.priorityEnabled,
 });
 
 /** Only the parts that would be saved, so blank rows and ignored values don't count as a change. */
@@ -31,6 +34,7 @@ const normalized = (d: PremiumDraft) => JSON.stringify({
     rides: d.ridesEnabled,
     questions: (d.questions ?? []).filter(q => q.prompt.trim() !== '').map(q => [q.prompt.trim(), q.type, q.options, q.required]),
     minimum: minimumValue(d),
+    priority: !!d.priorityEnabled,
 });
 
 /**
@@ -49,6 +53,15 @@ export const submitMode = ({ usesPremium, isPremium, isOwner }: { usesPremium: b
     if (isPremium || !usesPremium) return 'confirm';
     return isOwner ? 'upgrade' : 'ownerNeeds';
 };
+
+export type PremiumHighlights = ReturnType<typeof premiumFeaturesInUse>;
+
+/**
+ * Which rows to mark with the gold edge and crown: the Premium features in use, but only while
+ * the footer is asking for Premium, so the marks point at exactly what the Premium button is about.
+ */
+export const premiumHighlights = (d: PremiumDraft, mode: SubmitMode): PremiumHighlights =>
+    mode === 'confirm' ? { bring: false, rides: false, questions: false, minimum: false, priority: false } : premiumFeaturesInUse(d);
 
 export const submitHint = (mode: SubmitMode): string => {
     if (mode === 'upgrade') return 'Premium is needed to save these settings.';

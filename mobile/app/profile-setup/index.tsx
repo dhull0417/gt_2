@@ -1,8 +1,7 @@
 import { View, Text, TextInput, Alert, StyleSheet } from 'react-native';
 import type { TextInputInstance } from 'react-native';
-import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useEffect, useRef, useState } from 'react';
-import { useAuth, useUser } from '@clerk/expo';
+import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
@@ -10,7 +9,6 @@ import { User, useApiClient, userApi } from '@/utils/api';
 import { openPendingInvite } from '@/utils/pendingInvite';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import { haptic } from '@/utils/haptics';
-import { unregisterPushToken } from '@/hooks/usePushNotifications';
 import { AuthScreen } from '@/components/auth/AuthScreen';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
@@ -18,7 +16,6 @@ import { fontSize } from '@/constants/theme';
 
 const ProfileSetupScreen = () => {
     const { user: clerkUser } = useUser();
-    const { signOut } = useAuth();
     const router = useRouter();
     const api = useApiClient();
     const queryClient = useQueryClient();
@@ -131,20 +128,6 @@ const ProfileSetupScreen = () => {
         <AuthScreen
             title="Set up your profile"
             subtitle="Tell your groups who you are. This only takes a moment."
-            footer={
-                // Signed in with the wrong account? Without this there's no way out of setup.
-                <View style={styles.footerRow}>
-                    <Text style={[styles.footerText, { color: colors.textMuted }]}>Not you? </Text>
-                    <PressableOpacity
-                        hitSlop={8}
-                        disabled={isSaving}
-                        accessibilityLabel="Sign out"
-                        onPress={async () => { await unregisterPushToken(api); queryClient.clear(); signOut(); }}
-                    >
-                        <Text style={[styles.footerText, { color: colors.brand, fontWeight: '700' }]}>Sign out</Text>
-                    </PressableOpacity>
-                </View>
-            }
         >
             {!isAppleUser && nameFields}
 
@@ -196,8 +179,6 @@ const styles = StyleSheet.create({
     optional: { fontSize: fontSize.xs, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
     cardBody: { fontSize: fontSize.md, marginBottom: 14 },
     note: { fontSize: fontSize.sm, textAlign: 'center', marginBottom: 18 },
-    footerRow: { flexDirection: 'row', justifyContent: 'center' },
-    footerText: { fontSize: fontSize.base },
 });
 
 export default ProfileSetupScreen;

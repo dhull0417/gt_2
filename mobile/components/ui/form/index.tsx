@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useThemeColors } from '@/contexts/AppearanceContext';
+import InfoBubble from '@/components/InfoBubble';
 import type { ThemeColors } from '@/constants/theme';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -57,11 +58,12 @@ export function GroupCard({ children, style }: { children: React.ReactNode; styl
 /**
  * One setting on one line: label left, current value and a chevron right.
  * `disabledReason` greys it out; `error` turns it red with the instruction in place of the value;
- * `locked` marks a Premium-only setting; `right` replaces value + chevron with a control (e.g. a switch).
+ * `locked` marks a Premium-only setting; `right` replaces value + chevron with a control (e.g. a switch);
+ * `info` adds an "i" after the label that opens an explainer.
  */
-export function SummaryRow({ label, value, onPress, disabledReason, error, locked, right, testID, onLayoutY }: {
+export function SummaryRow({ label, value, onPress, disabledReason, error, locked, right, info, testID, onLayoutY }: {
   label: string; value: string; onPress: () => void; disabledReason?: string; error?: string | null; locked?: boolean;
-  right?: React.ReactNode; testID?: string; onLayoutY?: (y: number) => void;
+  right?: React.ReactNode; info?: { title: string; description: string }; testID?: string; onLayoutY?: (y: number) => void;
 }) {
   const colors = useThemeColors();
   const s = useFormStyles();
@@ -73,7 +75,8 @@ export function SummaryRow({ label, value, onPress, disabledReason, error, locke
       onLayout={onLayoutY ? (e) => onLayoutY(e.nativeEvent.layout.y) : undefined}
       style={[s.row, !!error && s.rowError, disabled && { opacity: 0.45 }]}>
       <Text style={[s.label, { flexShrink: 0 }, !!error && { color: colors.danger }]}>{label}</Text>
-      {right ? <View style={{ flex: 1, alignItems: 'flex-end' }}>{right}</View> : (
+      {info && <InfoBubble title={info.title} description={info.description} />}
+      {right ? <View testID="row-right" style={{ flex: 1, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginLeft: 'auto' }}>{right}</View> : (
         <>
           <Text style={[s.value, !!error && { color: colors.danger, fontWeight: '600' }]} numberOfLines={2}>{shown}</Text>
           {locked && <Feather testID="row-lock" name="lock" size={14} color={colors.textFaint} />}

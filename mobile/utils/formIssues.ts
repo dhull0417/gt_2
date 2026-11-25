@@ -120,8 +120,15 @@ export const scheduleIssues = (d: ScheduleData, opts: { requireName: boolean; em
   issues.push(...minimumIssues(d));
   issues.push(...bringIssues(d.bringItems));
   issues.push(...questionIssues(d.questions));
+  issues.push(...priorityIssues(d));
   return issues;
 };
+
+/** Priority RSVP gives members a head start from when RSVPs open, so it needs an open time. */
+export const priorityIssues = (d: { priorityEnabled?: boolean; rsvpRestricted: boolean; leadEnabled: boolean }): Issue[] =>
+  d.priorityEnabled && !(d.rsvpRestricted && d.leadEnabled)
+    ? [{ area: 'rsvp', field: 'priority', kind: 'missing', message: 'Priority RSVP needs a time RSVPs open' }]
+    : [];
 
 /** What to show now: invalid input always, missing information only after a submit attempt. */
 export const visibleIssues = (issues: Issue[], attempted: boolean): Issue[] =>

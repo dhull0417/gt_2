@@ -104,6 +104,8 @@ export interface ScheduleData extends LongDraft {
     minAttendeesInput: string; // Premium minimum headcount; "" = none
     bringItems: BringItemDraft[]; // Premium assignments: things to bring
     ridesEnabled: boolean; // Premium assignments: carpool coordination
+    /** Premium: Priority RSVP on/off. Saved with its own call after the schedule (see the Edit Schedule screen). */
+    priorityEnabled?: boolean;
     /** Premium: RSVP questions written before the schedule exists (saved right after it's created). */
     questions?: QuestionDraft[];
     rsvpRestricted: boolean;
@@ -311,6 +313,7 @@ export const scheduleFromNamedSchedule = (group: GroupDetails, sched: NamedSched
         minAttendeesInput: sched.defaultMinAttendees ? String(sched.defaultMinAttendees) : "",
         bringItems: (sched.defaultBringItems || []).map(i => ({ key: i._id, _id: i._id, name: i.name, max: i.max ? String(i.max) : "" })),
         ridesEnabled: !!sched.defaultRidesEnabled,
+        priorityEnabled: !!sched.priorityEnabled,
         rsvpRestricted: sched.generationLeadDays != null || sched.generationDeadlineDays != null,
         leadEnabled: sched.generationLeadDays != null,
         leadDays: sched.generationLeadDays ?? 5,

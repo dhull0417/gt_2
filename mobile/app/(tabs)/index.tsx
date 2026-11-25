@@ -37,7 +37,7 @@ import { toast } from '@/contexts/ToastContext';
 import { muteStateFor, restoreRequest } from '@/utils/groupMute';
 import { runBackInterceptor } from '@/utils/backInterceptors';
 import { ScreenTour, TourTarget } from '@/components/tour/ScreenTour';
-import { meetupsEmptyTourSteps, meetupsEmptyTourEnabled } from '@/utils/emptyScreenTours';
+import { meetupsEmptyTourSteps, meetupsEmptyTourEnabled, meetupsWelcome } from '@/utils/emptyScreenTours';
 import { TOURS } from '@/utils/screenTours';
 
 type GroupedMeetups = {
@@ -600,6 +600,7 @@ const DashboardScreen = () => {
       <ScreenTour
         tourKey={TOURS.meetupsEmpty}
         steps={meetupsEmptyTourSteps}
+        welcome={meetupsWelcome}
         enabled={meetupsEmptyTourEnabled({ loaded: !isLoading && prefsLoaded && !isOfflineEmpty(meetupsQuery) && !isError, meetups })}
         user={currentUser}
       >

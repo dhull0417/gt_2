@@ -10,6 +10,7 @@ import { useCreateGroup } from "@/hooks/useCreateGroup";
 import { deviceTimeZone } from "@/utils/timezones";
 import { buildSchedulePayload, ScheduleData } from "@/utils/createGroupDraft";
 import { saveDraftQuestions } from "@/utils/questionDrafts";
+import { priorityOnBody } from "@/utils/priorityDefaults";
 import { useApiClient, groupApi } from "@/utils/api";
 import { useFocusEffect, useRouter } from "expo-router";
 import Animated, { FadeInRight } from "react-native-reanimated";
@@ -51,7 +52,7 @@ const CreateGroupScreen = () => {
         const built = schedules
             .map(sch => {
                 const routinePart = buildSchedulePayload(sch);
-                return routinePart ? { input: { name: sch.name.trim() || groupName, ...routinePart }, questions: sch.questions } : null;
+                return routinePart ? { input: { name: sch.name.trim() || groupName, ...routinePart }, questions: sch.questions, priority: !!sch.priorityEnabled } : null;
             })
             .filter((s): s is NonNullable<typeof s> => s !== null);
         const scheduleInputs = built.map(b => b.input);
@@ -81,6 +82,14 @@ const CreateGroupScreen = () => {
                     (scheduleId, questions) => groupApi.updateScheduleQuestions(api, data.group._id, scheduleId, { questions }),
                 );
                 if (!ok) Alert.alert("Group created", "Your RSVP questions couldn't be saved. You can add them from the schedule in Group Settings.");
+                // Priority RSVP switched on during setup is turned on now that the series exist: the owner gets the head start.
+                const priorityResults = await Promise.allSettled(built.map((b, i) => {
+                    const sid = data.group.schedules?.[i]?._id;
+                    return b.priority && sid ? groupApi.updateSchedulePriority(api, data.group._id, sid, priorityOnBody(data.group.owner, data.group.owner ? [data.group.owner] : [])) : Promise.resolve();
+                }));
+                if (priorityResults.some(r => r.status === "rejected")) {
+                    Alert.alert("Group created", "Priority RSVP couldn't be turned on. You can turn it on from the schedule in Group Settings.");
+                }
                 setCreatedGroupId(data.group._id);
                 setStep("invite");
             },

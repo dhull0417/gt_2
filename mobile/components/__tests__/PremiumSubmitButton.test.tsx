@@ -2,7 +2,10 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react-native';
 import { PremiumSubmitButton } from '../PremiumSubmitButton';
 import { PremiumPreviewNote } from '../schedule/PremiumPreviewNote';
+import { PremiumHighlight } from '../schedule/PremiumHighlight';
+import { Text } from 'react-native';
 
+jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock('@/contexts/AppearanceContext', () => {
@@ -35,5 +38,18 @@ describe('PremiumPreviewNote', () => {
   it('shows the one-line note', async () => {
     await render(<PremiumPreviewNote />);
     expect(screen.getByText('Set these up now. Premium is needed to save them.')).toBeTruthy();
+  });
+});
+
+describe('PremiumHighlight', () => {
+  it('adds the crown tab when active', async () => {
+    await render(<PremiumHighlight active><Text>Rides</Text></PremiumHighlight>);
+    expect(screen.getByText('Rides')).toBeTruthy();
+    expect(screen.getByTestId('premium-crown')).toBeTruthy();
+  });
+  it('renders the row plainly when inactive', async () => {
+    await render(<PremiumHighlight active={false}><Text>Rides</Text></PremiumHighlight>);
+    expect(screen.getByText('Rides')).toBeTruthy();
+    expect(screen.queryByTestId('premium-crown')).toBeNull();
   });
 });

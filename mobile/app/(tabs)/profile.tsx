@@ -19,7 +19,7 @@ import { LoadingAnimation } from '@/components/LoadingAnimation';
 import { useAppearance, useThemeColors, type ThemePreference } from '@/contexts/AppearanceContext';
 import type { ThemeColors } from '@/constants/theme';
 import { unregisterPushToken } from '@/hooks/usePushNotifications';
-import { PremiumRainbowLabel } from '@/components/schedule/PremiumRainbowLabel';
+import { PremiumGoldLabel } from '@/components/schedule/PremiumGoldLabel';
 
 const CALENDAR_OPTIONS = [
   {
@@ -299,7 +299,7 @@ const HomeScreen = () => {
                       style={[styles.card, styles.row, index < ACTIONS.length - 1 && { marginBottom: 12 }]}
                     >
                       {action.id === 'premium' ? (
-                        <PremiumRainbowLabel label={action.label} />
+                        <PremiumGoldLabel label={action.label} />
                       ) : (
                         <>
                           <View style={[styles.rowIcon, { backgroundColor: action.color + '18' }]}>

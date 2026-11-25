@@ -22,6 +22,7 @@ export default function InfoBubble({ title, description, iconSize = 14, iconColo
         <>
             <PressableOpacity
                 onPress={() => setVisible(true)}
+                accessibilityLabel={`About ${title}`}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 style={[styles.trigger, { backgroundColor: colors.backgroundAlt }, style]}
             >

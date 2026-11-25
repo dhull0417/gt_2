@@ -11,6 +11,10 @@ const WELCOME_VIDEO = Platform.select({
   default: require('../assets/videos/welcome-create-group-ios.mov'),
 });
 
+// Switched off 2026-11-25: a new account now starts with the Meetups tour, then account setup
+// (docs/specs/2026-11-25-first-run-intro-before-setup-design.md). Set true to bring the video back.
+export const WELCOME_VIDEO_ENABLED = false;
+
 interface WelcomeModalProps {
   visible: boolean;
   onClose: () => void;

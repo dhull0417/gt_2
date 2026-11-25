@@ -82,10 +82,9 @@ describe('Profile setup', () => {
     expect(screen.queryByLabelText('First name')).toBeNull();
   });
 
-  it('signs out from setup', async () => {
+  it('has no "Not you? Sign out" link (removed 2026-11-25)', async () => {
     await render(<ProfileSetupScreen />);
-    await fireEvent.press(screen.getByLabelText('Sign out'));
-    await waitFor(() => expect(mockSignOut).toHaveBeenCalled());
-    expect(mockClear).toHaveBeenCalled();
+    expect(screen.queryByLabelText('Sign out')).toBeNull();
+    expect(screen.queryByText(/Not you/)).toBeNull();
   });
 });

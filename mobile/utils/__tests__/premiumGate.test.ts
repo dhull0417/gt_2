@@ -1,4 +1,4 @@
-import { premiumFeaturesInUse, usesPremiumFeatures, submitMode, submitHint, type PremiumDraft } from '../premiumGate';
+import { premiumFeaturesInUse, premiumHighlights, usesPremiumFeatures, submitMode, submitHint, type PremiumDraft } from '../premiumGate';
 
 const base = (over: Partial<PremiumDraft> = {}): PremiumDraft => ({
   bringItems: [], ridesEnabled: false, questions: [], minAttendeesInput: '', rsvpRestricted: false, deadlineEnabled: false, ...over,
@@ -7,7 +7,7 @@ const q = (prompt: string) => ({ prompt, type: 'text', options: ['', ''], requir
 
 describe('premiumFeaturesInUse', () => {
   it('is all false for an empty draft', () => {
-    expect(premiumFeaturesInUse(base())).toEqual({ bring: false, rides: false, questions: false, minimum: false });
+    expect(premiumFeaturesInUse(base())).toEqual({ bring: false, rides: false, questions: false, minimum: false, priority: false });
   });
   it('detects each feature on its own', () => {
     expect(premiumFeaturesInUse(base({ bringItems: [{ name: 'Chips', max: '' }] })).bring).toBe(true);
@@ -67,5 +67,29 @@ describe('submitHint', () => {
     expect(submitHint('confirm')).toBe('');
     expect(submitHint('upgrade')).toBe('Premium is needed to save these settings.');
     expect(submitHint('ownerNeeds')).toBe('The group owner needs Premium to save these settings.');
+  });
+});
+
+describe('premiumHighlights', () => {
+  const draft = base({ bringItems: [{ name: 'Chips', max: '' }], ridesEnabled: true });
+  it('marks the features in use while the footer asks for Premium', () => {
+    expect(premiumHighlights(draft, 'upgrade')).toEqual({ bring: true, rides: true, questions: false, minimum: false, priority: false });
+    expect(premiumHighlights(draft, 'ownerNeeds')).toEqual({ bring: true, rides: true, questions: false, minimum: false, priority: false });
+  });
+  it('marks nothing when the draft can be saved', () => {
+    expect(premiumHighlights(draft, 'confirm')).toEqual({ bring: false, rides: false, questions: false, minimum: false, priority: false });
+  });
+});
+
+describe('priority RSVP', () => {
+  it('counts as a Premium feature when switched on', () => {
+    expect(premiumFeaturesInUse(base({ priorityEnabled: true })).priority).toBe(true);
+    expect(usesPremiumFeatures(base({ priorityEnabled: true }))).toBe(true);
+  });
+  it('switching it off is not a Premium change', () => {
+    expect(usesPremiumFeatures(base({ priorityEnabled: false }), base({ priorityEnabled: true }))).toBe(false);
+  });
+  it('is highlighted while the footer asks for Premium', () => {
+    expect(premiumHighlights(base({ priorityEnabled: true }), 'upgrade').priority).toBe(true);
   });
 });

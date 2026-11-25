@@ -88,3 +88,10 @@ it('waits while the welcome video or name prompt is showing, then starts once it
   await act(async () => { jest.advanceTimersByTime(TOUR_START_DELAY_MS); });
   expect(start).toHaveBeenCalledTimes(1);
 });
+
+it('records the tour as seen as soon as it starts, so closing the app mid-tour does not bring it back', async () => {
+  const { qc } = await setup({ _id: 'u1' });
+  await act(async () => { jest.advanceTimersByTime(TOUR_START_DELAY_MS); });
+  expect((qc.getQueryData(['currentUser']) as any).seenTours).toEqual(['group-details']);
+  expect(mockMarkTourSeen).toHaveBeenCalledWith({}, 'group-details');
+});
