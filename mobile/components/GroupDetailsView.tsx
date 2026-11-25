@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { requireOnline } from '@/utils/offlineState';
 import {
     Modal,
@@ -15,6 +15,12 @@ import { GroupDetails, User, useApiClient } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import { GroupAvatar } from './GroupAvatar';
 import { getDMDisplayName } from '@/utils/groupDisplay';
+import type { ViewInstance } from 'react-native';
+import { AttachStep, SpotlightTourProvider, type SpotlightTour, type TourStep } from 'react-native-spotlight-tour';
+import { TourTip } from '@/components/tour/TourTip';
+import { useScreenTour } from '@/hooks/useScreenTour';
+import { TOURS } from '@/utils/screenTours';
+import { groupDetailsTourSteps } from '@/utils/groupDetailsTour';
 
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
@@ -36,6 +42,8 @@ interface GroupDetailsViewProps {
     groupDetails: GroupDetails;
     currentUser: User;
     onLeaveSuccess: () => void;
+    /** Scrolls the page so this view is on screen; resolves once it has. Used by the first-visit tour. */
+    scrollIntoView?: (node: ViewInstance | null) => Promise<void>;
 }
 
 // Group photo + name, the next meetup, then a 2-wide grid of squircle tiles that each open
@@ -44,6 +52,7 @@ export const GroupDetailsView = ({
     groupDetails,
     currentUser,
     onLeaveSuccess,
+    scrollIntoView,
 }: GroupDetailsViewProps) => {
 
     const colors = useThemeColors();
@@ -123,6 +132,23 @@ export const GroupDetailsView = ({
     };
     const tiles = buildDetailTiles({ isDM, canManage });
 
+    // First-visit tour: highlights each tile in turn, once per person (see utils/screenTours.ts).
+    const tourRef = useRef<SpotlightTour>(null);
+    const tileRefs = useRef<Partial<Record<DetailTileKey, ViewInstance | null>>>({});
+    const startTour = useCallback(() => tourRef.current?.start(), []);
+    const { markSeen: markTourSeen } = useScreenTour({
+        key: TOURS.groupDetails, user: currentUser, enabled: tiles.length > 0, start: startTour,
+    });
+    const tourSteps = useMemo<TourStep[]>(() => {
+        const steps = groupDetailsTourSteps(tiles, canManage);
+        return steps.map((step) => ({
+            before: () => scrollIntoView?.(tileRefs.current[step.tile] ?? null),
+            render: (props) => <TourTip {...props} title={step.title} body={step.body} total={steps.length} />,
+        }));
+        // tiles is rebuilt every render; its contents only change with isDM/canManage.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDM, canManage, scrollIntoView]);
+
     // Schedule editing (owners/moderators) lives in the Schedule Details sheet. Close the sheet first:
     // a screen pushed while a page-sheet Modal is up opens underneath it.
     const openFromSchedule = (pathname: '/group-edit-schedule/[id]' | '/group-edit-jit/[id]', scheduleId: string) => {
@@ -153,6 +179,15 @@ export const GroupDetailsView = ({
     const headerName = isDM ? getDMDisplayName(groupDetails as any, currentUser.clerkId) : groupDetails.name;
 
     return (
+        <SpotlightTourProvider
+            ref={tourRef}
+            steps={tourSteps}
+            onStop={markTourSeen}
+            shape={{ type: 'rectangle', padding: 6 }}
+            motion="slide"
+            overlayOpacity={0.6}
+            arrow={{ color: colors.surface }}
+        >
         <View style={styles.container}>
             {/* Group photo + name */}
             <View style={styles.groupHeader}>
@@ -185,8 +220,12 @@ export const GroupDetailsView = ({
             {/* Squircle grid, 2 wide */}
             {tiles.length > 0 && (
                 <View style={styles.tileGrid}>
-                    {tiles.map((key) => (
-                        <SquircleTile key={key} testID={`tile-${key}`} style={styles.tile} {...tileProps[key]} />
+                    {tiles.map((key, i) => (
+                        <AttachStep key={key} index={i} fill style={styles.tile}>
+                            <View ref={(el) => { tileRefs.current[key] = el; }}>
+                                <SquircleTile testID={`tile-${key}`} {...tileProps[key]} />
+                            </View>
+                        </AttachStep>
                     ))}
                 </View>
             )}
@@ -228,6 +267,7 @@ export const GroupDetailsView = ({
                 </View>
             )}
         </View>
+        </SpotlightTourProvider>
     );
 };
 

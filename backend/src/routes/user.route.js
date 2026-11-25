@@ -11,6 +11,7 @@ import {
   updatePermissionStatus,
   toggleGroupMute,
   togglePinGroup,
+  markTourSeen,
   markGroupRead,
   deleteAccount,
   syncPremium,
@@ -33,6 +34,7 @@ router.patch("/notification-prefs", protectRoute, updateNotificationPrefs);
 router.patch("/permissions", protectRoute, updatePermissionStatus);
 router.patch("/mute-group", protectRoute, toggleGroupMute);
 router.patch("/pin-group", protectRoute, togglePinGroup);
+router.patch("/tours/:key", protectRoute, markTourSeen);
 router.patch("/groups/:groupId/read", protectRoute, markGroupRead);
 router.delete("/account", protectRoute, deleteAccount);
 // Called by the app right after a purchase / restore so Premium shows up without waiting for the webhook.

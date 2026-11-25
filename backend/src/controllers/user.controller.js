@@ -90,6 +90,28 @@ export const togglePinGroup = asyncHandler(async (req, res) => {
   res.status(200).json({ pinnedGroups: user.pinnedGroups });
 });
 
+// Tour keys are short lowercase slugs chosen by the app ("group-details", "group-details-v2").
+const TOUR_KEY = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/**
+ * @desc    Record that the person has finished or skipped a screen's first-visit tour
+ * @route   PATCH /api/users/tours/:key
+ */
+export const markTourSeen = asyncHandler(async (req, res) => {
+  const { userId: clerkId } = getAuth(req);
+  const key = String(req.params?.key ?? '');
+  if (key.length > 40 || !TOUR_KEY.test(key)) {
+    return res.status(400).json({ error: "Invalid tour key." });
+  }
+  const user = await User.findOneAndUpdate(
+    { clerkId },
+    { $addToSet: { seenTours: key } },
+    { new: true },
+  ).select('seenTours');
+  if (!user) return res.status(404).json({ error: "User not found." });
+  res.status(200).json({ seenTours: user.seenTours });
+});
+
 /**
  * @desc    Mark a group's chat as read up to now, for the unread dot on the groups list
  * @route   PATCH /api/users/groups/:groupId/read

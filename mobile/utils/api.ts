@@ -112,6 +112,8 @@ export interface User {
   lastReadAt?: Record<string, string>;
   zipCode?: string;
   hasSeenWelcome?: boolean;
+  /** First-visit screen tours finished or skipped (app 1.5+). See utils/screenTours.ts. */
+  seenTours?: string[];
   permissions?: {
     notifications: 'granted' | 'denied' | 'undetermined';
     location: 'granted' | 'denied' | 'undetermined';
@@ -634,6 +636,11 @@ export const userApi = {
   },
   togglePinGroup: async (api: AxiosInstance, groupId: string, pinned: boolean): Promise<{ pinnedGroups: string[] }> => {
     const response = await api.patch<{ pinnedGroups: string[] }>("/api/users/pin-group", { groupId, pinned });
+    return response.data;
+  },
+  /** Records that a first-visit tour was finished or skipped. See utils/screenTours.ts. */
+  markTourSeen: async (api: AxiosInstance, key: string): Promise<{ seenTours: string[] }> => {
+    const response = await api.patch<{ seenTours: string[] }>(`/api/users/tours/${encodeURIComponent(key)}`);
     return response.data;
   },
   markGroupRead: async (api: AxiosInstance, groupId: string): Promise<{ ok: boolean }> => {

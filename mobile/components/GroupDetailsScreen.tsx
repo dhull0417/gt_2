@@ -4,10 +4,12 @@ import {
   ScrollView,
   RefreshControl,
   Platform,
+  Dimensions,
 } from 'react-native';
+import type { ScrollViewInstance, ViewInstance } from 'react-native';
 import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { OfflineEmptyState } from '@/components/OfflineEmptyState';
 import { isOfflineEmpty } from '@/utils/offlineState';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -74,6 +76,24 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
     router.dismissTo({ pathname: '/group-chat/[id]', params: { id } });
   };
 
+  // For the first-visit tour: scroll a tile on screen before it's highlighted. The tour measures
+  // where things are on the screen, so a tile below the fold has to be scrolled up first.
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const scrollY = useRef(0);
+  const scrollIntoView = useCallback((node: ViewInstance | null) => new Promise<void>((resolve) => {
+    if (!node) return resolve();
+    node.measureInWindow((_x: number, y: number, _w: number, h: number) => {
+      const windowH = Dimensions.get('window').height;
+      const top = insets.top + 16;
+      const bottom = windowH - insets.bottom - 16;
+      if (y >= top && y + h <= bottom) return resolve();
+      // Put the tile a little above the middle, leaving room for the tip below or above it.
+      const delta = y + h / 2 - windowH * 0.4;
+      scrollRef.current?.scrollTo({ y: Math.max(0, scrollY.current + delta), animated: true });
+      setTimeout(resolve, 350);
+    });
+  }), [insets.top, insets.bottom]);
+
   // Android back returns to the chat when Details was opened from it, like the on-screen arrow.
   useAndroidBack(from === 'chat', handleOpenChat);
 
@@ -83,6 +103,9 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
       edges={showsTabBarBeneath ? ['top', 'left', 'right'] : ['top', 'left', 'right', 'bottom']}
     >
       <ScrollView
+        ref={scrollRef}
+        onScroll={(e) => { scrollY.current = e.nativeEvent.contentOffset.y; }}
+        scrollEventThrottle={16}
         style={{ backgroundColor: colors.backgroundAlt }}
         className="flex-1"
         keyboardShouldPersistTaps="handled"
@@ -106,6 +129,7 @@ export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsSc
               groupDetails={groupDetails}
               currentUser={currentUser!}
               onLeaveSuccess={() => router.dismissTo('/(tabs)/groups')}
+              scrollIntoView={scrollIntoView}
             />
           )}
         </View>

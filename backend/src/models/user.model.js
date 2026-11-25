@@ -34,6 +34,12 @@ const userSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        // First-visit screen tours the person has finished or skipped (app 1.5+), e.g. "group-details".
+        // Users from before tours have no key here, so the app shows them each tour once too.
+        seenTours: {
+            type: [String],
+            default: [],
+        },
         // Premium subscription entitlement. Written ONLY by the server (the
         // RevenueCat webhook / admin tooling), never from client input; see
         // utils/premium.js. Users created before this field existed simply
