@@ -84,6 +84,27 @@ export function normalizeInviteCode(input: string | null | undefined): string | 
 
 export const isInviteCode = (s: string) => normalizeInviteCode(s) !== null;
 
+const LABELLED_CODE_RE = /INVITE\s*CODE\s*:?\s*([A-Za-z0-9]{4}[\s-]?[A-Za-z0-9]{4}|[A-Za-z0-9]{3}-?[A-Za-z0-9]{3})(?![A-Za-z0-9])/i;
+
+/** Finds an invite code in whatever was pasted: just the code, or a whole (or partly) copied invite
+ *  message. Looks for the code after "INVITE CODE:", then for a line that is only an 8-character code.
+ *  Loose words elsewhere in the text are never taken as a code. */
+export function findInviteCode(text: string | null | undefined): string | null {
+  const raw = String(text ?? '');
+  const whole = normalizeInviteCode(raw);
+  if (whole) return whole;
+  const labelled = LABELLED_CODE_RE.exec(raw);
+  if (labelled) {
+    const code = normalizeInviteCode(labelled[1]);
+    if (code) return code;
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    const code = normalizeInviteCode(line);
+    if (code && code.length === 8) return code;
+  }
+  return null;
+}
+
 /** "K7P2QXMR" -> "K7P2 QXMR" for display, so it reads less like a 6-digit verification code.
  *  The space is ignored when the code is typed back in. Older 6-character codes are left as-is. */
 export function formatInviteCode(code: string | null | undefined): string {

@@ -1,4 +1,4 @@
-import { buildShareLink, formatInviteCode } from './inviteLink';
+import { buildShareLink } from './inviteLink';
 
 /**
  * The one invite text used everywhere (group details, create group, add members, meetup sheet,
@@ -21,5 +21,6 @@ export function buildInviteMessage(opts: {
     : `${hello}Join my group "${opts.groupName ?? ''}" on GroupThat`;
   const link = buildShareLink(opts.link, { meetupId: opts.meetupId, referrerId: opts.referrerId });
   if (!opts.code) return `${what} 👉\n${link}`;
-  return `${what}!\n\nINVITE CODE:\n\n${formatInviteCode(opts.code)}\n\n👉 ${link}`;
+  // The code goes in unspaced so one double-tap or long-press in Messages/WhatsApp selects all of it.
+  return `${what}!\n\nINVITE CODE:\n\n${opts.code}\n\n👉 ${link}`;
 }
