@@ -1,25 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, Platform, StyleSheet } from 'react-native';
+import { View, Text, Modal, Platform, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useThemeColors, useAppearance } from '@/contexts/AppearanceContext';
 
-// Converts between app's "hh:mm AM/PM" strings and Date objects for the native picker.
-export const timeStringToDate = (time: string): Date => {
-    const [t, period] = time.split(' ');
-    let [h, m] = t.split(':').map(Number);
-    if (period === 'PM' && h !== 12) h += 12;
-    if (period === 'AM' && h === 12) h = 0;
-    const d = new Date();
-    d.setHours(h, m, 0, 0);
-    return d;
-};
+import { timeStringToDate, dateToTimeString } from '@/utils/timeString';
 
-export const dateToTimeString = (date: Date): string => {
-    let h = date.getHours();
-    const m = date.getMinutes();
-    const period = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
-};
+// Re-exported so existing imports from this file keep working.
+export { timeStringToDate, dateToTimeString };
 
 interface NativeTimePickerProps {
     value: string;
@@ -34,6 +22,8 @@ interface NativeTimePickerProps {
 // iOS: inline spinner sheet with a Done button. Android: system dialog, commits on pick.
 // Caller controls mount/unmount via its own "show picker" flag.
 const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, onClose, asOverlay }) => {
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
     const [temp, setTemp] = useState<Date>(() => timeStringToDate(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { setTemp(timeStringToDate(value)); }, []);
@@ -57,18 +47,18 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({ value, onChange, on
     }
 
     const content = (
-        <View style={styles.modalContainer}>
-            <View style={styles.pickerModalContent}>
-                <DateTimePicker value={temp} mode="time" display="spinner" onChange={handleChange} textColor="black" />
-                <TouchableOpacity onPress={() => { onChange(dateToTimeString(temp)); onClose(); }} style={styles.doneButton}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.overlay }]}>
+            <View style={[styles.pickerModalContent, { backgroundColor: colors.surface }]}>
+                <DateTimePicker value={temp} mode="time" display="spinner" onChange={handleChange} textColor={scheme === 'dark' ? 'white' : 'black'} />
+                <PressableOpacity onPress={() => { onChange(dateToTimeString(temp)); onClose(); }} style={[styles.doneButton, { backgroundColor: colors.brand }]}>
                     <Text style={styles.doneButtonText}>Done</Text>
-                </TouchableOpacity>
+                </PressableOpacity>
             </View>
         </View>
     );
 
     if (asOverlay) {
-        return <View style={StyleSheet.absoluteFillObject}>{content}</View>;
+        return <View style={StyleSheet.absoluteFill}>{content}</View>;
     }
 
     return (

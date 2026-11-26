@@ -1,31 +1,85 @@
 import {
   View,
   Text,
-  ScrollView,
-  TouchableOpacity,
+  FlatList,
+  RefreshControl,
+  Alert,
 } from 'react-native';
-import React, { useCallback, useEffect, useMemo } from 'react';
+import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Animated, { LinearTransition, type SharedValue } from 'react-native-reanimated';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter, useLocalSearchParams, useFocusEffect, usePathname } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { Group, User, useApiClient, userApi } from '@/utils/api';
 import { getDMDisplayName } from '@/utils/groupDisplay';
 import { Feather } from '@expo/vector-icons';
-import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { GroupAvatar } from '@/components/GroupAvatar';
-import { LoadingAnimation } from '@/components/LoadingAnimation';
-import { TAB_BAR_HEIGHT } from '@/utils/layout';
+import { NotificationBell } from '@/components/NotificationBell';
+import { SkeletonList } from '@/components/Skeleton';
+import { FadeUp, FadeUpScreen } from '@/components/ui/FadeUp';
+import { SwipeRowActions } from '@/components/SwipeRowActions';
+import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
+import { tabScreenBottomPadding } from '@/utils/layout';
 import { promptForNotificationPermission } from '@/hooks/usePushNotifications';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import { useUnreadCounts } from '@/hooks/useUnreadCounts';
+import { formatListTime } from '@/utils/listTime';
+import { haptic } from '@/utils/haptics';
+import { toast } from '@/contexts/ToastContext';
+import { getGroupImage } from '@/utils/groupDisplay';
+import { GroupMuteSheet } from '@/components/GroupMuteSheet';
+import { muteStateFor, type MuteState } from '@/utils/groupMute';
+import { ScreenTour, TourTarget } from '@/components/tour/ScreenTour';
+import { groupsEmptyTourSteps, groupsEmptyTourEnabled } from '@/utils/emptyScreenTours';
+import { TOURS } from '@/utils/screenTours';
+
+const ACTION_WIDTH = 76;
+
+/** A swipeable row that registers itself so opening one row closes the others. */
+const SwipeRow = ({ id, registry, renderRightActions, children }: {
+  id: string;
+  registry: React.RefObject<Map<string, React.RefObject<SwipeableMethods | null>>>;
+  renderRightActions: (progress: SharedValue<number>) => React.ReactNode;
+  children: React.ReactNode;
+}) => {
+  const ref = useRef<SwipeableMethods>(null);
+  useEffect(() => {
+    registry.current.set(id, ref);
+    return () => { registry.current.delete(id); };
+  }, [id, registry]);
+  return (
+    <ReanimatedSwipeable
+      ref={ref}
+      friction={2}
+      overshootRight={false}
+      rightThreshold={40}
+      renderRightActions={renderRightActions}
+      onSwipeableWillOpen={() => {
+        haptic.select();
+        registry.current.forEach((r, otherId) => { if (otherId !== id) r.current?.close(); });
+      }}
+    >
+      {children}
+    </ReanimatedSwipeable>
+  );
+};
 
 const GroupScreen = () => {
   const api = useApiClient();
   const router = useRouter();
-  const pathname = usePathname();
+  const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
+  const colors = useThemeColors();
   const { promptNotifications } = useLocalSearchParams<{ promptNotifications?: string }>();
+  const swipeRefs = useRef(new Map<string, React.RefObject<SwipeableMethods | null>>());
+  const closeAllSwipes = () => swipeRefs.current.forEach((r) => r.current?.close());
 
   // Ask once after group creation, then drop the param so revisiting this tab doesn't re-ask
   useEffect(() => {
@@ -34,108 +88,282 @@ const GroupScreen = () => {
     router.setParams({ promptNotifications: undefined });
   }, [promptNotifications]);
 
-  const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups } = useGetGroups();
-
-  // Most recently active chats first; groups with no messages yet sink to the bottom.
-  const sortedGroups = useMemo(() => {
-    if (!groups) return groups;
-    return [...groups].sort((a, b) => {
-      const aTime = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0;
-      const bTime = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : 0;
-      return bTime - aTime;
-    });
-  }, [groups]);
+  const groupsQuery = useGetGroups();
+  const { data: groups, isLoading: isLoadingGroups, isError: isErrorGroups, refetch: refetchGroups, dataUpdatedAt: groupsUpdatedAt } = groupsQuery;
 
   const { data: currentUser, refetch: refetchUser, isLoading: isLoadingUser } = useQuery<User, Error>({
     queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
   });
 
-  const { data: notifications } = useGetNotifications();
-  const hasUnreadNotifications = notifications?.some(n => !n.read);
+  // Pinned groups first; then most recently active chats. A group with no messages yet is
+  // ordered by when it was created, so a brand-new group lands near the top instead of sinking.
+  const pinnedSet = useMemo(() => new Set(currentUser?.pinnedGroups ?? []), [currentUser?.pinnedGroups]);
+  const sortedGroups = useMemo(() => {
+    if (!groups) return groups;
+    const activity = (g: Group) => {
+      const t = g.lastMessage?.createdAt || g.createdAt;
+      return t ? new Date(t).getTime() : 0;
+    };
+    return [...groups].sort((a, b) => {
+      const pinDiff = Number(pinnedSet.has(b._id)) - Number(pinnedSet.has(a._id));
+      return pinDiff !== 0 ? pinDiff : activity(b) - activity(a);
+    });
+  }, [groups, pinnedSet]);
 
+  // Realtime keeps this fresh; only refetch on focus when the data is a little old.
   useFocusEffect(
     useCallback(() => {
-      refetchGroups();
+      if (Date.now() - groupsUpdatedAt > 30_000) refetchGroups();
       refetchUser();
-    }, [refetchGroups, refetchUser])
+    }, [refetchGroups, refetchUser, groupsUpdatedAt])
   );
+
+  // Offline, this says so and stops instead of spinning until the connection is back.
+  const { refreshing: isPullRefreshing, refresh: handlePullRefresh } = useRefreshOrToast([() => refetchGroups(), () => refetchUser()]);
+
+  // Groups the existing check (lastMessage newer than lastReadAt, not sent by me) marks unread —
+  // only those are asked for a real count.
+  const unreadCandidates = useMemo(
+    () =>
+      (sortedGroups ?? [])
+        .filter((g) => {
+          const lastReadAt = currentUser?.lastReadAt?.[g._id];
+          const own = !!g.lastMessage?.user?.clerkId && g.lastMessage.user.clerkId === currentUser?.clerkId;
+          return !own && !!g.lastMessage?.createdAt &&
+            (!lastReadAt || new Date(lastReadAt) < new Date(g.lastMessage.createdAt));
+        })
+        .map((g) => ({ groupId: g._id, lastReadAt: currentUser?.lastReadAt?.[g._id] ?? '' })),
+    [sortedGroups, currentUser]
+  );
+  const unreadCounts = useUnreadCounts(unreadCandidates);
 
   const handleOpenGroupDetail = (group: Group) => {
     router.push({ pathname: '/group-chat/[id]', params: { id: group._id } });
   };
 
-  const renderGroupList = () => {
-    if (isLoadingGroups || (!currentUser && isLoadingUser)) return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>;
-    if (isErrorGroups) return <Text className="text-center text-red-500 mt-4">Failed to load groups.</Text>;
-    if (!sortedGroups || sortedGroups.length === 0) return <Text className="text-center text-gray-500 mt-4">You have no groups yet.</Text>;
+  // --- Swipe actions: pin and mute ---
 
-    return sortedGroups.map((group) => {
-      const isMuted = currentUser?.mutedGroups?.includes(group._id) || currentUser?.mutedUntilNextMeetup?.includes(group._id);
-      const displayName = group.isDM ? getDMDisplayName(group, currentUser?.clerkId) : group.name;
-      const lastReadAt = currentUser?.lastReadAt?.[group._id];
-      const isOwnLastMessage = !!group.lastMessage?.user?.clerkId &&
-        group.lastMessage.user.clerkId === currentUser?.clerkId;
-      const isUnread = !isOwnLastMessage && !!group.lastMessage?.createdAt &&
-        (!lastReadAt || new Date(lastReadAt) < new Date(group.lastMessage.createdAt));
-      return (
-        <TouchableOpacity
-          key={group._id}
-          className="relative bg-white px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100"
-          onPress={() => handleOpenGroupDetail(group)}
-        >
-          {isUnread && (
-            <View className="absolute top-3 right-3 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
-          )}
-          <View className="flex-row items-center">
-            <View style={{ marginRight: 12 }}>
-              <GroupAvatar name={displayName} imageUrl={group.image} size={44} borderRadius={12} />
-            </View>
-            <View className="flex-1">
-              <View className="flex-row items-center">
-                <Text className="text-lg font-bold text-gray-800 flex-1" numberOfLines={1}>
-                  {displayName}
-                </Text>
-                {isMuted && <Feather name="bell-off" size={14} color="#9CA3AF" style={{ marginLeft: 6 }} />}
-              </View>
-              {group.lastMessage ? (
-                <Text className="text-sm text-gray-500 mt-0.5" numberOfLines={1}>
-                  <Text style={{ color: '#4A90E2', fontWeight: '600' }}>{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
-                </Text>
-              ) : (
-                <Text className="text-sm text-gray-400 italic mt-0.5">No messages yet</Text>
-              )}
-            </View>
-          </View>
-        </TouchableOpacity>
-      );
-    });
+  const setUserField = (patch: (u: User) => User) => {
+    queryClient.setQueryData<User>(['currentUser'], (old) => (old ? patch(old) : old));
   };
+
+  const togglePin = async (group: Group) => {
+    const nowPinned = !pinnedSet.has(group._id);
+    closeAllSwipes();
+    haptic.press();
+    setUserField((u) => ({
+      ...u,
+      pinnedGroups: nowPinned ? [...(u.pinnedGroups ?? []), group._id] : (u.pinnedGroups ?? []).filter((id) => id !== group._id),
+    }));
+    try {
+      await userApi.togglePinGroup(api, group._id, nowPinned);
+      toast.success(nowPinned ? 'Pinned to the top' : 'Unpinned');
+    } catch {
+      refetchUser();
+      toast.error("Couldn't update the pin. Try again.");
+    }
+  };
+
+  // Swipe "Mute" opens the same mute sheet as the chat header bell.
+  const [muteSheetGroup, setMuteSheetGroup] = useState<Group | null>(null);
+  const handleMutePress = (group: Group) => {
+    haptic.press();
+    closeAllSwipes();
+    setMuteSheetGroup(group);
+  };
+
+  const renderRightActions = (group: Group, muteState: MuteState, isPinned: boolean) => (progress: SharedValue<number>) => (
+    <SwipeRowActions progress={progress} style={{ flexDirection: 'row', alignItems: 'stretch', marginVertical: 8, marginLeft: 8, gap: 8 }}>
+      <PressableOpacity
+        haptic={false}
+        onPress={() => togglePin(group)}
+        accessibilityLabel={isPinned ? 'Unpin group' : 'Pin group'}
+        style={{ width: ACTION_WIDTH, borderRadius: 16, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Feather name={isPinned ? 'x-circle' : 'bookmark'} size={20} color="#fff" />
+        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 }}>{isPinned ? 'Unpin' : 'Pin'}</Text>
+      </PressableOpacity>
+      <PressableOpacity
+        haptic={false}
+        onPress={() => handleMutePress(group)}
+        accessibilityLabel={muteState.state === 'none' ? 'Mute group' : 'Change mute settings'}
+        style={{ width: ACTION_WIDTH, borderRadius: 16, backgroundColor: colors.textMuted, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Feather name={muteState.state === 'none' ? 'bell-off' : 'bell'} size={20} color="#fff" />
+        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 }}>{muteState.state === 'none' ? 'Mute' : 'Muted'}</Text>
+      </PressableOpacity>
+    </SwipeRowActions>
+  );
+
+  const renderGroup = ({ item: group, index }: { item: Group; index: number }) => {
+    const muteState = muteStateFor(currentUser, group._id);
+    const isPinned = pinnedSet.has(group._id);
+    const displayName = group.isDM ? getDMDisplayName(group, currentUser?.clerkId) : group.name;
+    const lastReadAt = currentUser?.lastReadAt?.[group._id];
+    const isOwnLastMessage = !!group.lastMessage?.user?.clerkId &&
+      group.lastMessage.user.clerkId === currentUser?.clerkId;
+    const isUnread = !isOwnLastMessage && !!group.lastMessage?.createdAt &&
+      (!lastReadAt || new Date(lastReadAt) < new Date(group.lastMessage.createdAt));
+    // Real count when available; until then (or if it can't be fetched) the plain dot shows.
+    const info = isUnread ? unreadCounts[group._id] : undefined;
+    const unreadInfo = info && info.unread > 0 ? info : null;
+    const timeLabel = formatListTime(group.lastMessage?.createdAt);
+
+    return (
+      <Animated.View layout={LinearTransition.duration(220)}>
+        {/* Fade-up sits inside the layout view so a reorder (new message) slides, not replays. */}
+        <FadeUp index={index}>
+          <SwipeRow
+            id={group._id}
+            registry={swipeRefs}
+            renderRightActions={renderRightActions(group, muteState, isPinned)}
+          >
+            <PressableOpacity
+              className="relative bg-white dark:bg-gray-900 px-4 py-4 my-2 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800"
+              onPress={() => handleOpenGroupDetail(group)}
+              haptic="tap"
+            >
+              {isUnread && !unreadInfo && (
+                <View className="absolute top-3 right-3 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-gray-900" />
+              )}
+              <View className="flex-row items-center">
+                <View style={{ marginRight: 12 }}>
+                  <GroupAvatar name={displayName} imageUrl={getGroupImage(group, currentUser?.clerkId)} size={44} borderRadius={12} />
+                </View>
+                <View className="flex-1">
+                  <View className="flex-row items-center">
+                    {isPinned && <Feather name="bookmark" size={13} color={colors.brand} style={{ marginRight: 5 }} />}
+                    <Text className="text-lg font-bold text-gray-800 dark:text-gray-100 flex-1" numberOfLines={1}>
+                      {displayName}
+                    </Text>
+                    {muteState.state === 'full' && <Feather name="bell-off" size={14} color={colors.textFaint} style={{ marginLeft: 6 }} accessibilityLabel="Muted" />}
+                    {muteState.state === 'partial' && <Feather name="bell" size={14} color={colors.textFaint} style={{ marginLeft: 6, opacity: 0.7 }} accessibilityLabel="Some notifications muted" />}
+                    {!!timeLabel && (
+                      <Text style={{ marginLeft: 8, fontSize: 12, color: isUnread ? colors.brand : colors.textFaint, fontWeight: isUnread ? '700' : '500' }}>
+                        {timeLabel}
+                      </Text>
+                    )}
+                  </View>
+                  {group.lastMessage ? (
+                    <Text className="text-sm text-gray-500 dark:text-gray-400 mt-0.5" numberOfLines={1}>
+                      <Text style={{ color: colors.brand, fontWeight: '600' }}>{group.lastMessage.user.name}:</Text> {group.lastMessage.text}
+                    </Text>
+                  ) : (
+                    <Text className="text-sm text-gray-400 dark:text-gray-500 italic mt-0.5">No messages yet</Text>
+                  )}
+                </View>
+                {unreadInfo && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 8 }}>
+                    {unreadInfo.mentioned > 0 && (
+                      <View style={{ backgroundColor: colors.brand, borderRadius: 10, minWidth: 20, height: 20, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>@</Text>
+                      </View>
+                    )}
+                    <View style={{ backgroundColor: '#EF4444', borderRadius: 10, minWidth: 20, height: 20, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>{unreadInfo.unread > 99 ? '99+' : unreadInfo.unread}</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </PressableOpacity>
+          </SwipeRow>
+        </FadeUp>
+      </Animated.View>
+    );
+  };
+
+  const showSkeleton = isLoadingGroups || (!currentUser && isLoadingUser);
 
   return (
     <SafeAreaView
-      className='flex-1 bg-gray-50'
+      className='flex-1 bg-gray-50 dark:bg-black'
       edges={['left', 'right']}
       style={{ paddingTop: contentTopInset }}
     >
-      <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
-        <TouchableOpacity onPress={() => { if (pathname !== '/notifications') router.push('/notifications'); }}>
-          <Feather name="bell" size={26} color="#4A90E2" />
-          {hasUnreadNotifications && (
-            <View className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
-          )}
-        </TouchableOpacity>
-        <Text className="text-xl font-black text-gray-900">Groups</Text>
-        <TouchableOpacity
+      {/* First-visit tour, only while there are no groups (utils/emptyScreenTours.ts). */}
+      <ScreenTour
+        tourKey={TOURS.groupsEmpty}
+        steps={groupsEmptyTourSteps}
+        enabled={groupsEmptyTourEnabled({ loaded: !showSkeleton && !isOfflineEmpty(groupsQuery) && !isErrorGroups, groups: sortedGroups })}
+        user={currentUser}
+      >
+      <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <NotificationBell />
+        <Text className="text-xl font-black text-gray-900 dark:text-gray-100">Groups</Text>
+        <TourTarget target="add" style={{ alignSelf: 'center' }}>
+        <PressableOpacity
           onPress={() => router.push('/create-group')}
           style={{ alignItems: 'center', justifyContent: 'center' }}
         >
-          <Feather name="plus-circle" size={26} color="#4A90E2" />
-        </TouchableOpacity>
+          <Feather name="plus-circle" size={26} color={colors.brand} />
+        </PressableOpacity>
+        </TourTarget>
       </View>
-      <ScrollView className="px-4" contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}>
-        {renderGroupList()}
-      </ScrollView>
+
+      {showSkeleton ? (
+        <View style={{ flex: 1, paddingHorizontal: 16 }}><SkeletonList kind="group" count={5} /></View>
+      ) : isOfflineEmpty(groupsQuery) ? (
+        <OfflineEmptyState message="Connect to the internet to load your groups." onRetry={handlePullRefresh} />
+      ) : isErrorGroups && !groups ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+          <Text style={{ color: colors.textMuted, fontSize: 16, marginBottom: 16 }}>Couldn't load your groups.</Text>
+          <PressableOpacity onPress={() => refetchGroups()} style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Try again</Text>
+          </PressableOpacity>
+        </View>
+      ) : (
+        // Mounted with the loaded list so the cascade starts when real rows appear.
+        <FadeUpScreen>
+          <FlatList
+            data={sortedGroups ?? []}
+            keyExtractor={(g) => g._id}
+            renderItem={renderGroup}
+            style={{ paddingHorizontal: 16 }}
+            contentContainerStyle={{ flexGrow: 1, paddingTop: 8, paddingBottom: tabScreenBottomPadding(insets.bottom) }}
+            refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
+            ListEmptyComponent={
+              <FadeUp index={0} style={{ flex: 1 }}>
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 64 }}>
+                <Text className="text-center text-gray-500 dark:text-gray-400" style={{ fontSize: 16, marginBottom: 16 }}>You have no groups yet.</Text>
+                <TourTarget target="create-group" style={{ alignSelf: 'center' }}>
+                <PressableOpacity
+                  onPress={() => router.push('/create-group')}
+                  haptic="press"
+                  style={{ backgroundColor: colors.brand, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Create a group</Text>
+                </PressableOpacity>
+                </TourTarget>
+                <TourTarget target="invite-code" style={{ alignSelf: 'center', marginTop: 18 }}>
+                <PressableOpacity onPress={() => router.push('/join/code')} style={{ padding: 8 }}>
+                  <Text style={{ color: colors.brand, fontWeight: '800', fontSize: 17 }}>Have an invite code?</Text>
+                </PressableOpacity>
+                </TourTarget>
+              </View>
+              </FadeUp>
+            }
+            ListFooterComponent={(sortedGroups?.length ?? 0) > 0 ? (
+              <FadeUp index={sortedGroups?.length}>
+                <PressableOpacity onPress={() => router.push('/join/code')} style={{ alignSelf: 'center', marginTop: 16, padding: 8 }}>
+                  <Text style={{ color: colors.brand, fontWeight: '800', fontSize: 17 }}>Have an invite code?</Text>
+                </PressableOpacity>
+              </FadeUp>
+            ) : undefined}
+          />
+        </FadeUpScreen>
+      )}
+      <GroupMuteSheet
+        visible={!!muteSheetGroup}
+        group={muteSheetGroup ? {
+          _id: muteSheetGroup._id,
+          name: muteSheetGroup.isDM ? getDMDisplayName(muteSheetGroup, currentUser?.clerkId) : muteSheetGroup.name,
+          isDM: muteSheetGroup.isDM,
+        } : null}
+        currentUser={currentUser}
+        onClose={() => setMuteSheetGroup(null)}
+      />
+      </ScreenTour>
     </SafeAreaView>
   );
 };

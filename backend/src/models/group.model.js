@@ -9,9 +9,11 @@ const dayTimeSchema = new mongoose.Schema({
   day: { type: Number, required: false },   // 0-6 for weekdays (Weekly/Biweekly/Daily)
   date: { type: Number, required: false },  // 1-31 for monthly dates
   time: { type: String, required: true },   // e.g., "06:00 PM"
-  // Biweekly-only: the chosen first occurrence for this specific day, so two
-  // days in the same routine can be phase-offset from each other (e.g.
-  // Tuesdays starting one week, Fridays starting the next).
+  // Optional end time ("09:00 PM"); earlier than `time` means the next day.
+  endTime: { type: String, default: null },
+  // Biweekly: the chosen first occurrence for this specific day, so two days in the
+  // same routine can be phase-offset (Tuesdays starting one week, Fridays the next).
+  // Quarterly/semiannual/yearly: the series' first date (required).
   startDate: { type: Date, required: false },
 }, { _id: false });
 
@@ -22,9 +24,11 @@ const dayTimeSchema = new mongoose.Schema({
 const routineSchema = new mongoose.Schema({
   frequency: {
     type: String,
-    enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal'],
+    enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal', 'quarterly', 'semiannual', 'yearly'],
     required: true
   },
+  // quarterly/semiannual/yearly only: repeat on the first date's day-of-month or its Nth weekday.
+  repeatBy: { type: String, enum: ['date', 'weekday'], required: false },
   dayTimes: [dayTimeSchema],
   rules: [{
     type: { type: String },
@@ -46,11 +50,53 @@ const routineSchema = new mongoose.Schema({
 const namedScheduleSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   startDate: { type: Date }, // Selected from the calendar card after routines are set
+  // Optional, inclusive: no meetups are generated after this day (leagues, seasons).
+  // Stored like startDate (date-only UTC midnight); null = the series runs forever.
+  endDate: { type: Date, default: null },
   routines: [routineSchema], // Support for "Multiple Rules" (max 5)
 
   defaultLocation: { type: String, trim: true, default: "" },
   defaultCapacity: { type: Number, default: 0 },
+  // Premium: cancel a meetup if fewer than this many people are in by the RSVP deadline (0 = off).
+  defaultMinAttendees: { type: Number, min: 0, default: 0 },
   defaultDescription: { type: String, trim: true, default: "" },
+  // Premium meetup assignments: things people can sign up to bring (max = how many
+  // can be claimed in total, null = unlimited) and whether to coordinate rides.
+  defaultBringItems: [{
+    name: { type: String, required: true, trim: true },
+    max: { type: Number, min: 1, default: null },
+  }],
+  defaultRidesEnabled: { type: Boolean, default: false },
+  // Premium custom RSVP questions asked when someone says they're In.
+  defaultQuestions: [{
+    prompt: { type: String, required: true, trim: true },
+    type: { type: String, enum: ['text', 'choice', 'yesno'], default: 'text' },
+    options: [String],
+    required: { type: Boolean, default: false },
+  }],
+  // Premium priority RSVP: ranked members get RSVP windows before everyone else.
+  // priorityOrder is the ranking; priorityTiers slice it into groups (size people,
+  // each with an exclusive window of windowMinutes before the next group opens).
+  priorityEnabled: { type: Boolean, default: false },
+  priorityOrder: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  priorityTiers: [{
+    size: { type: Number, min: 1, required: true },
+    windowMinutes: { type: Number, min: 1, required: true },
+    _id: false,
+  }],
+  // Windows don't tick during quiet hours (so nobody loses their turn while asleep).
+  priorityQuiet: {
+    enabled: { type: Boolean, default: false },
+    start: { type: String, default: "10:00 PM" },
+    end: { type: String, default: "08:00 AM" },
+  },
+
+  // Dates the organizer deleted or skipped. Generation never recreates these slots.
+  skippedSlots: [{
+    date: { type: Date, required: true },
+    time: { type: String, required: true },
+    _id: false,
+  }],
 
   generationLeadDays: { type: Number, min: 0, default: null },
   generationLeadTime: { type: String, default: "09:00 AM" },
@@ -69,6 +115,13 @@ const groupSchema = new mongoose.Schema({
    * A group can have zero or more named schedules; invites/chat work regardless.
    * Capped at 5 active schedules, enforced in createSchedule (Mongoose can't express it).
    */
+  // Premium custom RSVP reactions: the catchphrase + emoji popup shown after tapping
+  // I'm In / I'm Out. When a group has any for a status, only those play for it.
+  rsvpResponses: [{
+    status: { type: String, enum: ['in', 'out'], required: true },
+    text: { type: String, required: true, trim: true },
+    emoji: { type: String, required: true, trim: true },
+  }],
   schedules: [namedScheduleSchema],
 
   timezone: { type: String, required: true }, // Global timezone, shared by every schedule
@@ -94,10 +147,36 @@ const groupSchema = new mongoose.Schema({
     createdAt: { type: Date },
   },
   isDM: { type: Boolean, default: false },
+  // Invite link: people who use the link ask to join and an owner/moderator approves them.
+  inviteRequiresApproval: { type: Boolean, default: false },
+  // People timed out of this group's chat by an owner/moderator (copied to Supabase chat_timeouts,
+  // which the database checks). until: null = until a moderator lifts it. Hidden by default
+  // (select: false) so it never leaks to members through group responses; ask for "+chatTimeouts".
+  chatTimeouts: {
+    type: [{
+      user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+      until: { type: Date, default: null },
+      by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      createdAt: { type: Date, default: Date.now },
+      _id: false,
+    }],
+    select: false,
+    default: [],
+  },
+  // Stats: show the joke awards (Hall of Shame) to every member, not just organizers.
+  statsRevealJokes: { type: Boolean, default: false },
   dmParticipants: [{
     userId: { type: String },
     name: { type: String },
+    profilePicture: { type: String },
     _id: false,
+  }],
+  // Premium teams & tournaments: saved strength rankings (strongest first), at most 10.
+  // Only owners and moderators see them. See utils/tournament/.
+  rankingLists: [{
+    name: { type: String, required: true, maxlength: 30 },
+    order: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    updatedAt: { type: Date, default: Date.now },
   }],
 }, { timestamps: true });
 

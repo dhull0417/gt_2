@@ -1,9 +1,12 @@
-import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUser } from '@clerk/expo';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useApiClient, userApi } from '@/utils/api';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import { toast } from '@/contexts/ToastContext';
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
@@ -11,6 +14,7 @@ const VerifyNewEmailScreen = () => {
     const { user } = useUser();
     const router = useRouter();
     const api = useApiClient();
+    const colors = useThemeColors();
     const { emailId } = useLocalSearchParams<{ emailId: string }>();
     const pendingEmail = user?.emailAddresses.find(e => e.id === emailId)?.emailAddress;
 
@@ -62,7 +66,7 @@ const VerifyNewEmailScreen = () => {
 
             await user.update({ primaryEmailAddressId: emailAddressToVerify.id });
 
-            Alert.alert("Success", "Your email address has been updated.");
+            toast.success("Your email address has been updated.");
 
             router.back();
             router.back(); // twice, back to main menu
@@ -75,51 +79,51 @@ const VerifyNewEmailScreen = () => {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-gray-100">
+        <SafeAreaView className="flex-1 bg-gray-100 dark:bg-black">
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 className="flex-1"
             >
                 <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }} className="p-6">
-                    <Text style={styles.title}>Check your new email</Text>
-                    <Text style={styles.subtitle}>
+                    <Text style={[styles.title, { color: colors.textPrimary }]}>Check your new email</Text>
+                    <Text style={[styles.subtitle, { color: colors.textMuted }]}>
                         We've sent a verification code to{pendingEmail ? ':' : ' your new email address.'}
                     </Text>
                     {pendingEmail && (
-                        <Text style={styles.pendingEmail}>{pendingEmail}</Text>
+                        <Text style={[styles.pendingEmail, { color: colors.textSecondary }]}>{pendingEmail}</Text>
                     )}
                     <TextInput
                         value={code}
                         onChangeText={setCode}
                         placeholder="Verification Code"
-                        placeholderTextColor="#9CA3AF"
+                        placeholderTextColor={colors.placeholder}
                         keyboardType="numeric"
-                        style={styles.input}
+                        style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textSecondary }]}
                     />
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={onVerifyPress}
                         disabled={isLoading}
-                        style={styles.saveBtn}
+                        style={[styles.saveBtn, { backgroundColor: colors.brand }]}
                         activeOpacity={0.85}
                     >
                         {isLoading
                             ? <ActivityIndicator color="white" />
                             : <Text style={styles.saveBtnText}>Verify and Save</Text>}
-                    </TouchableOpacity>
-                    <TouchableOpacity
+                    </PressableOpacity>
+                    <PressableOpacity
                         onPress={onResendPress}
                         disabled={resendLoading || resendCooldown > 0}
                         style={styles.resendBtn}
                         activeOpacity={0.7}
                     >
                         {resendLoading
-                            ? <ActivityIndicator color="#4A90E2" />
+                            ? <ActivityIndicator color={colors.brand} />
                             : (
-                                <Text style={[styles.resendText, resendCooldown > 0 && styles.resendTextDisabled]}>
+                                <Text style={[styles.resendText, { color: resendCooldown > 0 ? colors.textFaint : colors.brand }]}>
                                     {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend Code'}
                                 </Text>
                             )}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>

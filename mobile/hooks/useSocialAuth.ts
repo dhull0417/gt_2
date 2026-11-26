@@ -17,7 +17,7 @@ export const useSocialAuth = () => {
                 await setActive({ session: createdSessionId });
             }
         } catch (err) {
-            console.log("Error in social auth", err)
+            console.warn("Social sign-in failed:", (err as any)?.errors?.[0]?.code ?? (err as any)?.message)
             const provider = strategy ==="oauth_google" ? "Google" : "Apple";
             Alert.alert("Error", `Failed to sign in with ${provider}. Please try again.`)
             // On Android this can fail after /sso-callback already navigated away

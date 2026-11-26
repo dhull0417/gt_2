@@ -1,4 +1,5 @@
 import { Schedule, Routine, DayTime } from './api';
+import { isLongFrequency, describeLongRoutine } from './longInterval';
 
 // Formats a schedule to a readable string; supports nested Routines and Ordinal frequency.
 export const formatSchedule = (schedule: Schedule): string => {
@@ -42,6 +43,7 @@ const formatSingleRoutine = (routine: Routine & { days?: number[] }): string => 
   };
 
   if (frequency === 'daily') return "Daily";
+  if (isLongFrequency(frequency)) return describeLongRoutine(routine);
 
   // Handle Weekly / Biweekly
   if (frequency === 'weekly' || frequency === 'biweekly') {

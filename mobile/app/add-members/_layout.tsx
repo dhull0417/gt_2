@@ -1,25 +1,27 @@
 import { Stack, useRouter } from 'expo-router';
 import React from 'react';
-import { TouchableOpacity } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const AddMembersLayout = () => {
     const router = useRouter();
-    
+    const colors = useThemeColors();
+
     return (
-        <Stack>
-            <Stack.Screen 
-                name="[id]" 
-                options={{ 
+        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerTransparent: false /* solid header on iOS 26+ (see app/_layout.tsx) */ }}>
+            <Stack.Screen
+                name="[id]"
+                options={{
                     headerTitle: 'Invite Members',
                     presentation: 'card',
                     animation: 'slide_from_right',
                     headerLeft: () => (
-                        <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
+                        <PressableOpacity accessibilityLabel="Close" onPress={() => router.back()} style={{ marginLeft: 10 }}>
                             <Feather name="x" size={24} color="#4A90E2" />
-                        </TouchableOpacity>
+                        </PressableOpacity>
                     ),
-                }} 
+                }}
             />
         </Stack>
     );

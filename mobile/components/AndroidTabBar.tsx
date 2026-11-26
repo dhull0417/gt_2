@@ -4,7 +4,8 @@ import React, { useEffect } from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { useRouter } from 'expo-router';
+import type { BottomTabBarProps } from 'expo-router/tabs';
 import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
 import Animated, {
   Easing,
@@ -14,8 +15,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-const ACTIVE_COLOR = '#4A90E2';
-const INACTIVE_COLOR = '#8E8E93';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 // Must match TAB_BAR_HEIGHT in utils/layout.ts (android: 80) or content shifts under the bar.
 const BAR_HEIGHT = 80;
@@ -30,6 +30,9 @@ const TAB_ICONS: Record<string, React.ComponentProps<typeof Feather>['name']> = 
 };
 
 const AnimatedTabIcon = ({ name, focused }: { name: React.ComponentProps<typeof Feather>['name']; focused: boolean }) => {
+  const colors = useThemeColors();
+  const activeColor = colors.brand;
+  const inactiveColor = colors.textFaint;
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
   const shadowOpacity = useSharedValue(0);
@@ -69,8 +72,8 @@ const AnimatedTabIcon = ({ name, focused }: { name: React.ComponentProps<typeof 
           <Defs>
             {/* Darkest at the center, fading out toward the tapered tips. */}
             <RadialGradient id="tabShadowGradient" cx="50%" cy="50%" r="50%">
-              <Stop offset="0%" stopColor={ACTIVE_COLOR} stopOpacity={0.6} />
-              <Stop offset="100%" stopColor={ACTIVE_COLOR} stopOpacity={0.22} />
+              <Stop offset="0%" stopColor={activeColor} stopOpacity={0.6} />
+              <Stop offset="100%" stopColor={activeColor} stopOpacity={0.22} />
             </RadialGradient>
           </Defs>
           <Ellipse
@@ -83,27 +86,32 @@ const AnimatedTabIcon = ({ name, focused }: { name: React.ComponentProps<typeof 
         </Svg>
       </Animated.View>
       <Animated.View style={iconStyle}>
-        <Feather name={name} size={24} color={focused ? ACTIVE_COLOR : INACTIVE_COLOR} />
+        <Feather name={name} size={24} color={focused ? activeColor : inactiveColor} />
       </Animated.View>
     </View>
   );
 };
 
-export const AndroidTabBar = ({ state, descriptors, navigation }: BottomTabBarProps) => {
+export const AndroidTabBar = ({ state, descriptors, emitter, navigateToTab }: BottomTabBarProps) => {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
 
   return (
-    <View style={[styles.container, { height: BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}>
+    <View style={[
+      styles.container,
+      { height: BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom, backgroundColor: colors.surface, borderTopColor: colors.border },
+    ]}>
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         const isFocused = state.index === index;
 
         const onPress = () => {
-          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+          const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (event.defaultPrevented) return;
 
           if (!isFocused) {
-            navigation.navigate(route.name, route.params);
+            navigateToTab(route.key);
             return;
           }
 
@@ -112,12 +120,12 @@ export const AndroidTabBar = ({ state, descriptors, navigation }: BottomTabBarPr
           // directly from chat, leaving it as the stack's only entry. Navigate to the
           // list explicitly so the tap always works.
           if (route.name === 'groups') {
-            navigation.navigate('groups', { screen: 'index' });
+            router.navigate('/groups');
           }
         };
 
         const onLongPress = () => {
-          navigation.emit({ type: 'tabLongPress', target: route.key });
+          emitter.emit({ type: 'tabLongPress', target: route.key });
         };
 
         return (

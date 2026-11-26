@@ -1,0 +1,287 @@
+diff --git a/node_modules/react-native-spotlight-tour/dist/helpers/shape.js b/node_modules/react-native-spotlight-tour/dist/helpers/shape.js
+index 6ead757..04b6612 100644
+--- a/node_modules/react-native-spotlight-tour/dist/helpers/shape.js
++++ b/node_modules/react-native-spotlight-tour/dist/helpers/shape.js
+@@ -27,7 +27,7 @@ export function transitionOf(options) {
+         case "fade":
+             return Animated.sequence([
+                 Animated.timing(opacity, {
+-                    duration: 400,
++                    duration: 150,
+                     toValue: 0,
+                     useNativeDriver,
+                 }),
+@@ -44,7 +44,7 @@ export function transitionOf(options) {
+                     }),
+                 ]),
+                 Animated.timing(opacity, {
+-                    duration: 400,
++                    duration: 200,
+                     toValue: 1,
+                     useNativeDriver,
+                 }),
+diff --git a/node_modules/react-native-spotlight-tour/dist/lib/SpotlightTour.context.d.ts b/node_modules/react-native-spotlight-tour/dist/lib/SpotlightTour.context.d.ts
+index 07b8857..35a8da1 100644
+--- a/node_modules/react-native-spotlight-tour/dist/lib/SpotlightTour.context.d.ts
++++ b/node_modules/react-native-spotlight-tour/dist/lib/SpotlightTour.context.d.ts
+@@ -38,6 +38,8 @@ export interface ShapeOptions {
+      * @default circle
+      */
+     type?: Shape;
++    /** GroupThat patch: draws a `rectangle` spot from this SVG path (see src). */
++    path?: (rect: LayoutRectangle) => string;
+ }
+ export interface RenderProps {
+     /**
+diff --git a/node_modules/react-native-spotlight-tour/dist/lib/SpotlightTour.provider.js b/node_modules/react-native-spotlight-tour/dist/lib/SpotlightTour.provider.js
+index ef2f94e..4532877 100644
+--- a/node_modules/react-native-spotlight-tour/dist/lib/SpotlightTour.provider.js
++++ b/node_modules/react-native-spotlight-tour/dist/lib/SpotlightTour.provider.js
+@@ -105,6 +105,8 @@ export const SpotlightTourProvider = forwardRef((props, ref) => {
+         stop,
+     }), [changeSpot, current, goTo, next, previous, spot, start, steps, stop, pause]);
+     useImperativeHandle(ref, () => ({
++        // GroupThat patch: lets the app move or hide the highlight itself (e.g. while it scrolls).
++        changeSpot,
+         current,
+         goTo,
+         next,
+diff --git a/node_modules/react-native-spotlight-tour/dist/lib/components/tour-overlay/TourOverlay.component.js b/node_modules/react-native-spotlight-tour/dist/lib/components/tour-overlay/TourOverlay.component.js
+index 0fbbd87..cdaafbf 100644
+--- a/node_modules/react-native-spotlight-tour/dist/lib/components/tour-overlay/TourOverlay.component.js
++++ b/node_modules/react-native-spotlight-tour/dist/lib/components/tour-overlay/TourOverlay.component.js
+@@ -7,6 +7,7 @@ import { vh, vw } from "../../../helpers/responsive";
+ import { SpotlightTourContext, } from "../../SpotlightTour.context";
+ import { Css, DEFAULT_ARROW, arrowCss } from "./TourOverlay.styles";
+ import { CircleShape } from "./shapes/CircleShape.component";
++import { PathShape } from "./shapes/PathShape.component";
+ import { RectShape } from "./shapes/RectShape.component";
+ export const TourOverlay = forwardRef((props, ref) => {
+     const { backdropOpacity, color, current, motion, nativeDriver, onBackdropPress, shape, spot, tourStep, ...tooltipProps } = props;
+@@ -48,7 +49,7 @@ export const TourOverlay = forwardRef((props, ref) => {
+     const ShapeMask = useMemo(() => {
+         switch (shapeOptions.type) {
+             case "circle": return CircleShape;
+-            case "rectangle": return RectShape;
++            case "rectangle": return shapeOptions.path ? PathShape : RectShape;
+         }
+     }, [shapeOptions]);
+     const handleBackdropPress = useCallback(() => {
+@@ -68,8 +69,8 @@ export const TourOverlay = forwardRef((props, ref) => {
+         const { height, width } = spot;
+         if ([height, width].every(value => value > 0)) {
+             Animated.timing(tooltipOpacity.current, {
+-                delay: 400,
+-                duration: 400,
++                delay: 200,
++                duration: 150,
+                 toValue: 1,
+                 useNativeDriver,
+             })
+@@ -81,7 +82,7 @@ export const TourOverlay = forwardRef((props, ref) => {
+             return new Promise(resolve => {
+                 if (current !== undefined) {
+                     Animated.timing(tooltipOpacity.current, {
+-                        duration: 400,
++                        duration: 150,
+                         toValue: 0,
+                         useNativeDriver,
+                     })
+@@ -93,7 +94,7 @@ export const TourOverlay = forwardRef((props, ref) => {
+             });
+         },
+     }), [current, useNativeDriver]);
+-    return (_jsx(Modal, { animationType: "fade", presentationStyle: "overFullScreen", supportedOrientations: ["portrait", "landscape", "landscape-left", "landscape-right", "portrait-upside-down"], transparent: true, visible: current !== undefined, children: _jsxs(View, { testID: "Overlay View", style: Css.overlayView, children: [_jsxs(Svg, { testID: "Spot Svg", height: vh(100), width: vw(100), viewBox: `0 0 ${vw(100)} ${vh(100)}`, onPress: handleBackdropPress, shouldRasterizeIOS: true, renderToHardwareTextureAndroid: true, children: [_jsx(Defs, { children: _jsxs(Mask, { id: "mask", x: 0, y: 0, height: "100%", width: "100%", children: [_jsx(Rect, { height: vh(100), width: vw(100), fill: "#fff" }), _jsx(ShapeMask, { spot: spot, setReference: refs.setReference, motion: stepMotion, padding: shapeOptions.padding, useNativeDriver: useNativeDriver })] }) }), _jsx(Rect, { height: vh(100), width: vw(100), fill: color, mask: "url(#mask)", opacity: backdropOpacity })] }), current !== undefined && (_jsxs(Animated.View, { ref: refs.setFloating, testID: "Tooltip View", style: { ...floatingStyles, opacity: tooltipOpacity.current }, children: [_jsx(tourStep.render, { current: current, isFirst: current === 0, isLast: current === steps.length - 1, next: next, previous: previous, stop: stop, pause: pause, resume: resume, goTo: goTo }), floating.arrow !== false && (_jsx(View, { style: [
++    return (_jsx(Modal, { animationType: "fade", presentationStyle: "overFullScreen", supportedOrientations: ["portrait", "landscape", "landscape-left", "landscape-right", "portrait-upside-down"], transparent: true, visible: current !== undefined, children: _jsxs(View, { testID: "Overlay View", style: Css.overlayView, children: [_jsxs(Svg, { testID: "Spot Svg", height: vh(100), width: vw(100), viewBox: `0 0 ${vw(100)} ${vh(100)}`, onPress: handleBackdropPress, shouldRasterizeIOS: true, renderToHardwareTextureAndroid: true, children: [_jsx(Defs, { children: _jsxs(Mask, { id: "mask", x: 0, y: 0, height: "100%", width: "100%", children: [_jsx(Rect, { height: vh(100), width: vw(100), fill: "#fff" }), _jsx(ShapeMask, { spot: spot, setReference: refs.setReference, motion: stepMotion, padding: shapeOptions.padding, path: shapeOptions.path, useNativeDriver: useNativeDriver })] }) }), _jsx(Rect, { height: vh(100), width: vw(100), fill: color, mask: "url(#mask)", opacity: backdropOpacity })] }), current !== undefined && (_jsxs(Animated.View, { ref: refs.setFloating, testID: "Tooltip View", style: { ...floatingStyles, opacity: tooltipOpacity.current }, children: [_jsx(tourStep.render, { current: current, isFirst: current === 0, isLast: current === steps.length - 1, next: next, previous: previous, stop: stop, pause: pause, resume: resume, goTo: goTo }), floating.arrow !== false && (_jsx(View, { style: [
+                                 Css.tooltipArrow,
+                                 arrowCss({
+                                     arrow: typeof floating.arrow !== "boolean"
+diff --git a/node_modules/react-native-spotlight-tour/dist/lib/components/tour-overlay/shapes/PathShape.component.js b/node_modules/react-native-spotlight-tour/dist/lib/components/tour-overlay/shapes/PathShape.component.js
+new file mode 100644
+index 0000000..86701e9
+--- /dev/null
++++ b/node_modules/react-native-spotlight-tour/dist/lib/components/tour-overlay/shapes/PathShape.component.js
+@@ -0,0 +1,29 @@
++// GroupThat patch: see src/lib/components/tour-overlay/shapes/PathShape.component.tsx
++import { jsx as _jsx } from "react/jsx-runtime";
++import { memo, useEffect, useMemo, useRef, useState } from "react";
++import isEqual from "react-fast-compare";
++import { Animated } from "react-native";
++import { Path } from "react-native-svg";
++const AnimatedPath = Animated.createAnimatedComponent(Path);
++export const PathShape = memo(props => {
++    const { padding, path, setReference, spot, useNativeDriver } = props;
++    const width = spot.width + padding;
++    const height = spot.height + padding;
++    const x = spot.x - (padding / 2);
++    const y = spot.y - (padding / 2);
++    const [shown, setShown] = useState({ height, width, x, y });
++    const opacity = useRef(new Animated.Value(0)).current;
++    useEffect(() => {
++        const next = { height, width, x, y };
++        Animated.timing(opacity, { duration: 150, toValue: 0, useNativeDriver }).start(() => {
++            setShown(next);
++            // Nothing to highlight (before the first step, or hidden while the page scrolls): stay dark.
++            if (spot.width <= 0 || spot.height <= 0) return;
++            Animated.timing(opacity, { duration: 200, toValue: 1, useNativeDriver }).start();
++        });
++        setReference({ measure: callback => callback(x, y, width, height) });
++        return () => setReference(undefined);
++    }, [x, y, width, height, spot.width, spot.height, setReference, useNativeDriver]);
++    const d = useMemo(() => path(shown), [path, shown]);
++    return _jsx(AnimatedPath, { d: d, fill: "black", opacity: opacity });
++}, isEqual);
+diff --git a/node_modules/react-native-spotlight-tour/src/helpers/shape.ts b/node_modules/react-native-spotlight-tour/src/helpers/shape.ts
+index 568b04b..daa97a3 100644
+--- a/node_modules/react-native-spotlight-tour/src/helpers/shape.ts
++++ b/node_modules/react-native-spotlight-tour/src/helpers/shape.ts
+@@ -78,7 +78,7 @@ export function transitionOf(options: TransitionOptions): Animated.CompositeAnim
+     case "fade":
+       return Animated.sequence([
+         Animated.timing(opacity, {
+-          duration: 400,
++          duration: 150,
+           toValue: 0,
+           useNativeDriver,
+         }),
+@@ -95,7 +95,7 @@ export function transitionOf(options: TransitionOptions): Animated.CompositeAnim
+           }),
+         ]),
+         Animated.timing(opacity, {
+-          duration: 400,
++          duration: 200,
+           toValue: 1,
+           useNativeDriver,
+         }),
+diff --git a/node_modules/react-native-spotlight-tour/src/lib/SpotlightTour.context.ts b/node_modules/react-native-spotlight-tour/src/lib/SpotlightTour.context.ts
+index 4c247b6..f6c8916 100644
+--- a/node_modules/react-native-spotlight-tour/src/lib/SpotlightTour.context.ts
++++ b/node_modules/react-native-spotlight-tour/src/lib/SpotlightTour.context.ts
+@@ -43,6 +43,11 @@ export interface ShapeOptions {
+    * @default circle
+    */
+   type?: Shape;
++  /**
++   * GroupThat patch: draws a `rectangle` spot from this SVG path instead of a plain rectangle,
++   * given the spot's rectangle (padding included). The spot then always fades between steps.
++   */
++  path?: (rect: LayoutRectangle) => string;
+ }
+ 
+ export interface RenderProps {
+diff --git a/node_modules/react-native-spotlight-tour/src/lib/SpotlightTour.provider.tsx b/node_modules/react-native-spotlight-tour/src/lib/SpotlightTour.provider.tsx
+index 6ea53bc..21acac8 100644
+--- a/node_modules/react-native-spotlight-tour/src/lib/SpotlightTour.provider.tsx
++++ b/node_modules/react-native-spotlight-tour/src/lib/SpotlightTour.provider.tsx
+@@ -249,6 +249,8 @@ export const SpotlightTourProvider = forwardRef<SpotlightTour, SpotlightTourProv
+   }), [changeSpot, current, goTo, next, previous, spot, start, steps, stop, pause]);
+ 
+   useImperativeHandle(ref, () => ({
++    // GroupThat patch: lets the app move or hide the highlight itself (e.g. while it scrolls).
++    changeSpot,
+     current,
+     goTo,
+     next,
+diff --git a/node_modules/react-native-spotlight-tour/src/lib/components/tour-overlay/TourOverlay.component.tsx b/node_modules/react-native-spotlight-tour/src/lib/components/tour-overlay/TourOverlay.component.tsx
+index 127c1d6..ad84d4a 100644
+--- a/node_modules/react-native-spotlight-tour/src/lib/components/tour-overlay/TourOverlay.component.tsx
++++ b/node_modules/react-native-spotlight-tour/src/lib/components/tour-overlay/TourOverlay.component.tsx
+@@ -44,6 +44,7 @@ import {
+ 
+ import { Css, DEFAULT_ARROW, arrowCss } from "./TourOverlay.styles";
+ import { CircleShape } from "./shapes/CircleShape.component";
++import { PathShape } from "./shapes/PathShape.component";
+ import { RectShape } from "./shapes/RectShape.component";
+ 
+ import type { Optional, ToOptional } from "../../../helpers/common";
+@@ -103,7 +104,7 @@ export const TourOverlay = forwardRef<TourOverlayRef, TourOverlayProps>((props,
+     return tourStep.motion ?? motion;
+   }, [tourStep, motion]);
+ 
+-  const shapeOptions = useMemo((): Required<ShapeOptions> => {
++  const shapeOptions = useMemo((): Required<Omit<ShapeOptions, "path">> & Pick<ShapeOptions, "path"> => {
+     const options = tourStep.shape ?? shape;
+     const padding = 16;
+ 
+@@ -128,7 +129,8 @@ export const TourOverlay = forwardRef<TourOverlayRef, TourOverlayProps>((props,
+   const ShapeMask = useMemo(<P extends ShapeProps>(): ComponentType<P> => {
+     switch (shapeOptions.type) {
+       case "circle": return CircleShape;
+-      case "rectangle": return RectShape;
++      // GroupThat patch: a custom path draws the rectangle spot when given.
++      case "rectangle": return (shapeOptions.path ? PathShape : RectShape) as ComponentType<P>;
+     }
+   }, [shapeOptions]);
+ 
+@@ -154,8 +156,8 @@ export const TourOverlay = forwardRef<TourOverlayRef, TourOverlayProps>((props,
+ 
+     if ([height, width].every(value => value > 0)) {
+       Animated.timing(tooltipOpacity.current, {
+-        delay: 400,
+-        duration: 400,
++        delay: 200,
++        duration: 150,
+         toValue: 1,
+         useNativeDriver,
+       })
+@@ -168,7 +170,7 @@ export const TourOverlay = forwardRef<TourOverlayRef, TourOverlayProps>((props,
+       return new Promise(resolve => {
+         if (current !== undefined) {
+           Animated.timing(tooltipOpacity.current, {
+-            duration: 400,
++            duration: 150,
+             toValue: 0,
+             useNativeDriver,
+           })
+@@ -206,6 +208,7 @@ export const TourOverlay = forwardRef<TourOverlayRef, TourOverlayProps>((props,
+                 setReference={refs.setReference}
+                 motion={stepMotion}
+                 padding={shapeOptions.padding}
++                path={shapeOptions.path}
+                 useNativeDriver={useNativeDriver}
+               />
+             </Mask>
+diff --git a/node_modules/react-native-spotlight-tour/src/lib/components/tour-overlay/shapes/PathShape.component.tsx b/node_modules/react-native-spotlight-tour/src/lib/components/tour-overlay/shapes/PathShape.component.tsx
+new file mode 100644
+index 0000000..77e610f
+--- /dev/null
++++ b/node_modules/react-native-spotlight-tour/src/lib/components/tour-overlay/shapes/PathShape.component.tsx
+@@ -0,0 +1,38 @@
++// GroupThat patch: a rectangle spot drawn from a caller-supplied SVG path (ShapeOptions.path), so the
++// cut-out can match the highlighted item's shape (e.g. a squircle tile). Always fades between spots:
++// out where it was, move while hidden, then in at the new spot.
++import { memo, useEffect, useMemo, useRef, useState } from "react";
++import isEqual from "react-fast-compare";
++import { Animated, type LayoutRectangle } from "react-native";
++import { Path } from "react-native-svg";
++
++import type { ShapeProps } from "../../../../helpers/shape";
++
++const AnimatedPath = Animated.createAnimatedComponent(Path);
++
++export const PathShape = memo<ShapeProps & { path: (rect: LayoutRectangle) => string }>(props => {
++  const { padding, path, setReference, spot, useNativeDriver } = props;
++  const width = spot.width + padding;
++  const height = spot.height + padding;
++  const x = spot.x - (padding / 2);
++  const y = spot.y - (padding / 2);
++
++  const [shown, setShown] = useState<LayoutRectangle>({ height, width, x, y });
++  const opacity = useRef(new Animated.Value(0)).current;
++
++  useEffect(() => {
++    const next = { height, width, x, y };
++    Animated.timing(opacity, { duration: 150, toValue: 0, useNativeDriver }).start(() => {
++      setShown(next);
++      // Nothing to highlight (before the first step, or hidden while the page scrolls): stay dark.
++      if (spot.width <= 0 || spot.height <= 0) return;
++      Animated.timing(opacity, { duration: 200, toValue: 1, useNativeDriver }).start();
++    });
++    setReference({ measure: callback => callback(x, y, width, height) });
++    return () => setReference(undefined);
++  }, [x, y, width, height, spot.width, spot.height, setReference, useNativeDriver]);
++
++  const d = useMemo(() => path(shown), [path, shown]);
++
++  return <AnimatedPath d={d} fill="black" opacity={opacity} />;
++}, isEqual);

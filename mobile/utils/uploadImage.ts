@@ -5,6 +5,9 @@ import { AxiosInstance } from "axios";
 import { getSupabaseClient } from "./supabase";
 import { requestImageCrop } from "../components/ImageCropperHost";
 import { reportPermissionStatus } from "./permissions";
+import { PhotoReadError } from "./photoErrors";
+
+export { PhotoReadError };
 
 type Bucket = "profile-pictures" | "group-images" | "chat-images";
 
@@ -31,8 +34,9 @@ async function processAndUpload(
 ): Promise<UploadedImage> {
   const manipulated = await ImageManipulator.manipulateAsync(
     localUri,
-    [{ resize: { width: 800 } }],
-    { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    // Chat photos are looked at full-screen, so they keep more detail than avatars and covers.
+    [{ resize: { width: bucket === "chat-images" ? 1280 : 800 } }],
+    { compress: bucket === "chat-images" ? 0.85 : 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
   );
 
   if (!manipulated.base64) throw new Error("Failed to process image.");
@@ -54,8 +58,25 @@ async function processAndUpload(
   };
 }
 
+/** Ensure camera access, with the same Settings deep-link fallback as the photo library. */
+export async function ensureCameraPermission(): Promise<boolean> {
+  const current = await ImagePicker.getCameraPermissionsAsync();
+  if (current.status === "granted") return true;
+  if (current.canAskAgain) {
+    const requested = await ImagePicker.requestCameraPermissionsAsync();
+    if (requested.status === "granted") return true;
+    if (!requested.canAskAgain) offerSettings();
+    return false;
+  }
+  offerSettings();
+  return false;
+}
+
 /** Ensure photo library access. If canAskAgain is false (permanently denied), offer a Settings deep-link instead of a dead-end prompt. */
 export async function ensurePhotoLibraryPermission(api?: AxiosInstance): Promise<boolean> {
+  // Android's system photo picker needs no permission. Asking anyway showed a needless storage prompt
+  // on Android 12 and below, and saying no there blocked picking a photo at all.
+  if (Platform.OS === "android") return true;
   const current = await ImagePicker.getMediaLibraryPermissionsAsync();
   if (current.status === "granted") {
     if (api) reportPermissionStatus(api, { photoLibrary: "granted" });
@@ -88,21 +109,27 @@ function offerSettings() {
   );
 }
 
-/** Opens the image picker; returns a local URI (no upload). Android skips native allowsEditing (its toolbar has no visible confirm/cancel) and uses ImageCropperHost instead. */
+/**
+ * Opens the image picker, then our own square cropper (ImageCropperHost); returns a local URI (no upload).
+ * The system crop step isn't used on either platform: on Android its toolbar has no visible confirm/cancel,
+ * and on iPhone its "Choose" button hangs on photos stored in iCloud until they finish downloading
+ * (testers had to try up to 6 times). Throws PhotoReadError when the photo can't be read or cropped.
+ */
 export async function pickImageUri(api?: AxiosInstance): Promise<string | null> {
   const hasPermission = await ensurePhotoLibraryPermission(api);
   if (!hasPermission) return null;
 
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ["images"],
-    quality: 1,
-    ...(Platform.OS === "ios" ? { allowsEditing: true, aspect: [1, 1] as [number, number] } : {}),
-  });
+  let result: ImagePicker.ImagePickerResult;
+  try {
+    result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1 });
+  } catch (e) {
+    throw new PhotoReadError(e);
+  }
   if (result.canceled) return null;
 
   const asset = result.assets[0];
-  if (Platform.OS !== "android") return asset.uri;
-
+  // iOS: let the picker finish dismissing first, or the cropper's modal can fail to appear.
+  if (Platform.OS === "ios") await new Promise((r) => setTimeout(r, 400));
   return requestImageCrop(asset.uri, asset.width, asset.height);
 }
 

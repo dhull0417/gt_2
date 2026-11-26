@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 interface Props {
   label: string;
@@ -26,6 +27,7 @@ function Dot({ delay }: { delay: number }) {
 
 // WhatsApp/iMessage-style bubble with three bouncing dots, replacing a plain "X is typing…" line.
 export function ChatTypingBubble({ label }: Props) {
+  const colors = useThemeColors();
   const entrance = useSharedValue(0);
 
   useEffect(() => {
@@ -39,24 +41,23 @@ export function ChatTypingBubble({ label }: Props) {
 
   return (
     <Animated.View style={[styles.row, entranceStyle]}>
-      <View style={styles.bubble}>
+      <View style={[styles.bubble, { backgroundColor: colors.backgroundAlt }]}>
         <Dot delay={0} />
         <Dot delay={120} />
         <Dot delay={240} />
       </View>
-      <Text style={styles.label} numberOfLines={1}>{label}</Text>
+      <Text style={[styles.label, { color: colors.textFaint }]} numberOfLines={1}>{label}</Text>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, marginBottom: 4, gap: 8 },
-  label: { fontSize: 12, color: '#9CA3AF', fontStyle: 'italic', flexShrink: 1 },
+  label: { fontSize: 12, fontStyle: 'italic', flexShrink: 1 },
   bubble: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#E5E7EB',
     borderRadius: 16,
     borderBottomLeftRadius: 4,
     paddingHorizontal: 14,

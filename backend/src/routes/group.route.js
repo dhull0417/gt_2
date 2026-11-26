@@ -1,6 +1,7 @@
 import express from "express";
 import {
   createGroup,
+  sampleGroupsRemoved,
   getGroups,
   getGroupDetails,
   addMember,
@@ -13,24 +14,73 @@ import {
   updateGroupSchedule,
   createSchedule,
   updateSchedule,
+  countMeetupsAfter,
+  updateSchedulePriority,
+  updateScheduleQuestions,
+  getGroupStats,
+  updateStatsSettings,
+  updateRsvpResponses,
+  exportGroupAttendance,
+  getPastMeetups,
+  getPastMeetupDetail,
   deleteSchedule,
   updateModerators,
   toggleModerator,
   transferOwnership,
-  generateInviteLink,
-  redeemInviteToken,
 } from "../controllers/group.controller.js";
+import {
+  generateInviteLink,
+  resetInviteLink,
+  updateInviteSettings,
+  getInvitePreview,
+  redeemInviteToken,
+  createContactInvite,
+} from "../controllers/invite.controller.js";
+import { rateLimit } from "../utils/rateLimit.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 import { getAuth } from "@clerk/express";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import { notifyUsers } from "../utils/push.notifications.js";
+import { isMutedFor } from "../utils/groupMute.js";
+import { addChatMembers } from "../utils/supabaseAdmin.js";
+
+import mongoose from "mongoose";
+
+// Loads the signed-in user and the group, and confirms the user belongs to it.
+// Returns { user, group } or sends the error response and returns null.
+const requireGroupMember = async (req, res, select) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400).json({ message: 'Invalid group id' });
+    return null;
+  }
+  const { userId: clerkId } = getAuth(req);
+  const [user, group] = await Promise.all([
+    User.findOne({ clerkId }).select('_id firstName lastName clerkId'),
+    Group.findById(id).select(select),
+  ]);
+  if (!user) { res.status(404).json({ message: 'User not found' }); return null; }
+  if (!group) { res.status(404).json({ message: 'Group not found' }); return null; }
+  if (!group.members.some((m) => m.equals(user._id))) {
+    res.status(403).json({ message: 'You are not a member of this group' });
+    return null;
+  }
+  return { user, group };
+};
+
+const displayName = (user, fallback) =>
+  [user.firstName, user.lastName].filter(Boolean).join(' ') || String(fallback || '').slice(0, 80) || 'Someone';
 
 const router = express.Router();
+
+// best-effort (per server instance) memory of recent reaction pushes, used to collapse repeats
+const recentReactionPushes = new Map();
 
 // --- Group Management ---
 router.get("/", protectRoute, getGroups);
 router.post("/create", protectRoute, createGroup);
+router.post("/demo", protectRoute, sampleGroupsRemoved);
 
 // find/create 1-on-1 DM group; must precede /:groupId (wildcard collision)
 router.post("/dm", protectRoute, async (req, res) => {
@@ -43,6 +93,13 @@ router.post("/dm", protectRoute, async (req, res) => {
     const target = await User.findById(targetUserId);
     if (!sender || !target) return res.status(404).json({ message: "User not found" });
     if (sender._id.equals(target._id)) return res.status(400).json({ message: "Cannot DM yourself" });
+
+    // Spam guard: you can only message people you already share a (non-DM) group with.
+    const sharesGroup = await Group.exists({
+      isDM: { $ne: true },
+      members: { $all: [sender._id, target._id] },
+    });
+    if (!sharesGroup) return res.status(403).json({ message: "You can only message people you share a group with." });
 
     const existing = await Group.findOne({
       isDM: true,
@@ -69,6 +126,7 @@ router.post("/dm", protectRoute, async (req, res) => {
       { _id: { $in: [sender._id, target._id] } },
       { $addToSet: { groups: dmGroup._id } }
     );
+    await addChatMembers(dmGroup._id, [sender.clerkId, target.clerkId]);
 
     res.status(201).json({ group: dmGroup, isNew: true });
   } catch (err) {
@@ -93,49 +151,72 @@ router.patch("/:groupId/schedule", protectRoute, updateGroupSchedule);
 // multi-schedule routes — a group can have several named schedules
 router.post("/:groupId/schedules", protectRoute, createSchedule);
 router.patch("/:groupId/schedules/:scheduleId", protectRoute, updateSchedule);
+router.get("/:groupId/schedules/:scheduleId/meetups-after", protectRoute, countMeetupsAfter);
+router.put("/:groupId/schedules/:scheduleId/priority", protectRoute, updateSchedulePriority);
+router.put("/:groupId/schedules/:scheduleId/questions", protectRoute, updateScheduleQuestions);
+router.get("/:groupId/stats", protectRoute, getGroupStats);
+router.patch("/:groupId/stats-settings", protectRoute, updateStatsSettings);
+router.put("/:groupId/rsvp-responses", protectRoute, updateRsvpResponses);
+router.get("/:groupId/stats/export", protectRoute, exportGroupAttendance);
+router.get("/:groupId/past-meetups", protectRoute, getPastMeetups);
+router.get("/:groupId/past-meetups/:meetupId", protectRoute, getPastMeetupDetail);
 router.delete("/:groupId/schedules/:scheduleId", protectRoute, deleteSchedule);
 router.post("/:groupId/meetups", protectRoute, createOneOffMeetup);
 
 // --- Membership & Invites ---
 // join/:token must be registered before /:groupId to avoid route collision
-router.post("/join/:token", protectRoute, redeemInviteToken);
+router.post("/join/:token", rateLimit({ name: "invite-redeem", limit: 20 }), protectRoute, redeemInviteToken);
+router.get("/invite/:token", rateLimit({ name: "invite-preview", limit: 20 }), protectRoute, getInvitePreview);
 router.post("/:groupId/add-member", protectRoute, addMember);
 router.post("/:groupId/leave", protectRoute, leaveGroup);
 router.post("/:groupId/remove-member", protectRoute, removeMember);
 router.post("/:groupId/invite", protectRoute, inviteUser);
 router.post("/:groupId/invite-link", protectRoute, generateInviteLink);
+router.post("/:groupId/invite-link/reset", protectRoute, resetInviteLink);
+router.put("/:groupId/invite-settings", protectRoute, updateInviteSettings);
+router.post("/:groupId/contact-invite", protectRoute, createContactInvite);
 
 // updates lastMessage preview and notifies group members
 router.patch("/:id/last-message", protectRoute, async (req, res) => {
   try {
-    const { text, senderName } = req.body;
-    if (!text || !senderName) return res.status(400).json({ message: 'text and senderName required' });
+    const { text, senderName: clientName } = req.body;
+    if (typeof text !== 'string' || !text.trim()) return res.status(400).json({ message: 'text required' });
 
-    const { userId: senderClerkId } = getAuth(req);
+    // Once the database trigger is delivering chat pushes (and updating lastMessage)
+    // through /api/chat/webhook/message, older app versions that still call this
+    // endpoint must not notify a second time.
+    if (process.env.CHAT_PUSH_MODE === 'webhook') return res.json({ ok: true });
+
+    const ctx = await requireGroupMember(req, res, 'name _id members');
+    if (!ctx) return;
+    const { user, group: found } = ctx;
+    const senderName = displayName(user, clientName);
+    const preview = text.slice(0, 500);
 
     const group = await Group.findByIdAndUpdate(
-      req.params.id,
-      { lastMessage: { text, user: { name: senderName, clerkId: senderClerkId }, createdAt: new Date() } },
+      found._id,
+      { lastMessage: { text: preview, user: { name: senderName, clerkId: user.clerkId }, createdAt: new Date() } },
       { new: true }
     );
-    if (!group) return res.status(404).json({ message: 'Group not found' });
 
-    // Fire-and-forget — don't hold up the response for notification delivery
-    User.find({
-      _id: { $in: group.members },
-      clerkId: { $ne: senderClerkId },
-      expoPushToken: { $exists: true, $ne: null },
-      mutedGroups: { $ne: group._id },
-      mutedUntilNextMeetup: { $ne: group._id },
-    }).then(recipients => {
+    // Awaited: on Vercel, work still running after the response is sent can be dropped.
+    try {
+      const recipients = (await User.find({
+        _id: { $in: group.members },
+        clerkId: { $ne: user.clerkId },
+        $or: [{ expoPushToken: { $exists: true, $ne: null } }, { 'expoPushTokens.0': { $exists: true } }],
+      })).filter((u) => !isMutedFor(u, group._id, 'chat'));
       if (recipients.length > 0) {
-        notifyUsers(recipients, {
+        await notifyUsers(recipients, {
           title: group.name,
-          body: `${senderName}: ${text}`,
+          body: `${senderName}: ${preview}`,
           data: { type: 'chat', groupId: group._id.toString() },
+          type: 'chat',
         });
       }
-    }).catch(err => console.error('Chat notification error:', err));
+    } catch (err) {
+      console.error('Chat notification error:', err);
+    }
 
     res.json({ ok: true });
   } catch (err) {
@@ -146,30 +227,47 @@ router.patch("/:id/last-message", protectRoute, async (req, res) => {
 // notifies group members of a reaction
 router.post("/:id/chat-reaction", protectRoute, async (req, res) => {
   try {
-    const { emoji, senderName } = req.body;
-    if (!emoji || !senderName) {
-      return res.status(400).json({ message: 'emoji and senderName required' });
+    const { emoji, senderName: clientName, authorId } = req.body;
+    if (typeof emoji !== 'string' || !emoji || emoji.length > 16) {
+      return res.status(400).json({ message: 'valid emoji required' });
     }
 
-    const { userId: senderClerkId } = getAuth(req);
+    const ctx = await requireGroupMember(req, res, 'name _id members');
+    if (!ctx) return;
+    const { user, group } = ctx;
+    const senderName = displayName(user, clientName);
 
-    const group = await Group.findById(req.params.id).select('name _id members');
-    if (!group) return res.status(404).json({ message: 'Group not found' });
+    // Newer apps send the message author's id so only that person is notified.
+    // Older apps omit it and keep the previous notify-everyone behavior.
+    const onlyAuthor = typeof authorId === 'string' && authorId ? { clerkId: authorId } : {};
+    if (onlyAuthor.clerkId === user.clerkId) return res.json({ ok: true });
 
-    const recipients = await User.find({
+    // Repeated reactions from the same person to the same author are collapsed into one push per minute.
+    const dedupeKey = `${group._id}:${user.clerkId}:${onlyAuthor.clerkId || 'all'}`;
+    const lastSent = recentReactionPushes.get(dedupeKey);
+    if (lastSent && Date.now() - lastSent < 60 * 1000) return res.json({ ok: true, collapsed: true });
+    recentReactionPushes.set(dedupeKey, Date.now());
+    if (recentReactionPushes.size > 2000) {
+      for (const [k, t] of recentReactionPushes) if (Date.now() - t > 60 * 1000) recentReactionPushes.delete(k);
+    }
+
+    const recipients = (await User.find({
       _id: { $in: group.members },
-      clerkId: { $ne: senderClerkId },
-      expoPushToken: { $exists: true, $ne: null },
-      mutedGroups: { $ne: group._id },
-      mutedUntilNextMeetup: { $ne: group._id },
-    });
+      ...(onlyAuthor.clerkId ? { clerkId: onlyAuthor.clerkId } : { clerkId: { $ne: user.clerkId } }),
+      $or: [{ expoPushToken: { $exists: true, $ne: null } }, { 'expoPushTokens.0': { $exists: true } }],
+    })).filter((u) => !isMutedFor(u, group._id, 'chat'));
 
     if (recipients.length > 0) {
-      notifyUsers(recipients, {
-        title: group.name,
-        body: `${senderName} reacted ${emoji} to a message`,
-        data: { type: 'chat', groupId: group._id.toString() },
-      }).catch(err => console.error('Reaction notification error:', err));
+      try {
+        await notifyUsers(recipients, {
+          title: group.name,
+          body: `${senderName} reacted ${emoji} to ${onlyAuthor.clerkId ? 'your message' : 'a message'}`,
+          data: { type: 'chat', groupId: group._id.toString() },
+          type: 'chat',
+        });
+      } catch (err) {
+        console.error('Reaction notification error:', err);
+      }
     }
 
     res.json({ ok: true });

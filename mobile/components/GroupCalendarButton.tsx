@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { TouchableOpacity, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import GroupMeetupsModal from '@/components/GroupMeetupsModal';
+import { useAppearance } from '@/contexts/AppearanceContext';
 
 interface GroupCalendarButtonProps {
   groupId: string;
@@ -10,15 +12,20 @@ interface GroupCalendarButtonProps {
 
 // Shared by Group Details and Group Chat; renders nothing for DMs (no meetups).
 export const GroupCalendarButton = ({ groupId, isDM }: GroupCalendarButtonProps) => {
+  const { scheme } = useAppearance();
+  const isDark = scheme === 'dark';
   const [modalVisible, setModalVisible] = useState(false);
 
   if (isDM) return null;
 
   return (
     <>
-      <TouchableOpacity onPress={() => setModalVisible(true)} style={styles.iconButton}>
+      <PressableOpacity accessibilityLabel="Calendar"
+        onPress={() => setModalVisible(true)}
+        style={[styles.iconButton, { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB', borderColor: isDark ? '#5C4A1E' : '#FDE68A' }]}
+      >
         <Feather name="calendar" size={18} color="#D97706" />
-      </TouchableOpacity>
+      </PressableOpacity>
 
       <GroupMeetupsModal
         visible={modalVisible}

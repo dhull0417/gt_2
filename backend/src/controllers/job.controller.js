@@ -1,3 +1,4 @@
+import { archiveMeetups, ARCHIVE_FIELDS } from "../utils/groupStats.js";
 import asyncHandler from "express-async-handler";
 import Meetup from "../models/meetup.model.js";
 import Group from "../models/group.model.js";
@@ -6,6 +7,13 @@ import Poll from "../models/poll.model.js";
 import { RSVP_REMINDER_STAGES } from "../utils/date.utils.js";
 import { generateMeetupsForGroup } from "../utils/meetupGeneration.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
+import { groupHasPremium } from "../utils/premium.js";
+import { evaluateDueMeetups } from "../utils/minimumHeadcount.js";
+import { notifyOpenTiers } from "../utils/priorityRsvp.js";
+import Notification from "../models/notification.model.js";
+import { postSystemMessage } from "../utils/systemMessage.js";
+import { clearNextMeetupMutesUpdate } from "../utils/groupMute.js";
+import { expiryFilter } from "../utils/meetupEndTime.js";
 
 /**
  * @desc    Generate meetups for groups whose nextGenerationAt is now due.
@@ -42,20 +50,18 @@ export const regenerateMeetups = asyncHandler(async (req, res) => {
   res.status(200).json({ generated: generatedCount, failed: failedCount, message: "Regeneration complete." });
 });
 
-// Meetups stay "happening now" for this long after startsAt before expiring — mirrors MEETUP_ACTIVE_DURATION_MS in mobile/utils/meetupStatus.ts.
-const MEETUP_ACTIVE_DURATION_MS = 60 * 60 * 1000;
-
 /**
- * @desc    Expire meetups whose active window (startsAt + 1hr) has passed.
- *          Uses startsAt for a single atomic DB operation — no JS loop.
+ * @desc    Expire meetups that are over: past their end time (endsAt), or 1 hour after
+ *          start when they have none (mirrors meetupEndInstant in mobile/utils/meetupTime.ts).
+ *          A single atomic DB operation — no JS loop.
  * @route   POST /api/jobs/expire-meetups
  */
 export const expirePastMeetups = asyncHandler(async (req, res) => {
   const now = new Date();
-  const cutoff = new Date(now.getTime() - MEETUP_ACTIVE_DURATION_MS);
+  const filter = expiryFilter(now);
 
   const toExpire = await Meetup.find(
-    { status: 'scheduled', startsAt: { $lte: cutoff } },
+    filter,
     'group'
   );
 
@@ -66,15 +72,13 @@ export const expirePastMeetups = asyncHandler(async (req, res) => {
   const groupIds = [...new Set(toExpire.map(m => m.group.toString()))];
 
   const result = await Meetup.updateMany(
-    { status: 'scheduled', startsAt: { $lte: cutoff } },
+    filter,
     { $set: { status: 'expired' } }
   );
 
   if (groupIds.length > 0) {
-    await User.updateMany(
-      { mutedUntilNextMeetup: { $in: groupIds } },
-      { $pull: { mutedUntilNextMeetup: { $in: groupIds } } }
-    );
+    const { filter, update } = clearNextMeetupMutesUpdate(groupIds);
+    await User.updateMany(filter, update);
     console.log(`[Expire] Unmuted users for ${groupIds.length} group(s).`);
   }
 
@@ -83,20 +87,41 @@ export const expirePastMeetups = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Delete meetups that expired more than 10 days ago.
+ * @desc    Delete expired and cancelled meetups that started more than 10 days ago.
+ *          Only expired ones are archived for group stats; cancelled meetups
+ *          don't count toward attendance or member titles.
  * @route   POST /api/jobs/cleanup-meetups
  */
 export const cleanupExpiredMeetups = asyncHandler(async (req, res) => {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 10);
 
+  // Keep each meetup's RSVPs for group stats before it's deleted. If archiving
+  // fails, skip the delete so nothing is lost; the next run tries again.
+  const old = await Meetup.find({ status: 'expired', startsAt: { $lte: cutoff } })
+    .select(ARCHIVE_FIELDS)
+    .lean();
+  try {
+    await archiveMeetups(old);
+  } catch (err) {
+    console.error('[Cleanup] Archive failed, skipping delete:', err);
+    return res.status(500).json({ message: 'Archive failed; nothing deleted.' });
+  }
+
   const result = await Meetup.deleteMany({
-    status: 'expired',
+    status: { $in: ['expired', 'cancelled'] },
     startsAt: { $lte: cutoff }
   });
 
   console.log(`[Cleanup] Deleted ${result.deletedCount} old meetup(s).`);
-  res.status(200).json({ message: `Cleanup complete. Deleted ${result.deletedCount} old meetups.` });
+
+  // Notifications older than 90 days are of no use any more.
+  const notifCutoff = new Date();
+  notifCutoff.setDate(notifCutoff.getDate() - 90);
+  const oldNotifs = await Notification.deleteMany({ createdAt: { $lt: notifCutoff }, status: { $ne: 'pending' } });
+  console.log(`[Cleanup] Deleted ${oldNotifs.deletedCount} old notification(s).`);
+
+  res.status(200).json({ message: `Cleanup complete. Deleted ${result.deletedCount} old meetups and ${oldNotifs.deletedCount} old notifications.` });
 });
 
 /**
@@ -106,6 +131,27 @@ export const cleanupExpiredMeetups = asyncHandler(async (req, res) => {
  */
 export const notifyRsvpOpen = asyncHandler(async (req, res) => {
   const now = new Date();
+
+  // Priority groups: each group is told the moment its window opens, ahead of the
+  // general open time. (Groups that open early because the ones before them answered
+  // are announced from the RSVP itself.)
+  const priorityMeetups = await Meetup.find({
+    status: 'scheduled',
+    startsAt: { $gte: now },
+    rsvpNotified: false,
+    rsvpOpenDate: { $gt: now },
+    'priorityTiers.0': { $exists: true },
+  }).select('_id group').lean();
+  let tiersAnnounced = 0;
+  for (const m of priorityMeetups) {
+    try {
+      const group = await Group.findById(m.group).select('owner').lean();
+      if (!(await groupHasPremium(group))) continue;
+      tiersAnnounced += await notifyOpenTiers(m._id);
+    } catch (err) {
+      console.error("notifyRsvpOpen priority failed for meetup", m._id.toString(), err);
+    }
+  }
 
   const toNotify = await Meetup.find({
     status: 'scheduled',
@@ -119,7 +165,14 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
     const dateStr = new Date(meetup.date).toLocaleDateString('en-US', {
       weekday: 'short', month: 'short', day: 'numeric', timeZone: meetup.timezone,
     });
-    const members = await User.find({ _id: { $in: meetup.members } });
+    // Members of a priority group were already told when their window opened.
+    const alreadyTold = new Set(
+      (meetup.priorityTiers || [])
+        .filter((_, i) => (meetup.priorityOpened || []).includes(i))
+        .flatMap((t) => t.members.map((id) => id.toString()))
+    );
+    const members = (await User.find({ _id: { $in: meetup.members } }))
+      .filter((u) => !alreadyTold.has(u._id.toString()));
     if (members.length > 0) {
       await notifyAndPersist(members, {
         title: "RSVPs Are Open!",
@@ -132,7 +185,7 @@ export const notifyRsvpOpen = asyncHandler(async (req, res) => {
     }
   }
 
-  res.status(200).json({ message: `Notified for ${toNotify.length} meetup(s).` });
+  res.status(200).json({ message: `Notified for ${toNotify.length} meetup(s); announced ${tiersAnnounced} priority group(s).` });
 });
 
 /**
@@ -160,8 +213,7 @@ export const notifyMeetupReminder = asyncHandler(async (req, res) => {
     const recipients = await User.find({
       _id: { $in: recipientIds },
       expoPushToken: { $exists: true, $ne: null },
-      mutedGroups: { $ne: meetup.group },
-      mutedUntilNextMeetup: { $ne: meetup.group },
+      // Group mutes are applied per kind inside notifyAndPersist.
     });
 
     if (recipients.length > 0) {
@@ -199,12 +251,20 @@ const MONTHLY_REMINDER_COPY = {
   '24h': (name) => `Tomorrow's the day — RSVP for "${name}".`,
   '6h':  (name) => `"${name}" starts in a few hours — RSVP if you can make it!`,
 };
+// Semiannual and yearly get one extra, earlier reminder a month out.
+const LONG_INTERVAL_REMINDER_COPY = {
+  '30d': (name) => `"${name}" is a month away — RSVP whenever you know.`,
+  ...MONTHLY_REMINDER_COPY,
+};
 const RSVP_REMINDER_COPY = {
   daily: DAILY_REMINDER_COPY,
   weekly: WEEKLY_REMINDER_COPY,
   biweekly: WEEKLY_REMINDER_COPY,
   monthly: MONTHLY_REMINDER_COPY,
   ordinal: MONTHLY_REMINDER_COPY,
+  quarterly: MONTHLY_REMINDER_COPY,
+  semiannual: LONG_INTERVAL_REMINDER_COPY,
+  yearly: LONG_INTERVAL_REMINDER_COPY,
 };
 
 /**
@@ -259,8 +319,7 @@ export const notifyRsvpReminderStages = asyncHandler(async (req, res) => {
     const recipients = await User.find({
       _id: { $in: meetup.undecided },
       expoPushToken: { $exists: true, $ne: null },
-      mutedGroups: { $ne: meetup.group },
-      mutedUntilNextMeetup: { $ne: meetup.group },
+      // Group mutes are applied per kind inside notifyAndPersist.
     });
 
     if (recipients.length > 0) {
@@ -311,6 +370,8 @@ export const expirePolls = asyncHandler(async (req, res) => {
       ? `"${poll.prompt}" has closed. Winner: ${winnerText}.`
       : `"${poll.prompt}" has closed with no votes.`;
 
+    if (poll.group?._id) await postSystemMessage(poll.group._id, body);
+
     const members = await User.find({ _id: { $in: poll.group?.members || [] } });
     if (members.length > 0) {
       await notifyAndPersist(members, {
@@ -325,4 +386,19 @@ export const expirePolls = asyncHandler(async (req, res) => {
   }
 
   res.status(200).json({ message: `Job complete. Expired ${expiredCount} poll(s).` });
+});
+
+/**
+ * @desc    Premium "minimum headcount": once a meetup's RSVP deadline has passed,
+ *          cancel it if fewer people are in than the series requires, and tell
+ *          everyone. Each meetup is evaluated exactly once (minimumChecked), so a
+ *          restored meetup isn't cancelled again. Headcount = people who are in
+ *          plus the guests they're bringing; the waitlist doesn't count. If the
+ *          owner's Premium has lapsed the meetup is marked checked but left alone.
+ *          Runs every minute like the other jobs.
+ * @route   POST /api/jobs/cancel-under-minimum
+ */
+export const cancelUnderMinimum = asyncHandler(async (req, res) => {
+  const { checked, cancelled } = await evaluateDueMeetups();
+  res.status(200).json({ message: `Checked ${checked} meetup(s); cancelled ${cancelled}.` });
 });

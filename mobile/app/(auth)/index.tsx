@@ -1,40 +1,52 @@
 import { useSocialAuth } from "@/hooks/useSocialAuth";
 import { useAppleAuth } from "@/hooks/useAppleAuth";
-import { useRef, useState } from "react";
-import { Animated, Dimensions, Text, Image, View, TouchableOpacity, ActivityIndicator, StyleSheet, Linking } from "react-native";
-import { useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
+import { peekPendingInvite } from "@/utils/pendingInvite";
+import { authButtonOrder, type AuthOption } from "@/utils/authOptions";
+import { Text, Image, View, ActivityIndicator, StyleSheet, Linking, Platform } from "react-native";
+import Animated, { FadeInDown, FadeOutUp, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import { Button } from '@/components/ui/Button';
+import { useFocusEffect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from '@expo/vector-icons';
 import * as AppleAuthentication from "expo-apple-authentication";
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import { fontSize } from '@/constants/theme';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
+const BUTTON_HEIGHT = 52;
+const BUTTON_RADIUS = 14;
+// One duration for every part of the "More options" reveal so it moves as one.
+const REVEAL_MS = 260;
+const revealLayout = LinearTransition.duration(REVEAL_MS);
 
 export default function Index() {
-  const { handleSocialAuth, isLoading } = useSocialAuth();
+  const { handleSocialAuth, isLoading: googleIsLoading } = useSocialAuth();
   const { handleAppleAuth, isLoading: appleIsLoading } = useAppleAuth();
-  const isAnyLoading = isLoading || appleIsLoading;
+  const isAnyLoading = googleIsLoading || appleIsLoading;
   const router = useRouter();
-  const [showOtherOptions, setShowOtherOptions] = useState(false);
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const colors = useThemeColors();
+  const order = authButtonOrder(Platform.OS);
+  const [showMore, setShowMore] = useState(false);
+  // An invite picked up from a link or from the install is waiting for sign-in.
+  const [hasInvite, setHasInvite] = useState(false);
+  useFocusEffect(useCallback(() => {
+    const check = () => peekPendingInvite().then((p) => setHasInvite(!!p)).catch(() => {});
+    check();
+    // A fresh install's invite (install referrer / clipboard) can arrive a moment after launch.
+    const t = setTimeout(check, 1500);
+    return () => clearTimeout(t);
+  }, []));
 
-  const toggleOtherOptions = () => {
-    const toValue = showOtherOptions ? 0 : 1;
-    Animated.timing(slideAnim, {
-      toValue,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-    setShowOtherOptions(!showOtherOptions);
+  // The chevron turns as the extra options slide in. Phone drops down and fades in while the
+  // logo, the buttons and the toggle glide to their new spots, all on the same timing.
+  const chevron = useSharedValue(0);
+  const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${chevron.value * 180}deg` }] }));
+  const toggleMore = () => {
+    const next = !showMore;
+    chevron.value = withTiming(next ? 1 : 0, { duration: REVEAL_MS });
+    setShowMore(next);
   };
-
-  const primaryTranslateX = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -SCREEN_WIDTH],
-  });
-  const otherTranslateX = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [SCREEN_WIDTH, 0],
-  });
 
   const handleOpenPrivacyPolicy = () => {
     Linking.openURL("https://groupthatapp.com/privacy-policy/").catch((err) =>
@@ -42,170 +54,142 @@ export default function Index() {
     );
   };
 
+  const optionStyle = [styles.option, { backgroundColor: colors.surface }];
+
+  const renderOption = (option: AuthOption) => {
+    switch (option) {
+      case 'apple':
+        // Apple's own branded button (its style is Apple's guideline, kept black in both themes).
+        return appleIsLoading ? (
+          <View key="apple" style={[styles.appleButton, styles.shadow]}>
+            <ActivityIndicator size="small" color="#fff" />
+          </View>
+        ) : (
+          <View key="apple" pointerEvents={isAnyLoading ? 'none' : 'auto'} style={{ opacity: isAnyLoading ? 0.5 : 1 }}>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={BUTTON_RADIUS}
+              style={[styles.appleButton, styles.shadow]}
+              onPress={handleAppleAuth}
+            />
+          </View>
+        );
+      case 'google':
+        return (
+          <Button
+            key="google"
+            title="Continue with Google"
+            variant="outline"
+            size="lg"
+            onPress={() => handleSocialAuth("oauth_google")}
+            loading={googleIsLoading}
+            disabled={isAnyLoading && !googleIsLoading}
+            icon={<Image source={require("../../assets/images/google-logo.png")} style={styles.googleLogo} resizeMode="contain" />}
+            style={optionStyle}
+          />
+        );
+      case 'email':
+        return (
+          <Button
+            key="email"
+            title="Continue with Email"
+            variant="outline"
+            size="lg"
+            onPress={() => router.push('/(auth)/email')}
+            disabled={isAnyLoading}
+            icon={<Feather name="mail" size={20} color={colors.textPrimary} />}
+            style={optionStyle}
+          />
+        );
+      case 'phone':
+        return (
+          <Button
+            key="phone"
+            title="Continue with Phone"
+            variant="outline"
+            size="lg"
+            onPress={() => router.push('/(auth)/phone-login')}
+            disabled={isAnyLoading}
+            icon={<Feather name="phone" size={20} color={colors.textPrimary} />}
+            style={optionStyle}
+          />
+        );
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
-          <View style={styles.logoContainer}>
-            <View style={styles.logoBox}>
-              <Image
-                source={require("../../assets/images/splash-icon.png")}
-                style={styles.logoImage}
-                resizeMode="contain"
-              />
-            </View>
-          </View>
+        {/* The transition sits on the logo itself, not its container: the container's frame
+            animating doesn't move the logo, which would re-center instantly and jump. */}
+        <View style={styles.logoArea}>
+          <Animated.Image
+            layout={revealLayout}
+            source={require("../../assets/images/splash-icon.png")}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+        </View>
 
-          <View style={{ height: '50%' }} />
-
-          <View style={[styles.buttonGroup, { marginTop: 118 }]}>
-            <View style={styles.slideStage}>
-              {/* Primary: Google + Email */}
-              <Animated.View
-                style={[styles.slidePane, { transform: [{ translateX: primaryTranslateX }] }]}
-                pointerEvents={showOtherOptions ? 'none' : 'auto'}
-              >
-                <TouchableOpacity
-                  style={[styles.button, styles.shadow]}
-                  onPress={() => handleSocialAuth("oauth_google")}
-                  disabled={isAnyLoading}
-                >
-                  {isLoading ? <ActivityIndicator size="small" color="#000" /> : (
-                    <View style={styles.buttonContent}>
-                      <Image source={require("../../assets/images/google-logo.png")} style={styles.iconImage} resizeMode="contain" />
-                      <Text style={styles.buttonText} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Google</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.button, styles.shadow]}
-                  onPress={() => router.push('/(auth)/sign-in')}
-                >
-                  <View style={styles.buttonContent}>
-                      <Feather name="mail" size={24} color="#000" style={{ marginRight: 12 }} />
-                      <Text style={styles.buttonText} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Email</Text>
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-
-              {/* Other: Apple + Phone */}
-              <Animated.View
-                style={[styles.slidePane, styles.slidePaneOverlay, { transform: [{ translateX: otherTranslateX }] }]}
-                pointerEvents={showOtherOptions ? 'auto' : 'none'}
-              >
-                {appleIsLoading ? (
-                  <View style={[styles.appleButton, styles.shadow]}>
-                    <ActivityIndicator size="small" color="#fff" />
-                  </View>
-                ) : (
-                  <AppleAuthentication.AppleAuthenticationButton
-                    buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
-                    buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                    cornerRadius={9999}
-                    style={[styles.appleButton, styles.shadow]}
-                    onPress={handleAppleAuth}
-                  />
-                )}
-
-                <TouchableOpacity
-                  style={[styles.button, styles.shadow]}
-                  onPress={() => router.push('/(auth)/phone-login')}
-                  disabled={isAnyLoading}
-                >
-                  <View style={styles.buttonContent}>
-                    <Feather name="phone" size={22} color="#000" style={{ marginRight: 12 }} />
-                    <Text style={styles.buttonText} maxFontSizeMultiplier={1.3} numberOfLines={1} ellipsizeMode="tail">Continue with Phone</Text>
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-
-            {/* Other Options Toggle */}
-            <TouchableOpacity
-              style={styles.otherOptionsToggle}
-              onPress={toggleOtherOptions}
+        <Animated.View style={styles.buttonGroup} layout={revealLayout}>
+          {order.primary.map(renderOption)}
+          {showMore ? order.more.map((option) => (
+            <Animated.View
+              key={option}
+              entering={FadeInDown.duration(REVEAL_MS)}
+              exiting={FadeOutUp.duration(REVEAL_MS * 0.7)}
             >
-              <Text style={styles.otherOptionsText}>Other Options</Text>
-              <Feather name={showOtherOptions ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" style={{ marginLeft: 4 }} />
-            </TouchableOpacity>
-          </View>
+              {renderOption(option)}
+            </Animated.View>
+          )) : null}
+          {order.more.length > 0 ? (
+            <Animated.View layout={revealLayout}>
+              <PressableOpacity style={styles.moreToggle} onPress={toggleMore} accessibilityRole="button" accessibilityState={{ expanded: showMore }}>
+                <Text style={[styles.moreText, { color: colors.textMuted }]}>{showMore ? 'Fewer options' : 'More options'}</Text>
+                <Animated.View style={[{ marginLeft: 4 }, chevronStyle]}>
+                  <Feather name="chevron-down" size={16} color={colors.textMuted} />
+                </Animated.View>
+              </PressableOpacity>
+            </Animated.View>
+          ) : null}
+        </Animated.View>
 
-          <View style={{ flex: 1 }} />
-
-          <View>
-            <Text style={styles.footerText}>
-              By signing up, you agree to our
-              <Text style={styles.linkText} onPress={handleOpenPrivacyPolicy}> Privacy Policy</Text>
-            </Text>
+        {hasInvite ? (
+          <View style={[styles.inviteBanner, { backgroundColor: colors.brandSoft }]}>
+            <Feather name="check-circle" size={18} color={colors.success} style={{ marginRight: 8 }} />
+            <Text style={[styles.inviteBannerText, { color: colors.textPrimary }]}>Your invite is saved. Sign in or sign up to join the group.</Text>
           </View>
+        ) : (
+          <Text style={[styles.inviteHint, { color: colors.textMuted }]}>
+            Invited to a group? Tap the invite link again after signing in, or{' '}
+            <Text style={{ color: colors.brand, fontWeight: '600' }} onPress={() => router.push('/join/code')}>enter an invite code</Text>.
+          </Text>
+        )}
+
+        <Text style={[styles.footerText, { color: colors.textMuted }]}>
+          By continuing, you agree to our
+          <Text style={{ color: colors.brand }} onPress={handleOpenPrivacyPolicy}> Privacy Policy</Text>
+        </Text>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 32,
-    justifyContent: 'center',
-  },
-  logoContainer: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ translateY: -85 }],
-  },
-  logoBox: {
-    width: 320,
-    height: 196,
-    position: 'relative',
-  },
-  logoImage: {
-    width: 320,
-    height: 196,
-  },
-  buttonGroup: {
-    gap: 8,
-  },
-  slideStage: {
-    height: 104,
-  },
-  slidePane: {
-    width: '100%',
-    gap: 8,
-  },
-  slidePaneOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-  },
+  safeArea: { flex: 1 },
+  container: { flex: 1, paddingHorizontal: 24, paddingBottom: 12 },
+  logoArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  logoImage: { width: 320, height: 196 },
+  buttonGroup: { gap: 12, marginBottom: 20 },
+  option: { minHeight: BUTTON_HEIGHT, borderRadius: BUTTON_RADIUS },
   appleButton: {
     width: '100%',
-    height: 48,
+    height: BUTTON_HEIGHT,
     backgroundColor: '#000000',
-    borderRadius: 9999,
+    borderRadius: BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 9999,
-    height: 48,
-    paddingHorizontal: 24,
   },
   shadow: {
     shadowColor: "#000",
@@ -214,43 +198,11 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconImage: {
-    width: 20,
-    height: 20,
-    marginRight: 10,
-  },
-  buttonText: {
-    color: '#000000',
-    fontWeight: '600',
-    fontSize: 18,
-    flexShrink: 1,
-  },
-  otherOptionsToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    marginTop: 8,
-  },
-  otherOptionsText: {
-    color: '#6B7280',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  footerText: {
-    textAlign: 'center',
-    color: '#6B7280',
-    fontSize: 12,
-    lineHeight: 16,
-    marginTop: 24,
-    paddingHorizontal: 8,
-  },
-  linkText: {
-    color: '#3B82F6',
-  },
+  googleLogo: { width: 20, height: 20 },
+  moreToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8 },
+  moreText: { fontWeight: '600', fontSize: fontSize.md },
+  inviteBanner: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14 },
+  inviteBannerText: { flex: 1, fontSize: fontSize.md, lineHeight: 19 },
+  inviteHint: { textAlign: 'center', fontSize: fontSize.sm, lineHeight: 18, paddingHorizontal: 8 },
+  footerText: { textAlign: 'center', fontSize: fontSize.xs, lineHeight: 16, marginTop: 16, paddingHorizontal: 8 },
 });

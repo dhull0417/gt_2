@@ -1,11 +1,13 @@
 // Android replacement for expo-image-picker's allowsEditing (its toolbar has no
 // visible confirm/cancel there). Mount once near app root, then call requestImageCrop().
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, useWindowDimensions, ActivityIndicator } from 'react-native';
+import { Modal, View, Text, StyleSheet, useWindowDimensions, ActivityIndicator } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { PhotoReadError } from '@/utils/photoErrors';
 
 const MAX_ZOOM = 4;
 function clamp(value: number, min: number, max: number) {
@@ -18,11 +20,13 @@ type CropRequest = {
   width: number;
   height: number;
   resolve: (uri: string | null) => void;
+  reject: (err: Error) => void;
 };
 
 let showCropper: ((uri: string, width: number, height: number) => Promise<string | null>) | null = null;
 
-/** Opens the crop UI for a picked photo. Resolves with the cropped local URI, or null if canceled. */
+/** Opens the crop UI for a picked photo. Resolves with the cropped local URI, or null if canceled;
+ *  rejects with PhotoReadError if the photo couldn't be cropped. */
 export function requestImageCrop(uri: string, width: number, height: number): Promise<string | null> {
   if (!showCropper) return Promise.resolve(null);
   return showCropper(uri, width, height);
@@ -45,7 +49,7 @@ export function ImageCropperHost() {
 
   useEffect(() => {
     showCropper = (uri, width, height) => {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         scale.value = 1;
         savedScale.value = 1;
         translateX.value = 0;
@@ -53,7 +57,7 @@ export function ImageCropperHost() {
         savedTranslateX.value = 0;
         savedTranslateY.value = 0;
         setProcessing(false);
-        setRequest({ uri, width, height, resolve });
+        setRequest({ uri, width, height, resolve, reject });
       });
     };
     return () => {
@@ -137,8 +141,10 @@ export function ImageCropperHost() {
         { format: ImageManipulator.SaveFormat.JPEG },
       );
       activeRequest.resolve(result.uri);
-    } catch {
-      activeRequest.resolve(null);
+    } catch (e) {
+      // Used to resolve null (looked like a cancel, so nothing happened and people retried);
+      // report it so the screen can say the photo couldn't be used.
+      activeRequest.reject(new PhotoReadError(e));
     } finally {
       setRequest(null);
     }
@@ -150,25 +156,25 @@ export function ImageCropperHost() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={handleCancel} hitSlop={12} disabled={processing}>
+            <PressableOpacity onPress={handleCancel} hitSlop={12} disabled={processing}>
               <Text style={[styles.headerButton, processing && styles.headerButtonDisabled]}>Cancel</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
             <Text style={styles.headerTitle}>Move and Scale</Text>
-            <TouchableOpacity onPress={handleConfirm} hitSlop={12} disabled={processing}>
+            <PressableOpacity onPress={handleConfirm} hitSlop={12} disabled={processing}>
               <Text style={[styles.headerButton, styles.headerButtonPrimary, processing && styles.headerButtonDisabled]}>Choose</Text>
-            </TouchableOpacity>
+            </PressableOpacity>
           </View>
 
           <View style={styles.cropArea}>
             {request && (
               <GestureDetector gesture={composedGesture}>
-                <View style={StyleSheet.absoluteFillObject}>
+                <View style={StyleSheet.absoluteFill}>
                   {/* Full image, dimmed, unclipped — gives context on what's outside the crop. */}
-                  <View style={[StyleSheet.absoluteFillObject, styles.centerContent]} pointerEvents="none">
+                  <View style={[StyleSheet.absoluteFill, styles.centerContent]} pointerEvents="none">
                     <Animated.Image source={{ uri: request.uri }} style={[imageStyle, styles.dimmedImage]} />
                   </View>
                   {/* Same image again, clipped to the crop square, at full brightness. */}
-                  <View style={[StyleSheet.absoluteFillObject, styles.centerContent]} pointerEvents="none">
+                  <View style={[StyleSheet.absoluteFill, styles.centerContent]} pointerEvents="none">
                     <View style={[styles.cropSquare, { width: VIEW_SIZE, height: VIEW_SIZE }]}>
                       <Animated.Image source={{ uri: request.uri }} style={imageStyle} />
                     </View>
@@ -178,7 +184,7 @@ export function ImageCropperHost() {
             )}
 
             {processing && (
-              <View style={[StyleSheet.absoluteFillObject, styles.processingOverlay]}>
+              <View style={[StyleSheet.absoluteFill, styles.processingOverlay]}>
                 <ActivityIndicator size="large" color="#fff" />
                 <Text style={styles.processingText}>Processing photo…</Text>
               </View>

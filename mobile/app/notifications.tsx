@@ -1,19 +1,34 @@
-import React, { useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, SectionList, StyleSheet, RefreshControl } from 'react-native';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from '@/contexts/ToastContext';
+import { SkeletonList } from '@/components/Skeleton';
+import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { onlineManager, useMutationState, useQuery } from '@tanstack/react-query';
+import { queueMutation } from '@/utils/queuedMutations';
 import { useGetNotifications } from '@/hooks/useGetNotifications';
 import { useMarkNotificationsAsRead } from '@/hooks/useMarkNotificationsAsRead';
-import { Notification, User, useApiClient, userApi } from '@/utils/api';
+import { rideNoticeLead } from '@/utils/rides';
+import { Notification, User, useApiClient, userApi, notificationApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
-import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { getChangeLines, type ChangeLine } from '@/utils/changeLines';
 import { getNotificationIcon } from '@/utils/notificationIcons';
-import { ACCEPT_INVITE_MUTATION_KEY, DECLINE_INVITE_MUTATION_KEY } from '@/utils/offlineMutations';
+import { goToTarget, resolveNotificationTarget } from '@/utils/notificationRouting';
 import { getUserDisplayName } from '@/utils/groupDisplay';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
+import { formatMeetupDate, formatMeetupTime } from '@/utils/meetupTime';
+import { timeoutNoticeLength } from '@/utils/chatTimeout';
 
 const timeAgo = (date: string) => {
     const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
+    if (seconds < 45) return "just now";
     let interval = seconds / 31536000;
     if (interval > 1) return Math.floor(interval) + "y ago";
     interval = seconds / 2592000;
@@ -24,7 +39,7 @@ const timeAgo = (date: string) => {
     if (interval > 1) return Math.floor(interval) + "h ago";
     interval = seconds / 60;
     if (interval > 1) return Math.floor(interval) + "m ago";
-    return Math.floor(seconds) + "s ago";
+    return "just now";
 };
 
 const CHANGED_FIELD_LABELS: Record<string, string> = {
@@ -42,15 +57,29 @@ const describeChangedFields = (fields?: string[]) => {
     return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
 };
 
+// In the viewer's own timezone, like everywhere else meetup times are shown.
 const formatMeetupDateTime = (meetup?: { date?: string; time?: string; timezone?: string }) => {
     if (!meetup?.date) return null;
-    const options: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: meetup.timezone };
-    const dateStr = new Date(meetup.date).toLocaleDateString(undefined, options);
-    return meetup.time ? `${dateStr} at ${meetup.time}` : dateStr;
+    if (!meetup.time) {
+        return new Date(meetup.date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', timeZone: meetup.timezone });
+    }
+    const m = { date: meetup.date, time: meetup.time, timezone: meetup.timezone };
+    return `${formatMeetupDate(m, { weekday: 'long', month: 'long', day: 'numeric' })} at ${formatMeetupTime(m)}`;
 };
 
-const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAccepting, isDeclining }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, isAccepting: boolean, isDeclining: boolean }) => {
+const ChangeLines = ({ lines, styles }: { lines: ChangeLine[]; styles: ReturnType<typeof useMemoStyles> }) => (
+    <View style={styles.changeLines}>
+        {lines.map(line => (
+            <Text key={line.label} style={styles.changeLine}>
+                <Text style={styles.bold}>{line.label}: </Text>{line.value}
+            </Text>
+        ))}
+    </View>
+);
+
+const NotificationItem = ({ notification, currentUser, onAccept, onDecline, onDelete, isAccepting, isDeclining, replyQueued = false, colors, unreadBg, highlight }: { notification: Notification, currentUser: User, onAccept: (id: string) => void, onDecline: (id: string) => void, onDelete: (id: string) => void, isAccepting: boolean, isDeclining: boolean, replyQueued?: boolean, colors: ThemeColors, unreadBg: string, highlight: boolean }) => {
     const router = useRouter();
+    const styles = useMemoStyles(colors);
 
     const getMessage = () => {
         const senderName = notification.sender ? getUserDisplayName(notification.sender) : '';
@@ -61,6 +90,12 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
         switch (notification.type) {
             case 'group-invite':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> invited you to join <Text style={styles.bold}>{groupName}</Text>.</Text>;
+            case 'join-request':
+                if (notification.status === 'accepted') return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> was approved to join <Text style={styles.bold}>{groupName}</Text>.</Text>;
+                if (notification.status === 'declined') return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text>'s request to join <Text style={styles.bold}>{groupName}</Text> was declined.</Text>;
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> asked to join <Text style={styles.bold}>{groupName}</Text> with the invite link.</Text>;
+            case 'join-approved':
+                return <Text style={styles.messageText}>You're in! Your request to join <Text style={styles.bold}>{groupName}</Text> was approved.</Text>;
             case 'invite-accepted':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> accepted your invitation to <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'invite-declined':
@@ -69,8 +104,24 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> added you to <Text style={styles.bold}>{groupName}</Text>.</Text>;
             case 'group-member-joined':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> has been added to <Text style={styles.bold}>{groupName}</Text>!</Text>;
+            case 'chat-timeout':
+                // Never names the moderator.
+                return <Text style={styles.messageText}>You've been timed out of the chat in <Text style={styles.bold}>{groupName}</Text> {timeoutNoticeLength(notification.meta?.duration)}.</Text>;
             case 'group-removed':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> removed you from <Text style={styles.bold}>{groupName}</Text>.</Text>;
+            case 'ownership-transferred': {
+                const premiumNote = notification.meta?.premiumPaused
+                    ? ' Its Premium features are paused until you have your own Premium subscription.'
+                    : '';
+                if (!notification.sender || notification.meta?.reason === 'owner-deleted-account') {
+                    return <Text style={styles.messageText}>The previous owner of <Text style={styles.bold}>{groupName}</Text> left GroupThat, so you're now the owner.{premiumNote}</Text>;
+                }
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> made you the owner of <Text style={styles.bold}>{groupName}</Text>.{premiumNote}</Text>;
+            }
+            case 'group-deleted':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> deleted the group <Text style={styles.bold}>{notification.meta?.groupName || 'you were in'}</Text>.</Text>;
+            case 'schedule-removed':
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> removed the <Text style={styles.bold}>{notification.meta?.scheduleName || 'schedule'}</Text> schedule{groupName ? <> from <Text style={styles.bold}>{groupName}</Text></> : null}. Its upcoming meetups were deleted.</Text>;
             case 'group-updated':
                 return <Text style={styles.messageText}>The group <Text style={styles.bold}>{groupName}</Text> was renamed.</Text>;
             case 'meetup-rsvp-in':
@@ -88,15 +139,51 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
                     return <Text style={styles.messageText}>You're in! A spot opened up for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
                 }
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> was promoted to "in" for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'priority-bumped':
+                return <Text style={styles.messageText}>A member with RSVP priority took a spot in <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>. You're first on the waitlist.</Text>;
+            case 'guests-removed':
+                return notification.meta?.count
+                    ? <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> changed your guests for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text> to {notification.meta.count}.</Text>
+                    : <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> removed your guests from <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'ride-assigned':
+            case 'ride-removed':
+                return <Text style={styles.messageText}>{rideNoticeLead(notification.type, notification.meta)} <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'tournament-set':
+                return <Text style={styles.messageText}>Teams and matches are set for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'tournament-match-ready':
+                return <Text style={styles.messageText}>Your next match is up at <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+            case 'tournament-finished':
+                return <Text style={styles.messageText}>We have a champion at <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>. See the results.</Text>;
             case 'meetup-created':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> scheduled a new meetup{groupName ? <> for <Text style={styles.bold}>{groupName}</Text></> : null}.</Text>;
             case 'meetup-updated': {
+                const lines = getChangeLines(notification.meta);
+                if (lines.length > 0) {
+                    return (
+                        <View>
+                            <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> updated <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>:</Text>
+                            <ChangeLines lines={lines} styles={styles} />
+                        </View>
+                    );
+                }
                 const changeSummary = describeChangedFields(notification.meta?.changedFields);
                 const when = formatMeetupDateTime(notification.meetup);
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> updated the {changeSummary || 'details'} for <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>{when ? <>{' — '}<Text style={styles.bold}>{when}</Text></> : null}.</Text>;
             }
+            case 'schedule-updated': {
+                const lines = getChangeLines(notification.meta);
+                return (
+                    <View>
+                        <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> updated the <Text style={styles.bold}>{notification.meta?.scheduleName || 'recurring'}</Text> schedule{groupName ? <> in <Text style={styles.bold}>{groupName}</Text></> : null}{lines.length > 0 ? ':' : '.'}</Text>
+                        <ChangeLines lines={lines} styles={styles} />
+                    </View>
+                );
+            }
             case 'meetup-cancelled':
-                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> cancelled <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
+                if (notification.meta?.reason === 'minimum-headcount') {
+                    return <Text style={styles.messageText}><Text style={styles.bold}>{meetupName || 'A meetup'}</Text> was cancelled: only {notification.meta.count ?? 0} of the {notification.meta.needed ?? 0} needed signed up.</Text>;
+                }
+                return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> cancelled <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.{notification.meta?.reason ? <>{' '}<Text style={{ fontStyle: 'italic' }}>"{notification.meta.reason}"</Text></> : null}</Text>;
             case 'meetup-restored':
                 return <Text style={styles.messageText}><Text style={styles.bold}>{senderName}</Text> restored <Text style={styles.bold}>{meetupName || 'a meetup'}</Text>.</Text>;
             case 'meetup-rsvp-reminder':
@@ -114,71 +201,86 @@ const NotificationItem = ({ notification, currentUser, onAccept, onDecline, isAc
         }
     };
 
+    // Every notification leads somewhere (see utils/notificationRouting.ts), and
+    // the same rules apply when the OS push for it is tapped.
     const handlePress = () => {
-        // The user is no longer a member, so the group details screen isn't reachable.
-        if (notification.type === 'group-removed') return;
-        // Meetup-related notifications deep-link straight to that meetup's detail
-        // modal — mirrors the OS push-tap handling in usePushNotifications.ts.
-        if (notification.meetup?._id) {
-            router.push({
-                pathname: '/(tabs)',
-                params: { openMeetupId: notification.meetup._id }
-            });
-            return;
-        }
-        if (notification.group?._id) {
-            // See the matching branch in group-chat/[id].tsx's handleOpenDetails.
-            if (Platform.OS === 'ios') {
-                router.push({
-                    pathname: '/group-details/[id]',
-                    params: { id: notification.group._id }
-                });
-                return;
-            }
-            router.navigate('/(tabs)/groups');
-            router.push({
-                pathname: '/groups/[id]',
-                params: { id: notification.group._id }
-            });
-        }
+        goToTarget(router, resolveNotificationTarget({
+            type: notification.type,
+            groupId: notification.group?._id,
+            meetupId: notification.meetup?._id,
+            pollId: notification.poll?._id,
+            tournamentId: notification.meta?.tournamentId,
+        }));
     };
 
     const icon = getNotificationIcon(notification.type);
 
-    return (
-        <TouchableOpacity style={[styles.itemContainer, !notification.read && styles.unread]} onPress={handlePress} activeOpacity={0.7}>
+    const needsAnswer = (notification.type === 'group-invite' || notification.type === 'join-request') && notification.status === 'pending';
+    const canDelete = !needsAnswer;
+
+    const row = (
+        <PressableOpacity style={[styles.itemContainer, highlight && { backgroundColor: unreadBg, borderLeftWidth: 3, borderLeftColor: colors.brand }]} onPress={handlePress} activeOpacity={0.7}>
             <View style={styles.iconContainer}>
                 <Feather name={icon.name as any} size={24} color={icon.color} />
             </View>
             <View style={styles.textContainer}>
                 {getMessage()}
                 <Text style={styles.timeText}>{timeAgo(notification.createdAt)}</Text>
-                {notification.type === 'group-invite' && notification.status === 'pending' && (
+                {needsAnswer && (
                     <View style={styles.actionContainer}>
-                        <TouchableOpacity
+                        <PressableOpacity
                             style={[styles.actionButton, styles.acceptButton, (isAccepting || isDeclining) && styles.actionButtonDisabled]}
                             onPress={() => onAccept(notification._id)}
                             disabled={isAccepting || isDeclining}
                         >
-                            <Text style={styles.actionTextAccept}>{isAccepting ? 'Accepting…' : 'Accept'}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
+                            <Text style={styles.actionTextAccept}>{isAccepting ? (replyQueued ? 'Accepts when online' : 'Accepting…') : 'Accept'}</Text>
+                        </PressableOpacity>
+                        <PressableOpacity
                             style={[styles.actionButton, styles.declineButton, (isAccepting || isDeclining) && styles.actionButtonDisabled]}
                             onPress={() => onDecline(notification._id)}
                             disabled={isAccepting || isDeclining}
                         >
-                            <Text style={styles.actionTextDecline}>{isDeclining ? 'Declining…' : 'Decline'}</Text>
-                        </TouchableOpacity>
+                            <Text style={styles.actionTextDecline}>{isDeclining ? (replyQueued ? 'Declines when online' : 'Declining…') : 'Decline'}</Text>
+                        </PressableOpacity>
                     </View>
                 )}
             </View>
-        </TouchableOpacity>
+        </PressableOpacity>
+    );
+
+    if (!canDelete) return row;
+    return (
+        <ReanimatedSwipeable
+            friction={2}
+            overshootRight={false}
+            renderRightActions={() => (
+                <PressableOpacity
+                    haptic="press"
+                    accessibilityLabel="Delete notification"
+                    onPress={() => onDelete(notification._id)}
+                    style={{ width: 84, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}
+                >
+                    <Feather name="trash-2" size={20} color="#fff" />
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', marginTop: 4 }}>Delete</Text>
+                </PressableOpacity>
+            )}
+        >
+            {row}
+        </ReanimatedSwipeable>
     );
 };
 
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
+
 const NotificationsScreen = () => {
     const api = useApiClient();
-    const { data: notifications, isLoading, refetch } = useGetNotifications();
+    const queryClient = useQueryClient();
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const unreadBg = scheme === 'dark' ? '#152238' : '#EFF6FF';
+    const styles = useMemoStyles(colors);
+    const notificationsQuery = useGetNotifications();
+    const { data: notifications, isLoading, refetch } = notificationsQuery;
     const { mutate: markAsRead } = useMarkNotificationsAsRead();
     const { data: currentUser } = useQuery<User>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
 
@@ -186,30 +288,81 @@ const NotificationsScreen = () => {
     // live in utils/offlineMutations.ts / app/_layout.tsx's MutationCache, so an
     // accept/decline tapped offline is queued and still resolves correctly even
     // if this screen isn't around to see it (see useRsvp.ts for the same pattern).
-    const acceptMutation = useMutation<unknown, any, string>({
-        mutationKey: ACCEPT_INVITE_MUTATION_KEY,
-        onError: (error) => console.error("Failed to accept invite", error),
+    // Invitation replies are queued: tapped offline they are saved and sent when the connection
+    // is back (mutationFn + list refresh are in utils/offlineMutations.ts / app/_layout.tsx).
+    const queryClientForInvites = useQueryClient();
+    const inviteReplies = useMutationState({
+        filters: { status: 'pending', predicate: (m) => ['acceptInvite', 'declineInvite'].includes(m.options.mutationKey?.[0] as string) },
+        select: (m) => ({ id: m.state.variables as string, kind: m.options.mutationKey?.[0] as string, paused: m.state.isPaused }),
     });
-    const declineMutation = useMutation<unknown, any, string>({
-        mutationKey: DECLINE_INVITE_MUTATION_KEY,
-        onError: (error) => console.error("Failed to decline invite", error),
-    });
+    const replyFor = (id: string) => inviteReplies.find((r) => r.id === id);
 
+    // The unread highlight stays for as long as you're on this screen: remember which rows were
+    // unread when it opened, then mark everything read (which clears the bell and app badge).
+    const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set());
+    const snapshotTaken = useRef(false);
+    const [focusTick, setFocusTick] = useState(0);
     useFocusEffect(useCallback(() => {
+        setFocusTick(t => t + 1);
+        return () => { snapshotTaken.current = false; setUnreadIds(new Set()); };
+    }, []));
+    useEffect(() => {
+        if (!notifications || snapshotTaken.current) return;
+        snapshotTaken.current = true;
+        setUnreadIds(new Set(notifications.filter(n => !n.read).map(n => n._id)));
         markAsRead(undefined, { onSettled: () => refetch() });
-    }, [refetch, markAsRead]));
+    }, [notifications, focusTick, markAsRead, refetch]);
 
-    const handleAccept = (id: string) => acceptMutation.mutate(id);
-    const handleDecline = (id: string) => declineMutation.mutate(id);
+    const replyToInvite = (key: 'acceptInvite' | 'declineInvite', id: string) => {
+        if (!onlineManager.isOnline()) toast.info("Saved. It'll send when you're back online.");
+        queueMutation(queryClientForInvites, key, id)
+            .then(() => {
+                if (key !== 'acceptInvite') return;
+                const isRequest = queryClient.getQueryData<Notification[]>(['notifications'])?.find(n => n._id === id)?.type === 'join-request';
+                toast.success(isRequest ? 'Request approved' : 'Invite accepted');
+            })
+            .catch(() => { /* MutationCache.onError shows why */ });
+    };
+    const handleAccept = (id: string) => replyToInvite('acceptInvite', id);
+    const handleDecline = (id: string) => replyToInvite('declineInvite', id);
+
+    const handleDelete = async (id: string) => {
+        const previous = queryClient.getQueryData<Notification[]>(['notifications']);
+        queryClient.setQueryData<Notification[]>(['notifications'], (old) => old?.filter(n => n._id !== id));
+        try {
+            await notificationApi.deleteNotification(api, id);
+        } catch {
+            queryClient.setQueryData(['notifications'], previous);
+            toast.error("Couldn't delete that. Try again.");
+        }
+    };
+
+    // Offline, this says so and stops instead of spinning until the connection is back.
+    const { refreshing: isPullRefreshing, refresh: handlePullRefresh } = useRefreshOrToast([() => refetch()]);
+
+    const sections = useMemo(() => {
+        const today = startOfToday();
+        const list = notifications ?? [];
+        const todays = list.filter(n => new Date(n.createdAt).getTime() >= today);
+        const earlier = list.filter(n => new Date(n.createdAt).getTime() < today);
+        return [
+            ...(todays.length ? [{ title: 'Today', data: todays }] : []),
+            ...(earlier.length ? [{ title: 'Earlier', data: earlier }] : []),
+        ];
+    }, [notifications]);
+
+    if (isOfflineEmpty(notificationsQuery)) {
+        return <View style={styles.container}><OfflineEmptyState message="Connect to the internet to load your notifications." onRetry={handlePullRefresh} /></View>;
+    }
 
     if (isLoading || !currentUser) {
-        return <View style={styles.center}><LoadingAnimation /></View>;
+        return <View style={styles.container}><SkeletonList kind="notification" count={7} /></View>;
     }
 
     if (!notifications || notifications.length === 0) {
         return (
             <View style={styles.center}>
-                <Feather name="bell-off" size={48} color="#D1D5DB" />
+                <Feather name="bell-off" size={48} color={colors.textFaint} />
                 <Text style={styles.emptyText}>No notifications yet.</Text>
             </View>
         );
@@ -217,43 +370,68 @@ const NotificationsScreen = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
-            <FlatList
-                data={notifications}
+            <SectionList
+                sections={sections}
                 renderItem={({ item }) => (
                     <NotificationItem
                         notification={item}
                         currentUser={currentUser}
                         onAccept={handleAccept}
                         onDecline={handleDecline}
-                        isAccepting={acceptMutation.isPending && acceptMutation.variables === item._id}
-                        isDeclining={declineMutation.isPending && declineMutation.variables === item._id}
+                        onDelete={handleDelete}
+                        isAccepting={replyFor(item._id)?.kind === 'acceptInvite'}
+                        isDeclining={replyFor(item._id)?.kind === 'declineInvite'}
+                        replyQueued={!!replyFor(item._id)?.paused}
+                        colors={colors}
+                        unreadBg={unreadBg}
+                        highlight={unreadIds.has(item._id)}
                     />
                 )}
+                renderSectionHeader={({ section }) => (
+                    <Text style={styles.sectionHeader}>{section.title}</Text>
+                )}
                 keyExtractor={item => item._id}
+                stickySectionHeadersEnabled={false}
                 contentContainerStyle={{ paddingVertical: 8 }}
+                refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
             />
         </SafeAreaView>
     );
 };
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F9FAFB' },
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' },
-    emptyText: { marginTop: 16, fontSize: 16, color: '#6B7280' },
-    itemContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: 'white' },
-    unread: { backgroundColor: '#EFF6FF', borderLeftWidth: 3, borderLeftColor: '#4A90E2' },
-    iconContainer: { marginRight: 16, marginTop: 2 },
-    textContainer: { flex: 1 },
-    messageText: { fontSize: 15, color: '#374151', lineHeight: 22 },
-    bold: { fontWeight: 'bold' },
-    timeText: { fontSize: 12, color: '#9CA3AF', marginTop: 4 },
-    actionContainer: { flexDirection: 'row', marginTop: 12, gap: 12 },
-    actionButton: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
-    actionButtonDisabled: { opacity: 0.5 },
-    acceptButton: { backgroundColor: '#10B981' },
-    declineButton: { backgroundColor: '#F3F4F6' },
-    actionTextAccept: { color: 'white', fontWeight: 'bold' },
-    actionTextDecline: { color: '#4B5563', fontWeight: 'bold' },
-});
+// Small factory so both the screen and the row component share one token-driven
+// stylesheet without recreating it on every render (memoized by theme identity).
+const styleCache = new Map<ThemeColors, ReturnType<typeof buildStyles>>();
+function buildStyles(colors: ThemeColors) {
+    return StyleSheet.create({
+        container: { flex: 1, backgroundColor: colors.background },
+        center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+        sectionHeader: { fontSize: 12, fontWeight: '800' as const, letterSpacing: 0.8, textTransform: 'uppercase' as const, color: colors.textFaint, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, backgroundColor: colors.background },
+        emptyText: { marginTop: 16, fontSize: 16, color: colors.textMuted },
+        itemContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.surface },
+        iconContainer: { marginRight: 16, marginTop: 2 },
+        textContainer: { flex: 1 },
+        messageText: { fontSize: 15, color: colors.textSecondary, lineHeight: 22 },
+        bold: { fontWeight: 'bold' as const },
+        changeLines: { marginTop: 4, gap: 2 },
+        changeLine: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
+        timeText: { fontSize: 12, color: colors.textFaint, marginTop: 4 },
+        actionContainer: { flexDirection: 'row' as const, marginTop: 12, gap: 12 },
+        actionButton: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
+        actionButtonDisabled: { opacity: 0.5 },
+        acceptButton: { backgroundColor: colors.success },
+        declineButton: { backgroundColor: colors.backgroundAlt },
+        actionTextAccept: { color: 'white', fontWeight: 'bold' as const },
+        actionTextDecline: { color: colors.textSecondary, fontWeight: 'bold' as const },
+    });
+}
+function useMemoStyles(colors: ThemeColors) {
+    let s = styleCache.get(colors);
+    if (!s) {
+        s = buildStyles(colors);
+        styleCache.set(colors, s);
+    }
+    return s;
+}
 
 export default NotificationsScreen;

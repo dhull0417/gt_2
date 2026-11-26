@@ -2,19 +2,21 @@ import React, { useMemo, useState } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
     TextInput,
     StyleSheet,
     Modal,
     ActivityIndicator,
     ScrollView,
+    KeyboardAvoidingView,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { DateTime } from 'luxon';
 import NativeTimePicker from './NativeTimePicker';
 import { useCreatePoll } from '@/hooks/useCreatePoll';
+import { useThemeColors, useAppearance } from '@/contexts/AppearanceContext';
 
 interface CreatePollModalProps {
     visible: boolean;
@@ -25,6 +27,16 @@ interface CreatePollModalProps {
 
 const MAX_PROMPT_LENGTH = 100;
 const MIN_OPTIONS = 2;
+
+// One-tap ways to end a poll; "Pick a date" keeps the full date and time controls.
+type QuickExpiry = '1h' | '1d' | '3d' | '1w' | 'none' | 'custom';
+const QUICK_EXPIRY: { key: Exclude<QuickExpiry, 'custom'>; label: string; add?: { hours?: number; days?: number; weeks?: number } }[] = [
+    { key: '1h', label: '1 hour', add: { hours: 1 } },
+    { key: '1d', label: '1 day', add: { days: 1 } },
+    { key: '3d', label: '3 days', add: { days: 3 } },
+    { key: '1w', label: '1 week', add: { weeks: 1 } },
+    { key: 'none', label: 'No end' },
+];
 const MAX_OPTIONS = 10;
 const PROMPT_PLACEHOLDER = "What time works best for everyone this weekend?";
 
@@ -49,6 +61,7 @@ const combineDateAndTime = (isoDate: string, time: string, timezone: string): st
 const InlineCalendar = ({ value, onChange, minDate }: {
     value: string; onChange: (iso: string) => void; minDate?: string;
 }) => {
+    const colors = useThemeColors();
     const [month, setMonth] = useState(
         value ? DateTime.fromISO(value).startOf("month") : DateTime.now().startOf("month")
     );
@@ -67,17 +80,17 @@ const InlineCalendar = ({ value, onChange, minDate }: {
     return (
         <View style={cal.container}>
             <View style={cal.nav}>
-                <TouchableOpacity onPress={() => setMonth(m => m.minus({ months: 1 }))} style={cal.navBtn}>
-                    <Feather name="chevron-left" size={22} color="#4A90E2" />
-                </TouchableOpacity>
-                <Text style={cal.monthLabel}>{month.toFormat("MMMM yyyy")}</Text>
-                <TouchableOpacity onPress={() => setMonth(m => m.plus({ months: 1 }))} style={cal.navBtn}>
-                    <Feather name="chevron-right" size={22} color="#4A90E2" />
-                </TouchableOpacity>
+                <PressableOpacity accessibilityLabel="Go back" onPress={() => setMonth(m => m.minus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
+                    <Feather name="chevron-left" size={22} color={colors.brand} />
+                </PressableOpacity>
+                <Text style={[cal.monthLabel, { color: colors.textPrimary }]}>{month.toFormat("MMMM yyyy")}</Text>
+                <PressableOpacity onPress={() => setMonth(m => m.plus({ months: 1 }))} style={[cal.navBtn, { backgroundColor: colors.brandSoft }]}>
+                    <Feather name="chevron-right" size={22} color={colors.brand} />
+                </PressableOpacity>
             </View>
             <View style={cal.weekRow}>
                 {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-                    <Text key={i} style={cal.dayHeader}>{d}</Text>
+                    <Text key={i} style={[cal.dayHeader, { color: colors.textFaint }]}>{d}</Text>
                 ))}
             </View>
             {weeks.map((week, wi) => (
@@ -88,16 +101,21 @@ const InlineCalendar = ({ value, onChange, minDate }: {
                         const selected = iso === value;
                         const disabled = day < minDT;
                         return (
-                            <TouchableOpacity
+                            <PressableOpacity
                                 key={iso}
-                                style={[cal.cell, selected && cal.cellSelected, disabled && cal.cellDisabled]}
+                                style={[cal.cell, selected && { backgroundColor: colors.brand, borderRadius: 100 }, disabled && cal.cellDisabled]}
                                 onPress={() => !disabled && onChange(iso)}
                                 disabled={disabled}
                             >
-                                <Text style={[cal.cellText, selected && cal.cellTextSelected, disabled && cal.cellTextDisabled]}>
+                                <Text style={[
+                                    cal.cellText,
+                                    { color: colors.textSecondary },
+                                    selected && cal.cellTextSelected,
+                                    disabled && { color: colors.borderStrong },
+                                ]}>
                                     {day.day}
                                 </Text>
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         );
                     })}
                 </View>
@@ -111,26 +129,32 @@ const InlineCalendar = ({ value, onChange, minDate }: {
 
 const DatePickerModal = ({ visible, value, minDate, onChange, onCancel }: {
     visible: boolean; value: string; minDate?: string; onChange: (iso: string) => void; onCancel: () => void;
-}) => (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-        <View style={s.popupWrap}>
-            <View style={s.calendarPopupCard}>
-                <View style={s.popupHeader}>
-                    <Text style={s.popupTitle}>Expiration Date</Text>
-                    <TouchableOpacity onPress={onCancel} style={{ padding: 4 }} activeOpacity={0.7}>
-                        <Feather name="x" size={20} color="#9CA3AF" />
-                    </TouchableOpacity>
-                </View>
-                <View style={{ padding: 8 }}>
-                    {visible && <InlineCalendar value={value} onChange={onChange} minDate={minDate} />}
+}) => {
+    const colors = useThemeColors();
+    return (
+        <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={s.popupWrap}>
+                <View style={[s.calendarPopupCard, { backgroundColor: colors.surface }]}>
+                    <View style={[s.popupHeader, { borderBottomColor: colors.border }]}>
+                        <Text style={[s.popupTitle, { color: colors.textPrimary }]}>Expiration Date</Text>
+                        <PressableOpacity accessibilityLabel="Close" onPress={onCancel} style={{ padding: 4 }} activeOpacity={0.7}>
+                            <Feather name="x" size={20} color={colors.textFaint} />
+                        </PressableOpacity>
+                    </View>
+                    <View style={{ padding: 8 }}>
+                        {visible && <InlineCalendar value={value} onChange={onChange} minDate={minDate} />}
+                    </View>
                 </View>
             </View>
-        </View>
-    </Modal>
-);
+        </Modal>
+    );
+};
 
 const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModalProps) => {
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const isDark = scheme === 'dark';
     const { mutateAsync: createPoll, isPending } = useCreatePoll();
 
     const [prompt, setPrompt] = useState('');
@@ -143,7 +167,8 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
     const [showTimePopup, setShowTimePopup] = useState(false);
 
     const filledOptionCount = options.filter(o => o.trim().length > 0).length;
-    const hasExpiry = !!expiryDate && !!expiryTime;
+    const [quick, setQuick] = useState<QuickExpiry>('1d');
+    const hasExpiry = quick === 'none' || (!!expiryDate && !!expiryTime);
     const canStartPoll = prompt.trim().length > 0 && filledOptionCount >= MIN_OPTIONS && hasExpiry;
 
     const resetAndClose = () => {
@@ -152,6 +177,7 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
         setAllowMultiple(false);
         setExpiryDate(null);
         setExpiryTime(null);
+        setQuick('1d');
         setShowDatePopup(false);
         setShowTimePopup(false);
         onClose();
@@ -167,14 +193,21 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
     };
 
     const handleStartPoll = async () => {
-        if (!canStartPoll || !expiryDate || !expiryTime) return;
+        if (!canStartPoll) return;
         try {
+            let expiresAt: string | null = null;
+            if (quick === 'custom') {
+                expiresAt = combineDateAndTime(expiryDate!, expiryTime!, timezone);
+            } else if (quick !== 'none') {
+                const add = QUICK_EXPIRY.find((q) => q.key === quick)?.add ?? {};
+                expiresAt = DateTime.now().setZone(timezone).plus(add).toISO();
+            }
             await createPoll({
                 groupId,
                 prompt: prompt.trim(),
                 options: options.map(o => o.trim()).filter(Boolean),
                 allowMultiple,
-                expiresAt: combineDateAndTime(expiryDate, expiryTime, timezone),
+                expiresAt,
             });
             resetAndClose();
         } catch {
@@ -185,139 +218,171 @@ const CreatePollModal = ({ visible, onClose, groupId, timezone }: CreatePollModa
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={resetAndClose}>
             {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
-            <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
+            <SafeAreaView style={[s.screen, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
                 <View style={s.screenHeader}>
-                    <TouchableOpacity onPress={resetAndClose} style={s.iconBtn}>
-                        <Feather name="x" size={24} color="#6B7280" />
-                    </TouchableOpacity>
+                    <PressableOpacity accessibilityLabel="Close" onPress={resetAndClose} style={s.iconBtn}>
+                        <Feather name="x" size={24} color={colors.textMuted} />
+                    </PressableOpacity>
                     <View style={{ width: 36 }} />
                 </View>
 
+                {/* Modal windows aren't resized for the keyboard on Android (edge-to-edge), so the options
+                    and the Start Poll button sat under it. Pad for it on both platforms, as AddMeetupWizard does. */}
+                <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
                 <ScrollView
                     style={{ flex: 1 }}
                     contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
                 >
-                    <Text style={s.screenTitle}>Create a poll</Text>
-                    <Text style={s.screenSub}>The poll will appear in the chat</Text>
+                    <Text style={[s.screenTitle, { color: colors.textPrimary }]}>Create a poll</Text>
+                    <Text style={[s.screenSub, { color: colors.textFaint }]}>The poll will appear in the chat</Text>
 
                     {/* Poll Details */}
-                    <View style={s.sectionCard}>
+                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, s.sectionIconChipBlue]}>
-                                <Feather name="message-square" size={16} color="#4A90E2" />
+                            <View style={[s.sectionIconChip, { backgroundColor: isDark ? '#1A2A42' : '#EFF6FF', borderColor: isDark ? '#2C4870' : '#BFDBFE' }]}>
+                                <Feather name="message-square" size={16} color={colors.brand} />
                             </View>
-                            <Text style={s.sectionTitle}>Poll Details</Text>
+                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Poll Details</Text>
                         </View>
 
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Prompt</Text>
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textMuted }]}>Prompt</Text>
                         <TextInput
-                            style={s.promptInput}
+                            style={[s.promptInput, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: colors.border }]}
                             value={prompt}
                             onChangeText={(text) => setPrompt(text.slice(0, MAX_PROMPT_LENGTH))}
                             placeholder={PROMPT_PLACEHOLDER}
-                            placeholderTextColor="#9CA3AF"
+                            placeholderTextColor={colors.placeholder}
                             maxLength={MAX_PROMPT_LENGTH}
                             multiline
                         />
-                        <Text style={s.charCounter}>{prompt.length}/{MAX_PROMPT_LENGTH}</Text>
+                        <Text style={[s.charCounter, { color: colors.textFaint }]}>{prompt.length}/{MAX_PROMPT_LENGTH}</Text>
                     </View>
 
                     {/* Responses */}
-                    <View style={s.sectionCard}>
+                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, s.sectionIconChipViolet]}>
+                            <View style={[s.sectionIconChip, { backgroundColor: isDark ? '#241B3D' : '#F5F3FF', borderColor: isDark ? '#3B2E63' : '#DDD6FE' }]}>
                                 <Feather name="list" size={16} color="#7C3AED" />
                             </View>
-                            <Text style={[s.sectionTitle, { flex: 1 }]}>Responses</Text>
-                            <Text style={s.responsesCounter}>{options.length}/{MAX_OPTIONS}</Text>
+                            <Text style={[s.sectionTitle, { flex: 1, color: colors.textPrimary }]}>Responses</Text>
+                            <Text style={[s.responsesCounter, { color: colors.textFaint }]}>{options.length}/{MAX_OPTIONS}</Text>
                         </View>
 
                         {options.map((option, index) => (
                             <View key={index} style={s.optionRow}>
-                                <Text style={s.optionNumber}>{index + 1}</Text>
+                                <Text style={[s.optionNumber, { color: colors.textFaint }]}>{index + 1}</Text>
                                 <TextInput
-                                    style={s.optionInput}
+                                    style={[s.optionInput, { backgroundColor: colors.backgroundAlt, color: colors.textPrimary, borderColor: colors.border }]}
                                     value={option}
                                     onChangeText={(text) => updateOption(index, text)}
                                     placeholder="Type a response option here"
-                                    placeholderTextColor="#9CA3AF"
+                                    placeholderTextColor={colors.placeholder}
                                 />
                             </View>
                         ))}
 
                         {options.length < MAX_OPTIONS ? (
-                            <TouchableOpacity style={s.addOptionBox} onPress={addOption}>
-                                <Feather name="plus" size={20} color="#4A90E2" />
-                            </TouchableOpacity>
+                            <PressableOpacity style={[s.addOptionBox, { borderColor: colors.brand, backgroundColor: colors.brandSoft }]} onPress={addOption}>
+                                <Feather name="plus" size={20} color={colors.brand} />
+                            </PressableOpacity>
                         ) : (
-                            <Text style={s.limitReachedText}>Limit of 10 responses reached</Text>
+                            <Text style={[s.limitReachedText, { color: colors.textFaint }]}>Limit of 10 responses reached</Text>
                         )}
                     </View>
 
                     {/* Response Type */}
-                    <View style={s.sectionCard}>
+                    <View style={[s.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, s.sectionIconChipTeal]}>
+                            <View style={[s.sectionIconChip, { backgroundColor: isDark ? '#123330' : '#ECFDF9', borderColor: isDark ? '#1F5B54' : '#99E6DA' }]}>
                                 <Feather name="check-square" size={16} color="#0D9488" />
                             </View>
-                            <Text style={s.sectionTitle}>Group Members can choose:</Text>
+                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Group Members can choose:</Text>
                         </View>
                         <View style={s.boolRow}>
-                            <TouchableOpacity
-                                style={[s.boolBtn, !allowMultiple && s.boolBtnActive]}
+                            <PressableOpacity
+                                style={[s.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, !allowMultiple && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => setAllowMultiple(false)}
                             >
-                                <Text style={[s.boolBtnText, !allowMultiple && s.boolBtnTextActive]}>Only ONE Response</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[s.boolBtn, allowMultiple && s.boolBtnActive]}
+                                <Text style={[s.boolBtnText, { color: colors.textMuted }, !allowMultiple && { color: colors.brand }]}>Only ONE Response</Text>
+                            </PressableOpacity>
+                            <PressableOpacity
+                                style={[s.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, allowMultiple && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                                 onPress={() => setAllowMultiple(true)}
                             >
-                                <Text style={[s.boolBtnText, allowMultiple && s.boolBtnTextActive]}>Multiple Responses</Text>
-                            </TouchableOpacity>
+                                <Text style={[s.boolBtnText, { color: colors.textMuted }, allowMultiple && { color: colors.brand }]}>Multiple Responses</Text>
+                            </PressableOpacity>
                         </View>
                     </View>
 
                     {/* Expiration */}
-                    <View style={[s.sectionCard, { marginBottom: 8 }]}>
+                    <View style={[s.sectionCard, { marginBottom: 8, backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <View style={s.sectionHeaderRow}>
-                            <View style={[s.sectionIconChip, s.sectionIconChipAmber]}>
-                                <Feather name="clock" size={16} color="#F59E0B" />
+                            <View style={[s.sectionIconChip, { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB', borderColor: isDark ? '#5C4A1E' : '#FDE68A' }]}>
+                                <Feather name="clock" size={16} color={colors.warning} />
                             </View>
-                            <Text style={s.sectionTitle}>Expiration</Text>
+                            <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>Expiration</Text>
                         </View>
 
-                        <Text style={[s.fieldLabel, s.fieldLabelFirst]}>Date</Text>
-                        <TouchableOpacity style={s.dateFieldRow} onPress={() => setShowDatePopup(true)}>
-                            <Feather name="calendar" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                            <Text style={expiryDate ? s.dateFieldText : s.dateFieldPlaceholder}>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+                            {QUICK_EXPIRY.map((q) => {
+                                const on = quick === q.key;
+                                return (
+                                    <PressableOpacity
+                                        key={q.key}
+                                        haptic="select"
+                                        onPress={() => setQuick(q.key)}
+                                        style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1.5, borderColor: on ? colors.brand : colors.border, backgroundColor: on ? colors.brandSoft : colors.surface }}
+                                    >
+                                        <Text style={{ fontWeight: '700', fontSize: 13, color: on ? colors.brand : colors.textMuted }}>{q.label}</Text>
+                                    </PressableOpacity>
+                                );
+                            })}
+                            <PressableOpacity
+                                haptic="select"
+                                onPress={() => setQuick('custom')}
+                                style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1.5, borderColor: quick === 'custom' ? colors.brand : colors.border, backgroundColor: quick === 'custom' ? colors.brandSoft : colors.surface }}
+                            >
+                                <Text style={{ fontWeight: '700', fontSize: 13, color: quick === 'custom' ? colors.brand : colors.textMuted }}>Pick a date</Text>
+                            </PressableOpacity>
+                        </View>
+                        {quick === 'none' && (
+                            <Text style={{ color: colors.textFaint, fontSize: 12, marginTop: 6 }}>The poll stays open until you close it.</Text>
+                        )}
+
+                        {quick === 'custom' && (<>
+                        <Text style={[s.fieldLabel, s.fieldLabelFirst, { color: colors.textMuted }]}>Date</Text>
+                        <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => setShowDatePopup(true)}>
+                            <Feather name="calendar" size={16} color={colors.brand} style={{ marginRight: 8 }} />
+                            <Text style={expiryDate ? [s.dateFieldText, { color: colors.textSecondary }] : [s.dateFieldPlaceholder, { color: colors.textFaint }]}>
                                 {expiryDate ? DateTime.fromISO(expiryDate).toFormat('MMM d, yyyy') : 'Select date'}
                             </Text>
-                            <Feather name="chevron-right" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
-                        </TouchableOpacity>
+                            <Feather name="chevron-right" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
+                        </PressableOpacity>
 
-                        <Text style={s.fieldLabel}>Time</Text>
-                        <TouchableOpacity style={s.dateFieldRow} onPress={() => setShowTimePopup(true)}>
-                            <Feather name="clock" size={16} color="#4A90E2" style={{ marginRight: 8 }} />
-                            <Text style={expiryTime ? s.dateFieldText : s.dateFieldPlaceholder}>
+                        <Text style={[s.fieldLabel, { color: colors.textMuted }]}>Time</Text>
+                        <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => setShowTimePopup(true)}>
+                            <Feather name="clock" size={16} color={colors.brand} style={{ marginRight: 8 }} />
+                            <Text style={expiryTime ? [s.dateFieldText, { color: colors.textSecondary }] : [s.dateFieldPlaceholder, { color: colors.textFaint }]}>
                                 {expiryTime ?? 'Select time'}
                             </Text>
-                            <Feather name="chevron-right" size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
-                        </TouchableOpacity>
+                            <Feather name="chevron-right" size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
+                        </PressableOpacity>
+                        </>)}
                     </View>
                 </ScrollView>
 
-                <View style={s.screenFooter}>
-                    <TouchableOpacity
+                <View style={[s.screenFooter, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+                    <PressableOpacity
                         onPress={handleStartPoll}
                         disabled={!canStartPoll || isPending}
-                        style={[s.startBtn, (!canStartPoll || isPending) && s.startBtnDisabled]}
+                        style={[s.startBtn, { backgroundColor: colors.brand }, (!canStartPoll || isPending) && { backgroundColor: colors.borderStrong }]}
                     >
                         {isPending ? <ActivityIndicator color="white" /> : <Text style={s.startBtnText}>Start Poll</Text>}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
+                </KeyboardAvoidingView>
 
                 <DatePickerModal
                     visible={showDatePopup}

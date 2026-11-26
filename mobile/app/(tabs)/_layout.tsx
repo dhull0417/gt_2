@@ -1,13 +1,15 @@
 import React from 'react';
 import { Platform } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
-import { NativeTabs, Icon, Label, VectorIcon } from 'expo-router/unstable-native-tabs';
+import { NativeTabs } from 'expo-router/native-tabs';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@clerk/expo';
 import { AndroidTabBar } from '@/components/AndroidTabBar';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const TabsLayout = () => {
   const { isLoaded, isSignedIn } = useAuth();
+  const colors = useThemeColors();
 
   // Show nothing until Clerk is ready
   if (!isLoaded) {
@@ -32,34 +34,34 @@ const TabsLayout = () => {
 
   return (
     <NativeTabs
-      tintColor="#4A90E2"
-      indicatorColor="#4A90E2"
+      tintColor={colors.brand}
+      indicatorColor={colors.brand}
       rippleColor="rgba(74, 144, 226, 0.15)"
       labelVisibilityMode="unlabeled"
       blurEffect="none"
-      backgroundColor="white"
+      backgroundColor={colors.surface}
       disableTransparentOnScrollEdge
     >
       <NativeTabs.Trigger name="index">
-        <Icon
+        <NativeTabs.Trigger.Icon
           sf={{ default: 'house', selected: 'house.fill' }}
-          androidSrc={<VectorIcon family={Feather} name="home" />}
+          src={<NativeTabs.Trigger.VectorIcon family={Feather} name="home" />}
         />
-        <Label hidden>Home</Label>
+        <NativeTabs.Trigger.Label hidden>Home</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="groups">
-        <Icon
+        <NativeTabs.Trigger.Icon
           sf={{ default: 'person.3', selected: 'person.3.fill' }}
-          androidSrc={<VectorIcon family={Feather} name="users" />}
+          src={<NativeTabs.Trigger.VectorIcon family={Feather} name="users" />}
         />
-        <Label hidden>Groups</Label>
+        <NativeTabs.Trigger.Label hidden>Groups</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
-        <Icon
+        <NativeTabs.Trigger.Icon
           sf={{ default: 'person.crop.circle', selected: 'person.crop.circle.fill' }}
-          androidSrc={<VectorIcon family={Feather} name="user" />}
+          src={<NativeTabs.Trigger.VectorIcon family={Feather} name="user" />}
         />
-        <Label hidden>Profile</Label>
+        <NativeTabs.Trigger.Label hidden>Profile</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );

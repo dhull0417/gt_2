@@ -10,6 +10,10 @@ const meetupSchema = new mongoose.Schema({
   name: { type: String, required: true },
   date: { type: Date, required: true },
   time: { type: String, required: true },
+  // Optional end time ("08:00 PM") and the exact moment it ends (next day when earlier
+  // than `time`). Without one, the meetup is treated as lasting 1 hour.
+  endTime: { type: String, default: null },
+  endsAt: { type: Date, default: null },
   timezone: { type: String, required: true },
   location: { type: String, trim: true, default: "" },
   description: { type: String, trim: true, default: "" },
@@ -21,9 +25,89 @@ const meetupSchema = new mongoose.Schema({
   out: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   waitlist: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   capacity: { type: Number, default: 0 },
+  // Minimum headcount (Premium): copied from the series at generation. The
+  // cancel-under-minimum job evaluates it once, at rsvpCloseDate.
+  minAttendees: { type: Number, default: 0 },
+  minimumChecked: { type: Boolean, default: false },
+  // Why it was cancelled when the app (not a person) did it, e.g. 'minimum-headcount'.
+  cancelReason: { type: String, default: null },
+  // Optional note the organizer typed when cancelling ("Rain delay", ...), shown to members.
+  // When "Remind All" was last sent for this meetup (shown next to the button).
+  lastRemindedAt: { type: Date, default: null },
+  cancelNote: { type: String, trim: true, maxlength: 200, default: null },
+  // Premium meetup assignments. bringItems/ridesEnabled are copied from the
+  // series (item _ids stay the same as the series' so claims survive refreshes).
+  bringItems: [{
+    name: { type: String, required: true },
+    max: { type: Number, default: null },
+  }],
+  ridesEnabled: { type: Boolean, default: false },
+  // Premium custom RSVP questions (copied from the series; _ids match the series')
+  // and the answers people gave.
+  questions: [{
+    prompt: { type: String, required: true },
+    type: { type: String, enum: ['text', 'choice', 'yesno'], default: 'text' },
+    options: [String],
+    required: { type: Boolean, default: false },
+  }],
+  answers: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    question: { type: mongoose.Schema.Types.ObjectId },
+    value: { type: String },
+    _id: false,
+  }],
+  // who is bringing what (a user may claim several items)
+  bringClaims: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    item: { type: mongoose.Schema.Types.ObjectId },
+    _id: false,
+  }],
+  // carpool: drivers say how many passengers they can take; passengers just need a seat
+  rides: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    role: { type: String, enum: ['driver', 'passenger'] },
+    seats: { type: Number, default: 0, min: 0 },
+    // Ride assignments (passengers only): the car the rider sits in (null = needs a ride) and
+    // where their guests sit. Guests not covered by guestRides still need a ride. See utils/rides.js.
+    driver: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    guestRides: [{
+      driver: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      count: { type: Number, min: 1 },
+      _id: false,
+    }],
+    _id: false,
+  }],
+  // Premium priority RSVP snapshot: groups of members and when each group's window
+  // opens (rsvpOpenDate stays the time it opens for everyone). priorityOpened lists
+  // group indexes already announced.
+  priorityTiers: [{
+    members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    opensAt: { type: Date },
+    _id: false,
+  }],
+  priorityOpened: { type: [Number], default: [] },
   // generating routine's frequency (null for one-off); drives RSVP-reminder
   // stages and the display cap.
-  frequency: { type: String, enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal'], default: null },
+  frequency: { type: String, enum: ['daily', 'weekly', 'biweekly', 'monthly', 'ordinal', 'quarterly', 'semiannual', 'yearly'], default: null },
+  // Members' own RSVP answers with times, for the Stats timing awards (utils/rsvpLog.js).
+  rsvpLog: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    status: { type: String, enum: ['in', 'out', 'waitlist'] },
+    at: { type: Date },
+    _id: false,
+  }],
+  // True when the log started after people had already answered (their answers weren't logged).
+  rsvpLogPartial: { type: Boolean },
+  // The meetup's own RSVP rules ("N days before at a time"; null days = no limit on that side).
+  // Set on one-offs and on meetups whose settings were changed individually; rsvpOpenDate and
+  // rsvpCloseDate are computed from them (and recomputed when the meetup is rescheduled).
+  rsvpLeadDays: { type: Number, min: 0, default: null },
+  rsvpLeadTime: { type: String, default: "09:00 AM" },
+  rsvpDeadlineDays: { type: Number, min: 0, default: null },
+  rsvpDeadlineTime: { type: String, default: "09:00 AM" },
+  // True once this meetup's RSVP rules, minimum, things to bring, rides or questions were set
+  // on the meetup itself. Series edits then leave those settings alone.
+  customSettings: { type: Boolean, default: false },
   rsvpOpenDate: { type: Date },
   rsvpCloseDate: { type: Date },
   rsvpNotified: { type: Boolean, default: false },

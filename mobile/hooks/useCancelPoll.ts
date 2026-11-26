@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getErrorMessage } from "../utils/networkError";
 import { useAuth } from "@clerk/expo";
 import { useApiClient, pollApi } from "../utils/api";
 import { Alert } from "react-native";
@@ -22,7 +23,7 @@ export const useCancelPoll = () => {
       broadcastPollUpdate(getToken, variables.groupId);
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to cancel poll.";
+      const errorMessage = getErrorMessage(error, "Failed to cancel poll.");
       Alert.alert("Error", errorMessage);
     },
   });

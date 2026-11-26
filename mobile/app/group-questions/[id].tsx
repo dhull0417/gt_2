@@ -1,0 +1,265 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
+import {
+  View, Text, TextInput, StyleSheet, Alert, Switch, ActivityIndicator,
+  ScrollView, KeyboardAvoidingView, Platform,
+} from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@clerk/expo';
+import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
+import { useApiClient, groupApi, meetupApi, RsvpQuestion } from '@/utils/api';
+import { useGetMeetups } from '@/hooks/useGetMeetups';
+import { broadcastGroupUpdate, broadcastMeetupUpdate } from '@/utils/groupRealtime';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
+import { UpgradeButton } from '@/components/UpgradeButton';
+
+const MAX_QUESTIONS = 5;
+const TYPE_LABELS: Record<RsvpQuestion['type'], string> = { text: 'Text', choice: 'Choices', yesno: 'Yes / No' };
+
+interface Draft {
+  key: string;
+  _id?: string;
+  prompt: string;
+  type: RsvpQuestion['type'];
+  options: string[];
+  required: boolean;
+}
+
+const newKey = () => `q_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const blank = (): Draft => ({ key: newKey(), prompt: '', type: 'text', options: ['', ''], required: false });
+
+export default function GroupQuestionsScreen() {
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  // A series' questions (scheduleId), or one meetup's own (meetupId).
+  const { id, scheduleId, meetupId } = useLocalSearchParams<{ id: string; scheduleId?: string; meetupId?: string }>();
+  const router = useRouter();
+  const api = useApiClient();
+  const queryClient = useQueryClient();
+  const { getToken } = useAuth();
+  const groupQuery = useGetGroupDetails(id);
+  const { data: group, isLoading } = groupQuery;
+
+  const schedule = useMemo(() => (scheduleId ? group?.schedules?.find((s) => s._id === scheduleId) ?? null : null), [group, scheduleId]);
+  const { data: allMeetups } = useGetMeetups();
+  const meetup = useMemo(() => (meetupId ? allMeetups?.find((m) => m._id === meetupId) ?? null : null), [allMeetups, meetupId]);
+  const source = schedule
+    ? { name: schedule.name, questions: schedule.defaultQuestions ?? [] }
+    : meetup ? { name: meetup.name, questions: meetup.questions ?? [] } : null;
+  const isPremium = group?.isPremium === true;
+
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!source || loaded) return;
+    setDrafts(source.questions.map((q) => ({
+      key: newKey(), _id: q._id, prompt: q.prompt, type: q.type,
+      options: q.type === 'choice' ? [...q.options] : ['', ''], required: q.required,
+    })));
+    setLoaded(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedule, meetup, loaded]);
+
+  const patch = (key: string, p: Partial<Draft>) => setDrafts((cur) => cur.map((d) => (d.key === key ? { ...d, ...p } : d)));
+
+  const problem = (): string | null => {
+    for (const [i, d] of drafts.entries()) {
+      if (!d.prompt.trim()) return `Question ${i + 1} needs some text.`;
+      if (d.type === 'choice' && d.options.map((o) => o.trim()).filter(Boolean).length < 2) {
+        return `"${d.prompt.trim()}" needs at least 2 choices.`;
+      }
+    }
+    return null;
+  };
+
+  const save = async () => {
+    if (!id || (!scheduleId && !meetupId)) return;
+    const err = problem();
+    if (err) { Alert.alert('Check your questions', err); return; }
+    setSaving(true);
+    try {
+      const questions = drafts.map((d) => ({
+        _id: d._id,
+        prompt: d.prompt.trim(),
+        type: d.type,
+        options: d.type === 'choice' ? d.options.map((o) => o.trim()).filter(Boolean) : [],
+        required: d.required,
+      }));
+      if (scheduleId) await groupApi.updateScheduleQuestions(api, id, scheduleId, { questions });
+      else await meetupApi.updateMeetupQuestions(api, meetupId!, { questions });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['groupDetails', id] }),
+        queryClient.invalidateQueries({ queryKey: ['meetups'] }),
+        queryClient.invalidateQueries({ queryKey: ['groups'] }),
+      ]);
+      broadcastGroupUpdate(getToken, id);
+      broadcastMeetupUpdate(getToken, id);
+      router.back();
+    } catch (e: any) {
+      const data = e.response?.data;
+      const status = e.response?.status;
+      const detail =
+        (typeof data === 'object' && (data?.message || data?.error)) ||
+        (status === 404 ? "The server doesn't have this feature yet (it may need to be deployed)." : null) ||
+        (status ? `The server responded with an error (${status}).` : 'Could not reach the server. Check your connection.');
+      Alert.alert('Could not save', detail);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (isOfflineEmpty(groupQuery)) {
+    return <SafeAreaView style={styles.safe}><OfflineEmptyState onBack={() => router.back()} /></SafeAreaView>;
+  }
+
+  if (isLoading || !group || !source) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><LoadingAnimation /></View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.headerBar}>
+        <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()} style={styles.iconBtn}>
+          <Feather name="arrow-left" size={24} color={colors.textMuted} />
+        </PressableOpacity>
+        <Text style={styles.headerTitle}>RSVP Questions</Text>
+        <PressableOpacity onPress={save} disabled={saving || !isPremium} style={{ minWidth: 40, alignItems: 'flex-end' }}>
+          {saving
+            ? <ActivityIndicator size="small" color={colors.brand} />
+            : <Text style={[styles.saveText, !isPremium && { opacity: 0.4 }]}>Save</Text>}
+        </PressableOpacity>
+      </View>
+
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 140 }}>
+          <Text style={styles.sub}>
+            Ask members something when they RSVP "I'm In" to "{source.name}"{meetupId ? ' (this meetup only)' : ''}. Everyone going can see the answers on the meetup. Up to {MAX_QUESTIONS} questions.
+          </Text>
+
+          {!isPremium ? (
+            <View style={styles.lockRow}>
+              <Feather name="lock" size={16} color={colors.textFaint} style={{ marginTop: 1 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.lockTitle}>Premium</Text>
+                <Text style={styles.lockText}>Custom RSVP questions require the group owner to have Premium.</Text>
+                <UpgradeButton owner={group?.owner} />
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.sectionLabel}>Questions</Text>
+              {drafts.map((d, i) => (
+                <View key={d.key} style={[styles.card, { marginTop: i === 0 ? 0 : 14 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text style={styles.qLabel}>Question {i + 1}</Text>
+                    <PressableOpacity accessibilityLabel="Delete" onPress={() => setDrafts((cur) => cur.filter((x) => x.key !== d.key))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Feather name="trash-2" size={16} color={colors.danger} />
+                    </PressableOpacity>
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    value={d.prompt}
+                    onChangeText={(t) => patch(d.key, { prompt: t })}
+                    placeholder="e.g. Any dietary restrictions?"
+                    placeholderTextColor={colors.textFaint}
+                    maxLength={140}
+                  />
+
+                  <View style={styles.segment}>
+                    {(Object.keys(TYPE_LABELS) as RsvpQuestion['type'][]).map((t) => (
+                      <PressableOpacity
+                        key={t}
+                        onPress={() => patch(d.key, { type: t })}
+                        style={[styles.segBtn, d.type === t && styles.segBtnOn]}
+                      >
+                        <Text style={[styles.segText, d.type === t && { color: '#fff' }]}>{TYPE_LABELS[t]}</Text>
+                      </PressableOpacity>
+                    ))}
+                  </View>
+
+                  {d.type === 'choice' && (
+                    <View style={{ marginTop: 10 }}>
+                      {d.options.map((o, oi) => (
+                        <View key={oi} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <TextInput
+                            style={[styles.input, { flex: 1 }]}
+                            value={o}
+                            onChangeText={(t) => patch(d.key, { options: d.options.map((x, xi) => (xi === oi ? t : x)) })}
+                            placeholder={`Choice ${oi + 1}`}
+                            placeholderTextColor={colors.textFaint}
+                            maxLength={60}
+                          />
+                          {d.options.length > 2 && (
+                            <PressableOpacity accessibilityLabel="Remove" onPress={() => patch(d.key, { options: d.options.filter((_, xi) => xi !== oi) })} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                              <Feather name="x" size={18} color={colors.textFaint} />
+                            </PressableOpacity>
+                          )}
+                        </View>
+                      ))}
+                      {d.options.length < 10 && (
+                        <PressableOpacity onPress={() => patch(d.key, { options: [...d.options, ''] })} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Feather name="plus-circle" size={16} color={colors.brand} />
+                          <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 14 }}>Add choice</Text>
+                        </PressableOpacity>
+                      )}
+                    </View>
+                  )}
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>Required</Text>
+                    <Switch value={d.required} onValueChange={(v) => patch(d.key, { required: v })} trackColor={{ true: colors.accentTeal }} />
+                  </View>
+                </View>
+              ))}
+
+              {drafts.length < MAX_QUESTIONS && (
+                <PressableOpacity onPress={() => setDrafts((cur) => [...cur, blank()])} style={styles.addBtn}>
+                  <Feather name="plus-circle" size={18} color={colors.brand} />
+                  <Text style={{ color: colors.brand, fontWeight: '700', fontSize: 15 }}>Add question</Text>
+                </PressableOpacity>
+              )}
+              <Text style={styles.hint}>
+                Required questions must be answered to save the answers sheet, but members can still skip it and answer later. Removing a question deletes its answers.
+              </Text>
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+  headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
+  iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  saveText: { fontSize: 16, fontWeight: '800', color: colors.brand },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 20, marginBottom: 8 },
+  sub: { fontSize: 14, color: colors.textMuted, lineHeight: 20, marginTop: 4 },
+  card: { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14 },
+  qLabel: { fontSize: 11, fontWeight: '800', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: { height: 44, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, fontSize: 15, color: colors.textPrimary, backgroundColor: colors.surface },
+  segment: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  segBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10, borderWidth: 1.5, borderColor: colors.accentTeal },
+  segBtnOn: { backgroundColor: colors.accentTeal },
+  segText: { fontSize: 13, fontWeight: '700', color: colors.accentTeal },
+  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 14, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#93C5FD', backgroundColor: colors.surface },
+  hint: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginTop: 10 },
+  lockRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12, marginTop: 16 },
+  lockTitle: { fontSize: 13, fontWeight: '800', color: colors.textSecondary },
+  lockText: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
+});

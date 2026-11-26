@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getErrorMessage } from "../utils/networkError";
 import { useAuth } from "@clerk/expo";
 import { useApiClient, groupApi } from "../utils/api";
 import { Alert } from "react-native";
 import { broadcastGroupUpdate, broadcastMeetupUpdate } from "../utils/groupRealtime";
+import { toast } from '@/contexts/ToastContext';
 
 interface DeleteGroupVariables {
   groupId: string;
@@ -18,7 +20,7 @@ export const useDeleteGroup = () => {
       groupApi.deleteGroup(api, variables.groupId),
 
     onSuccess: (data, variables) => {
-      Alert.alert("Success", data.message);
+      toast.success(data.message);
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
       // Fire before the group's gone server-side would be pointless, but by
@@ -28,7 +30,7 @@ export const useDeleteGroup = () => {
       broadcastMeetupUpdate(getToken, variables.groupId);
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to delete group.";
+      const errorMessage = getErrorMessage(error, "Failed to delete group.");
       Alert.alert("Error", errorMessage);
     },
   });

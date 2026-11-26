@@ -17,3 +17,13 @@ export function getUserDisplayName(user?: { firstName?: string; lastName?: strin
 export function getUserInitial(user?: { firstName?: string } | null): string {
   return user?.firstName?.[0] ?? '?';
 }
+
+/** Photo to show for a group: the other person's picture in a DM, otherwise the group's own image. */
+export function getGroupImage(group: Group | undefined | null, currentUserClerkId?: string): string | undefined {
+  if (!group) return undefined;
+  if (group.isDM) {
+    const other = group.dmParticipants?.find(p => p.userId !== currentUserClerkId);
+    return other?.profilePicture || undefined;
+  }
+  return group.image || undefined;
+}

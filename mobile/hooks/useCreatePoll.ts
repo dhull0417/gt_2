@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getErrorMessage } from "../utils/networkError";
 import { useAuth } from "@clerk/expo";
 import { useApiClient, pollApi } from "../utils/api";
 import { Alert } from "react-native";
@@ -9,7 +10,8 @@ interface CreatePollVariables {
   prompt: string;
   options: string[];
   allowMultiple: boolean;
-  expiresAt: string;
+  /** null = no end; the poll stays open until closed. */
+  expiresAt: string | null;
 }
 
 export const useCreatePoll = () => {
@@ -25,7 +27,7 @@ export const useCreatePoll = () => {
       broadcastPollUpdate(getToken, variables.groupId);
     },
     onError: (error: any) => {
-      const errorMessage = error.response?.data?.error || "Failed to create poll.";
+      const errorMessage = getErrorMessage(error, "Failed to create poll.");
       Alert.alert("Error", errorMessage);
     },
   });

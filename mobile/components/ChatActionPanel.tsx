@@ -1,14 +1,16 @@
 import { useEffect } from 'react';
-import { Dimensions, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
 import type { BubbleLayout } from './ChatMessageBubble';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const PANEL_WIDTH = 244;
 const REACTIONS_PANEL_WIDTH = 300;
-const ESTIMATED_PANEL_HEIGHT = 220;
+const ESTIMATED_PANEL_HEIGHT = 270;
 const SAFE_MARGIN = 14;
 const REACTIONS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
 
@@ -22,10 +24,18 @@ interface Props {
   onReply: () => void;
   showCopy: boolean;
   onCopy: () => void;
+  // Pin / unpin for the group's pinned-messages banner. Omit to hide.
+  showPin?: boolean;
+  isPinned?: boolean;
+  onPin?: () => void;
   showEdit: boolean;
   onEdit: () => void;
   showDelete: boolean;
   onDelete: () => void;
+  // Owner/moderator: "Time out Sam". Omit to hide.
+  showTimeOut?: boolean;
+  timeOutLabel?: string;
+  onTimeOut?: () => void;
   onClose: () => void;
 }
 
@@ -40,9 +50,9 @@ function ReactionButton({ emoji, index, onPress }: { emoji: string; index: numbe
   }));
   return (
     <Animated.View style={style}>
-      <TouchableOpacity style={styles.emojiBtn} onPress={onPress} activeOpacity={0.7}>
+      <PressableOpacity style={styles.emojiBtn} onPress={onPress} activeOpacity={0.7}>
         <Text style={{ fontSize: 24 }}>{emoji}</Text>
-      </TouchableOpacity>
+      </PressableOpacity>
     </Animated.View>
   );
 }
@@ -57,12 +67,19 @@ export function ChatActionPanel({
   onReply,
   showCopy,
   onCopy,
+  showPin,
+  isPinned,
+  onPin,
   showEdit,
   onEdit,
   showDelete,
   onDelete,
+  showTimeOut,
+  timeOutLabel,
+  onTimeOut,
   onClose,
 }: Props) {
+  const colors = useThemeColors();
   const entrance = useSharedValue(0);
   useEffect(() => {
     entrance.value = withTiming(1, { duration: 180 });
@@ -96,12 +113,12 @@ export function ChatActionPanel({
   };
 
   return (
-    <View style={StyleSheet.absoluteFillObject}>
-      <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose}>
-        <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
+    <View style={StyleSheet.absoluteFill}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
+        <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
       </Pressable>
 
-      <Animated.View style={[styles.panel, { top, left, width: panelWidth }, panelStyle]}>
+      <Animated.View style={[styles.panel, { top, left, width: panelWidth, backgroundColor: colors.surface }, panelStyle]}>
         {showReactions && (
           <View style={styles.emojiRow}>
             {REACTIONS.map((emoji, i) => (
@@ -111,38 +128,50 @@ export function ChatActionPanel({
           </View>
         )}
 
-        {(showReply || showCopy) && (
+        {(showReply || showCopy || showPin) && (
           <>
-            {showReactions && <View style={styles.divider} />}
+            {showReactions && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
             {showReply && (
-              <TouchableOpacity style={styles.actionRow} onPress={onReply}>
-                <Feather name="corner-up-left" size={17} color="#111827" />
-                <Text style={styles.actionLabel}>Reply</Text>
-              </TouchableOpacity>
+              <PressableOpacity style={styles.actionRow} onPress={onReply}>
+                <Feather name="corner-up-left" size={17} color={colors.textPrimary} />
+                <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>Reply</Text>
+              </PressableOpacity>
             )}
             {showCopy && (
-              <TouchableOpacity style={styles.actionRow} onPress={onCopy}>
-                <Feather name="copy" size={16} color="#111827" />
-                <Text style={styles.actionLabel}>Copy</Text>
-              </TouchableOpacity>
+              <PressableOpacity style={styles.actionRow} onPress={onCopy}>
+                <Feather name="copy" size={16} color={colors.textPrimary} />
+                <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>Copy</Text>
+              </PressableOpacity>
+            )}
+            {showPin && (
+              <PressableOpacity style={styles.actionRow} onPress={onPin}>
+                <Feather name="map-pin" size={16} color={colors.textPrimary} />
+                <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>{isPinned ? 'Unpin' : 'Pin'}</Text>
+              </PressableOpacity>
             )}
           </>
         )}
 
-        {(showEdit || showDelete) && (
+        {(showEdit || showDelete || showTimeOut) && (
           <>
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
             {showEdit && (
-              <TouchableOpacity style={styles.actionRow} onPress={onEdit}>
-                <Feather name="edit-2" size={16} color="#111827" />
-                <Text style={styles.actionLabel}>Edit</Text>
-              </TouchableOpacity>
+              <PressableOpacity style={styles.actionRow} onPress={onEdit}>
+                <Feather name="edit-2" size={16} color={colors.textPrimary} />
+                <Text style={[styles.actionLabel, { color: colors.textPrimary }]}>Edit</Text>
+              </PressableOpacity>
             )}
             {showDelete && (
-              <TouchableOpacity style={styles.actionRow} onPress={onDelete}>
-                <Feather name="trash-2" size={16} color="#EF4444" />
-                <Text style={[styles.actionLabel, { color: '#EF4444' }]}>Delete</Text>
-              </TouchableOpacity>
+              <PressableOpacity style={styles.actionRow} onPress={onDelete}>
+                <Feather name="trash-2" size={16} color={colors.danger} />
+                <Text style={[styles.actionLabel, { color: colors.danger }]}>Delete</Text>
+              </PressableOpacity>
+            )}
+            {showTimeOut && (
+              <PressableOpacity style={styles.actionRow} onPress={onTimeOut}>
+                <Feather name="clock" size={16} color={colors.danger} />
+                <Text style={[styles.actionLabel, { color: colors.danger }]} numberOfLines={1}>{timeOutLabel ?? 'Time out'}</Text>
+              </PressableOpacity>
             )}
           </>
         )}

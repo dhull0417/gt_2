@@ -1,14 +1,15 @@
+import { toast } from '@/contexts/ToastContext';
 import React, { useState, useEffect, useRef } from "react";
 import {
     View,
     Text,
-    TouchableOpacity,
     ScrollView,
     StyleSheet,
     Alert,
     ActivityIndicator,
-    Animated,
 } from "react-native";
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/expo";
@@ -21,6 +22,8 @@ import { broadcastGroupUpdate, broadcastMeetupUpdate } from "../../utils/groupRe
 import { getErrorMessage } from "../../utils/networkError";
 import NativeTimePicker, { timeStringToDate } from "@/components/NativeTimePicker";
 import InfoBubble from "@/components/InfoBubble";
+import { useAppearance, useThemeColors } from "@/contexts/AppearanceContext";
+import type { ThemeColors } from "@/constants/theme";
 
 // Same day-count for open/deadline still needs a time-of-day check — leadDays >= deadlineDays alone isn't enough
 const timeToMinutes = (time: string): number => {
@@ -28,30 +31,6 @@ const timeToMinutes = (time: string): number => {
     return t.getHours() * 60 + t.getMinutes();
 };
 
-// ─── ToggleSwitch ─────────────────────────────────────────────────────────────
-
-const ToggleSwitch = ({ value, onValueChange, activeColor = "#4A90E2" }: {
-    value: boolean; onValueChange: (v: boolean) => void; activeColor?: string;
-}) => {
-    const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
-    const scale = useRef(new Animated.Value(1)).current;
-    useEffect(() => {
-        Animated.timing(anim, { toValue: value ? 1 : 0, duration: 180, useNativeDriver: false }).start();
-        Animated.sequence([
-            Animated.timing(scale, { toValue: 1.3, duration: 90, useNativeDriver: false }),
-            Animated.spring(scale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: false }),
-        ]).start();
-    }, [value]);
-    const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["#E5E7EB", activeColor] });
-    const thumbLeft = anim.interpolate({ inputRange: [0, 1], outputRange: [2, 20] });
-    return (
-        <TouchableOpacity activeOpacity={0.8} onPress={() => onValueChange(!value)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Animated.View style={[s.switchTrack, { backgroundColor: trackColor }]}>
-                <Animated.View style={[s.switchThumb, { left: thumbLeft, transform: [{ scale }] }]} />
-            </Animated.View>
-        </TouchableOpacity>
-    );
-};
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -66,6 +45,9 @@ interface RsvpSettings {
 }
 
 const EditJitScreen = () => {
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const isDark = scheme === 'dark';
     const { id, scheduleId } = useLocalSearchParams<{ id: string; scheduleId: string }>();
     const router = useRouter();
     const api = useApiClient();
@@ -153,9 +135,8 @@ const EditJitScreen = () => {
             broadcastGroupUpdate(getToken, id);
             broadcastMeetupUpdate(getToken, id);
 
-            Alert.alert("Saved", "RSVP settings updated.", [
-                { text: "OK", onPress: () => router.back() },
-            ]);
+            toast.success("RSVP settings saved.");
+            router.back();
         } catch (error: any) {
             Alert.alert("Error", getErrorMessage(error, "Failed to update RSVP settings."));
         } finally {
@@ -167,7 +148,7 @@ const EditJitScreen = () => {
 
     if (loadingGroup || !group) {
         return (
-            <SafeAreaView style={s.safe}>
+            <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
                 <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
                     <LoadingAnimation />
                 </View>
@@ -177,27 +158,29 @@ const EditJitScreen = () => {
 
     if (!schedule) {
         return (
-            <SafeAreaView style={s.safe}>
+            <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
                 <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
-                    <Text style={s.screenSub}>This schedule couldn't be found. It may have been removed.</Text>
-                    <TouchableOpacity style={s.primaryBtn} onPress={() => router.back()}>
+                    <Text style={[s.screenSub, { color: colors.textFaint }]}>This schedule couldn't be found. It may have been removed.</Text>
+                    <PressableOpacity style={[s.primaryBtn, { backgroundColor: colors.brand }]} onPress={() => router.back()}>
                         <Text style={s.primaryBtnText}>Go back</Text>
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
             </SafeAreaView>
         );
     }
 
+    const disabledBtnBg = isDark ? '#2A3A52' : '#93C5FD';
+
     // ── Render ────────────────────────────────────────────────────────────────
 
     return (
-        <SafeAreaView style={s.safe}>
+        <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
             <View style={s.screen}>
-                <View style={s.screenHeader}>
-                    <TouchableOpacity onPress={() => router.back()} style={s.iconBtn}>
-                        <Feather name="arrow-left" size={24} color="#6B7280" />
-                    </TouchableOpacity>
-                    <Text style={s.headerTitle}>RSVP Settings</Text>
+                <View style={[s.screenHeader, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+                    <PressableOpacity accessibilityLabel="Go back" onPress={() => router.back()} style={s.iconBtn}>
+                        <Feather name="arrow-left" size={24} color={colors.textSecondary} />
+                    </PressableOpacity>
+                    <Text style={[s.headerTitle, { color: colors.textPrimary }]}>RSVP Settings</Text>
                     <View style={{ width: 36 }} />
                 </View>
 
@@ -206,18 +189,18 @@ const EditJitScreen = () => {
                     contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
                     showsVerticalScrollIndicator={false}
                 >
-                    <Text style={s.screenSub}>Control when members can RSVP to "{schedule.name}" meetups.</Text>
+                    <Text style={[s.screenSub, { color: colors.textFaint }]}>Control when members can RSVP to "{schedule.name}" meetups.</Text>
 
-                    <Text style={s.fieldLabel}>Limit when people can RSVP?</Text>
+                    <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Limit when people can RSVP?</Text>
                     <View style={s.boolRow}>
-                        <TouchableOpacity style={[s.boolBtn, !rsvpRestricted && s.boolBtnActive]}
+                        <PressableOpacity style={[s.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, !rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                             onPress={() => setRsvpRestricted(false)}>
-                            <Text style={[s.boolBtnText, !rsvpRestricted && s.boolBtnTextActive]}>Allow anytime</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[s.boolBtn, rsvpRestricted && s.boolBtnActive]}
+                            <Text style={[s.boolBtnText, { color: colors.textMuted }, !rsvpRestricted && { color: colors.brand }]}>Allow anytime</Text>
+                        </PressableOpacity>
+                        <PressableOpacity style={[s.boolBtn, { borderColor: colors.border, backgroundColor: colors.surface }, rsvpRestricted && { borderColor: colors.brand, backgroundColor: colors.brandSoft }]}
                             onPress={() => setRsvpRestricted(true)}>
-                            <Text style={[s.boolBtnText, rsvpRestricted && s.boolBtnTextActive]}>Limit RSVPs</Text>
-                        </TouchableOpacity>
+                            <Text style={[s.boolBtnText, { color: colors.textMuted }, rsvpRestricted && { color: colors.brand }]}>Limit RSVPs</Text>
+                        </PressableOpacity>
                     </View>
 
                     {rsvpRestricted && (
@@ -225,7 +208,7 @@ const EditJitScreen = () => {
                             <View>
                                 <View style={s.toggleRow}>
                                     <View style={s.toggleRowLabelWrap}>
-                                        <Text style={s.toggleRowLabel}>Earliest time to RSVP</Text>
+                                        <Text style={[s.toggleRowLabel, { color: colors.textSecondary }]}>Earliest time to RSVP</Text>
                                         <InfoBubble
                                             title="Earliest time to RSVP"
                                             description={"This sets the earliest time and day people can respond.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs as soon as the meetup is created."}
@@ -242,30 +225,30 @@ const EditJitScreen = () => {
                                 </View>
                                 {leadEnabled && (
                                     <View style={{ marginTop: 10 }}>
-                                        <View style={s.leadRow}>
-                                            <TouchableOpacity onPress={() => {
+                                        <View style={[s.leadRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                            <PressableOpacity accessibilityLabel="Decrease" onPress={() => {
                                                 const nextLeadDays = Math.max(deadlineEnabled ? deadlineDays : 0, leadDays - 1);
                                                 setLeadDays(nextLeadDays);
                                                 if (deadlineEnabled && nextLeadDays === deadlineDays && timeToMinutes(leadTime) > timeToMinutes(deadlineTime)) {
                                                     setLeadTime(deadlineTime);
                                                 }
-                                            }} style={s.stepperBtn}>
-                                                <Feather name="minus" size={18} color="#4A90E2" />
-                                            </TouchableOpacity>
+                                            }} style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]}>
+                                                <Feather name="minus" size={18} color={colors.brand} />
+                                            </PressableOpacity>
                                             <View style={s.leadCenter}>
-                                                <Text style={s.leadVal}>{leadDays}</Text>
-                                                <Text style={s.leadSub}>days before</Text>
+                                                <Text style={[s.leadVal, { color: colors.textPrimary }]}>{leadDays}</Text>
+                                                <Text style={[s.leadSub, { color: colors.textFaint }]}>days before</Text>
                                             </View>
-                                            <TouchableOpacity onPress={() => setLeadDays(leadDays + 1)} style={s.stepperBtn}>
-                                                <Feather name="plus" size={18} color="#4A90E2" />
-                                            </TouchableOpacity>
+                                            <PressableOpacity accessibilityLabel="Increase" onPress={() => setLeadDays(leadDays + 1)} style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]}>
+                                                <Feather name="plus" size={18} color={colors.brand} />
+                                            </PressableOpacity>
                                         </View>
-                                        <Text style={s.fieldLabel}>Time</Text>
-                                        <TouchableOpacity style={s.dateFieldRow} onPress={openLeadTimePicker}>
-                                            <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
-                                            <Text style={s.dateFieldText}>{leadTime}</Text>
-                                            <Feather name={showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
-                                        </TouchableOpacity>
+                                        <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
+                                        <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={openLeadTimePicker}>
+                                            <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
+                                            <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{leadTime}</Text>
+                                            <Feather name={showLeadTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
+                                        </PressableOpacity>
                                     </View>
                                 )}
                             </View>
@@ -273,7 +256,7 @@ const EditJitScreen = () => {
                             <View>
                                 <View style={s.toggleRow}>
                                     <View style={s.toggleRowLabelWrap}>
-                                        <Text style={s.toggleRowLabel}>Latest time to RSVP</Text>
+                                        <Text style={[s.toggleRowLabel, { color: colors.textSecondary }]}>Latest time to RSVP</Text>
                                         <InfoBubble
                                             title="Latest time to RSVP"
                                             description={"This sets the cutoff for responding.\n\nIt's a number of days before the meetup, at a specific time.\n\nTurn it off to allow RSVPs right up until the meetup starts."}
@@ -290,30 +273,30 @@ const EditJitScreen = () => {
                                 </View>
                                 {deadlineEnabled && (
                                     <View style={{ marginTop: 10 }}>
-                                        <View style={s.leadRow}>
-                                            <TouchableOpacity onPress={() => setDeadlineDays(Math.max(0, deadlineDays - 1))} style={s.stepperBtn}>
-                                                <Feather name="minus" size={18} color="#4A90E2" />
-                                            </TouchableOpacity>
+                                        <View style={[s.leadRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                            <PressableOpacity accessibilityLabel="Decrease" onPress={() => setDeadlineDays(Math.max(0, deadlineDays - 1))} style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]}>
+                                                <Feather name="minus" size={18} color={colors.brand} />
+                                            </PressableOpacity>
                                             <View style={s.leadCenter}>
-                                                <Text style={s.leadVal}>{deadlineDays}</Text>
-                                                <Text style={s.leadSub}>days before</Text>
+                                                <Text style={[s.leadVal, { color: colors.textPrimary }]}>{deadlineDays}</Text>
+                                                <Text style={[s.leadSub, { color: colors.textFaint }]}>days before</Text>
                                             </View>
-                                            <TouchableOpacity onPress={() => {
+                                            <PressableOpacity accessibilityLabel="Increase" onPress={() => {
                                                 const nextDeadlineDays = leadEnabled ? Math.min(leadDays, deadlineDays + 1) : deadlineDays + 1;
                                                 setDeadlineDays(nextDeadlineDays);
                                                 if (leadEnabled && nextDeadlineDays === leadDays && timeToMinutes(deadlineTime) < timeToMinutes(leadTime)) {
                                                     setDeadlineTime(leadTime);
                                                 }
-                                            }} style={s.stepperBtn}>
-                                                <Feather name="plus" size={18} color="#4A90E2" />
-                                            </TouchableOpacity>
+                                            }} style={[s.stepperBtn, { backgroundColor: colors.brandSoft }]}>
+                                                <Feather name="plus" size={18} color={colors.brand} />
+                                            </PressableOpacity>
                                         </View>
-                                        <Text style={s.fieldLabel}>Time</Text>
-                                        <TouchableOpacity style={s.dateFieldRow} onPress={openDeadlineTimePicker}>
-                                            <Feather name="clock" size={16} color="#9CA3AF" style={{ marginRight: 10 }} />
-                                            <Text style={s.dateFieldText}>{deadlineTime}</Text>
-                                            <Feather name={showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color="#9CA3AF" style={{ marginLeft: "auto" }} />
-                                        </TouchableOpacity>
+                                        <Text style={[s.fieldLabel, { color: colors.textFaint }]}>Time</Text>
+                                        <PressableOpacity style={[s.dateFieldRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={openDeadlineTimePicker}>
+                                            <Feather name="clock" size={16} color={colors.textFaint} style={{ marginRight: 10 }} />
+                                            <Text style={[s.dateFieldText, { color: colors.textSecondary }]}>{deadlineTime}</Text>
+                                            <Feather name={showDeadlineTimePicker ? "chevron-up" : "chevron-down"} size={16} color={colors.textFaint} style={{ marginLeft: "auto" }} />
+                                        </PressableOpacity>
                                     </View>
                                 )}
                             </View>
@@ -321,12 +304,12 @@ const EditJitScreen = () => {
                     )}
                 </ScrollView>
 
-                <View style={s.screenFooter}>
+                <View style={[s.screenFooter, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
                     {!hasChanged && (
-                        <Text style={s.noChangeHint}>No changes yet</Text>
+                        <Text style={[s.noChangeHint, { color: colors.textFaint }]}>No changes yet</Text>
                     )}
-                    <TouchableOpacity
-                        style={[s.primaryBtn, (!hasChanged || isSaving) && s.primaryBtnDisabled]}
+                    <PressableOpacity
+                        style={[s.primaryBtn, { backgroundColor: colors.brand }, (!hasChanged || isSaving) && { backgroundColor: disabledBtnBg }]}
                         onPress={handleSave}
                         disabled={!hasChanged || isSaving}
                     >
@@ -334,7 +317,7 @@ const EditJitScreen = () => {
                             ? <ActivityIndicator color="#fff" size="small" />
                             : <><Text style={s.primaryBtnText}>Save Changes</Text><Feather name="check" size={18} color="#fff" style={{ marginLeft: 6 }} /></>
                         }
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </View>
             </View>
 
@@ -392,8 +375,6 @@ const s = StyleSheet.create({
     toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     toggleRowLabelWrap: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, marginRight: 12 },
     toggleRowLabel: { fontSize: 14, fontWeight: "700", color: "#374151" },
-    switchTrack: { width: 44, height: 26, borderRadius: 13, padding: 2, justifyContent: "center" },
-    switchThumb: { position: "absolute", width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.25, shadowRadius: 2, elevation: 2 },
     leadRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
     stepperBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#EEF6FF", alignItems: "center", justifyContent: "center" },
     leadCenter: { alignItems: "center", minWidth: 60 },

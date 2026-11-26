@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
+import { useWindowInsets } from '@/contexts/WindowInsetsContext';
 import { Modal, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 interface Props {
@@ -19,7 +19,8 @@ const MAX_SCALE = 4;
 
 export function ChatImageViewer({ visible, imageUrl, imageWidth, imageHeight, onClose }: Props) {
   const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
+  // Drawn full-screen over the offline banner: needs the real top inset.
+  const insets = useWindowInsets();
   const viewerHeight = height * 0.85;
 
   // Rendered image box within the letterboxed container, so panning clamps to
@@ -89,6 +90,9 @@ export function ChatImageViewer({ visible, imageUrl, imageWidth, imageHeight, on
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+      {/* A Modal is its own native window on Android: gestures inside it only work under their own
+          root view. Without this, pinch-to-zoom and panning did nothing on Android. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         {imageUrl && (
           <GestureDetector gesture={composedGesture}>
@@ -110,6 +114,7 @@ export function ChatImageViewer({ visible, imageUrl, imageWidth, imageHeight, on
           <Feather name="x" size={22} color="#fff" />
         </Pressable>
       </Pressable>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

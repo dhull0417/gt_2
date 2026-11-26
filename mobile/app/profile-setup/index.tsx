@@ -1,22 +1,28 @@
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
-import React, { useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TextInput, Alert, StyleSheet } from 'react-native';
+import type { TextInputInstance } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
 import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import * as SecureStore from 'expo-secure-store';
+import { Feather } from '@expo/vector-icons';
 import { User, useApiClient, userApi } from '@/utils/api';
-import { PENDING_INVITE_KEY } from '@/app/join/[token]';
+import { openPendingInvite } from '@/utils/pendingInvite';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import { haptic } from '@/utils/haptics';
+import { AuthScreen } from '@/components/auth/AuthScreen';
+import { Button } from '@/components/ui/Button';
+import { TextField } from '@/components/ui/TextField';
+import { fontSize } from '@/constants/theme';
 
 const ProfileSetupScreen = () => {
     const { user: clerkUser } = useUser();
     const router = useRouter();
     const api = useApiClient();
     const queryClient = useQueryClient();
-    // This app never writes the name back to Clerk (only to our own backend via
-    // syncUser/updateProfile — see useAppleAuth.ts), so clerkUser.firstName is never
-    // populated for Apple sign-in. The saved name lives on our own currentUser record,
-    // which app/_layout.tsx's routing already keeps warm in this same query cache.
+    const colors = useThemeColors();
+    // Our own currentUser record is the source of truth for the name. Clerk only gets a
+    // best-effort copy of an Apple name (see useAppleAuth.ts), so prefer currentUser; it's
+    // kept warm in this same query cache by app/_layout.tsx's routing.
     const { data: currentUser } = useQuery<User, Error>({
         queryKey: ['currentUser'],
         queryFn: () => userApi.getCurrentUser(api),
@@ -25,6 +31,16 @@ const ProfileSetupScreen = () => {
     const [lastName, setLastName] = useState(currentUser?.lastName ?? clerkUser?.lastName ?? '');
     const [zipCode, setZipCode] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const lastNameRef = useRef<TextInputInstance>(null);
+    const zipRef = useRef<TextInputInstance>(null);
+
+    // Names can arrive after first render (the user record loads late); fill them in
+    // unless the person has already started typing.
+    useEffect(() => {
+        if (!firstName && (currentUser?.firstName || clerkUser?.firstName)) setFirstName(currentUser?.firstName ?? clerkUser?.firstName ?? '');
+        if (!lastName && (currentUser?.lastName || clerkUser?.lastName)) setLastName(currentUser?.lastName ?? clerkUser?.lastName ?? '');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentUser?.firstName, currentUser?.lastName, clerkUser?.firstName, clerkUser?.lastName]);
 
     const isAppleUser = clerkUser?.externalAccounts?.some(a => (a.provider as string).includes('apple')) ?? false;
     // Apple only hands us a name on the account's very first authorization ever, so a
@@ -39,8 +55,11 @@ const ProfileSetupScreen = () => {
             Alert.alert('Missing Information', 'Please fill out all fields.');
             return;
         }
-        if (zipCode.trim() && zipCode.trim().length !== 5) {
-            Alert.alert('Invalid Zip Code', 'Zip code must be exactly 5 digits.');
+        // Required: the app won't continue without it (see the routing check in app/_layout.tsx),
+        // and it is what lets us show places near you first when you pick a location.
+        if (zipCode.trim().length !== 5) {
+            haptic.error();
+            Alert.alert('Zip Code Needed', 'Please enter your 5-digit zip code.');
             return;
         }
         // Apple users: omit firstName/lastName so syncUser populates them from Apple's token instead,
@@ -49,31 +68,25 @@ const ProfileSetupScreen = () => {
             ? { firstName: firstName.trim(), lastName: lastName.trim() }
             : {};
         const profileData = isAppleUser
-            ? { ...appleNameOverride, ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) }
-            : { firstName: firstName.trim(), lastName: lastName.trim(), ...(zipCode.trim() ? { zipCode: zipCode.trim() } : {}) };
+            ? { ...appleNameOverride, zipCode: zipCode.trim() }
+            : { firstName: firstName.trim(), lastName: lastName.trim(), zipCode: zipCode.trim() };
 
         setIsSaving(true);
         try {
             // Ensure the Mongo user exists first — idempotent, returns existing user if present
-            const syncRes = await userApi.syncUser(api, { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' });
-            // TEMP DEBUG — remove once the profile-setup redirect-loop bug is diagnosed.
-            console.log('[profile-setup] syncUser response', syncRes.data);
+            await userApi.syncUser(api, { firstName: clerkUser?.firstName ?? '', lastName: clerkUser?.lastName ?? '' });
             const { data } = await userApi.updateProfile(api, profileData);
-            console.log('[profile-setup] updateProfile response', data);
             if (data?.user) {
                 queryClient.setQueryData(['currentUser'], data.user);
             } else {
                 queryClient.invalidateQueries({ queryKey: ['currentUser'] });
             }
 
-            const pendingToken = await SecureStore.getItemAsync(PENDING_INVITE_KEY);
-            if (pendingToken) {
-                await SecureStore.deleteItemAsync(PENDING_INVITE_KEY);
-                router.replace({ pathname: '/join/[token]', params: { token: pendingToken } });
-            } else {
+            if (!(await openPendingInvite(router, 'replace'))) {
                 router.replace('/(tabs)');
             }
         } catch (error: any) {
+            haptic.error();
             const errorMessage = error.response?.data?.error || 'Failed to update profile.';
             Alert.alert('Error', errorMessage);
         } finally {
@@ -81,96 +94,91 @@ const ProfileSetupScreen = () => {
         }
     };
 
+    const nameFields = (
+        <>
+            <TextField
+                label="First name"
+                placeholder="Sam"
+                value={firstName}
+                onChangeText={setFirstName}
+                autoCapitalize="words"
+                autoComplete="given-name"
+                textContentType="givenName"
+                returnKeyType="next"
+                onSubmitEditing={() => lastNameRef.current?.focus()}
+                containerStyle={styles.field}
+            />
+            <TextField
+                ref={lastNameRef}
+                label="Last name"
+                placeholder="Lee"
+                value={lastName}
+                onChangeText={setLastName}
+                autoCapitalize="words"
+                autoComplete="family-name"
+                textContentType="familyName"
+                returnKeyType="next"
+                onSubmitEditing={() => zipRef.current?.focus()}
+                containerStyle={styles.field}
+            />
+        </>
+    );
+
     return (
-        <SafeAreaView className="flex-1 bg-gray-50">
-            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1">
-                <ScrollView
-                    contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
-                    keyboardShouldPersistTaps="handled"
-                >
-                <View className="p-8">
-                    <Text className="text-3xl font-bold text-gray-800 text-center">Welcome!</Text>
-                    <Text className="text-lg text-gray-600 text-center mt-2 mb-8">Let's set up your profile.</Text>
+        <AuthScreen
+            title="Set up your profile"
+            subtitle="Tell your groups who you are. This only takes a moment."
+        >
+            {!isAppleUser && nameFields}
 
-                    {!isAppleUser && (
-                        <>
-                            <TextInput
-                                placeholder="First Name"
-                                value={firstName}
-                                onChangeText={setFirstName}
-                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-                                placeholderTextColor="#999"
-                            />
-                            <TextInput
-                                placeholder="Last Name"
-                                value={lastName}
-                                onChangeText={setLastName}
-                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-                                placeholderTextColor="#999"
-                            />
-                        </>
-                    )}
-
-                    <TextInput
-                        placeholder="Zip Code"
-                        value={zipCode}
-                        onChangeText={(text) => setZipCode(text.replace(/\D/g, '').slice(0, 5))}
-                        keyboardType="numeric"
-                        maxLength={5}
-                        className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-4"
-                        style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-                        placeholderTextColor="#999"
-                    />
-
-                    {needsName && (
-                        <View className="w-full bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                            <Text className="text-base font-bold text-gray-800 mb-1">Update Name!</Text>
-                            <Text className="text-sm text-gray-600 mb-4">Make sure your friends know who you are.</Text>
-                            <TextInput
-                                placeholder="First Name"
-                                value={firstName}
-                                onChangeText={setFirstName}
-                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base mb-3"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-                                placeholderTextColor="#999"
-                            />
-                            <TextInput
-                                placeholder="Last Name"
-                                value={lastName}
-                                onChangeText={setLastName}
-                                className="w-full bg-white p-4 border border-gray-300 rounded-lg text-base"
-                                style={{ height: 52, paddingVertical: 0, textAlignVertical: 'center', lineHeight: undefined }}
-                                placeholderTextColor="#999"
-                            />
-                        </View>
-                    )}
-
-                    {isAppleUser && !needsName && (
-                        <Text className="text-sm text-gray-500 text-center mb-6">
-                            If you would like to modify your name, visit the Profile Tab {`>`} Update Account Info.
-                        </Text>
-                    )}
-
-                    {!isAppleUser && <View className="mb-6" />}
-
-                    <TouchableOpacity
-                        onPress={handleSaveProfile}
-                        disabled={isSaving}
-                        className={`w-full py-4 rounded-lg items-center shadow ${isSaving ? 'bg-[#4A90E2]' : 'bg-[#4A90E2]'}`}
-                    >
-                        {isSaving ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text className="text-white text-lg font-bold">Save & Continue</Text>
-                        )}
-                    </TouchableOpacity>
+            {needsName && (
+                <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.cardHeader}>
+                        <Feather name="user" size={18} color={colors.brand} />
+                        <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Add your name</Text>
+                        <Text style={[styles.optional, { color: colors.textFaint }]}>Optional</Text>
+                    </View>
+                    <Text style={[styles.cardBody, { color: colors.textMuted }]}>So your friends know who you are.</Text>
+                    {nameFields}
                 </View>
-                </ScrollView>
-            </KeyboardAvoidingView>
-        </SafeAreaView>
+            )}
+
+            <TextField
+                ref={zipRef}
+                label="Zip code"
+                placeholder="84060"
+                autoComplete="postal-code"
+                textContentType="postalCode"
+                returnKeyType="done"
+                onSubmitEditing={handleSaveProfile}
+                value={zipCode}
+                onChangeText={(text) => setZipCode(text.replace(/\D/g, '').slice(0, 5))}
+                keyboardType="number-pad"
+                maxLength={5}
+                helperText="Helps us show places near you first when you pick a meetup location. We never share it."
+                containerStyle={styles.fieldLast}
+            />
+
+            {isAppleUser && !needsName && (
+                <Text style={[styles.note, { color: colors.textMuted }]}>
+                    You can change your name anytime in Profile › Update Account Info.
+                </Text>
+            )}
+
+            <Button title="Save & continue" size="lg" onPress={handleSaveProfile} loading={isSaving} />
+        </AuthScreen>
     );
 };
+
+const styles = StyleSheet.create({
+    field: { marginBottom: 14 },
+    fieldLast: { marginBottom: 24 },
+    card: { borderRadius: 20, borderWidth: 1, padding: 16, paddingBottom: 4, marginBottom: 18 },
+    cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+    cardTitle: { fontSize: fontSize.lg, fontWeight: '800', flex: 1 },
+    optional: { fontSize: fontSize.xs, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+    cardBody: { fontSize: fontSize.md, marginBottom: 14 },
+    note: { fontSize: fontSize.sm, textAlign: 'center', marginBottom: 18 },
+});
 
 export default ProfileSetupScreen;

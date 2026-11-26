@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test --experimental-test-module-mocks \"src/**/*.test.mjs\"",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "migrate:status": "migrate-mongo status -f migrate-mongo-config.cjs",
@@ -17,8 +17,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@arcjet/inspect": "^1.0.0-beta.8",
-    "@arcjet/node": "^1.0.0-beta.8",
     "@clerk/clerk-sdk-node": "^5.1.6",
     "@clerk/express": "^1.7.3",
     "cloudinary": "^2.7.0",

@@ -15,6 +15,7 @@ import Group from "../models/group.model.js";
 import Meetup from "../models/meetup.model.js";
 import User from "../models/user.model.js";
 import { calculateNextMeetupDate, computeNextGenerationAt } from "../utils/date.utils.js";
+import { clearNextMeetupMutesUpdate } from "../utils/groupMute.js";
 
 const parseTimeString = (timeStr) => {
   if (!timeStr) return { hours: 9, minutes: 0 };
@@ -63,10 +64,8 @@ async function backfill() {
     );
     // Clear any stale mutes from the groups that just expired
     if (groupIds.length > 0) {
-      await User.updateMany(
-        { mutedUntilNextMeetup: { $in: groupIds } },
-        { $pull: { mutedUntilNextMeetup: { $in: groupIds } } }
-      );
+      const { filter, update } = clearNextMeetupMutesUpdate(groupIds);
+      await User.updateMany(filter, update);
     }
     console.log(`  ✓ Expired ${expireResult.modifiedCount} past meetup(s) and cleared stale mutes.`);
   } else {

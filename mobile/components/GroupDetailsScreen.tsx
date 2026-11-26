@@ -2,42 +2,28 @@ import {
   View,
   Text,
   ScrollView,
-  ActivityIndicator,
-  Keyboard,
-  Alert,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-  Pressable,
-  Image,
+  RefreshControl,
+  Platform,
+  Dimensions,
 } from 'react-native';
-import React, { useState, useMemo } from 'react';
+import type { ScrollViewInstance, ViewInstance } from 'react-native';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
-import { useRemoveMember } from '@/hooks/useRemoveMember';
-import { User, useApiClient, userApi, groupApi } from '@/utils/api';
-import { getDMDisplayName, getUserDisplayName, getUserInitial } from '@/utils/groupDisplay';
+import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
-import { useSearchUsers } from '@/hooks/useSearchUsers';
-import { useInviteUser } from '@/hooks/useInviteUser';
 import { GroupDetailsView } from '@/components/GroupDetailsView';
-import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import { GroupCalendarButton } from '@/components/GroupCalendarButton';
-import { TAB_BAR_HEIGHT } from '@/utils/layout';
-
-const styles = StyleSheet.create({
-  settingsButton: {
-    padding: 6,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-});
+import { tabScreenBottomPadding } from '@/utils/layout';
+import { scrollIntoViewForTour } from '@/utils/scrollIntoViewForTour';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 interface GroupDetailsScreenProps {
   // False when mounted outside the Groups tab (no tab bar underneath) — see app/group-details/[id].tsx
@@ -45,218 +31,131 @@ interface GroupDetailsScreenProps {
 }
 
 export const GroupDetailsScreen = ({ showsTabBarBeneath = true }: GroupDetailsScreenProps) => {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // from=chat: Android opened Details from the chat header (see group-chat/[id].tsx handleOpenDetails).
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
+  const colors = useThemeColors();
 
   const insets = useSafeAreaInsets();
   const api = useApiClient();
   const router = useRouter();
-  const queryClient = useQueryClient();
 
-  // Cached list data gives an instant name/avatar/isDM fallback while details load.
-  const { data: groups } = useGetGroups();
-  const fallbackGroup = useMemo(() => groups?.find(g => g._id === id), [groups, id]);
-
-  const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails } = useGetGroupDetails(id ?? null);
+  const detailsQuery = useGetGroupDetails(id ?? null);
+  const { data: groupDetails, isLoading: isLoadingDetails, isError: isErrorDetails, refetch: refetchDetails } = detailsQuery;
+  const detailsOffline = isOfflineEmpty(detailsQuery);
+  // If the details never arrive (a request that hangs), stop the loader after 8 seconds and offer
+  // Retry instead of spinning forever. Same limit as the chat screen.
+  const [detailsTimedOut, setDetailsTimedOut] = useState(false);
+  // Only counts while a request is actually running (not while offline and waiting).
+  const detailsFetching = detailsQuery.fetchStatus === 'fetching';
+  useEffect(() => {
+    setDetailsTimedOut(false);
+    if (groupDetails || !detailsFetching) return;
+    const t = setTimeout(() => setDetailsTimedOut(true), 8000);
+    return () => clearTimeout(t);
+  }, [groupDetails, detailsFetching, id]);
 
   const { data: currentUser } = useQuery<User, Error>({
     queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
   });
 
-  const canManageGroup = useMemo(() => {
-    if (!groupDetails || !currentUser) return false;
-    const userId = currentUser._id;
-    const g = groupDetails as any;
-    const isOwner = (g.owner?._id || g.owner) === userId;
-    const isMod = g.moderators?.some((m: any) => (m?._id || m) === userId);
-    return isOwner || isMod;
-  }, [groupDetails, currentUser]);
-
-  const isDM = groupDetails?.isDM ?? fallbackGroup?.isDM ?? false;
-
-  const { mutate: removeMember, isPending: isRemovingMember } = useRemoveMember();
-
-  const [dmTargetMember, setDmTargetMember] = useState<User | null>(null);
-  const [isCreatingDM, setIsCreatingDM] = useState(false);
-
-  const handleMemberPress = (member: User) => {
-    setDmTargetMember(member);
-  };
-
-  const handleSendDM = async () => {
-    if (!dmTargetMember) return;
-    setIsCreatingDM(true);
-    try {
-      const { group } = await groupApi.createOrGetDM(api, dmTargetMember._id);
-      queryClient.invalidateQueries({ queryKey: ['groups'] });
-      setDmTargetMember(null);
-      router.push({ pathname: '/group-chat/[id]', params: { id: group._id } });
-    } catch {
-      Alert.alert('Error', 'Could not open DM. Please try again.');
-    } finally {
-      setIsCreatingDM(false);
-    }
-  };
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const { data: searchResults } = useSearchUsers(searchQuery);
-  const { mutate: inviteUser } = useInviteUser();
-
-  const handleInvite = (userIdToInvite: string) => {
-    if (!id) return;
-    inviteUser({ groupId: id, userIdToInvite }, {
-        onSuccess: () => {
-            setSearchQuery('');
-            Keyboard.dismiss();
-            Alert.alert("Success", "Invite sent!");
-        }
-    });
-  };
-
-  const handleRemoveMember = (memberIdToRemove: string) => {
-    if (!id) return;
-    Alert.alert("Remove Member", "Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Remove", style: "destructive", onPress: () => {
-        removeMember({ groupId: id, memberIdToRemove }, {
-          onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
-          }
-        });
-      }},
-    ]);
-  };
-
-  const handleSettingsPress = () => {
-    if (!id) return;
-    router.push({
-      pathname: '/group-settings/[id]',
-      params: { id }
-    });
-  };
+  // Offline, this says so and stops instead of spinning until the connection is back.
+  const { refreshing: isPullRefreshing, refresh: handlePullRefresh } = useRefreshOrToast([() => refetchDetails()]);
 
   const handleOpenChat = () => {
     if (!id) return;
+    if (Platform.OS === 'android') {
+      // On Android, Details sits in the Groups tab stack with no chat beneath it. Pop Details so the
+      // Groups list is underneath, then open the chat, so the chat's back lands on the list.
+      if (router.canGoBack()) router.back();
+      router.push({ pathname: '/group-chat/[id]', params: { id } });
+      return;
+    }
     // Pops back to an already-open chat for this group (correct back-slide animation,
     // matching the chevron-left affordance); falls back to a push for entry points that
     // never went through chat (groups list, notifications, DM creation, meetup modal).
     router.dismissTo({ pathname: '/group-chat/[id]', params: { id } });
   };
 
-  const headerName = groupDetails?.isDM
-    ? getDMDisplayName(groupDetails as any, currentUser?.clerkId)
-    : (groupDetails?.name || fallbackGroup?.name || '');
+  // For the first-visit tour: scroll a tile on screen before it's highlighted. The tour places its
+  // highlight from one measurement of where the tile is on screen, so the scroll has to have fully
+  // stopped first; otherwise the highlight lands where the tile was mid-scroll (below it).
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const scrollY = useRef(0);
+  const contentH = useRef(0);
+  const viewportH = useRef(0);
+  const scrollIntoView = useCallback((node: ViewInstance | null, beforeScroll?: () => Promise<void>) =>
+    scrollIntoViewForTour({
+      node,
+      scrollTo: (y) => scrollRef.current?.scrollTo({ y, animated: true }),
+      getScrollY: () => scrollY.current,
+      maxScrollY: contentH.current > 0 && viewportH.current > 0 ? contentH.current - viewportH.current : undefined,
+      windowH: Dimensions.get('window').height,
+      insetTop: insets.top,
+      insetBottom: insets.bottom,
+      beforeScroll,
+    }), [insets.top, insets.bottom]);
+
+  // Android back returns to the chat when Details was opened from it, like the on-screen arrow.
+  useAndroidBack(from === 'chat', handleOpenChat);
 
   return (
     <SafeAreaView
-      style={{ flex: 1, backgroundColor: 'white' }}
+      style={{ flex: 1, backgroundColor: colors.backgroundAlt }}
       edges={showsTabBarBeneath ? ['top', 'left', 'right'] : ['top', 'left', 'right', 'bottom']}
     >
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
-        <View className="flex-row items-center flex-1">
-          {/* Always back to chat — its only meaningful parent, regardless of nav stack */}
-          <TouchableOpacity onPress={handleOpenChat} className="mr-2 p-1">
-            <Feather name="chevron-left" size={26} color="#FF7A6E"/>
-          </TouchableOpacity>
-          <View style={{ marginRight: 10 }}>
-            <GroupAvatar name={headerName} imageUrl={groupDetails?.image || fallbackGroup?.image} size={36} borderRadius={9} />
-          </View>
-          <Text className="text-lg font-black text-gray-900 flex-1" numberOfLines={1}>
-            {headerName}
-          </Text>
-        </View>
-
-        <View className="flex-row items-center" style={{ gap: 8 }}>
-          {id && currentUser && (
-            <GroupCalendarButton groupId={id} isDM={isDM} />
-          )}
-
-          {canManageGroup && (
-            <TouchableOpacity
-              onPress={handleSettingsPress}
-              style={styles.settingsButton}
-              activeOpacity={0.7}
-            >
-              <Feather name="settings" size={22} color="#374151" />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
       <ScrollView
-        className="flex-1 bg-gray-50"
+        ref={scrollRef}
+        onScroll={(e) => { scrollY.current = e.nativeEvent.contentOffset.y; }}
+        onLayout={(e) => { viewportH.current = e.nativeEvent.layout.height; }}
+        onContentSizeChange={(_w, h) => { contentH.current = h; }}
+        scrollEventThrottle={16}
+        style={{ backgroundColor: colors.backgroundAlt }}
+        className="flex-1"
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: showsTabBarBeneath ? insets.bottom + TAB_BAR_HEIGHT : 0 }}
+        refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: showsTabBarBeneath ? tabScreenBottomPadding(insets.bottom) : 0 }}
       >
         <View className="p-6" style={{ flex: 1 }}>
-          {(isLoadingDetails || !groupDetails) ? (
+          {detailsOffline ? (
+              <OfflineEmptyState message="Connect to the internet to load this group." onRetry={handlePullRefresh} />
+          ) : (isErrorDetails || detailsTimedOut) && !groupDetails ? (
+              <View style={{ alignItems: 'center', marginTop: 48 }}>
+                <Text style={{ color: colors.textMuted, fontSize: 16, textAlign: 'center', marginBottom: 16 }}>Couldn't load this group.</Text>
+                <PressableOpacity onPress={() => { setDetailsTimedOut(false); handlePullRefresh(); }} style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}>
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Try again</Text>
+                </PressableOpacity>
+              </View>
+          ) : (isLoadingDetails || !groupDetails) ? (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
-          ) : isErrorDetails ? (
-              <Text className="text-center text-red-500 mt-4">Failed to load group details.</Text>
           ) : (
             <GroupDetailsView
               groupDetails={groupDetails}
               currentUser={currentUser!}
-              isRemovingMember={isRemovingMember}
-              onRemoveMember={handleRemoveMember}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              searchResults={searchResults}
-              onInvite={handleInvite}
               onLeaveSuccess={() => router.dismissTo('/(tabs)/groups')}
-              onMemberPress={groupDetails.isDM ? undefined : handleMemberPress}
+              scrollIntoView={scrollIntoView}
             />
           )}
         </View>
-      </ScrollView>
 
-      {/* DM bottom sheet */}
-      <Modal
-        visible={!!dmTargetMember}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setDmTargetMember(null)}
-      >
-        <Pressable style={dmStyles.backdrop} onPress={() => setDmTargetMember(null)}>
-          <Pressable style={dmStyles.sheet} onPress={() => {}}>
-            <View style={dmStyles.dragHandle} />
-            {dmTargetMember && (
-              <>
-                <Image
-                  source={{ uri: dmTargetMember.profilePicture || `https://placehold.co/100x100/EEE/31343C?text=${getUserInitial(dmTargetMember)}` }}
-                  style={dmStyles.avatar}
-                />
-                <Text style={dmStyles.name}>
-                  {getUserDisplayName(dmTargetMember)}
-                </Text>
-                <TouchableOpacity
-                  style={dmStyles.dmBtn}
-                  onPress={handleSendDM}
-                  disabled={isCreatingDM}
-                  activeOpacity={0.8}
-                >
-                  {isCreatingDM
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={dmStyles.dmBtnText}>Send DM</Text>
-                  }
-                </TouchableOpacity>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
+        {/* No header bar: a back button at the top-left of the page, always back to chat — its only
+            meaningful parent, regardless of nav stack. Inside the ScrollView so it scrolls away with
+            the content instead of staying pinned to the screen corner. */}
+        <PressableOpacity
+          accessibilityLabel="Go back"
+          onPress={handleOpenChat}
+          hitSlop={8}
+          style={{
+            position: 'absolute', top: 8, left: 12, width: 40, height: 40, borderRadius: 20,
+            alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
+            shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+          }}
+        >
+          <Feather name="chevron-left" size={26} color="#FF7A6E" style={{ marginLeft: -2 }} />
+        </PressableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 };
-
-const dmStyles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12, alignItems: 'center' },
-  dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', marginBottom: 24 },
-  avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 14, backgroundColor: '#F3F4F6' },
-  name: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 28 },
-  dmBtn: { backgroundColor: '#4A90E2', paddingHorizontal: 40, paddingVertical: 14, borderRadius: 16, minWidth: 160, alignItems: 'center' },
-  dmBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-});
 
 export default GroupDetailsScreen;

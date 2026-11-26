@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["RichShareModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.richshare.RichShareModule"]
+  }
+}

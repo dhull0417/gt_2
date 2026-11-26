@@ -26,20 +26,38 @@ import userRoutes from "./routes/user.route.js";
 import groupRoutes from "./routes/group.route.js";
 import meetupRoutes from "./routes/meetup.route.js";
 import pollRoutes from "./routes/poll.route.js";
+import healthRoutes from "./routes/health.route.js";
 import jobRoutes from "./routes/job.route.js";
 import notificationRoutes from "./routes/notification.route.js";
 import placesRoutes from "./routes/places.route.js";
+import chatRoutes from "./routes/chat.route.js";
+import linkPreviewRoutes from "./routes/linkPreview.route.js";
+import tournamentRoutes from "./routes/tournament.route.js";
 
 import { ENV } from "./config/env.js";
 import { connectDB } from "./config/db.js";
-import { arcjetMiddleware } from "./middleware/arcjet.middleware.js";
+import { clientInfo } from "./middleware/clientInfo.middleware.js";
+import revenuecatRoutes from "./routes/revenuecat.route.js";
+import emailRoutes from "./routes/email.route.js";
+import { resendWebhook, goPage } from "./controllers/email.controller.js";
 import User from "./models/user.model.js";
+import Group from "./models/group.model.js";
+import Meetup from "./models/meetup.model.js";
+import inviteRoutes from "./routes/invite.route.js";
+import { findInvite, recordInviteEvent } from "./controllers/invite.controller.js";
+import { inviteStatus, TOKEN_RE as INVITE_TOKEN_RE, APP_STORE_URL as INVITE_APP_STORE_URL, PLAY_STORE_URL as INVITE_PLAY_STORE_URL } from "./utils/invites.js";
+import { renderInvitePage, deviceInfo as inviteDeviceInfo, isLinkPreviewBot, IN_APP_HINT } from "./utils/invitePage.js";
+import { rateLimit } from "./utils/rateLimit.js";
 
 const app = express();
 
 app.use(cors());
+// Resend webhook needs the raw body for signature verification, so it is mounted before express.json().
+app.post("/api/email/webhook/resend", express.raw({ type: "*/*" }), resendWebhook);
 app.use(express.json());
 app.use(clerkMiddleware());
+// Tags each request with the calling app version (older store builds send none; see the middleware).
+app.use(clientInfo);
 app.get('/logo.png', (req, res) => {
   res.setHeader('Content-Type', 'image/png');
   res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -52,10 +70,10 @@ app.get('/og-image.png', async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.send(buf);
 });
-// app.use(arcjetMiddleware);
 
 app.get("/", (req, res) => res.send("Hello from server"));
 
+app.use("/api/health", healthRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/meetups", meetupRoutes);
@@ -63,38 +81,25 @@ app.use("/api/polls", pollRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/places", placesRoutes);
-
-app.post("/api/debug/log", (req, res) => {
-  console.log("[DEBUG]", JSON.stringify(req.body, null, 2));
-  res.status(200).json({ received: true });
-});
+app.use("/api/revenuecat", revenuecatRoutes);
+app.use("/api/email", emailRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/link-preview", linkPreviewRoutes);
+app.use("/api/tournaments", tournamentRoutes);
+app.use("/api/invites", inviteRoutes);
+app.get("/go/:dest", goPage);
+app.get("/go/:dest/:id", goPage);
 
 // --- Public web routes ---
 
-const APP_STORE_URL = 'https://apps.apple.com/app/groupthat/id6756112941';
-const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.dallinhull.groupthat';
+const APP_STORE_URL = INVITE_APP_STORE_URL;
+const PLAY_STORE_URL = INVITE_PLAY_STORE_URL;
 
-// In-app browsers (Messenger, Facebook, Instagram, Snapchat, TikTok, Line) block automatic
-// redirects into the App Store / Play Store / app schemes. Only a real user tap gets through,
-// so in those webviews we serve a page with buttons instead of redirecting.
-const IN_APP_BROWSER_RE = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|Snapchat|musical_ly|Bytedance|Line\//i;
-
+// /download (the old "step 1" link in invite texts) still uses these.
 const deviceInfo = (ua = '') => {
-  const isIOS = /iPhone|iPad|iPod/i.test(ua);
-  const isAndroid = /Android/i.test(ua);
-  const inApp = IN_APP_BROWSER_RE.test(ua);
-  return {
-    isIOS,
-    isAndroid,
-    inApp,
-    // Plain https store links: in-app browsers (Messenger, Instagram) hand these off to the
-    // App Store / Play Store on a user tap, but silently block itms-apps:// and intent:// links.
-    iosStoreHref: APP_STORE_URL,
-    androidStoreHref: PLAY_STORE_URL,
-  };
+  const d = inviteDeviceInfo(ua);
+  return { ...d, iosStoreHref: APP_STORE_URL, androidStoreHref: PLAY_STORE_URL };
 };
-
-const IN_APP_HINT = 'Not opening? Tap the \u2022\u2022\u2022 menu and choose \u201cOpen in Safari\u201d or \u201cOpen in Chrome\u201d.';
 
 // iOS Universal Links verification file
 app.get('/.well-known/apple-app-site-association', (req, res) => {
@@ -105,6 +110,7 @@ app.get('/.well-known/apple-app-site-association', (req, res) => {
         appIDs: ['9P29PK6A6D.com.dallinhull.groupthat'],
         components: [
           { '/': '/join/*' },
+          { '/': '/go/*' }, // email buttons (lifecycle emails, calendar events)
         ],
       }],
     },
@@ -112,7 +118,13 @@ app.get('/.well-known/apple-app-site-association', (req, res) => {
 });
 
 // Android App Links verification file
-// sha256_cert_fingerprints: Play Console > Setup > App signing > App signing key certificate > SHA-256
+// sha256_cert_fingerprints: Play Console > Setup > App signing > App signing key certificate > SHA-256.
+// ANDROID_CERT_FINGERPRINTS (comma-separated) adds more, e.g. the upload key used by EAS preview builds,
+// so links open the app on test devices too.
+const PLAY_SIGNING_FINGERPRINT = '2A:DC:47:BB:9C:A3:00:CD:22:CF:18:B6:32:93:47:7A:34:F0:A6:39:8B:90:16:D3:F4:0C:5A:3A:81:7B:94:1C';
+export const androidFingerprints = (extra = process.env.ANDROID_CERT_FINGERPRINTS) => [
+  ...new Set([PLAY_SIGNING_FINGERPRINT, ...String(extra || '').split(',').map((f) => f.trim().toUpperCase()).filter((f) => /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(f))]),
+];
 app.get('/.well-known/assetlinks.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.json([{
@@ -120,128 +132,51 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
     target: {
       namespace: 'android_app',
       package_name: 'com.dallinhull.groupthat',
-      sha256_cert_fingerprints: [
-        '2A:DC:47:BB:9C:A3:00:CD:22:CF:18:B6:32:93:47:7A:34:F0:A6:39:8B:90:16:D3:F4:0C:5A:3A:81:7B:94:1C',
-      ],
+      sha256_cert_fingerprints: androidFingerprints(),
     },
   }]);
 });
 
-// Invite landing page; shown only when the app isn't installed (OS intercepts otherwise).
-app.get('/join/:token', (req, res) => {
-  const { token } = req.params;
-  const deepLink = `groupthat://join/${token}`;
-  const { isAndroid, inApp, iosStoreHref, androidStoreHref } = deviceInfo(req.headers['user-agent']);
-  // intent:// opens the app if installed, else falls through to the Play Store immediately.
-  const intentUri = `intent://join/${token}#Intent;scheme=groupthat;package=com.dallinhull.groupthat;S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`;
-  // Tap target for people who already have the app (a tap works where an auto-redirect is blocked).
-  const openAppHref = isAndroid ? intentUri : deepLink;
+const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
-  res.setHeader('Content-Type', 'text/html');
-  res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Join a group on GroupThat</title>
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://invite.groupthatapp.com/join/${token}">
-  <meta property="og:site_name" content="GroupThat">
-  <meta property="og:title" content="You've been invited to join a group on GroupThat">
-  <meta property="og:description" content="Tap to join the group and coordinate meetups with your crew.">
-  <meta property="og:image" content="https://invite.groupthatapp.com/og-image.png">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
-  <meta property="og:image:type" content="image/png">
-  <meta name="theme-color" content="#ffffff">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="You've been invited to GroupThat">
-  <meta name="twitter:description" content="Tap to join the group and coordinate meetups with your crew.">
-  <meta name="twitter:image" content="https://invite.groupthatapp.com/og-image.png">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F9FAFB; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
-    .card { background: white; border-radius: 24px; padding: 48px 32px; text-align: center; max-width: 360px; width: 100%; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
-    .logo { width: 200px; height: 100px; margin: 0 auto 24px; }
-    .logo img { width: 200px; height: 100px; object-fit: contain; border-radius: 22px; }
-    h1 { font-size: 22px; font-weight: 700; color: #111827; margin-bottom: 8px; }
-    p { font-size: 15px; color: #6B7280; line-height: 1.5; margin-bottom: 32px; }
-    .spinner { width: 36px; height: 36px; border: 3px solid #E5E7EB; border-top-color: #4A90E2; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 20px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .btn { display: block; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 600; text-decoration: none; margin-bottom: 12px; }
-    .btn-ios { background: #000; color: white; }
-    .btn-android { background: #01875F; color: white; }
-    .btn-open { background: #F3F4F6; color: #111827; }
-    .hint { font-size: 13px; color: #9CA3AF; line-height: 1.4; margin: 8px 0 0; }
-    .btn-both { background: #4A90E2; color: white; }
-    #download { display: none; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="logo">
-      <img src="/logo.png" alt="GroupThat" />
-    </div>
+// Invite landing page; shown only when the app isn't installed (the OS opens the app otherwise).
+app.get('/join/:token', rateLimit({ name: 'invite-page', limit: 60 }), async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    // Tokens are url-safe random strings; reject anything else so it can never be reflected into the page.
+    if (!INVITE_TOKEN_RE.test(token)) return res.status(404).send('Invite link not found.');
+    const ua = String(req.headers['user-agent'] || '');
+    const device = inviteDeviceInfo(ua);
+    const meetupId = OBJECT_ID_RE.test(String(req.query.m || '')) ? String(req.query.m) : null;
+    const referrerId = OBJECT_ID_RE.test(String(req.query.r || '')) ? String(req.query.r) : null;
 
-    <div id="opening">
-      <div class="spinner"></div>
-      <h1>Opening GroupThat...</h1>
-      <p>You've been invited to join a group.</p>
-    </div>
+    const invite = await findInvite(token);
+    const status = inviteStatus(invite);
+    const group = invite ? await Group.findById(invite.groupId).select('name image members').lean() : null;
+    const inviter = group && referrerId && (group.members || []).some((m) => String(m) === referrerId)
+      ? await User.findById(referrerId).select('firstName').lean()
+      : null;
 
-    <div id="download">
-      <h1>Get GroupThat</h1>
-      <p>Download the app to join this group. After installing, tap your original link again to be added automatically.</p>
-      <a class="btn btn-ios" id="ios-btn" href="${iosStoreHref}">Download on the App Store</a>
-      <a class="btn btn-android" id="android-btn" href="${androidStoreHref}">Get it on Google Play</a>
-      <a class="btn btn-open" id="open-btn" href="${openAppHref}">I already have the app &mdash; open it</a>
-      ${inApp ? `<p class="hint">${IN_APP_HINT}</p>` : ''}
-    </div>
-  </div>
-
-  <script>
-    const ua = navigator.userAgent;
-    const isIOS = /iPhone|iPad|iPod/.test(ua);
-    const isAndroid = /Android/.test(ua);
-    const deepLink = ${JSON.stringify(deepLink)};
-    const intentUri = ${JSON.stringify(intentUri)};
-    const inApp = ${JSON.stringify(inApp)};
-
-    // clipboard fallback: app can pick up the deep link on first launch after install
-    try { navigator.clipboard.writeText(deepLink).catch(() => {}); } catch(e) {}
-
-    if (inApp) {
-      // Messenger/Instagram/etc. block automatic jumps to the app or store, so show the
-      // buttons immediately; a tap on them is allowed through.
-      document.getElementById('opening').style.display = 'none';
-      document.getElementById('download').style.display = 'block';
-      if (isIOS) document.getElementById('android-btn').style.display = 'none';
-      if (isAndroid) document.getElementById('ios-btn').style.display = 'none';
-    } else if (isAndroid) {
-      // intent:// opens the app if installed, else falls through to browser_fallback_url;
-      // avoids stranding the user on an ERR_UNKNOWN_URL_SCHEME page.
-      setTimeout(() => { window.location.href = intentUri; }, 25);
-    } else {
-      // iOS: navigate via location.href. If not installed, Safari's brief error is
-      // fine (share text already said to download). Download UI reveals after 2s
-      // (avoids the popup blocker); visibilitychange cancels it if the app opened.
-      document.getElementById('android-btn').style.display = 'none';
-
-      const showDownload = setTimeout(() => {
-        document.getElementById('opening').style.display = 'none';
-        document.getElementById('download').style.display = 'block';
-      }, 2000);
-
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden) clearTimeout(showDownload);
-      });
-      window.addEventListener('blur', () => clearTimeout(showDownload));
-
-      setTimeout(() => { window.location.href = deepLink; }, 25);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    if (status !== 'active' || !group) {
+      return res.status(status === 'missing' || !group ? 404 : 410).send(renderInvitePage({ token, status: group ? status : 'missing', inviterName: inviter?.firstName }, device));
     }
-  </script>
-</body>
-</html>`);
+
+    const meetup = meetupId
+      ? await Meetup.findOne({ _id: meetupId, group: group._id, status: { $ne: 'cancelled' } }).select('name').lean()
+      : null;
+
+    if (!isLinkPreviewBot(ua)) {
+      await recordInviteEvent({ groupId: group._id, token: invite.token, type: 'view', platform: device.platform, source: 'link' });
+    }
+
+    res.send(renderInvitePage({
+      token: invite.token, status, code: invite.code, groupName: group.name, groupImage: group.image || null,
+      memberCount: (group.members || []).length, inviterName: inviter?.firstName || null,
+      meetup, meetupId: meetup ? meetupId : null,
+    }, device));
+  } catch (err) { next(err); }
 });
 
 // OG preview image — returned as SVG for link preview cards
@@ -279,7 +214,7 @@ app.get('/download', (req, res) => {
   <meta property="og:url" content="https://invite.groupthatapp.com/download">
   <meta property="og:site_name" content="GroupThat">
   <meta property="og:title" content="GroupThat — Organize your group, not your calendar">
-  <meta property="og:description" content="The easiest way to coordinate meetups with your group. No group chats, no endless polls.">
+  <meta property="og:description" content="The easiest way to coordinate meetups with your group. Plan meetups, chat and RSVP in one place.">
   <meta property="og:image" content="${OG_IMAGE}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -310,7 +245,7 @@ app.get('/download', (req, res) => {
       <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
     </div>
     <h1>GroupThat</h1>
-    <p class="tagline">The easiest way to coordinate meetups with your group — no group chats, no endless polls.</p>
+    <p class="tagline">The easiest way to coordinate meetups with your group — plan meetups, chat and RSVP in one place.</p>
     ${isAndroid ? '' : `<a class="btn btn-ios" href="${iosStoreHref}">Download on the App Store</a>`}
     ${isIOS ? '' : `<a class="btn btn-android" href="${androidStoreHref}">Get it on Google Play</a>`}
     ${inApp ? `<p class="hint">${IN_APP_HINT}</p>` : ''}
@@ -321,7 +256,10 @@ app.get('/download', (req, res) => {
 
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
-  res.status(500).json({ error: err.message || "Internal server error" });
+  // Don't leak internal error text (DB / library messages) in production.
+  const message = ENV.NODE_ENV === "production" ? "Internal server error" : (err.message || "Internal server error");
+  const clientError = err.status && err.status >= 400 && err.status < 500;
+  res.status(clientError ? err.status : 500).json({ error: clientError ? (err.message || "Bad request") : message });
 });
 
 const startServer = async () => {

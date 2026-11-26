@@ -1,17 +1,28 @@
-import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, Platform } from 'react-native';
+import type { ViewInstance } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import React, { useMemo } from 'react';
 import { useEffect, useRef } from 'react';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  interpolateColor,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
+  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import type { ChatMessage } from '@/types/chat';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import { linkify, type Segment } from '@/utils/linkify';
+import { openLink, copyLink } from '@/utils/openLink';
+import { splitMentions } from '@/utils/chatMentions';
+import { LinkPreviewCard } from '@/components/LinkPreviewCard';
 
 export interface BubbleLayout {
   x: number;
@@ -35,6 +46,14 @@ interface Props {
   // together stalls the JS thread just long enough to make the header back button
   // feel unresponsive. Skip the entrance spring for that first batch.
   skipEntrance?: boolean;
+  // Position within a run of messages from the same person (see utils/chatGrouping). Defaults make a
+  // lone bubble: name, timestamp and tail corner all shown.
+  isFirst?: boolean;
+  isLast?: boolean;
+  // Clerk id -> display name, to render "@Name" mentions highlighted.
+  mentionNames?: Record<string, string>;
+  // Briefly tints the row (about 1.5 s) after jumping to this message from search or a pin.
+  flash?: boolean;
 }
 
 const MAX_IMAGE_WIDTH = 240;
@@ -65,7 +84,7 @@ function getImageDisplaySize(width?: number | null, height?: number | null) {
   return { width: Math.round(w), height: Math.round(h) };
 }
 
-export function ChatMessageBubble({
+function ChatMessageBubbleBase({
   message,
   isOwn,
   onLongPress,
@@ -76,13 +95,30 @@ export function ChatMessageBubble({
   onSwipeReply,
   isHighlighted,
   skipEntrance,
+  isFirst = true,
+  isLast = true,
+  mentionNames,
+  flash,
 }: Props) {
+  const colors = useThemeColors();
   const isDeleted = !!message.deleted_at;
   const isEdited = !!message.edited_at && !isDeleted;
   const hasImage = !!message.image_url && !isDeleted;
   const hasText = !!message.content && !isDeleted;
+  const segments = useMemo<Segment[]>(() => (hasText ? linkify(message.content) : []), [hasText, message.content]);
+  // First web link in the text gets a preview card under the message.
+  const previewUrl = useMemo(() => {
+    const seg = segments.find((s) => s.kind === 'url' && s.value);
+    return seg?.value && /^https?:\/\//i.test(seg.value) ? seg.value : null;
+  }, [segments]);
+  const mentionedNames = useMemo(
+    () => (message.mentions ?? []).map((id) => mentionNames?.[id]).filter((n): n is string => !!n),
+    [message.mentions, mentionNames]
+  );
+  const selfName = currentUserId ? mentionNames?.[currentUserId] : undefined;
   const imageSize = hasImage ? getImageDisplaySize(message.image_width, message.image_height) : null;
   const canInteract = !isDeleted && !message.pending && !message.failed;
+  const showTimeRow = isLast || isEdited || !!message.pending || !!message.failed || (!!message.pinned_at && !isDeleted);
 
   const time = message.failed
     ? "Couldn't send"
@@ -92,13 +128,38 @@ export function ChatMessageBubble({
   const reactions = (!isDeleted && message.reactions) ? message.reactions : {};
   const reactionEntries = Object.entries(reactions).filter(([, users]) => users.length > 0);
 
-  const bubbleRef = useRef<View>(null);
+  const bubbleRef = useRef<ViewInstance>(null);
   const handleLongPress = () => {
     if (!canInteract) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     bubbleRef.current?.measureInWindow((x, y, width, height) => {
       onLongPress({ x, y, width, height });
     });
+  };
+
+  // Links are nested <Text onPress>, which captures touches — so long-press must be forwarded
+  // explicitly or the reaction/reply menu would be unreachable on link text.
+  const handleLinkPress = (seg: Segment) => {
+    if (message.pending || message.failed) return onPendingPress?.();
+    if (seg.kind !== 'text' && seg.value) openLink(seg.kind, seg.value);
+  };
+  const handleLinkLongPress = (seg: Segment) => {
+    if (!canInteract) return;
+    if (seg.kind === 'text') return handleLongPress();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const options = [
+      { text: 'Open', onPress: () => seg.value && openLink(seg.kind as any, seg.value) },
+      { text: 'Copy', onPress: () => copyLink(seg.text) },
+      { text: 'Message options', onPress: handleLongPress },
+    ];
+    // Android dialogs hold at most three buttons and silently drop the rest (it was dropping "Open");
+    // there, tapping outside the dialog cancels instead.
+    Alert.alert(
+      seg.text,
+      undefined,
+      Platform.OS === 'android' ? options : [...options, { text: 'Cancel', style: 'cancel' as const }],
+      { cancelable: true }
+    );
   };
 
   // --- Entrance: slides + fades + scales in from the sender's side, once, on mount ---
@@ -115,6 +176,20 @@ export function ChatMessageBubble({
       { translateX: (1 - entrance.value) * (isOwn ? 26 : -26) },
       { scale: 0.85 + entrance.value * 0.15 },
     ],
+  }));
+
+  // --- Flash after a jump: fade a tint in, hold, fade out (1500 ms in all) ---
+  const flashValue = useSharedValue(0);
+  useEffect(() => {
+    if (!flash) return;
+    flashValue.value = withSequence(
+      withTiming(1, { duration: 200 }),
+      withDelay(1100, withTiming(0, { duration: 200 }))
+    );
+  }, [flash, flashValue]);
+  const flashTint = colors.brandSoft;
+  const flashStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(flashValue.value, [0, 1], ['rgba(0,0,0,0)', flashTint]),
   }));
 
   // --- Highlight while the press-and-hold menu is open for this message ---
@@ -162,34 +237,38 @@ export function ChatMessageBubble({
   }));
 
   return (
-    <Animated.View style={[styles.row, isOwn && styles.rowOwn, entranceStyle]}>
+    <Animated.View
+      style={[styles.row, { marginTop: isFirst ? 5 : 1, marginBottom: isLast ? 5 : 1 }, isOwn && styles.rowOwn, entranceStyle, flashStyle]}
+    >
       <Animated.View style={[styles.replyHint, replyIconStyle]} pointerEvents="none">
-        <Feather name="corner-up-left" size={16} color="#4A90E2" />
+        <Feather name="corner-up-left" size={16} color={colors.brand} />
       </Animated.View>
       <GestureDetector gesture={panGesture}>
         <Animated.View style={[styles.column, swipeStyle, highlightStyle]}>
-          <TouchableOpacity
+          <PressableOpacity
             ref={bubbleRef}
             style={[
               styles.bubble,
-              isOwn ? styles.bubbleOwn : styles.bubbleOther,
+              isOwn
+                ? { backgroundColor: colors.brand, ...(isLast ? { borderBottomRightRadius: 4 } : null) }
+                : { backgroundColor: colors.backgroundAlt, ...(isLast ? { borderBottomLeftRadius: 4 } : null) },
               hasImage && !hasText && styles.bubbleImageOnly,
               message.pending && styles.bubblePending,
-              message.failed && styles.bubbleFailed,
+              message.failed && { opacity: 0.85, borderWidth: 1, borderColor: colors.danger },
             ]}
             onPress={message.pending || message.failed ? onPendingPress : undefined}
             onLongPress={isDeleted || message.pending || message.failed ? undefined : handleLongPress}
             delayLongPress={350}
             activeOpacity={isDeleted ? 1 : message.pending || message.failed ? 0.7 : 0.85}
           >
-            {!isOwn && <Text style={styles.senderName}>{message.sender_name}</Text>}
+            {!isOwn && isFirst && <Text style={[styles.senderName, { color: colors.textMuted }]}>{message.sender_name}</Text>}
 
             {message.reply_to_id && !isDeleted && (
-              <View style={[styles.quoteBlock, isOwn && styles.quoteBlockOwn]}>
-                <Text style={[styles.quoteSender, isOwn && styles.quoteSenderOwn]} numberOfLines={1}>
+              <View style={[styles.quoteBlock, isOwn && styles.quoteBlockOwn, !isOwn && { borderLeftColor: colors.brand, backgroundColor: colors.surface }]}>
+                <Text style={[styles.quoteSender, isOwn && styles.quoteSenderOwn, !isOwn && { color: colors.brand }]} numberOfLines={1}>
                   {message.reply_to_sender}
                 </Text>
-                <Text style={[styles.quoteContent, isOwn && styles.quoteContentOwn]} numberOfLines={2}>
+                <Text style={[styles.quoteContent, isOwn && styles.quoteContentOwn, !isOwn && { color: colors.textSecondary }]} numberOfLines={2}>
                   {message.reply_to_content}
                 </Text>
               </View>
@@ -211,33 +290,84 @@ export function ChatMessageBubble({
             )}
 
             {isDeleted ? (
-              <Text style={styles.deletedText}>This message was deleted</Text>
+              <Text style={[styles.deletedText, { color: colors.textFaint }]}>This message was deleted</Text>
             ) : hasText ? (
-              <Text style={[styles.content, isOwn && styles.contentOwn]}>{message.content}</Text>
+              <Text style={[styles.content, isOwn ? styles.contentOwn : { color: colors.textPrimary }]}>
+                {segments.map((seg, i) =>
+                  seg.kind === 'text' ? (
+                    mentionedNames.length === 0 ? (
+                      seg.text
+                    ) : (
+                      splitMentions(seg.text, mentionedNames).map((part, j) =>
+                        part.mention ? (
+                          <Text
+                            key={`${i}-${j}`}
+                            style={[
+                              styles.mention,
+                              { color: isOwn ? '#fff' : colors.brand },
+                              part.mention === selfName && { backgroundColor: isOwn ? 'rgba(255,255,255,0.25)' : colors.brandSoft },
+                            ]}
+                          >
+                            {part.text}
+                          </Text>
+                        ) : (
+                          part.text
+                        )
+                      )
+                    )
+                  ) : (
+                    <Text
+                      key={i}
+                      style={[styles.link, { color: isOwn ? '#fff' : colors.brand }]}
+                      onPress={() => handleLinkPress(seg)}
+                      onLongPress={() => handleLinkLongPress(seg)}
+                      accessibilityRole="link"
+                    >
+                      {seg.text}
+                    </Text>
+                  )
+                )}
+              </Text>
             ) : null}
 
+            {previewUrl && canInteract ? <LinkPreviewCard url={previewUrl} isOwn={isOwn} onLongPress={handleLongPress} /> : null}
+
+            {showTimeRow && (
             <View style={[styles.timeRow, hasImage && !hasText && styles.timeRowImageOnly]}>
-              {isEdited && <Text style={[styles.editedLabel, isOwn && styles.editedLabelOwn]}>edited · </Text>}
+              {!!message.pinned_at && !isDeleted && (
+                <Feather name="map-pin" size={11} color={isOwn ? 'rgba(255,255,255,0.8)' : colors.textFaint} style={styles.statusIcon} />
+              )}
+              {isEdited && <Text style={[styles.editedLabel, isOwn ? styles.editedLabelOwn : { color: colors.textFaint }]}>edited · </Text>}
               {message.failed ? (
-                <Feather name="wifi-off" size={11} color={isOwn ? 'rgba(255,255,255,0.9)' : '#DC2626'} style={styles.statusIcon} />
+                <Feather name="wifi-off" size={11} color={isOwn ? 'rgba(255,255,255,0.9)' : colors.danger} style={styles.statusIcon} />
               ) : message.pending ? (
-                <Feather name="clock" size={11} color={isOwn ? 'rgba(255,255,255,0.7)' : '#9CA3AF'} style={styles.statusIcon} />
+                <Feather name="clock" size={11} color={isOwn ? 'rgba(255,255,255,0.7)' : colors.textFaint} style={styles.statusIcon} />
               ) : null}
-              <Text style={[styles.time, isOwn && styles.timeOwn, hasImage && !hasText && styles.timeOnImage, message.failed && !isOwn && styles.timeFailed]}>{time}</Text>
+              <Text style={[
+                styles.time,
+                isOwn ? styles.timeOwn : { color: colors.textFaint },
+                hasImage && !hasText && styles.timeOnImage,
+                message.failed && !isOwn && { color: colors.danger, fontWeight: '600' },
+              ]}>{time}</Text>
             </View>
-          </TouchableOpacity>
+            )}
+          </PressableOpacity>
 
           {reactionEntries.length > 0 && (
             <View style={[styles.reactions, isOwn && styles.reactionsOwn]}>
               {reactionEntries.map(([emoji, users]) => {
                 const reacted = currentUserId ? users.includes(currentUserId) : false;
                 return (
-                  <TouchableOpacity key={emoji} onLongPress={onReactionLongPress} delayLongPress={350} activeOpacity={0.8}>
-                    <View style={[styles.badge, reacted && styles.badgeActive]}>
+                  <PressableOpacity key={emoji} onLongPress={onReactionLongPress} delayLongPress={350} activeOpacity={0.8}>
+                    <View style={[
+                      styles.badge,
+                      { backgroundColor: colors.backgroundAlt, borderColor: colors.border },
+                      reacted && { backgroundColor: colors.brandSoft, borderColor: colors.brand },
+                    ]}>
                       <Text style={styles.badgeEmoji}>{emoji}</Text>
-                      <Text style={[styles.badgeCount, reacted && styles.badgeCountActive]}>{users.length}</Text>
+                      <Text style={[styles.badgeCount, { color: colors.textMuted }, reacted && { color: colors.brand }]}>{users.length}</Text>
                     </View>
-                  </TouchableOpacity>
+                  </PressableOpacity>
                 );
               })}
             </View>
@@ -249,22 +379,21 @@ export function ChatMessageBubble({
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', marginVertical: 4, paddingHorizontal: 12 },
+  row: { flexDirection: 'row', paddingHorizontal: 12 },
   rowOwn: { justifyContent: 'flex-end' },
   replyHint: { position: 'absolute', left: -4, top: '50%', marginTop: -12, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
   column: { maxWidth: '75%' },
   bubble: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
-  bubbleOwn: { backgroundColor: '#4A90E2', borderBottomRightRadius: 4 },
-  bubbleOther: { backgroundColor: '#E5E7EB', borderBottomLeftRadius: 4 },
   bubbleImageOnly: { paddingHorizontal: 4, paddingVertical: 4 },
   bubblePending: { opacity: 0.55 },
-  bubbleFailed: { opacity: 0.85, borderWidth: 1, borderColor: '#DC2626' },
-  senderName: { fontSize: 12, fontWeight: '700', color: '#6B7280', marginBottom: 2 },
+  senderName: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
   messageImage: { borderRadius: 10 },
   messageImageWithText: { marginBottom: 6 },
-  content: { fontSize: 15, fontWeight: '400', color: '#111827' },
+  content: { fontSize: 15, fontWeight: '400' },
   contentOwn: { color: '#fff' },
-  deletedText: { fontSize: 14, color: '#9CA3AF', fontStyle: 'italic' },
+  link: { textDecorationLine: 'underline', fontWeight: '500' },
+  mention: { fontWeight: '700' },
+  deletedText: { fontSize: 14, fontStyle: 'italic' },
   quoteBlock: { borderLeftWidth: 3, borderLeftColor: 'rgba(255,255,255,0.6)', paddingLeft: 8, paddingVertical: 3, marginBottom: 6, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 4 },
   quoteBlockOwn: { borderLeftColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(255,255,255,0.15)' },
   quoteSender: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.9)', marginBottom: 1 },
@@ -273,18 +402,30 @@ const styles = StyleSheet.create({
   quoteContentOwn: { color: 'rgba(255,255,255,0.75)' },
   timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4 },
   timeRowImageOnly: { marginTop: 2 },
-  editedLabel: { fontSize: 11, color: '#9CA3AF' },
+  editedLabel: { fontSize: 11 },
   editedLabelOwn: { color: 'rgba(255,255,255,0.6)' },
-  time: { fontSize: 11, color: '#9CA3AF' },
+  time: { fontSize: 11 },
   timeOwn: { color: 'rgba(255,255,255,0.7)' },
   timeOnImage: { color: 'rgba(255,255,255,0.85)' },
-  timeFailed: { color: '#DC2626', fontWeight: '600' },
   statusIcon: { marginRight: 3 },
   reactions: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 4 },
   reactionsOwn: { justifyContent: 'flex-end' },
-  badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: '#E5E7EB' },
-  badgeActive: { backgroundColor: '#EEF6FF', borderColor: '#4A90E2' },
+  badge: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1 },
   badgeEmoji: { fontSize: 14 },
-  badgeCount: { fontSize: 12, color: '#6B7280', marginLeft: 3, fontWeight: '700' },
-  badgeCountActive: { color: '#4A90E2' },
+  badgeCount: { fontSize: 12, marginLeft: 3, fontWeight: '700' },
 });
+
+// Long chats re-render every row whenever anything in the screen changes (typing, scrolling state, a new message).
+// The row's callbacks only ever act on `message` and on stable setters, so a row only needs to redraw when its own data
+// or look changes.
+export const ChatMessageBubble = React.memo(ChatMessageBubbleBase, (a, b) =>
+  a.message === b.message &&
+  a.isOwn === b.isOwn &&
+  a.currentUserId === b.currentUserId &&
+  a.isHighlighted === b.isHighlighted &&
+  a.isFirst === b.isFirst &&
+  a.isLast === b.isLast &&
+  a.skipEntrance === b.skipEntrance &&
+  a.mentionNames === b.mentionNames &&
+  a.flash === b.flash
+);

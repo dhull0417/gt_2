@@ -1,19 +1,25 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert, Share, Modal, Linking, Pressable, Platform, StyleSheet } from 'react-native';
-import React, { useCallback, useState } from 'react';
+import { View, Text, ScrollView, ActivityIndicator, Image, Alert, Modal, Linking, Pressable, Platform, StyleSheet, RefreshControl } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
+import React, { useCallback, useMemo, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TAB_BAR_HEIGHT } from '@/utils/layout';
+import { FadeUp, FadeUpScreen } from '@/components/ui/FadeUp';
+import { tabScreenBottomPadding } from '@/utils/layout';
 import { useAuth } from '@clerk/expo';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import * as Updates from 'expo-updates';
+import Constants from 'expo-constants';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
-import { pickAndUploadImage } from '@/utils/uploadImage';
+import { pickAndUploadImage, PhotoReadError } from '@/utils/uploadImage';
+import { shareApp } from '@/utils/shareInvite';
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
+import { useAppearance, useThemeColors, type ThemePreference } from '@/contexts/AppearanceContext';
+import type { ThemeColors } from '@/constants/theme';
+import { unregisterPushToken } from '@/hooks/usePushNotifications';
+import { PremiumGoldLabel } from '@/components/schedule/PremiumGoldLabel';
 
 const CALENDAR_OPTIONS = [
   {
@@ -21,6 +27,9 @@ const CALENDAR_OPTIONS = [
     label: 'Apple Calendar',
     icon: 'smartphone' as const,
     color: '#1C1C1E',
+    // Apple's near-black tint reads fine on a white light-mode circle, but disappears
+    // on a dark surface — swap to white when in dark mode instead.
+    darkColor: '#FFFFFF',
     useWebBrowser: false,
     getUrl: (icsUrl: string) => icsUrl.replace(/^https?:\/\//, 'webcal://'),
   },
@@ -34,13 +43,23 @@ const CALENDAR_OPTIONS = [
   },
 ];
 
+const APPEARANCE_OPTIONS: { key: ThemePreference; label: string; icon: React.ComponentProps<typeof Feather>['name'] }[] = [
+  { key: 'light', label: 'Light', icon: 'sun' },
+  { key: 'dark', label: 'Dark', icon: 'moon' },
+  { key: 'system', label: 'System', icon: 'smartphone' },
+];
+
 const HomeScreen = () => {
   const { signOut, getToken } = useAuth();
   const api = useApiClient();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
   const queryClient = useQueryClient();
+  const { preference, setPreference, scheme } = useAppearance();
+  const colors = useThemeColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [calendarModalVisible, setCalendarModalVisible] = useState(false);
   const [calendarUrl, setCalendarUrl] = useState<string | null>(null);
@@ -53,8 +72,6 @@ const HomeScreen = () => {
       queryKey: ['currentUser'],
       queryFn: () => userApi.getCurrentUser(api),
   });
-
-  useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
 
   const handleChangePhoto = async () => {
     try {
@@ -72,8 +89,9 @@ const HomeScreen = () => {
           old ? { ...old, profilePicture: url } : old
         );
       }
-    } catch {
-      Alert.alert('Error', 'Could not update your profile picture. Please try again.');
+    } catch (e) {
+      if (e instanceof PhotoReadError) Alert.alert("Couldn't use that photo", "Couldn't read that photo. Try another one.");
+      else Alert.alert('Error', 'Could not update your profile picture. Please try again.');
     } finally {
       setPhotoUploading(false);
     }
@@ -81,44 +99,9 @@ const HomeScreen = () => {
 
   const handleShareApp = async () => {
     try {
-      const result = await Share.share(
-        Platform.OS === 'ios'
-          ? {
-              message: 'Join me on GroupThat! The easiest way to coordinate meetups with your group.',
-              url: 'https://invite.groupthatapp.com/download',
-            }
-          : {
-              message: 'Join me on GroupThat! The easiest way to coordinate meetups with your group. Download here: https://invite.groupthatapp.com/download',
-            }
-      );
-
-      if (result.action === Share.sharedAction) {
-        if (result.activityType) {
-          // shared with activity type of result.activityType
-        } else {
-          // shared
-        }
-      } else if (result.action === Share.dismissedAction) {
-        // dismissed
-      }
+      await shareApp();
     } catch (error: any) {
       Alert.alert(error.message);
-    }
-  };
-
-  const handleCheckForUpdate = async () => {
-    try {
-      const update = await Updates.checkForUpdateAsync();
-      if (update.isAvailable) {
-        await Updates.fetchUpdateAsync();
-        Alert.alert('Update Downloaded', 'The app will restart to apply the update.', [
-          { text: 'Restart', onPress: () => Updates.reloadAsync() },
-        ]);
-      } else {
-        Alert.alert('No Update', 'You are already running the latest version.');
-      }
-    } catch (error: any) {
-      Alert.alert('Error Checking', error.message);
     }
   };
 
@@ -174,24 +157,38 @@ const HomeScreen = () => {
 
   const ACTIONS = [
     {
+      id: 'premium',
+      label: currentUser?.isPremium ? 'GroupThat Premium (Active)' : 'Get GroupThat Premium',
+      icon: 'award' as const,
+      color: colors.warning,
+      onPress: () => router.push('/paywall'),
+    },
+    {
       id: 'account',
       label: 'Update Account Info',
       icon: 'user' as const,
-      color: '#4A90E2',
+      color: colors.brand,
       onPress: () => router.push('/account'),
+    },
+    {
+      id: 'notifications',
+      label: 'Notifications',
+      icon: 'bell' as const,
+      color: '#7C3AED',
+      onPress: () => router.push('/account/notifications'),
     },
     {
       id: 'share',
       label: 'Share App',
       icon: 'share-2' as const,
-      color: '#4FD1C5',
+      color: colors.accentTeal,
       onPress: handleShareApp,
     },
     {
       id: 'calendar',
       label: 'Sync to My Calendar',
       icon: 'calendar' as const,
-      color: '#16A34A',
+      color: colors.success,
       onPress: handleOpenCalendarSync,
       loading: calendarLoading,
     },
@@ -199,89 +196,148 @@ const HomeScreen = () => {
 
   return (
     <SafeAreaView
-      className='flex-1 bg-gray-100'
+      className='flex-1 bg-gray-100 dark:bg-black'
       edges={['left', 'right']}
       style={{ paddingTop: contentTopInset }}
     >
-      <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 bg-white">
-        <Text className="text-xl font-black text-gray-900">
+      <View className="flex-row justify-center items-center px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <Text className="text-xl font-black text-gray-900 dark:text-gray-100">
           {currentUser?.firstName ? `${currentUser.firstName}'s Profile` : 'Profile'}
         </Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_HEIGHT + 20, flexGrow: 1 }}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: tabScreenBottomPadding(insets.bottom) + 20, flexGrow: 1 }}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={() => { refetch(); }} tintColor={colors.brand} colors={[colors.brand]} />}
+      >
         {isLoading ? (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
         ) : isError || !currentUser ? (
-            <Text className="text-center text-red-500 mt-8">Failed to load profile.</Text>
-        ) : (
-          <>
-            <View className="items-center p-6 bg-white border-b border-gray-200">
-              <TouchableOpacity onPress={handleChangePhoto} disabled={photoUploading} className="relative">
-                {photoUploading ? (
-                  <View style={styles.avatar} className="border-4 border-gray-200 bg-gray-100 items-center justify-center">
-                    <ActivityIndicator color="#4A90E2" />
-                  </View>
-                ) : currentUser.profilePicture ? (
-                  <Image
-                    source={{ uri: currentUser.profilePicture }}
-                    style={styles.avatar}
-                    className="border-4 border-gray-200"
-                  />
-                ) : (
-                  <View style={styles.avatar} className="border-4 border-gray-200 bg-indigo-100 items-center justify-center">
-                    <Text className="text-[82px] font-bold text-indigo-600">
-                      {(currentUser.firstName?.[0] ?? '?').toUpperCase()}
-                    </Text>
-                  </View>
-                )}
-                <View className="absolute bottom-0 right-0 bg-[#4A90E2] rounded-full p-3.5">
-                  <Feather name="camera" size={14} color="white" />
-                </View>
-              </TouchableOpacity>
-              <Text style={styles.name}>
-                  {getUserDisplayName(currentUser)}
-              </Text>
-              <Text className="text-sm text-gray-400 mt-0.5">
-                  {currentUser.email}
-              </Text>
-              {currentUser.createdAt && (
-                <Text className="text-sm text-gray-400 mt-0.5">
-                    Joined: {new Date(currentUser.createdAt).toLocaleDateString()}
-                </Text>
-              )}
+            <View style={{ alignItems: 'center', marginTop: 48 }}>
+              <Text style={{ color: colors.textMuted, fontSize: 16, marginBottom: 16 }}>Couldn't load your profile.</Text>
+              <PressableOpacity onPress={() => refetch()} style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}>
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Try again</Text>
+              </PressableOpacity>
             </View>
+        ) : (
+          // Mounted once the profile has loaded, so the cascade starts with real content.
+          <FadeUpScreen>
+            <FadeUp index={0}>
+              <View className="items-center p-6 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+                <PressableOpacity onPress={handleChangePhoto} disabled={photoUploading} className="relative">
+                  {photoUploading ? (
+                    <View style={styles.avatar} className="border-4 border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 items-center justify-center">
+                      <ActivityIndicator color={colors.brand} />
+                    </View>
+                  ) : currentUser.profilePicture ? (
+                    <Image
+                      source={{ uri: currentUser.profilePicture }}
+                      style={styles.avatar}
+                      className="border-4 border-gray-200 dark:border-gray-700"
+                    />
+                  ) : (
+                    <View style={styles.avatar} className="border-4 border-gray-200 dark:border-gray-700 bg-indigo-100 dark:bg-indigo-900 items-center justify-center">
+                      <Text className="text-[82px] font-bold text-indigo-600 dark:text-indigo-300">
+                        {(currentUser.firstName?.[0] ?? '?').toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View className="absolute bottom-0 right-0 rounded-full p-3.5" style={{ backgroundColor: colors.brand }}>
+                    <Feather name="camera" size={14} color="white" />
+                  </View>
+                </PressableOpacity>
+                <Text style={styles.name}>
+                    {getUserDisplayName(currentUser)}
+                </Text>
+                <Text className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
+                    {currentUser.email}
+                </Text>
+                {currentUser.createdAt && (
+                  <Text className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
+                      Joined: {new Date(currentUser.createdAt).toLocaleDateString()}
+                  </Text>
+                )}
+              </View>
+            </FadeUp>
 
             <View className="px-4 mt-8">
-                <Text style={styles.sectionLabel}>Account</Text>
+                <FadeUp index={1}>
+                  <Text style={styles.sectionLabel}>Appearance</Text>
+                  <View style={[styles.card, { flexDirection: 'row', padding: 4 }]}>
+                    {APPEARANCE_OPTIONS.map((option) => {
+                      const active = preference === option.key;
+                      return (
+                        <PressableOpacity
+                          key={option.key}
+                          onPress={() => setPreference(option.key)}
+                          activeOpacity={0.8}
+                          style={[
+                            styles.appearanceSegment,
+                            active && { backgroundColor: colors.brand },
+                          ]}
+                        >
+                          <Feather name={option.icon} size={16} color={active ? 'white' : colors.textMuted} />
+                          <Text style={[styles.appearanceSegmentLabel, active && { color: 'white' }]}>
+                            {option.label}
+                          </Text>
+                        </PressableOpacity>
+                      );
+                    })}
+                  </View>
+                </FadeUp>
+
+                <FadeUp index={2}>
+                  <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Account</Text>
+                </FadeUp>
                 {ACTIONS.map((action, index) => (
-                  <TouchableOpacity
-                    key={action.id}
-                    onPress={action.onPress}
-                    disabled={action.loading}
-                    activeOpacity={0.7}
-                    style={[styles.card, styles.row, index < ACTIONS.length - 1 && { marginBottom: 12 }]}
-                  >
-                    <View style={[styles.rowIcon, { backgroundColor: action.color + '18' }]}>
-                      <Feather name={action.icon} size={18} color={action.color} />
-                    </View>
-                    <Text style={styles.rowLabel}>{action.label}</Text>
-                    {action.loading
-                      ? <ActivityIndicator size="small" color="#9CA3AF" />
-                      : <Feather name="chevron-right" size={18} color="#9CA3AF" />}
-                  </TouchableOpacity>
+                  <FadeUp key={action.id} index={3 + index}>
+                    <PressableOpacity
+                      key={action.id}
+                      onPress={action.onPress}
+                      disabled={action.loading}
+                      activeOpacity={0.7}
+                      style={[styles.card, styles.row, index < ACTIONS.length - 1 && { marginBottom: 12 }]}
+                    >
+                      {action.id === 'premium' ? (
+                        <PremiumGoldLabel label={action.label} />
+                      ) : (
+                        <>
+                          <View style={[styles.rowIcon, { backgroundColor: action.color + '18' }]}>
+                            <Feather name={action.icon} size={18} color={action.color} />
+                          </View>
+                          <Text style={styles.rowLabel}>{action.label}</Text>
+                        </>
+                      )}
+                      {action.loading
+                        ? <ActivityIndicator size="small" color={colors.textFaint} />
+                        : <Feather name="chevron-right" size={18} color={colors.textFaint} />}
+                    </PressableOpacity>
+                  </FadeUp>
                 ))}
 
-                <TouchableOpacity
-                    onPress={() => { queryClient.clear(); signOut(); }}
-                    style={[styles.signOutBtn, { marginTop: 28 }]}
-                    activeOpacity={0.85}
-                >
-                    <Feather name="log-out" size={18} color="white" />
-                    <Text style={styles.signOutText}>Sign Out</Text>
-                </TouchableOpacity>
+                <FadeUp index={3 + ACTIONS.length}>
+                  <PressableOpacity
+                      onPress={async () => { await unregisterPushToken(api); queryClient.clear(); signOut(); }}
+                      style={[styles.signOutBtn, { marginTop: 28 }]}
+                      activeOpacity={0.85}
+                  >
+                      <Feather name="log-out" size={18} color="white" />
+                      <Text style={styles.signOutText}>Sign Out</Text>
+                  </PressableOpacity>
+                </FadeUp>
+
+                <FadeUp index={4 + ACTIONS.length}>
+                  <View style={{ alignItems: 'center', marginTop: 24 }}>
+                    <PressableOpacity onPress={() => Linking.openURL('https://groupthatapp.com/privacy-policy/').catch(() => {})}>
+                      <Text style={{ color: colors.textFaint, fontSize: 13, textDecorationLine: 'underline' }}>Privacy Policy</Text>
+                    </PressableOpacity>
+                    <Text style={{ color: colors.textFaint, fontSize: 12, marginTop: 8 }}>
+                      GroupThat {Constants.expoConfig?.version ?? ''}
+                    </Text>
+                  </View>
+                </FadeUp>
             </View>
-          </>
+          </FadeUpScreen>
         )}
       </ScrollView>
 
@@ -296,85 +352,89 @@ const HomeScreen = () => {
           onPress={() => setCalendarModalVisible(false)}
         >
           <Pressable onPress={() => {}}>
-            <View className="bg-white rounded-t-3xl px-6 pt-5 pb-10">
-              <View className="w-10 h-1 bg-gray-300 rounded-full self-center mb-5" />
+            <View className="bg-white dark:bg-gray-900 rounded-t-3xl px-6 pt-5 pb-10">
+              <View className="w-10 h-1 bg-gray-300 dark:bg-gray-700 rounded-full self-center mb-5" />
 
               {googleStep ? (
                 <>
-                  <TouchableOpacity
+                  <PressableOpacity
                     onPress={() => setGoogleStep(false)}
                     className="flex-row items-center mb-4"
                   >
-                    <Feather name="arrow-left" size={18} color="#6B7280" />
-                    <Text className="text-gray-500 text-sm ml-1">Back</Text>
-                  </TouchableOpacity>
-                  <Text className="text-xl font-bold text-gray-900 mb-1">Step 1 of 2</Text>
-                  <Text className="text-sm text-gray-500 mb-6">
+                    <Feather name="arrow-left" size={18} color={colors.textMuted} />
+                    <Text className="text-gray-500 dark:text-gray-400 text-sm ml-1">Back</Text>
+                  </PressableOpacity>
+                  <Text className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">Step 1 of 2</Text>
+                  <Text className="text-sm text-gray-500 dark:text-gray-400 mb-6">
                     Copy your sync link now — you'll paste it into Google Calendar on the next screen.
                   </Text>
-                  <TouchableOpacity
+                  <PressableOpacity
                     onPress={handleCopyLink}
-                    className="flex-row items-center justify-center py-4 rounded-xl border border-gray-300 bg-gray-50 mb-4"
+                    className="flex-row items-center justify-center py-4 rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 mb-4"
                   >
-                    <Feather name={urlCopied ? 'check' : 'copy'} size={18} color={urlCopied ? '#16A34A' : '#4A90E2'} />
-                    <Text className={`ml-2 font-semibold text-base ${urlCopied ? 'text-green-600' : 'text-[#4A90E2]'}`}>
+                    <Feather name={urlCopied ? 'check' : 'copy'} size={18} color={urlCopied ? colors.success : colors.brand} />
+                    <Text className={`ml-2 font-semibold text-base ${urlCopied ? 'text-green-600 dark:text-green-400' : ''}`} style={urlCopied ? undefined : { color: colors.brand }}>
                       {urlCopied ? 'Copied!' : 'Copy Sync Link'}
                     </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                  </PressableOpacity>
+                  <PressableOpacity
                     onPress={handleGoogleNext}
                     className="flex-row items-center justify-center py-4 bg-[#4285F4] rounded-xl"
                   >
                     <Text className="text-white font-bold text-base mr-2">Next — Open Google Calendar</Text>
                     <Feather name="arrow-right" size={18} color="white" />
-                  </TouchableOpacity>
+                  </PressableOpacity>
                 </>
               ) : (
                 <>
-                  <Text className="text-xl font-bold text-gray-900 mb-1">Add to Calendar</Text>
-                  <Text className="text-sm text-gray-500 mb-6">
+                  <Text className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">Add to Calendar</Text>
+                  <Text className="text-sm text-gray-500 dark:text-gray-400 mb-6">
                     Choose your calendar app to subscribe and stay in sync.
                   </Text>
 
-                  {CALENDAR_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option.id}
-                      onPress={() => handleOpenCalendarApp(option)}
-                      className="flex-row items-center py-4 border-b border-gray-100"
-                    >
-                      <View className="w-10 h-10 rounded-full items-center justify-center mr-4" style={{ backgroundColor: option.color + '18' }}>
-                        <Feather name={option.icon} size={20} color={option.color} />
-                      </View>
-                      <Text className="text-gray-800 text-base font-semibold flex-1">{option.label}</Text>
-                      <Feather name="chevron-right" size={18} color="#9CA3AF" />
-                    </TouchableOpacity>
-                  ))}
+                  {/* Apple Calendar's webcal:// link can't open on Android (every tap said "Cannot Open"). */}
+                  {CALENDAR_OPTIONS.filter((option) => Platform.OS === 'ios' || option.id !== 'apple').map((option) => {
+                    const iconColor = scheme === 'dark' && option.darkColor ? option.darkColor : option.color;
+                    return (
+                      <PressableOpacity
+                        key={option.id}
+                        onPress={() => handleOpenCalendarApp(option)}
+                        className="flex-row items-center py-4 border-b border-gray-100 dark:border-gray-800"
+                      >
+                        <View className="w-10 h-10 rounded-full items-center justify-center mr-4" style={{ backgroundColor: iconColor + '18' }}>
+                          <Feather name={option.icon} size={20} color={iconColor} />
+                        </View>
+                        <Text className="text-gray-800 dark:text-gray-200 text-base font-semibold flex-1">{option.label}</Text>
+                        <Feather name="chevron-right" size={18} color={colors.textFaint} />
+                      </PressableOpacity>
+                    );
+                  })}
 
-                  <TouchableOpacity
+                  <PressableOpacity
                     onPress={() => setShowOtherInstructions(prev => !prev)}
                     className="flex-row items-center py-4"
                   >
-                    <View className="w-10 h-10 rounded-full items-center justify-center mr-4 bg-gray-100">
-                      <Feather name="more-horizontal" size={20} color="#6B7280" />
+                    <View className="w-10 h-10 rounded-full items-center justify-center mr-4 bg-gray-100 dark:bg-gray-800">
+                      <Feather name="more-horizontal" size={20} color={colors.textMuted} />
                     </View>
-                    <Text className="text-gray-800 text-base font-semibold flex-1">Other</Text>
-                    <Feather name={showOtherInstructions ? 'chevron-up' : 'chevron-down'} size={18} color="#9CA3AF" />
-                  </TouchableOpacity>
+                    <Text className="text-gray-800 dark:text-gray-200 text-base font-semibold flex-1">Other</Text>
+                    <Feather name={showOtherInstructions ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textFaint} />
+                  </PressableOpacity>
 
                   {showOtherInstructions && (
-                    <View className="bg-gray-50 rounded-xl px-4 py-4 mb-2">
-                      <Text className="text-sm text-gray-600 leading-5 mb-4">
+                    <View className="bg-gray-50 dark:bg-gray-800 rounded-xl px-4 py-4 mb-2">
+                      <Text className="text-sm text-gray-600 dark:text-gray-300 leading-5 mb-4">
                         Copy the link below and paste it into your calendar app's "Subscribe from URL" or "Add calendar by URL" setting to stay in sync.
                       </Text>
-                      <TouchableOpacity
+                      <PressableOpacity
                         onPress={handleCopyLink}
-                        className="flex-row items-center justify-center py-3 rounded-xl border border-gray-300 bg-white"
+                        className="flex-row items-center justify-center py-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900"
                       >
-                        <Feather name={urlCopied ? 'check' : 'copy'} size={16} color={urlCopied ? '#16A34A' : '#4A90E2'} />
-                        <Text className={`ml-2 font-semibold text-sm ${urlCopied ? 'text-green-600' : 'text-[#4A90E2]'}`}>
+                        <Feather name={urlCopied ? 'check' : 'copy'} size={16} color={urlCopied ? colors.success : colors.brand} />
+                        <Text className={`ml-2 font-semibold text-sm ${urlCopied ? 'text-green-600 dark:text-green-400' : ''}`} style={urlCopied ? undefined : { color: colors.brand }}>
                           {urlCopied ? 'Copied!' : 'Copy Sync Link'}
                         </Text>
-                      </TouchableOpacity>
+                      </PressableOpacity>
                     </View>
                   )}
                 </>
@@ -389,7 +449,7 @@ const HomeScreen = () => {
 
 const AVATAR_SIZE = 218;
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   avatar: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
@@ -398,24 +458,24 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 24,
     fontWeight: '900',
-    color: '#111827',
+    color: colors.textPrimary,
     letterSpacing: -0.5,
     marginTop: 16,
   },
   sectionLabel: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#9CA3AF',
+    color: colors.textFaint,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
     marginLeft: 4,
   },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   row: {
@@ -436,12 +496,26 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
+    color: colors.textSecondary,
+  },
+  appearanceSegment: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  appearanceSegmentLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textMuted,
   },
   signOutBtn: {
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: '#4A90E2',
+    backgroundColor: colors.brand,
     borderRadius: 16,
     paddingVertical: 15,
     alignItems: 'center',

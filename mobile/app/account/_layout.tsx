@@ -1,25 +1,37 @@
 import { Stack, useRouter } from 'expo-router';
 import React from 'react';
-import { Platform, TouchableOpacity } from 'react-native';
+import { Platform } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const AccountLayout = () => {
     const router = useRouter();
+    const colors = useThemeColors();
 
     return (
-        <Stack screenOptions={{ headerTitleAlign: 'center' }}>
+        <Stack
+            screenOptions={{
+                headerTitleAlign: 'center',
+                contentStyle: { backgroundColor: colors.background },
+                headerStyle: { backgroundColor: colors.surface },
+                headerTintColor: colors.textPrimary,
+                headerTitleStyle: { color: colors.textPrimary },
+                headerTransparent: false, // solid header on iOS 26+ (see app/_layout.tsx)
+            }}
+        >
             <Stack.Screen
                 name="index"
                 options={{
                     headerTitle: 'Update Account',
                     headerLeft: () => (
-                        <TouchableOpacity
+                        <PressableOpacity accessibilityLabel="Close"
                             onPress={() => router.back()}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
                         >
-                            <Feather name="x" size={24} color="#374151" style={{ transform: [{ translateX: 2 }] }} />
-                        </TouchableOpacity>
+                            <Feather name="x" size={24} color={colors.textSecondary} style={{ transform: [{ translateX: 2 }] }} />
+                        </PressableOpacity>
                     ),
                 }}
             />
@@ -32,25 +44,42 @@ const AccountLayout = () => {
                     presentation: Platform.OS === 'ios' ? 'modal' : undefined,
                 }}
             />
-            <Stack.Screen 
-                name="update-email" 
-                options={{ 
+            <Stack.Screen
+                name="update-email"
+                options={{
                     headerTitle: 'Update Email',
                     presentation: 'modal',
-                }} 
+                }}
             />
-            <Stack.Screen 
-                name="verify-email" 
-                options={{ 
+            <Stack.Screen
+                name="verify-email"
+                options={{
                     headerTitle: 'Verify New Email',
                     presentation: 'modal',
-                }} 
+                }}
             />
             <Stack.Screen
                 name="change-password"
                 options={{
                     headerTitle: 'Change Password',
                     presentation: 'modal',
+                }}
+            />
+            <Stack.Screen name="update-zip" options={{ headerTitle: 'Zip Code', presentation: 'modal' }} />
+            <Stack.Screen name="update-phone" options={{ headerTitle: 'Phone Number', presentation: 'modal' }} />
+            <Stack.Screen
+                name="notifications"
+                options={{
+                    headerTitle: 'Notifications',
+                    headerLeft: () => (
+                        <PressableOpacity accessibilityLabel="Close"
+                            onPress={() => router.back()}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                            <Feather name="x" size={24} color={colors.textSecondary} style={{ transform: [{ translateX: 2 }] }} />
+                        </PressableOpacity>
+                    ),
                 }}
             />
             <Stack.Screen

@@ -7,16 +7,27 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  TouchableOpacity,
   SectionList,
   Modal,
   Pressable,
+  Keyboard,
+  useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
+import { queueMutation } from '@/utils/queuedMutations';
+import { useIsOnline } from '@/hooks/useIsOnline';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { nextJumpStep, takeJumpRequest, findMessageLocation, shouldLoadOlderOnScroll } from '@/utils/chatJump';
+import { floatingDayLabel } from '@/utils/chatFloatingDay';
+import { CHAT_LOAD_LIMIT_MS, chatLoadState } from '@/utils/chatLoadState';
+import { toast, ToastPortal } from '@/contexts/ToastContext';
+import { useScreenTopOffset } from '@/contexts/WindowInsetsContext';
+import { getErrorMessage, OFFLINE_ERROR_MESSAGE } from '@/utils/networkError';
+import { requireOnline } from '@/utils/offlineState';
 import { useGetGroups } from '@/hooks/useGetGroups';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useGetMeetups } from '@/hooks/useGetMeetups';
@@ -28,11 +39,16 @@ import CreatePollModal from '@/components/CreatePollModal';
 import PollListModal from '@/components/PollListModal';
 import { getDMDisplayName, getUserDisplayName } from '@/utils/groupDisplay';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { GroupAvatar } from '@/components/GroupAvatar';
+import { GroupHeaderTitle } from '@/components/GroupHeaderTitle';
 import { useMessages } from '@/hooks/useMessages';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { ChatMessageBubble, type BubbleLayout } from '@/components/ChatMessageBubble';
 import { ChatMessageInput } from '@/components/ChatMessageInput';
+import { ChatSystemMessage } from '@/components/ChatSystemMessage';
+import { ChatPinnedBanner, ChatPinnedModal } from '@/components/ChatPinnedMessages';
+import { usePinnedMessages } from '@/hooks/usePinnedMessages';
+import { computeGrouping, type BubbleGrouping } from '@/utils/chatGrouping';
+import type { MentionMember } from '@/utils/chatMentions';
 import { ChatDayBubble } from '@/components/ChatDayBubble';
 import { ChatTypingBubble } from '@/components/ChatTypingBubble';
 import { ChatScrollToBottomButton } from '@/components/ChatScrollToBottomButton';
@@ -47,8 +63,21 @@ import {
 } from '@/hooks/usePushNotifications';
 import { getDayBucketKey, getDayBucketLabel } from '@/utils/dayBucket';
 import type { ChatMessage, PendingImage } from '@/types/chat';
-import EmojiPicker from 'rn-emoji-keyboard';
+import { EmojiPickerSheet } from '@/components/EmojiPickerSheet';
 import * as Clipboard from 'expo-clipboard';
+import { isRsvpDeadlinePassed as isRsvpDeadlinePassedFn, isRsvpLockedFor } from '@/utils/meetupStatus';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
+import { getGroupImage } from '@/utils/groupDisplay';
+import { setActiveChat } from '@/utils/activeChat';
+import { formatMeetupDate } from '@/utils/meetupTime';
+import { GroupMuteSheet } from '@/components/GroupMuteSheet';
+import { muteStateFor } from '@/utils/groupMute';
+import { haptic } from '@/utils/haptics';
+import { runBackInterceptor } from '@/utils/backInterceptors';
+import { ChatTimeoutSheet } from '@/components/ChatTimeoutSheet';
+import { useChatModeration } from '@/hooks/useChatModeration';
+import { useNow } from '@/hooks/useNow';
+import { canModDeleteFrom, canTimeOut, formatTimeoutRemaining, isTimeoutActive } from '@/utils/chatTimeout';
 
 interface ChatDaySection {
   key: string;
@@ -61,8 +90,16 @@ const getUserId = (u: User | string): string => typeof u === 'string' ? u : u._i
 const GroupChatScreen = () => {
   const { id, promptNotifications } = useLocalSearchParams<{ id: string; promptNotifications?: string }>();
   const [chatHeaderHeight, setChatHeaderHeight] = useState(0);
+  const [pinnedBannerHeight, setPinnedBannerHeight] = useState(0);
+  const colors = useThemeColors();
+  const { scheme } = useAppearance();
+  const isDark = scheme === 'dark';
 
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
+  // Where this screen actually starts: below the status bar, or below the (taller) offline banner.
+  const screenTop = useScreenTopOffset();
+  const isOnline = useIsOnline();
   const api = useApiClient();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -83,12 +120,21 @@ const GroupChatScreen = () => {
     promptForNotificationPermissionOnFirstChatOpen(api);
   }, []);
 
-  // Tapping into a chat clears its unread dot on the groups list.
+  // Remember which chat is open so its own pushes stay quiet while you're reading it.
   useEffect(() => {
     if (!id) return;
-    userApi.markGroupRead(api, id)
-      .then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] }))
-      .catch(() => {});
+    setActiveChat(id);
+    return () => setActiveChat(null);
+  }, [id]);
+
+  // Tapping into a chat clears its unread dot on the groups list.
+  // And leaving marks it read again: whatever arrived while you were watching has been seen.
+  useEffect(() => {
+    if (!id) return;
+    // Queued, so a chat read offline still clears its unread badge once the connection is back.
+    const markRead = () => { queueMutation(queryClient, 'markGroupRead', { groupId: id }).catch(() => {}); };
+    markRead();
+    return () => { markRead(); };
   }, [id]);
 
   // Instant name/avatar/isDM fallback while the heavier group details request is in flight
@@ -118,43 +164,32 @@ const GroupChatScreen = () => {
   }, [effectiveGroup, currentUser]);
 
   const isDM = effectiveGroup?.isDM ?? false;
+  // Shown under the name in the header ("5 members · Tap for info"); 0 until the members load.
+  const headerMemberCount = (((groupDetails as any)?.members ?? (effectiveGroup as any)?.members) as unknown[] | undefined)?.length ?? 0;
+
+  // Chat timeouts (docs/specs/2026-11-16-chat-moderation-design.md). Mine comes from group details;
+  // while it runs the input turns red and every chat action except copy is hidden. The clock only
+  // ticks while I'm timed out, so the label counts down and the input comes back by itself.
+  const myChatTimeout = groupDetails?.myChatTimeout ?? null;
+  const timeoutNow = useNow(30_000, !!myChatTimeout);
+  const timedOut = !isDM && isTimeoutActive(myChatTimeout, timeoutNow);
+  const timeoutLabel = timedOut ? formatTimeoutRemaining(myChatTimeout!.until, timeoutNow) : null;
+  const moderation = useChatModeration(id ?? '');
+  const [timeoutTarget, setTimeoutTarget] = useState<{ userId: string; name: string } | null>(null);
+  // Re-check on every visit, so a timeout set or ended while I was elsewhere shows right away.
+  useFocusEffect(useCallback(() => {
+    if (id) queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+  }, [id, queryClient]));
 
   // Only the group owner/moderators can create a one-off meetup.
   const canCreateEvent = !isDM && canManageGroup;
 
-  const isMutedUntilNext = useMemo(() => {
-    if (!id || !currentUser) return false;
-    return !!currentUser.mutedUntilNextMeetup?.includes(id);
-  }, [id, currentUser]);
-
-  const isCurrentlyMuted = useMemo(() => {
-    if (!id || !currentUser) return false;
-    return !!currentUser.mutedGroups?.includes(id) || isMutedUntilNext;
-  }, [id, currentUser, isMutedUntilNext]);
-
-  const performMuteUpdate = async (type: 'indefinite' | 'untilNext' | 'none') => {
-    if (!id) return;
-    try {
-      await userApi.toggleGroupMute(api, id, type);
-      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-    } catch {
-      Alert.alert("Error", "Failed to update notification settings.");
-    }
-  };
-
-  const [muteOptionsVisible, setMuteOptionsVisible] = useState(false);
-
+  // Per-kind group mute (see utils/groupMute.ts). The bell opens the shared mute sheet.
+  const muteState = useMemo(() => muteStateFor(currentUser, id ?? ''), [currentUser, id]);
+  const [muteSheetVisible, setMuteSheetVisible] = useState(false);
   const handleMutePress = () => {
-    if (isCurrentlyMuted) {
-      performMuteUpdate('none');
-    } else {
-      setMuteOptionsVisible(true);
-    }
-  };
-
-  const handleMuteOptionPress = (type: 'indefinite' | 'untilNext') => {
-    setMuteOptionsVisible(false);
-    performMuteUpdate(type);
+    haptic.tap();
+    setMuteSheetVisible(true);
   };
 
   const headerName = effectiveGroup?.isDM
@@ -171,7 +206,8 @@ const GroupChatScreen = () => {
     // Android: land on the Groups list first so Details pushes on top of it,
     // not as the nested stack's only screen (else the tab has nothing to reset to)
     router.navigate('/(tabs)/groups');
-    router.push({ pathname: '/groups/[id]', params: { id } });
+    // from=chat makes Android's back button return to this chat (GroupDetailsScreen).
+    router.push({ pathname: '/groups/[id]', params: { id, from: 'chat' } });
   };
 
   // Always the groups list, regardless of entry point — chat has no consistent screen underneath it
@@ -183,9 +219,13 @@ const GroupChatScreen = () => {
   const senderId = currentUser?.clerkId ?? '';
   const senderName = currentUser ? getUserDisplayName(currentUser) : '';
 
-  const { messages, loading, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage } =
-    useMessages(id ?? '');
-  const { typingNames, handleTyping } = useTypingIndicator(id ?? '', senderId, senderName);
+  const {
+    messages, loading, sendMessage, retrySend, discardSend, addReaction, deleteMessage, editMessage,
+    fetchOlder, loadingOlder, reachedStart, refetch: refetchMessages, offlineNoMessages,
+  } = useMessages(id ?? '');
+  const { typingNames, handleTyping, clearTypingFor } = useTypingIndicator(id ?? '', senderId, senderName);
+  const { pins, pinMessage, unpinMessage } = usePinnedMessages(id ?? '');
+  const [pinnedModalVisible, setPinnedModalVisible] = useState(false);
 
   const { data: allMeetups } = useGetMeetups();
   const nextMeetup = useMemo<Meetup | null>(() => {
@@ -197,11 +237,12 @@ const GroupChatScreen = () => {
   const [nextMeetupModalVisible, setNextMeetupModalVisible] = useState(false);
   const [meetupWizardVisible, setMeetupWizardVisible] = useState(false);
   const [createPollVisible, setCreatePollVisible] = useState(false);
+  // The viewer's own day (a late meetup in a group further west can be tomorrow for them).
   const nextMeetupLabel = nextMeetup
-    ? new Date(nextMeetup.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: nextMeetup.timezone })
+    ? formatMeetupDate(nextMeetup, { weekday: 'short', month: 'short', day: 'numeric' })
     : null;
   const nextMeetupDay = nextMeetup
-    ? new Date(nextMeetup.date).toLocaleDateString(undefined, { day: 'numeric', timeZone: nextMeetup.timezone })
+    ? formatMeetupDate(nextMeetup, { day: 'numeric' })
     : null;
   // Mirrors MeetupDetailModal/meetup card RSVP state so the bar shows the same tint/status
   const nextMeetupRsvpStatus = useMemo(() => {
@@ -209,15 +250,19 @@ const GroupChatScreen = () => {
     const isOut = nextMeetup.out?.some(u => getUserId(u) === currentUser._id) || false;
     const isIn = nextMeetup.in?.some(u => getUserId(u) === currentUser._id) || false;
     const isWaitlisted = nextMeetup.waitlist?.some(u => getUserId(u) === currentUser._id) || false;
-    const isRsvpLocked = nextMeetup.rsvpOpenDate ? new Date(nextMeetup.rsvpOpenDate) > new Date() : false;
-    const isRsvpDeadlinePassed = nextMeetup.rsvpCloseDate ? new Date(nextMeetup.rsvpCloseDate) < new Date() : false;
+    const isRsvpLocked = isRsvpLockedFor(nextMeetup, currentUser._id);
+    const isRsvpDeadlinePassed = isRsvpDeadlinePassedFn(nextMeetup);
     return { isIn, isOut, isWaitlisted, isRsvpLocked, isRsvpDeadlinePassed };
   }, [nextMeetup, currentUser]);
   const nextMeetupBarColor = useMemo(() => {
-    if (!nextMeetupRsvpStatus) return '#EEF6FF';
+    if (!nextMeetupRsvpStatus) return isDark ? colors.backgroundAlt : '#EEF6FF';
     const { isOut, isIn, isWaitlisted } = nextMeetupRsvpStatus;
+    if (isDark) {
+      return isOut ? '#3B1E1E' : (isIn || isWaitlisted) ? '#153226' : colors.backgroundAlt;
+    }
     return isOut ? '#FEF2F2' : (isIn || isWaitlisted) ? '#EDF5F0' : '#FFFEFA';
-  }, [nextMeetupRsvpStatus]);
+  }, [nextMeetupRsvpStatus, isDark, colors]);
+  const pollBarColor = isDark ? '#2A2140' : '#F5F3FF';
 
   // Right side of the next-event bar: currently open polls for this group
   const { data: polls } = useGetPolls(!isDM ? id : undefined);
@@ -253,6 +298,14 @@ const GroupChatScreen = () => {
   const [selectedMessageLayout, setSelectedMessageLayout] = useState<BubbleLayout | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  // Timed out: drop a half-started reply or edit, and ignore swipe-to-reply (read in renderItem).
+  const timedOutRef = useRef(false);
+  timedOutRef.current = timedOut;
+  useEffect(() => {
+    if (!timedOut) return;
+    setReplyingTo(null);
+    setEditingMessage(null);
+  }, [timedOut]);
   const [editText, setEditText] = useState('');
   const [reactionDetailMessage, setReactionDetailMessage] = useState<ChatMessage | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<{ url: string; width?: number | null; height?: number | null } | null>(null);
@@ -263,9 +316,32 @@ const GroupChatScreen = () => {
     for (const msg of messages) {
       if (!map.has(msg.sender_id)) map.set(msg.sender_id, msg.sender_name);
     }
+    // Members who reacted without ever posting still have a name.
+    for (const m of ((groupDetails as any)?.members as User[] | undefined) ?? []) {
+      if (m.clerkId && !map.has(m.clerkId)) map.set(m.clerkId, getUserDisplayName(m));
+    }
     map.set(senderId, senderName);
     return map;
-  }, [messages, senderId, senderName]);
+  }, [messages, senderId, senderName, groupDetails]);
+
+  // Group members who can be @mentioned (everyone but me). Not offered in a one-on-one DM.
+  const mentionMembers = useMemo<MentionMember[] | undefined>(() => {
+    if (isDM) return undefined;
+    const members = (groupDetails as any)?.members as User[] | undefined;
+    if (!members) return undefined;
+    return members
+      .filter((m) => !!m.clerkId && m.clerkId !== senderId)
+      .map((m) => ({ clerkId: m.clerkId, name: getUserDisplayName(m) }));
+  }, [groupDetails, isDM, senderId]);
+
+  // Clerk id -> name for rendering "@Name" mentions; members first, then anyone seen in the thread.
+  const mentionNames = useMemo(() => {
+    const out: Record<string, string> = {};
+    userNameMap.forEach((name, uid) => { out[uid] = name; });
+    const members = (groupDetails as any)?.members as User[] | undefined;
+    for (const m of members ?? []) if (m.clerkId) out[m.clerkId] = getUserDisplayName(m);
+    return out;
+  }, [userNameMap, groupDetails]);
 
   const sections = useMemo<ChatDaySection[]>(() => {
     const byDay = new Map<string, ChatDaySection>();
@@ -280,10 +356,30 @@ const GroupChatScreen = () => {
     }
     return Array.from(byDay.values());
   }, [messages]);
+  // The floating date pill (stands in for sticky headers; see stickySectionHeadersEnabled below).
+  // The list requires these two props to stay the same object for its whole life, hence refs.
+  const [floatingDay, setFloatingDay] = useState<string | null>(null);
+  const onViewableItemsChangedRef = useRef(({ viewableItems }: { viewableItems: any[] }) => {
+    setFloatingDay(floatingDayLabel(viewableItems));
+  });
+  const viewabilityConfigRef = useRef({ itemVisiblePercentThreshold: 1 });
+
+  // Latest sections for jump retries, which fire from timers after the list may have changed.
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
+
+  // Cluster info (who gets a name label / timestamp / tail) computed per day section.
+  const groupingById = useMemo(() => {
+    const all = new Map<string, BubbleGrouping>();
+    for (const s of sections) computeGrouping(s.data).forEach((v, k) => all.set(k, v));
+    return all;
+  }, [sections]);
 
   const [listHeight, setListHeight] = useState(0);
   // Gates first paint so a freshly opened chat never visibly animates down from the oldest message
   const [contentReady, setContentReady] = useState(false);
+  const contentReadyRef = useRef(false);
+  contentReadyRef.current = contentReady;
   // Snapshot of message ids visible at first reveal, so their bubbles skip the entrance
   // animation — animating a whole history's worth of bubbles in at once stalls the JS
   // thread just long enough to make the header back button feel unresponsive.
@@ -296,8 +392,15 @@ const GroupChatScreen = () => {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  // Scrolling near the top pulls in the previous page of history.
+  const fetchOlderRef = useRef(fetchOlder);
+  fetchOlderRef.current = fetchOlder;
+
   const handleListScroll = useCallback((e: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    if (shouldLoadOlderOnScroll({ offsetY: contentOffset.y, contentReady: contentReadyRef.current, jumping: jumpingRef.current })) {
+      fetchOlderRef.current();
+    }
     const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
     const nearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
     isNearBottomRef.current = nearBottom;
@@ -332,32 +435,135 @@ const GroupChatScreen = () => {
     requestAnimationFrame(() => requestAnimationFrame(() => setContentReady(true)));
   }, [messages.length, contentReady, scrollToBottom]);
 
+  // --- Jump to a message (from search or the pinned list) ---
+  // Older history is paged in until the message is loaded, then it's scrolled into view and flashed.
+  // While jumping, the list must not follow new content down to the bottom.
+  const [jumpTarget, setJumpTarget] = useState<string | null>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const jumpingRef = useRef(false);
+  const jumpPagesRef = useRef(0);
+  // The message a jump is scrolling to. Retries look its position up again by id, since rows can shift.
+  const pendingScrollRef = useRef<string | null>(null);
+  const jumpRetryRef = useRef(0);
+  const jumpFetchingRef = useRef(false);
+  const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const endJump = useCallback((message?: string) => {
+    if (message) toast.show({ message, kind: 'info' });
+    if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
+    setJumpTarget(null);
+    // Keep auto-follow off until the jump's scroll has settled.
+    setTimeout(() => { jumpingRef.current = false; pendingScrollRef.current = null; }, 1000);
+  }, []);
+
+  const startJump = useCallback((messageId: string) => {
+    jumpPagesRef.current = 0;
+    jumpFetchingRef.current = false;
+    jumpingRef.current = true;
+    isNearBottomRef.current = false;
+    setJumpTarget(messageId);
+    // Never leave the chat stuck with auto-follow off if paging stalls.
+    if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
+    jumpTimerRef.current = setTimeout(() => endJump("Couldn't load that message."), 15_000);
+  }, [endJump]);
+
+  // The search screen leaves its jump request behind and goes back to this screen.
+  useFocusEffect(useCallback(() => {
+    if (!id) return;
+    const target = takeJumpRequest(id);
+    if (target) startJump(target);
+  }, [id, startJump]));
+
+  useEffect(() => {
+    if (!jumpTarget || !contentReady) return;
+    const step = nextJumpStep({ messages, targetId: jumpTarget, pagesLoaded: jumpPagesRef.current, reachedStart });
+    if (step === 'loadMore') {
+      if (loadingOlder || jumpFetchingRef.current) return;
+      jumpFetchingRef.current = true;
+      jumpPagesRef.current += 1;
+      fetchOlder().then((added) => {
+        jumpFetchingRef.current = false;
+        // A failed page: stop rather than retry 20 times. Otherwise the new messages (or the
+        // start of the chat) re-run this effect for the next step.
+        if (added === -1) endJump("Couldn't load older messages. Check your connection.");
+        // Didn't run because a scroll-triggered load was in flight: count it as not done.
+        else if (added === null) jumpPagesRef.current -= 1;
+      });
+      return;
+    }
+    if (step === 'found') {
+      const location = findMessageLocation(sections, jumpTarget);
+      if (location) {
+        const params = { ...location, viewPosition: 0.5, animated: true };
+        pendingScrollRef.current = jumpTarget;
+        jumpRetryRef.current = 0;
+        // Let the rows that were just paged in lay out first.
+        requestAnimationFrame(() => sectionListRef.current?.scrollToLocation(params));
+        const target = jumpTarget;
+        setFlashId(target);
+        setTimeout(() => setFlashId((f) => (f === target ? null : f)), 1600);
+        if (messages.find((m) => m.id === target)?.deleted_at) {
+          toast.show({ message: 'That message was deleted.', kind: 'info' });
+        }
+      }
+      endJump();
+    } else {
+      endJump(step === 'tooFar' ? 'That message is too far back to jump to.' : "Couldn't find that message.");
+    }
+  }, [jumpTarget, contentReady, messages, reachedStart, loadingOlder, fetchOlder, sections, endJump]);
+
   // A genuinely empty chat has nothing to position — reveal the empty state immediately.
   useEffect(() => {
-    if (!loading && messages.length === 0) setContentReady(true);
-  }, [loading, messages.length]);
+    // Offline with nothing saved isn't an empty chat: keep the overlay up so it can say so.
+    if (!loading && !offlineNoMessages && messages.length === 0) setContentReady(true);
+  }, [loading, offlineNoMessages, messages.length]);
 
   // Once visibly open, new messages get the usual animated scroll-into-view —
   // but only when the user is already near the bottom; otherwise surface the FAB instead.
+  // Keyed on the *last* message (client_id stays the same when a "sending" placeholder becomes the saved
+  // row), so loading older history at the top never counts as a new message or yanks the view.
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageKey = lastMessage ? (lastMessage.client_id ?? lastMessage.id) : null;
+  const seenLastKeyRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (!contentReady) return;
+    if (lastMessageKey === seenLastKeyRef.current) return;
+    const firstReveal = seenLastKeyRef.current === undefined;
+    seenLastKeyRef.current = lastMessageKey;
+    if (firstReveal) return;
     if (isNearBottomRef.current) {
       scrollToBottom(true);
     } else {
       setUnreadCount((c) => c + 1);
     }
-  }, [messages.length, contentReady, scrollToBottom]);
+  }, [lastMessageKey, contentReady, scrollToBottom]);
+
+  // Someone's message arriving means they've stopped typing.
+  useEffect(() => {
+    if (lastMessage && lastMessage.sender_id !== senderId) clearTypingFor(lastMessage.sender_id);
+  }, [lastMessageKey]);
 
   // Re-anchor on list height change — the real signal a keyboard-driven resize has landed,
   // unlike guessing a delay off the keyboard event (which fires before resize finishes).
   useEffect(() => {
-    if (listHeight > 0) scrollToBottom(true);
+    if (listHeight > 0 && !jumpingRef.current) scrollToBottom(true);
   }, [listHeight]);
 
   const isOwnSelected = selectedMessage?.sender_id === senderId;
   const isDeletedSelected = !!selectedMessage?.deleted_at;
+  // The member who wrote the selected message (messages carry Clerk ids; roles use member ids).
+  const selectedSender = useMemo(() => {
+    if (!selectedMessage || selectedMessage.kind === 'system') return null;
+    const members = ((groupDetails as any)?.members as User[] | undefined) ?? [];
+    return members.find((m) => m.clerkId === selectedMessage.sender_id) ?? null;
+  }, [selectedMessage, groupDetails]);
+  const canTimeOutSelected = !!selectedSender && canTimeOut(currentUser?._id, selectedSender._id, effectiveGroup as any);
+  // Someone else's message only (my own goes through the normal delete), and not while I'm timed out.
+  // Moderators can't delete the owner's or other moderators' messages (the backend enforces it too).
+  const canModDelete = !isDM && canManageGroup && !timedOut && !isOwnSelected && !isDeletedSelected && selectedMessage?.kind !== 'system'
+    && canModDeleteFrom(currentUser?._id, selectedSender?._id, effectiveGroup as any);
 
-  const handleSend = async (text: string, image?: PendingImage) => {
+  const handleSend = async (text: string, image?: PendingImage, mentions?: string[]) => {
     if (!id) return;
     const currentReply = replyingTo;
     setReplyingTo(null);
@@ -373,17 +579,20 @@ const GroupChatScreen = () => {
         currentReply
           ? { id: currentReply.id, content: currentReply.content, senderName: currentReply.sender_name }
           : undefined,
-        image
+        image,
+        mentions
       );
       const notifyText = text || '📷 Photo';
       api.patch(`/api/groups/${id}/last-message`, { text: notifyText, senderName }).catch(() => {});
       // Mark read so your own message doesn't re-trigger the unread dot after you leave
-      userApi.markGroupRead(api, id).catch(() => {});
-    } catch (err: any) {
-      Alert.alert('Error', err?.message ?? JSON.stringify(err));
+      queueMutation(queryClient, 'markGroupRead', { groupId: id }).catch(() => {});
+    } catch {
+      // The bubble itself turns red with Retry / Discard; no extra alert (it could pop up over
+      // another screen a minute later, after the retries run out).
     }
   };
 
+  const handlePendingPressRef = useRef<(item: ChatMessage) => void>(() => {});
   const handlePendingPress = (item: ChatMessage) => {
     if (!item.mutationId) return;
     if (item.failed) {
@@ -399,7 +608,7 @@ const GroupChatScreen = () => {
     } else {
       Alert.alert(
         'Still sending…',
-        'This message is waiting for a connection.',
+        isOnline ? 'This message is still being sent.' : 'This message is waiting for a connection.',
         [
           { text: 'Discard', style: 'destructive', onPress: () => discardSend(item.mutationId!) },
           { text: 'Close', style: 'cancel' },
@@ -407,26 +616,32 @@ const GroupChatScreen = () => {
       );
     }
   };
+  handlePendingPressRef.current = handlePendingPress;
 
   const closeActionPanel = () => {
     setSelectedMessage(null);
     setSelectedMessageLayout(null);
   };
 
-  const handleReact = async (emoji: string) => {
+  const handleReact = (emoji: string) => {
     if (!selectedMessage || !id) return;
     const target = selectedMessage;
     closeActionPanel();
+    // Queued: works offline. The push to the author is sent with it (utils/chatMutations.ts).
+    addReaction(target.id, emoji, senderId, senderName);
+  };
+
+  // Anyone can pin in a DM; in a group only owners and moderators (enforced in the app, not the database).
+  const canPin = isDM || canManageGroup;
+  const handlePinToggle = async () => {
+    if (!selectedMessage) return;
+    const target = selectedMessage;
+    closeActionPanel();
     try {
-      const result = await addReaction(target.id, emoji, senderId);
-      if (result.action !== 'removed') {
-        api.post(`/api/groups/${id}/chat-reaction`, {
-          emoji: result.emoji,
-          senderName,
-        }).catch(() => {});
-      }
+      if (target.pinned_at) await unpinMessage(target, senderId);
+      else await pinMessage(target, senderId);
     } catch (err: any) {
-      Alert.alert('Reaction failed', err?.message ?? JSON.stringify(err));
+      Alert.alert('Pin failed', getErrorMessage(err, 'Could not update the pinned message.'));
     }
   };
 
@@ -442,23 +657,43 @@ const GroupChatScreen = () => {
     closeActionPanel();
   };
 
+  // The edit box grows with the message; cap it to part of the space above the keyboard so Save
+  // and Cancel always stay on screen (on 1.3.3 a long message pushed them under the keyboard).
+  const { height: windowHeight } = useWindowDimensions();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  const editInputMaxHeight = Math.max(80, Math.min(200, (windowHeight - keyboardHeight) * 0.35));
+
   const handleEditOpen = () => {
     if (!selectedMessage) return;
-    setEditText(selectedMessage.content);
-    setEditingMessage(selectedMessage);
+    const target = selectedMessage;
     closeActionPanel();
+    // Edits aren't queued (unlike sends and reactions), so say so before they type one.
+    if (!requireOnline('edit messages')) return;
+    setEditText(target.content);
+    setEditingMessage(target);
   };
 
+  // The editor stays open until the edit is saved, so a failed save (e.g. the connection dropped
+  // while typing) keeps what they wrote and says why, inside the editor, instead of losing it.
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const handleEditSave = async () => {
-    if (!editingMessage) return;
+    if (!editingMessage || isSavingEdit) return;
     const trimmed = editText.trim();
     if (!trimmed || trimmed === editingMessage.content) { setEditingMessage(null); return; }
-    const target = editingMessage;
-    setEditingMessage(null);
+    if (!isOnline) { toast.error(OFFLINE_ERROR_MESSAGE); return; }
+    setIsSavingEdit(true);
     try {
-      await editMessage(target.id, trimmed);
+      await editMessage(editingMessage.id, trimmed);
+      setEditingMessage(null);
     } catch (err: any) {
-      Alert.alert('Edit failed', err?.message ?? 'Failed to edit message.');
+      toast.error(getErrorMessage(err, "Couldn't save your edit. Please try again."));
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -466,11 +701,19 @@ const GroupChatScreen = () => {
     if (!selectedMessage) return;
     const target = selectedMessage;
     closeActionPanel();
+    if (target.sender_id !== senderId) {
+      // Owner/moderator deleting someone else's message: goes through the server.
+      Alert.alert('Delete Message', 'Delete this message for everyone?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => moderation.modDelete(target.id) },
+      ]);
+      return;
+    }
     Alert.alert('Delete Message', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try { await deleteMessage(target.id); }
-        catch (err: any) { Alert.alert('Error', err?.message ?? 'Failed to delete.'); }
+        catch (err: any) { Alert.alert('Error', getErrorMessage(err, "Couldn't delete the message. Please try again.")); }
       }},
     ]);
   };
@@ -482,25 +725,63 @@ const GroupChatScreen = () => {
 
   const chatContentReady = contentReady && !!effectiveGroup && !!currentUser;
 
+  // If something never loads, show an error with Retry after a while instead of a blank screen
+  // forever (a tester saw a chat stay white even after restarting the app).
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  useEffect(() => {
+    setLoadTimedOut(false);
+    if (chatContentReady) return;
+    const t = setTimeout(() => setLoadTimedOut(true), CHAT_LOAD_LIMIT_MS);
+    return () => clearTimeout(t);
+  }, [chatContentReady, loadAttempt, id]);
+  const loadState = chatLoadState({
+    hasGroup: !!effectiveGroup,
+    hasUser: !!currentUser,
+    messagesReady: contentReady,
+    messagesPaused: offlineNoMessages,
+    elapsedMs: loadTimedOut ? CHAT_LOAD_LIMIT_MS : 0,
+  });
+  const retryLoad = () => {
+    if (!onlineManager.isOnline()) { toast.info("You're still offline."); return; }
+    queryClient.invalidateQueries({ queryKey: ['groupDetails', id] });
+    queryClient.invalidateQueries({ queryKey: ['groups'] });
+    queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+    refetchMessages();
+    setLoadAttempt((n) => n + 1);
+  };
+
+  // Pastel status-chip colors (icon buttons + mute options) adapt background/border by
+  // scheme while keeping the same hue family, mirroring MeetupCard's RSVP tint treatment.
+  const mutedChip = { backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2', borderColor: isDark ? '#5C2E2E' : '#FECACA' };
+  const mutedUntilNextChip = { backgroundColor: isDark ? '#3A2E12' : '#FFFBEB', borderColor: isDark ? '#5C4A1E' : '#FDE68A' };
+  const activeChip = { backgroundColor: isDark ? '#132A1E' : '#F0FDF4', borderColor: isDark ? '#1F4A34' : '#BBF7D0' };
+
   return (
     <SafeAreaView
-      style={{ flex: 1, backgroundColor: 'white', paddingTop: contentTopInset }}
+      style={{ flex: 1, backgroundColor: colors.background, paddingTop: contentTopInset }}
       edges={['left', 'right', 'bottom']}
     >
       <View
-        className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200"
+        className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800"
         onLayout={(e) => setChatHeaderHeight(e.nativeEvent.layout.height)}
       >
         <View className="flex-row items-center flex-1">
-          <TouchableOpacity onPress={handleBack} className="mr-2 p-1">
+          <PressableOpacity accessibilityLabel="Go back" onPress={handleBack} className="mr-2 p-1" hitSlop={8}>
             <Feather name="chevron-left" size={26} color="#FF7A6E"/>
-          </TouchableOpacity>
-          <View style={{ marginRight: 10 }}>
-            <GroupAvatar name={headerName} imageUrl={effectiveGroup?.image} size={36} borderRadius={9} />
-          </View>
-          <Text className="text-lg font-black text-gray-900 flex-1" numberOfLines={1}>
-            {headerName}
-          </Text>
+          </PressableOpacity>
+          {/* Tapping the group's photo or name opens its details (this replaces the old menu button). */}
+          <PressableOpacity accessibilityLabel="Group details" onPress={handleOpenDetails} activeOpacity={0.7} style={{ flex: 1 }}>
+            {/* Same title component as the details screen, so the logo doesn't move between them. */}
+            <GroupHeaderTitle
+              name={headerName}
+              imageUrl={getGroupImage(effectiveGroup as any, currentUser?.clerkId)}
+              showChevron
+              subtitle={!isDM && headerMemberCount > 0
+                ? `${headerMemberCount} ${headerMemberCount === 1 ? 'member' : 'members'} · Tap for info`
+                : 'Tap for info'}
+            />
+          </PressableOpacity>
         </View>
 
         <View className="flex-row items-center" style={{ gap: 8 }}>
@@ -508,34 +789,43 @@ const GroupChatScreen = () => {
             <GroupCalendarButton groupId={id} isDM={isDM} />
           )}
 
-          <TouchableOpacity
+          <PressableOpacity
             onPress={handleMutePress}
+            accessibilityLabel={
+              muteState.state === 'full' ? 'Notifications muted' : muteState.state === 'partial' ? 'Some notifications muted' : 'Mute notifications'
+            }
             style={[
               styles.iconButton,
-              isMutedUntilNext ? styles.iconButtonMutedUntilNext : isCurrentlyMuted ? styles.iconButtonMuted : styles.iconButtonActive,
+              muteState.state === 'partial' || muteState.until === 'nextMeetup' ? mutedUntilNextChip
+                : muteState.state === 'full' ? mutedChip : activeChip,
             ]}
           >
-            {isMutedUntilNext ? (
+            {muteState.state === 'partial' ? (
+              <>
+                <Feather name="bell" size={18} color="#D97706" />
+                <View style={[styles.partialMuteDot, { borderColor: colors.surface }]} />
+              </>
+            ) : muteState.until === 'nextMeetup' ? (
               <>
                 <Feather name="bell-off" size={18} color="#D97706" />
                 <Feather name="clock" size={10} color="#D97706" style={styles.mutedUntilNextClockIcon} />
               </>
             ) : (
               <Feather
-                name={isCurrentlyMuted ? "bell-off" : "bell"}
+                name={muteState.state === 'full' ? "bell-off" : "bell"}
                 size={18}
-                color={isCurrentlyMuted ? "#EF4444" : "#10B981"}
+                color={muteState.state === 'full' ? "#EF4444" : "#10B981"}
               />
             )}
-          </TouchableOpacity>
+          </PressableOpacity>
 
-          <TouchableOpacity
-            onPress={handleOpenDetails}
-            style={[styles.iconButton, styles.iconButtonDetails]}
-          >
-            <Feather name="menu" size={18} color="#4A90E2" />
-          </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Measured so the keyboard offset below includes it — otherwise, with a pinned message,
+          Android left the bottom of the composer hidden behind the keyboard by the banner's height. */}
+      <View onLayout={(e) => setPinnedBannerHeight(e.nativeEvent.layout.height)}>
+        <ChatPinnedBanner pins={pins} onPress={() => setPinnedModalVisible(true)} />
       </View>
 
       <View style={{ flex: 1 }}>
@@ -543,41 +833,100 @@ const GroupChatScreen = () => {
           style={{ flex: 1, opacity: chatContentReady ? 1 : 0 }}
           pointerEvents={chatContentReady ? 'auto' : 'none'}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={contentTopInset + chatHeaderHeight}
+          keyboardVerticalOffset={screenTop + chatHeaderHeight + pinnedBannerHeight}
         >
           <View style={{ flex: 1, position: 'relative' }}>
             <SectionList
               ref={sectionListRef}
               style={{ flex: 1 }}
               sections={sections}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
+              // Render the whole first page in one pass. With the default (10 rows, oldest first),
+              // the first-paint jump to the bottom landed on row ~10 of a long history, then the
+              // list visibly stepped down as later batches rendered. Each section adds a header and
+              // footer row, hence the * 2. Only read on first render.
+              initialNumToRender={Math.max(10, messages.length + sections.length * 2 + 2)}
+              keyExtractor={(item) => item.client_id ?? item.id}
+              renderItem={({ item }) => item.kind === 'system' ? (
+                <ChatSystemMessage text={item.content} />
+              ) : (
                 <ChatMessageBubble
                   message={item}
+                  isFirst={groupingById.get(item.id)?.isFirst ?? true}
+                  isLast={groupingById.get(item.id)?.isLast ?? true}
+                  mentionNames={mentionNames}
                   isOwn={item.sender_id === senderId}
                   currentUserId={senderId}
                   isHighlighted={selectedMessage?.id === item.id}
                   onLongPress={(layout) => { setSelectedMessage(item); setSelectedMessageLayout(layout); }}
                   onReactionLongPress={() => setReactionDetailMessage(item)}
                   onImagePress={(url, width, height) => setFullscreenImage({ url, width, height })}
-                  onPendingPress={() => handlePendingPress(item)}
-                  onSwipeReply={() => setReplyingTo(item)}
+                  onPendingPress={() => handlePendingPressRef.current(item)}
+                  onSwipeReply={() => { if (!timedOutRef.current) setReplyingTo(item); }}
                   skipEntrance={initialMessageIdsRef.current?.has(item.id) ?? false}
+                  flash={flashId === item.id}
                 />
               )}
               renderSectionHeader={({ section }) => <ChatDayBubble label={section.title} />}
-              stickySectionHeadersEnabled
+              ListHeaderComponent={
+                loadingOlder ? (
+                  <View style={{ paddingVertical: 12 }}>
+                    <LoadingAnimation />
+                  </View>
+                ) : !isOnline && !reachedStart && messages.length > 0 ? (
+                  <Text style={{ textAlign: 'center', color: colors.textFaint, fontSize: 12, paddingVertical: 10 }}>
+                    Connect to the internet to load older messages
+                  </Text>
+                ) : reachedStart && messages.length > 0 ? (
+                  <Text style={{ textAlign: 'center', color: colors.textFaint, fontSize: 12, paddingVertical: 10 }}>
+                    Start of the conversation
+                  </Text>
+                ) : undefined
+              }
+              // Keeps the message you were reading in place when an older page is added above it.
+              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+              // Not RN's sticky headers: they cache their positions and go stale when older pages are
+              // prepended (New Architecture), so date bubbles drifted below their day and search/pinned
+              // jumps landed far above the message. The floating pill below gives the sticky effect.
+              stickySectionHeadersEnabled={false}
+              onViewableItemsChanged={onViewableItemsChangedRef.current}
+              viewabilityConfig={viewabilityConfigRef.current}
+              onScrollToIndexFailed={(info) => {
+                // The rows above the jump target haven't been measured yet: scroll near the
+                // estimate so they render, then try again (a few times at most).
+                sectionListRef.current?.getScrollResponder()?.scrollTo({ y: info.averageItemLength * info.index, animated: false });
+                const targetId = pendingScrollRef.current;
+                if (targetId && jumpRetryRef.current < 3) {
+                  jumpRetryRef.current += 1;
+                  setTimeout(() => {
+                    // Look the message up again: rows may have shifted since the first try.
+                    const location = findMessageLocation(sectionsRef.current, targetId);
+                    if (location) sectionListRef.current?.scrollToLocation({ ...location, viewPosition: 0.5, animated: true });
+                  }, 250);
+                }
+              }}
               contentContainerStyle={{ paddingVertical: 12, flexGrow: 1 }}
               ListEmptyComponent={
                 <View style={chatStyles.center}>
-                  <Text style={{ color: '#9CA3AF', fontSize: 15 }}>No messages yet. Say hello!</Text>
+                  <Text style={{ color: colors.textFaint, fontSize: 15 }}>No messages yet. Say hello!</Text>
                 </View>
               }
-              onContentSizeChange={() => scrollToBottom(false)}
+              onContentSizeChange={() => {
+                if (jumpingRef.current) return;
+                // Follow content growth only during the initial reveal or while the user is at the
+                // bottom. Jumping down unconditionally yanked people out of history they were
+                // reading whenever an image loaded, a reaction landed, or a message arrived.
+                if (!contentReadyRef.current || isNearBottomRef.current) scrollToBottom(false);
+              }}
               onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
               onScroll={handleListScroll}
               scrollEventThrottle={16}
             />
+            {contentReady && floatingDay ? (
+              <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+                {/* Keyed by day so the pill re-runs its entrance when the day changes. */}
+                <ChatDayBubble key={floatingDay} label={floatingDay} />
+              </View>
+            ) : null}
             <ChatScrollToBottomButton
               visible={showScrollToBottom}
               unreadCount={unreadCount}
@@ -590,21 +939,21 @@ const GroupChatScreen = () => {
           </View>
 
           {replyingTo && (
-            <View style={chatStyles.replyPreview}>
-              <View style={chatStyles.replyPreviewBody}>
-                <Text style={chatStyles.replyPreviewLabel}>↩ {replyingTo.sender_name}</Text>
-                <Text style={chatStyles.replyPreviewText} numberOfLines={1}>{replyingTo.content}</Text>
+            <View style={[chatStyles.replyPreview, { backgroundColor: colors.surfaceAlt, borderTopColor: colors.border }]}>
+              <View style={[chatStyles.replyPreviewBody, { borderLeftColor: colors.brand }]}>
+                <Text style={[chatStyles.replyPreviewLabel, { color: colors.brand }]}>↩ {replyingTo.sender_name}</Text>
+                <Text style={[chatStyles.replyPreviewText, { color: colors.textMuted }]} numberOfLines={1}>{replyingTo.content}</Text>
               </View>
-              <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ padding: 4 }}>
-                <Text style={{ fontSize: 16, color: '#9CA3AF' }}>✕</Text>
-              </TouchableOpacity>
+              <PressableOpacity onPress={() => setReplyingTo(null)} style={{ padding: 4 }}>
+                <Text style={{ fontSize: 16, color: colors.textFaint }}>✕</Text>
+              </PressableOpacity>
             </View>
           )}
 
           {((nextMeetup && nextMeetupLabel) || activePolls.length > 0) && (
-            <View style={chatStyles.nextEventBarRow}>
+            <View style={[chatStyles.nextEventBarRow, { borderTopColor: colors.border }]}>
               {nextMeetup && nextMeetupLabel && (
-                <TouchableOpacity
+                <PressableOpacity
                   onPress={() => setNextMeetupModalVisible(true)}
                   style={[
                     chatStyles.nextEventBarHalf,
@@ -614,11 +963,11 @@ const GroupChatScreen = () => {
                   activeOpacity={0.7}
                 >
                   {activePolls.length === 0 && nextMeetupDay && (
-                    <View style={{ width: 20, height: 20, borderRadius: 7, backgroundColor: '#4A90E2', alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{ width: 20, height: 20, borderRadius: 7, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>{nextMeetupDay}</Text>
                     </View>
                   )}
-                  <Text style={chatStyles.nextEventText} numberOfLines={1}>
+                  <Text style={[chatStyles.nextEventText, { color: colors.textPrimary }]} numberOfLines={1}>
                     {activePolls.length > 0 ? 'Next Meetup' : `Next Meetup: ${nextMeetupLabel}`}
                   </Text>
                   {nextMeetupRsvpStatus && (
@@ -628,27 +977,27 @@ const GroupChatScreen = () => {
                       </Text>
                     ) : nextMeetupRsvpStatus.isRsvpLocked ? (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                        <Feather name="clock" size={13} color="#9CA3AF" />
-                        <Feather name="lock" size={13} color="#9CA3AF" />
+                        <Feather name="clock" size={13} color={colors.textFaint} />
+                        <Feather name="lock" size={13} color={colors.textFaint} />
                       </View>
                     ) : nextMeetupRsvpStatus.isRsvpDeadlinePassed ? (
-                      <Feather name="lock" size={13} color="#9CA3AF" />
+                      <Feather name="lock" size={13} color={colors.textFaint} />
                     ) : (
                       <Ionicons name="mail-open-outline" size={16} color="#F59E0B" />
                     )
                   )}
-                  {activePolls.length === 0 && <Feather name="chevron-right" size={13} color="#93C5FD" />}
-                </TouchableOpacity>
+                  {activePolls.length === 0 && <Feather name="chevron-right" size={13} color={colors.textFaint} />}
+                </PressableOpacity>
               )}
 
               {activePolls.length > 0 && (
-                <TouchableOpacity
+                <PressableOpacity
                   onPress={handlePollBarPress}
-                  style={[chatStyles.nextEventBarHalf, chatStyles.pollBarHalf]}
+                  style={[chatStyles.nextEventBarHalf, { backgroundColor: pollBarColor }]}
                   activeOpacity={0.7}
                 >
                   <Feather name="bar-chart-2" size={15} color="#7C3AED" />
-                  <Text style={chatStyles.pollBarText} numberOfLines={1}>
+                  <Text style={[chatStyles.pollBarText, { color: colors.textPrimary }]} numberOfLines={1}>
                     {activePolls.length > 1 ? 'Active Polls' : 'Active Poll'}
                   </Text>
                   {hasUnansweredActivePoll ? (
@@ -656,23 +1005,60 @@ const GroupChatScreen = () => {
                   ) : (
                     <Feather name="check-circle" size={15} color="#4FD1C5" />
                   )}
-                  <Feather name="chevron-right" size={13} color="#C4B5FD" />
-                </TouchableOpacity>
+                  <Feather name="chevron-right" size={13} color={colors.textFaint} />
+                </PressableOpacity>
               )}
             </View>
           )}
 
           <ChatMessageInput
+            groupId={id!}
+            mentionMembers={mentionMembers}
             onSend={handleSend}
             onTyping={handleTyping}
             onCreateEvent={canCreateEvent ? () => setMeetupWizardVisible(true) : undefined}
             onCreatePoll={!isDM ? () => setCreatePollVisible(true) : undefined}
+            timeoutLabel={timeoutLabel}
+            onSearch={() => id && router.push({ pathname: '/group-chat/search/[id]', params: { id } } as any)}
           />
         </KeyboardAvoidingView>
 
         {!chatContentReady && (
-          <View style={[styles.loadingContainer, StyleSheet.absoluteFillObject]} pointerEvents="none">
-            <LoadingAnimation />
+          <View
+            style={[styles.loadingContainer, { backgroundColor: colors.background }, StyleSheet.absoluteFill]}
+            pointerEvents={loadState.state === 'failed' || loadState.state === 'offline' ? 'auto' : 'none'}
+          >
+            {loadState.state === 'offline' ? (
+              <View style={{ alignItems: 'center', paddingHorizontal: 32 }}>
+                <Feather name="wifi-off" size={30} color={colors.textFaint} />
+                <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginTop: 12 }}>You're offline</Text>
+                <Text style={{ fontSize: 15, color: colors.textMuted, marginTop: 6, textAlign: 'center' }}>
+                  This chat hasn't been saved on this phone yet. It loads as soon as you're back online.
+                </Text>
+                <PressableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt, marginTop: 18 }]} onPress={handleBack}>
+                  <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600' }}>Back</Text>
+                </PressableOpacity>
+              </View>
+            ) : loadState.state === 'failed' ? (
+              <View style={{ alignItems: 'center', paddingHorizontal: 32 }}>
+                <Feather name="wifi-off" size={30} color={colors.textFaint} />
+                <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginTop: 12 }}>Couldn't load this chat</Text>
+                {/* Says which piece never arrived, so a screenshot tells us why. */}
+                <Text style={{ fontSize: 12, color: colors.textFaint, marginTop: 6, textAlign: 'center' }}>
+                  Still waiting for: {loadState.missing.join(', ')}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+                  <PressableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={handleBack}>
+                    <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600' }}>Back</Text>
+                  </PressableOpacity>
+                  <PressableOpacity style={[chatStyles.saveBtn, { backgroundColor: colors.brand }]} onPress={retryLoad}>
+                    <Text style={{ fontSize: 15, color: '#fff', fontWeight: '600' }}>Retry</Text>
+                  </PressableOpacity>
+                </View>
+              </View>
+            ) : (
+              <LoadingAnimation />
+            )}
           </View>
         )}
       </View>
@@ -687,36 +1073,65 @@ const GroupChatScreen = () => {
         <ChatActionPanel
           anchor={selectedMessageLayout}
           isOwn={isOwnSelected}
-          showReactions={!isDeletedSelected}
+          showReactions={!isDeletedSelected && !timedOut}
           onReact={handleReact}
           onOpenEmojiPicker={() => setEmojiPickerVisible(true)}
-          showReply={!isDeletedSelected}
+          showReply={!isDeletedSelected && !timedOut}
           onReply={handleReplyOpen}
           showCopy={!isDeletedSelected && !!selectedMessage?.content?.trim()}
           onCopy={handleCopy}
-          showEdit={isOwnSelected && !isDeletedSelected}
+          showPin={canPin && !timedOut && !isDeletedSelected && selectedMessage?.kind !== 'system'}
+          isPinned={!!selectedMessage?.pinned_at}
+          onPin={handlePinToggle}
+          showEdit={isOwnSelected && !isDeletedSelected && !timedOut}
           onEdit={handleEditOpen}
-          showDelete={isOwnSelected}
+          showDelete={(isOwnSelected && !timedOut) || canModDelete}
           onDelete={handleDeleteConfirm}
+          showTimeOut={canTimeOutSelected}
+          timeOutLabel={selectedSender ? `Time out ${selectedSender.firstName || getUserDisplayName(selectedSender)}` : undefined}
+          onTimeOut={() => {
+            if (!selectedSender) return;
+            setTimeoutTarget({ userId: selectedSender._id, name: selectedSender.firstName || getUserDisplayName(selectedSender) });
+            closeActionPanel();
+          }}
           onClose={closeActionPanel}
         />
       </Modal>
 
-      <EmojiPicker
+      <ChatTimeoutSheet
+        visible={!!timeoutTarget}
+        name={timeoutTarget?.name ?? ''}
+        current={groupDetails?.chatTimeouts?.find((t) => t.userId === timeoutTarget?.userId) ?? null}
+        onPick={(key) => { if (timeoutTarget) moderation.timeOut(timeoutTarget.userId, key); setTimeoutTarget(null); }}
+        onEnd={() => { if (timeoutTarget) moderation.endTimeout(timeoutTarget.userId); setTimeoutTarget(null); }}
+        onClose={() => setTimeoutTarget(null)}
+      />
+
+      <ChatPinnedModal
+        visible={pinnedModalVisible}
+        pins={pins}
+        onClose={() => setPinnedModalVisible(false)}
+        canUnpin={canPin && !timedOut}
+        onJump={(m) => {
+          setPinnedModalVisible(false);
+          startJump(m.id);
+        }}
+        onUnpin={(m) => {
+          unpinMessage(m, senderId).catch((err: any) => Alert.alert('Unpin failed', getErrorMessage(err, 'Could not unpin.')));
+        }}
+      />
+
+      <EmojiPickerSheet
         open={emojiPickerVisible}
         onClose={() => setEmojiPickerVisible(false)}
         onEmojiSelected={(item) => handleReact(item.emoji)}
-        enableSearchBar
-        enableRecentlyUsed
-        defaultHeight="75%"
-        expandedHeight="90%"
       />
 
       {/* Reaction detail */}
       <Modal visible={!!reactionDetailMessage} transparent animationType="fade" onRequestClose={() => setReactionDetailMessage(null)}>
         <Pressable style={chatStyles.overlay} onPress={() => setReactionDetailMessage(null)}>
-          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 16 }}>Reactions</Text>
+          <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 16 }}>Reactions</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               {Object.entries(reactionDetailMessage?.reactions ?? {})
                 .filter(([, users]) => users.length > 0)
@@ -724,10 +1139,10 @@ const GroupChatScreen = () => {
                   <View key={emoji} style={{ marginBottom: 16 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <Text style={{ fontSize: 22 }}>{emoji}</Text>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#6B7280' }}>{users.length}</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textMuted }}>{users.length}</Text>
                     </View>
                     {users.map((uid) => (
-                      <Text key={uid} style={{ fontSize: 15, color: '#111827', paddingVertical: 3, paddingLeft: 4 }}>
+                      <Text key={uid} style={{ fontSize: 15, color: colors.textPrimary, paddingVertical: 3, paddingLeft: 4 }}>
                         {userNameMap.get(uid) ?? 'Unknown'}
                       </Text>
                     ))}
@@ -740,28 +1155,37 @@ const GroupChatScreen = () => {
 
       {/* Edit modal */}
       <Modal visible={!!editingMessage} transparent animationType="fade" onRequestClose={() => setEditingMessage(null)}>
+        {/* Modal windows aren't resized for the keyboard (edge-to-edge), so lift the panel ourselves —
+            otherwise Save/Cancel sat under the keyboard on Android. */}
+        <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <Pressable style={chatStyles.overlay} onPress={() => setEditingMessage(null)}>
-          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 12 }}>Edit Message</Text>
+          <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 12 }}>Edit Message</Text>
             <TextInput
-              style={chatStyles.editInput}
+              style={[chatStyles.editInput, { borderColor: colors.border, backgroundColor: colors.backgroundAlt, color: colors.textPrimary, maxHeight: editInputMaxHeight }]}
               value={editText}
               onChangeText={setEditText}
               multiline
               autoFocus
               maxLength={2000}
-              selectionColor="#4A90E2"
+              selectionColor={colors.brand}
+              placeholderTextColor={colors.placeholder}
             />
             <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
-              <TouchableOpacity style={chatStyles.cancelBtn} onPress={() => setEditingMessage(null)}>
-                <Text style={{ fontSize: 15, color: '#6B7280', fontWeight: '600' }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={chatStyles.saveBtn} onPress={handleEditSave}>
-                <Text style={{ fontSize: 15, color: '#fff', fontWeight: '600' }}>Save</Text>
-              </TouchableOpacity>
+              <PressableOpacity style={[chatStyles.cancelBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setEditingMessage(null)}>
+                <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600' }}>Cancel</Text>
+              </PressableOpacity>
+              <PressableOpacity style={[chatStyles.saveBtn, { backgroundColor: colors.brand }]} onPress={handleEditSave} disabled={isSavingEdit}>
+                {isSavingEdit
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={{ fontSize: 15, color: '#fff', fontWeight: '600' }}>Save</Text>}
+              </PressableOpacity>
             </View>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
+        {/* This Modal covers the app-level toast; show "You're offline" etc. over the editor. */}
+        <ToastPortal />
       </Modal>
 
       <ChatImageViewer
@@ -776,7 +1200,7 @@ const GroupChatScreen = () => {
         visible={nextMeetupModalVisible}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setNextMeetupModalVisible(false)}
+        onRequestClose={() => { if (!runBackInterceptor()) setNextMeetupModalVisible(false); }}
       >
         <MeetupDetailModal meetup={nextMeetup} onClose={() => setNextMeetupModalVisible(false)} />
       </Modal>
@@ -784,19 +1208,19 @@ const GroupChatScreen = () => {
       {/* Poll picker — only shown when the bar's poll side is tapped with more than one active poll */}
       <Modal visible={pollSelectorVisible} transparent animationType="fade" onRequestClose={() => setPollSelectorVisible(false)}>
         <Pressable style={chatStyles.overlay} onPress={() => setPollSelectorVisible(false)}>
-          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 16 }}>Active Polls</Text>
+          <Pressable style={[chatStyles.detailPanel, { backgroundColor: colors.surface }]} onPress={() => {}}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 16 }}>Active Polls</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               {activePolls.map(poll => {
                 const hasVoted = !!currentUser && poll.options.some(opt =>
                   opt.voters.some(v => (typeof v === 'string' ? v : v._id) === currentUser._id)
                 );
                 return (
-                  <TouchableOpacity key={poll._id} style={chatStyles.pollSelectorRow} onPress={() => handleSelectActivePoll(poll._id)}>
-                    <Text style={chatStyles.pollSelectorPrompt} numberOfLines={2}>{poll.prompt}</Text>
+                  <PressableOpacity key={poll._id} style={[chatStyles.pollSelectorRow, { borderBottomColor: colors.border }]} onPress={() => handleSelectActivePoll(poll._id)}>
+                    <Text style={[chatStyles.pollSelectorPrompt, { color: colors.textPrimary }]} numberOfLines={2}>{poll.prompt}</Text>
                     {!hasVoted && <View style={chatStyles.pollSelectorDot} />}
-                    <Feather name="chevron-right" size={16} color="#9CA3AF" />
-                  </TouchableOpacity>
+                    <Feather name="chevron-right" size={16} color={colors.textFaint} />
+                  </PressableOpacity>
                 );
               })}
             </ScrollView>
@@ -834,45 +1258,12 @@ const GroupChatScreen = () => {
         />
       )}
 
-      {/* Mute options */}
-      <Modal visible={muteOptionsVisible} transparent animationType="fade" onRequestClose={() => setMuteOptionsVisible(false)}>
-        <Pressable style={chatStyles.overlay} onPress={() => setMuteOptionsVisible(false)}>
-          <Pressable style={chatStyles.detailPanel} onPress={() => {}}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: '#111827', marginBottom: 16 }}>Mute Notifications</Text>
-            <TouchableOpacity
-              style={[muteStyles.option, muteStyles.untilNextOption]}
-              onPress={() => handleMuteOptionPress('untilNext')}
-              activeOpacity={0.7}
-            >
-              <View style={[muteStyles.iconWrap, muteStyles.untilNextIconWrap]}>
-                <Feather name="clock" size={18} color="#D97706" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={muteStyles.untilNextText}>Mute until next meetup</Text>
-                <Text style={muteStyles.optionSubtitle}>We'll turn notifications back on for you</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color="#D1D5DB" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[muteStyles.option, muteStyles.indefiniteOption]}
-              onPress={() => handleMuteOptionPress('indefinite')}
-              activeOpacity={0.7}
-            >
-              <View style={[muteStyles.iconWrap, muteStyles.indefiniteIconWrap]}>
-                <Feather name="bell-off" size={18} color="#DC2626" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={muteStyles.indefiniteText}>Mute</Text>
-                <Text style={muteStyles.optionSubtitle}>Stay silent until you turn it back on</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color="#D1D5DB" />
-            </TouchableOpacity>
-            <TouchableOpacity style={chatStyles.cancelBtn} onPress={() => setMuteOptionsVisible(false)}>
-              <Text style={{ fontSize: 15, color: '#6B7280', fontWeight: '600', textAlign: 'center' }}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <GroupMuteSheet
+        visible={muteSheetVisible}
+        group={effectiveGroup ? { _id: effectiveGroup._id, name: headerName, isDM } : null}
+        currentUser={currentUser}
+        onClose={() => setMuteSheetVisible(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -892,26 +1283,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
   },
-  iconButtonMuted: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-  },
-  iconButtonMutedUntilNext: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FDE68A',
-  },
+  partialMuteDot: { position: 'absolute', top: 6, right: 6, width: 9, height: 9, borderRadius: 5, backgroundColor: '#F59E0B', borderWidth: 1.5 },
   mutedUntilNextClockIcon: {
     position: 'absolute',
     top: 2,
     right: 2,
-  },
-  iconButtonActive: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
-  },
-  iconButtonDetails: {
-    backgroundColor: '#EEF2FF',
-    borderColor: '#C7D2FE',
   },
 });
 
@@ -924,7 +1300,6 @@ const chatStyles = StyleSheet.create({
   nextEventBarHalfDivider: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: 'rgba(17,24,39,0.08)' },
   nextEventText: { fontSize: 15, fontWeight: '400', color: '#111827' },
   nextEventStatusText: { fontSize: 13, fontWeight: '900', letterSpacing: 1 },
-  pollBarHalf: { backgroundColor: '#F5F3FF' },
   pollBarText: { fontSize: 15, fontWeight: '400', color: '#111827' },
   pollSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F3F4F6' },
   pollSelectorPrompt: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
@@ -936,33 +1311,6 @@ const chatStyles = StyleSheet.create({
   editInput: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14, padding: 12, fontSize: 15, color: '#111827', backgroundColor: '#F9FAFB', minHeight: 80, maxHeight: 200, textAlignVertical: 'top', marginBottom: 16 },
   cancelBtn: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: '#F3F4F6' },
   saveBtn: { paddingHorizontal: 20, paddingVertical: 9, borderRadius: 10, backgroundColor: '#4A90E2' },
-});
-
-const muteStyles = StyleSheet.create({
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    marginBottom: 10,
-  },
-  untilNextOption: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
-  indefiniteOption: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
-  iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  untilNextIconWrap: { backgroundColor: '#FEF3C7' },
-  indefiniteIconWrap: { backgroundColor: '#FEE2E2' },
-  untilNextText: { fontSize: 15, fontWeight: '800', color: '#B45309' },
-  indefiniteText: { fontSize: 15, fontWeight: '800', color: '#DC2626' },
-  optionSubtitle: { fontSize: 12, fontWeight: '500', color: '#9CA3AF', marginTop: 2 },
 });
 
 export default GroupChatScreen;

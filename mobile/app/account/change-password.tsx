@@ -1,14 +1,17 @@
-import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useChangePassword } from '@/hooks/useChangePassword';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const ChangePasswordScreen = () => {
     const { user, isLoaded } = useUser();
     const router = useRouter();
+    const colors = useThemeColors();
 
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -40,80 +43,89 @@ const ChangePasswordScreen = () => {
 
     if (!isLoaded || !user?.passwordEnabled) {
         return (
-            <SafeAreaView className="flex-1 bg-gray-100 items-center justify-center">
-                <ActivityIndicator color="#4A90E2" />
+            <SafeAreaView className="flex-1 bg-gray-100 dark:bg-black items-center justify-center">
+                <ActivityIndicator color={colors.brand} />
             </SafeAreaView>
         );
     }
 
     return (
-        <SafeAreaView className="flex-1 bg-gray-100">
+        <SafeAreaView className="flex-1 bg-gray-100 dark:bg-black">
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 className="flex-1"
             >
                 <ScrollView contentContainerStyle={{ flexGrow: 1 }} className="p-6">
                     <View style={{ marginBottom: 20 }}>
-                        <Text style={styles.label}>Current Password</Text>
-                        <View style={styles.inputContainer}>
+                        <Text style={[styles.label, { color: colors.textFaint }]}>Current Password</Text>
+                        <View style={[styles.inputContainer, { backgroundColor: colors.backgroundAlt, borderColor: colors.border }]}>
                             <TextInput
                                 value={currentPassword}
                                 onChangeText={setCurrentPassword}
                                 placeholder="Enter your current password"
-                                placeholderTextColor="#9CA3AF"
+                                placeholderTextColor={colors.placeholder}
                                 secureTextEntry={!isCurrentVisible}
+                                autoComplete="current-password"
+                                autoCapitalize="none"
+                                returnKeyType="next"
                                 textContentType="oneTimeCode"
-                                style={styles.textInput}
+                                style={[styles.textInput, { color: colors.textSecondary }]}
                             />
-                            <TouchableOpacity onPress={() => setCurrentVisible(!isCurrentVisible)}>
-                                <Feather name={isCurrentVisible ? 'eye-off' : 'eye'} size={20} color="#9CA3AF" />
-                            </TouchableOpacity>
+                            <PressableOpacity accessibilityLabel={isCurrentVisible ? 'Hide password' : 'Show password'} onPress={() => setCurrentVisible(!isCurrentVisible)}>
+                                <Feather name={isCurrentVisible ? 'eye-off' : 'eye'} size={20} color={colors.textFaint} />
+                            </PressableOpacity>
                         </View>
                     </View>
                     <View style={{ marginBottom: 20 }}>
-                        <Text style={styles.label}>New Password</Text>
-                        <View style={styles.inputContainer}>
+                        <Text style={[styles.label, { color: colors.textFaint }]}>New Password</Text>
+                        <View style={[styles.inputContainer, { backgroundColor: colors.backgroundAlt, borderColor: colors.border }]}>
                             <TextInput
                                 value={newPassword}
                                 onChangeText={setNewPassword}
                                 placeholder="Enter your new password"
-                                placeholderTextColor="#9CA3AF"
+                                placeholderTextColor={colors.placeholder}
                                 secureTextEntry={!isNewVisible}
+                                autoComplete="new-password"
+                                autoCapitalize="none"
+                                returnKeyType="next"
                                 textContentType="oneTimeCode"
-                                style={styles.textInput}
+                                style={[styles.textInput, { color: colors.textSecondary }]}
                             />
-                            <TouchableOpacity onPress={() => setNewVisible(!isNewVisible)}>
-                                <Feather name={isNewVisible ? 'eye-off' : 'eye'} size={20} color="#9CA3AF" />
-                            </TouchableOpacity>
+                            <PressableOpacity accessibilityLabel={isNewVisible ? 'Hide password' : 'Show password'} onPress={() => setNewVisible(!isNewVisible)}>
+                                <Feather name={isNewVisible ? 'eye-off' : 'eye'} size={20} color={colors.textFaint} />
+                            </PressableOpacity>
                         </View>
                     </View>
                     <View style={{ marginBottom: 28 }}>
-                        <Text style={styles.label}>Confirm New Password</Text>
-                        <View style={styles.inputContainer}>
+                        <Text style={[styles.label, { color: colors.textFaint }]}>Confirm New Password</Text>
+                        <View style={[styles.inputContainer, { backgroundColor: colors.backgroundAlt, borderColor: colors.border }]}>
                             <TextInput
                                 value={confirmPassword}
                                 onChangeText={setConfirmPassword}
                                 placeholder="Confirm your new password"
-                                placeholderTextColor="#9CA3AF"
+                                placeholderTextColor={colors.placeholder}
                                 secureTextEntry={!isConfirmVisible}
+                                autoComplete="new-password"
+                                autoCapitalize="none"
+                                returnKeyType="done"
                                 textContentType="oneTimeCode"
-                                style={styles.textInput}
+                                style={[styles.textInput, { color: colors.textSecondary }]}
                             />
-                            <TouchableOpacity onPress={() => setConfirmVisible(!isConfirmVisible)}>
-                                <Feather name={isConfirmVisible ? 'eye-off' : 'eye'} size={20} color="#9CA3AF" />
-                            </TouchableOpacity>
+                            <PressableOpacity accessibilityLabel={isConfirmVisible ? 'Hide password' : 'Show password'} onPress={() => setConfirmVisible(!isConfirmVisible)}>
+                                <Feather name={isConfirmVisible ? 'eye-off' : 'eye'} size={20} color={colors.textFaint} />
+                            </PressableOpacity>
                         </View>
                     </View>
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={handleSave}
                         disabled={isPending}
-                        style={styles.saveBtn}
+                        style={[styles.saveBtn, { backgroundColor: colors.brand }]}
                         activeOpacity={0.85}
                     >
                         {isPending
                             ? <ActivityIndicator color="white" />
                             : <Text style={styles.saveBtnText}>Save New Password</Text>}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>

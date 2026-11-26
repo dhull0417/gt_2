@@ -1,32 +1,87 @@
-import { useRef, useState } from 'react';
-import { View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Image, Alert, Animated, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { View, TextInput, Text, StyleSheet, Image, ScrollView, Alert, Animated, LayoutAnimation, Platform, UIManager } from 'react-native';
+import type { TextInputInstance } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
-import { useAuth } from '@clerk/expo';
-import { ensurePhotoLibraryPermission, uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
+import { ensureCameraPermission, ensurePhotoLibraryPermission } from '@/utils/uploadImage';
 import { useApiClient } from '@/utils/api';
 import type { PendingImage } from '@/types/chat';
+import { useThemeColors } from '@/contexts/AppearanceContext';
+import {
+  applyMention,
+  extractMentions,
+  filterMembers,
+  findActiveMention,
+  type MentionMember,
+} from '@/utils/chatMentions';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+const MAX_PHOTOS = 4;
+// A photo attached to the next send. It's uploaded when the message is actually sent (inside the
+// queued send), so attaching and sending both work offline, just like text.
+interface PendingEntry { key: string; localUri: string; width?: number; height?: number }
+
 const TRAY_LAYOUT_ANIM = LayoutAnimation.create(180, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity);
 
 interface Props {
-  onSend: (text: string, image?: PendingImage) => Promise<void>;
+  // mentions: Clerk ids of the people @mentioned in the text.
+  onSend: (text: string, image?: PendingImage, mentions?: string[]) => Promise<void>;
+  // People who can be @mentioned (everyone in the group except you). Omit to turn mentions off, e.g. in a DM.
+  mentionMembers?: MentionMember[];
   onTyping?: () => void;
   onCreateEvent?: () => void;
   onCreatePoll?: () => void;
+  // Photos are stored under chat/<groupId>/ so access can be limited to the group's members.
+  groupId: string;
+  // Set while I'm timed out of this chat ("You are timed out for 3 hours"): the field and send
+  // button are shown in red and can't be used, and photos can't be added. Polls/events stay.
+  timeoutLabel?: string | null;
+  // When set, the send button shows a magnifying glass while there's nothing to send and opens
+  // chat search when tapped; it morphs into "Send" as soon as the user types or attaches a photo.
+  onSearch?: () => void;
 }
 
-export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll }: Props) {
-  const { getToken } = useAuth();
+export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll, mentionMembers, groupId, timeoutLabel, onSearch }: Props) {
+  const timedOut = !!timeoutLabel;
+  const colors = useThemeColors();
   const api = useApiClient();
   const [text, setText] = useState('');
-  const [pendingImage, setPendingImage] = useState<{ localUri: string; uploaded?: PendingImage } | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PendingEntry[]>([]);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [cursor, setCursor] = useState(0);
+  // Where to put the cursor once a picked @mention has been written into the text. Applied through the
+  // ref after the new text renders, not via a controlled `selection` prop: on Android that prop can be
+  // applied before the longer text lands, which jumps the cursor (or throws on an out-of-range index).
+  const inputRef = useRef<TextInputInstance>(null);
+  const pendingCursor = useRef<number | null>(null);
+  const [picked, setPicked] = useState<MentionMember[]>([]);
+  const activeMention = useMemo(
+    () => (mentionMembers?.length ? findActiveMention(text, cursor) : null),
+    [mentionMembers, text, cursor]
+  );
+  const suggestions = useMemo(
+    () => (activeMention && mentionMembers ? filterMembers(mentionMembers, activeMention.query) : []),
+    [activeMention, mentionMembers]
+  );
+
+  const pickMention = (member: MentionMember) => {
+    if (!activeMention) return;
+    const next = applyMention(text, activeMention, cursor, member.name);
+    pendingCursor.current = next.cursor;
+    setText(next.text);
+    setCursor(next.cursor);
+    setPicked((prev) => (prev.some((p) => p.clerkId === member.clerkId) ? prev : [...prev, member]));
+  };
+  useEffect(() => {
+    if (pendingCursor.current === null) return;
+    const pos = Math.min(pendingCursor.current, text.length);
+    pendingCursor.current = null;
+    inputRef.current?.setSelection(pos, pos);
+  }, [text]);
   const attachAnim = useRef(new Animated.Value(0)).current;
 
   const toggleAttachMenu = () => {
@@ -51,6 +106,22 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
     }).start();
   };
 
+  // Up to MAX_PHOTOS pictures can be attached to one send.
+  const addPhotos = (assets: { uri: string; width?: number; height?: number }[]) => {
+    if (!assets.length) return;
+    const room = MAX_PHOTOS - pendingImages.length;
+    const chosen = assets.slice(0, Math.max(room, 0));
+    if (assets.length > chosen.length) Alert.alert('Photo limit', `You can attach up to ${MAX_PHOTOS} photos at a time.`);
+    if (!chosen.length) return;
+    const entries: PendingEntry[] = chosen.map((a) => ({
+      key: `${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+      localUri: a.uri,
+      width: a.width,
+      height: a.height,
+    }));
+    setPendingImages((prev) => [...prev, ...entries]);
+  };
+
   const pickImage = async () => {
     const hasPermission = await ensurePhotoLibraryPermission(api);
     if (!hasPermission) return;
@@ -59,30 +130,45 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
       mediaTypes: ['images'],
       quality: 0.85,
       allowsEditing: false,
+      allowsMultipleSelection: true,
+      selectionLimit: Math.max(MAX_PHOTOS - pendingImages.length, 1),
     });
-
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-
-    setPendingImage({ localUri: asset.uri });
-    setUploading(true);
-
-    try {
-      const token = await getToken({ template: 'supabase' });
-      if (!token) throw new Error('No auth token');
-      const filePath = `chat/${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
-      const { url, width, height } = await uploadImageFromUriWithDimensions(asset.uri, 'chat-images', filePath, token);
-
-      setPendingImage({ localUri: asset.uri, uploaded: { url, width, height } });
-    } catch {
-      Alert.alert('Upload failed', 'Could not upload the image. Please try again.');
-      setPendingImage(null);
-    } finally {
-      setUploading(false);
-    }
+    if (result.canceled || !result.assets?.length) return;
+    addPhotos(result.assets.map((a) => ({ uri: a.uri, width: a.width, height: a.height })));
   };
 
-  const canSend = !uploading && (!!text.trim() || !!pendingImage?.uploaded);
+  const takePhoto = async () => {
+    if (!(await ensureCameraPermission())) return;
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: false });
+    if (result.canceled || !result.assets?.[0]) return;
+    const shot = result.assets[0];
+    addPhotos([{ uri: shot.uri, width: shot.width, height: shot.height }]);
+  };
+
+  const canSend = !!text.trim() || pendingImages.length > 0;
+  const showSearch = !!onSearch && !canSend;
+
+  // 0 = magnifying glass (search), 1 = "Send". Springs between the two so the button morphs in place.
+  const sendMorph = useRef(new Animated.Value(canSend ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.spring(sendMorph, {
+      toValue: canSend ? 1 : 0,
+      useNativeDriver: true,
+      speed: 22,
+      bounciness: 6,
+    }).start();
+  }, [canSend, sendMorph]);
+  const sendLayerStyle = {
+    opacity: sendMorph,
+    transform: [{ scale: sendMorph.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }],
+  };
+  const searchLayerStyle = {
+    opacity: sendMorph.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+    transform: [
+      { scale: sendMorph.interpolate({ inputRange: [0, 1], outputRange: [1, 0.6] }) },
+      { rotate: sendMorph.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-90deg'] }) },
+    ],
+  };
 
   // Doesn't await onSend: a send can stay paused for a while offline (it's
   // queued, not lost — see useMessages/chatMutations), and this input
@@ -90,114 +176,187 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   // already surfaces genuine failures via Alert, so nothing else to do here.
   const handleSend = () => {
     if (!canSend) return;
-    const image = pendingImage?.uploaded;
+    const images: PendingImage[] = pendingImages.map((p) => ({ localUri: p.localUri, width: p.width, height: p.height }));
     const trimmed = text.trim();
+    const mentions = extractMentions(trimmed, picked);
     setText('');
-    setPendingImage(null);
-    onSend(trimmed, image).catch(() => {});
+    setCursor(0);
+    setPicked([]);
+    setPendingImages([]);
+    // The text goes with the first photo; every extra photo is its own message right after it.
+    if (images.length === 0) {
+      onSend(trimmed, undefined, mentions.length ? mentions : undefined).catch(() => {});
+      return;
+    }
+    // All queued at once; sends to one chat go out one at a time, in this order (see scopeFor).
+    onSend(trimmed, images[0], mentions.length ? mentions : undefined).catch(() => {});
+    for (const extra of images.slice(1)) onSend('', extra).catch(() => {});
   };
 
   const plusRotation = attachAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] });
 
   return (
     <View>
-      {pendingImage && (
-        <View style={styles.previewContainer}>
-          <Image source={{ uri: pendingImage.localUri }} style={styles.previewImage} />
-          {uploading && (
-            <View style={styles.uploadingOverlay}>
-              <ActivityIndicator color="#fff" size="small" />
+      {pendingImages.length > 0 && !timedOut && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.previewRow}>
+          {pendingImages.map((img) => (
+            <View key={img.key} style={styles.previewContainer}>
+              <Image source={{ uri: img.localUri }} style={styles.previewImage} />
+              <PressableOpacity accessibilityLabel="Remove"
+                style={[styles.removeBtn, { backgroundColor: colors.textSecondary }]}
+                onPress={() => setPendingImages((prev) => prev.filter((p) => p.key !== img.key))}
+                // Extend the tap area into the thumbnail (Android drops touches outside the parent).
+                hitSlop={{ top: 6, bottom: 12, left: 12, right: 6 }}
+              >
+                <Feather name="x" size={13} color="#fff" />
+              </PressableOpacity>
             </View>
-          )}
-          <TouchableOpacity
-            style={styles.removeBtn}
-            onPress={() => setPendingImage(null)}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          >
-            <Feather name="x" size={13} color="#fff" />
-          </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
+      {suggestions.length > 0 && !timedOut && (
+        <View style={[styles.suggestions, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+          {suggestions.map((m) => (
+            <PressableOpacity key={m.clerkId} style={styles.suggestionRow} onPress={() => pickMention(m)} activeOpacity={0.6}>
+              <View style={[styles.suggestionAt, { backgroundColor: colors.brand + '20' }]}>
+                <Text style={{ color: colors.brand, fontWeight: '800', fontSize: 13 }}>@</Text>
+              </View>
+              <Text style={[styles.suggestionName, { color: colors.textPrimary }]} numberOfLines={1}>{m.name}</Text>
+            </PressableOpacity>
+          ))}
         </View>
       )}
 
       {attachMenuOpen && (
-        <View style={styles.tray}>
+        <View style={[styles.tray, { backgroundColor: colors.surface }]}>
           <View style={styles.trayRow}>
-            <TouchableOpacity
-              style={styles.trayItem}
-              onPress={() => { closeAttachMenu(); pickImage(); }}
-            >
-              <View style={[styles.trayIconWrap, { backgroundColor: '#EFF6FF' }]}>
-                <Feather name="image" size={20} color="#4A90E2" />
-              </View>
-              <Text style={styles.trayItemLabel}>Photos</Text>
-            </TouchableOpacity>
+            {!timedOut && (
+              <PressableOpacity
+                style={styles.trayItem}
+                onPress={() => { closeAttachMenu(); pickImage(); }}
+              >
+                <View style={[styles.trayIconWrap, { backgroundColor: colors.brand + '20' }]}>
+                  <Feather name="image" size={20} color={colors.brand} />
+                </View>
+                <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Photos</Text>
+              </PressableOpacity>
+            )}
+
+            {!timedOut && (
+              <PressableOpacity
+                style={styles.trayItem}
+                onPress={() => { closeAttachMenu(); takePhoto(); }}
+              >
+                <View style={[styles.trayIconWrap, { backgroundColor: '#F59E0B20' }]}>
+                  <Feather name="camera" size={20} color="#F59E0B" />
+                </View>
+                <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Camera</Text>
+              </PressableOpacity>
+            )}
 
             {onCreateEvent && (
-              <TouchableOpacity
+              <PressableOpacity
                 style={styles.trayItem}
                 onPress={() => { closeAttachMenu(); onCreateEvent(); }}
               >
-                <View style={[styles.trayIconWrap, { backgroundColor: '#ECFDF5' }]}>
+                <View style={[styles.trayIconWrap, { backgroundColor: '#10B98120' }]}>
                   <Feather name="calendar" size={20} color="#10B981" />
                 </View>
-                <Text style={styles.trayItemLabel}>Event</Text>
-              </TouchableOpacity>
+                <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Meetup</Text>
+              </PressableOpacity>
             )}
 
             {onCreatePoll && (
-              <TouchableOpacity
+              <PressableOpacity
                 style={styles.trayItem}
                 onPress={() => { closeAttachMenu(); onCreatePoll(); }}
               >
-                <View style={[styles.trayIconWrap, { backgroundColor: '#F5F3FF' }]}>
+                <View style={[styles.trayIconWrap, { backgroundColor: '#7C3AED20' }]}>
                   <Feather name="bar-chart-2" size={20} color="#7C3AED" />
                 </View>
-                <Text style={styles.trayItemLabel}>Poll</Text>
-              </TouchableOpacity>
+                <Text style={[styles.trayItemLabel, { color: colors.textSecondary }]}>Poll</Text>
+              </PressableOpacity>
             )}
           </View>
         </View>
       )}
 
-      <View style={styles.container}>
-        <TouchableOpacity
+      <View style={[styles.container, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
+        <PressableOpacity
           style={styles.photoBtn}
           onPress={toggleAttachMenu}
-          disabled={uploading}
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
           <Animated.View style={{ transform: [{ rotate: plusRotation }] }}>
-            <Feather name="plus-circle" size={24} color={uploading ? '#D1D5DB' : '#4A90E2'} />
+            <Feather name="plus-circle" size={24} color={colors.brand} />
           </Animated.View>
-        </TouchableOpacity>
+        </PressableOpacity>
 
         <TextInput
-          style={styles.input}
-          value={text}
+          ref={inputRef}
+          style={[styles.input, { backgroundColor: colors.backgroundAlt, color: colors.textPrimary }]}
+          // Timed out: empty, red text in place of the placeholder, can't be focused or typed in.
+          editable={!timedOut}
+          accessibilityState={{ disabled: timedOut }}
+          value={timedOut ? '' : text}
           onChangeText={(val) => { setText(val); if (val) onTyping?.(); }}
+          onSelectionChange={(e) => setCursor(e.nativeEvent.selection.start)}
           onFocus={closeAttachMenu}
-          placeholder="Message..."
-          placeholderTextColor="#9CA3AF"
+          placeholder={timeoutLabel || 'Message...'}
+          placeholderTextColor={timedOut ? colors.danger : colors.placeholder}
           multiline
           maxLength={2000}
           returnKeyType="default"
         />
 
-        <TouchableOpacity
-          style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-          onPress={handleSend}
-          disabled={!canSend}
-        >
-          <Text style={styles.sendLabel}>Send</Text>
-        </TouchableOpacity>
+        {timedOut ? (
+          <View
+            style={[styles.sendBtn, styles.sendBtnTimedOut, { backgroundColor: colors.danger }]}
+            accessibilityRole="button"
+            accessibilityLabel={timeoutLabel ?? undefined}
+            accessibilityState={{ disabled: true }}
+          >
+            <Feather name="x" size={18} color="#fff" />
+          </View>
+        ) : onSearch ? (
+          // One button in one spot: a magnifying glass (opens search) while the field is empty,
+          // morphing into "Send" once there's something to send.
+          <PressableOpacity
+            style={[styles.sendBtn, styles.morphBtn]}
+            onPress={showSearch ? onSearch : handleSend}
+            accessibilityRole="button"
+            accessibilityLabel={showSearch ? 'Search chat' : 'Send'}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          >
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.brand + '1F' }]} />
+            <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: colors.brand, opacity: sendMorph }]} />
+            <Animated.View style={[styles.morphLayer, searchLayerStyle]} pointerEvents="none">
+              <Feather name="search" size={19} color={colors.brand} />
+            </Animated.View>
+            <Animated.View style={[styles.morphLayer, sendLayerStyle]} pointerEvents="none">
+              <Text style={styles.sendLabel}>Send</Text>
+            </Animated.View>
+          </PressableOpacity>
+        ) : (
+          <PressableOpacity
+            style={[styles.sendBtn, { backgroundColor: colors.brand }, !canSend && { backgroundColor: colors.borderStrong }]}
+            onPress={handleSend}
+            disabled={!canSend}
+          >
+            <Text style={styles.sendLabel}>Send</Text>
+          </PressableOpacity>
+        )}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // Room for the remove (x) that pokes 6 px above/right of each thumbnail: the horizontal
+  // ScrollView clips it otherwise, and Android ignores taps outside a parent's bounds.
+  previewRow: { paddingHorizontal: 12, paddingTop: 8, paddingRight: 18, gap: 8 },
   previewContainer: {
-    marginHorizontal: 12,
     marginBottom: 6,
     alignSelf: 'flex-start',
   },
@@ -207,7 +366,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   uploadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.45)',
     borderRadius: 10,
     justifyContent: 'center',
@@ -259,7 +418,18 @@ const styles = StyleSheet.create({
     minWidth: 60,
   },
   sendBtnDisabled: { backgroundColor: '#B0C4E8' },
+  // Fixed size so the search and Send layers can stack exactly on top of each other.
+  morphBtn: { width: 64, height: 40, minWidth: 0, paddingHorizontal: 0, paddingVertical: 0, overflow: 'hidden', backgroundColor: 'transparent' },
+  morphLayer: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  sendBtnTimedOut: { alignItems: 'center', justifyContent: 'center' },
   sendLabel: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  suggestions: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 4,
+  },
+  suggestionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10 },
+  suggestionAt: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  suggestionName: { fontSize: 15, fontWeight: '600', flex: 1 },
   tray: {
     overflow: 'hidden',
     backgroundColor: '#fff',

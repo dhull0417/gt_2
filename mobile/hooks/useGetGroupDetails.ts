@@ -19,7 +19,7 @@ export const useGetGroupDetails = (groupId: string | null) => {
         enabled: !!groupId, // don't run without a groupId
     });
 
-    // Local changes invalidate this cache directly (see useAddMember etc); this
+    // Local changes invalidate this cache directly (add, remove, leave); this
     // subscribes to a broadcast so other devices' changes refetch immediately too.
     useEffect(() => {
         if (!groupId) return;

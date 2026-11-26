@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { useWindowInsets } from '@/contexts/WindowInsetsContext';
+import { requireOnline } from '@/utils/offlineState';
 import {
   View,
   Text,
-  TouchableOpacity,
   ScrollView,
   StyleSheet,
   Alert,
@@ -17,16 +18,17 @@ import {
   Animated,
   Easing
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { useAuth } from '@clerk/expo';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGetGroupDetails } from '@/hooks/useGetGroupDetails';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { User, useApiClient, userApi, groupApi } from '@/utils/api';
+import { usePremium } from '@/hooks/usePremium';
 import { getErrorMessage } from '@/utils/networkError';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
-import { formatSchedule } from '@/utils/schedule';
 import { useDeleteGroup } from '@/hooks/useDeleteGroup';
 import { useLeaveGroup } from '@/hooks/useLeaveGroup';
 import { pickImageUri, uploadImageFromUri, deleteStorageImage } from '@/utils/uploadImage';
@@ -34,20 +36,29 @@ import { broadcastGroupUpdate, broadcastMeetupUpdate } from '@/utils/groupRealti
 import { getUserDisplayName } from '@/utils/groupDisplay';
 import { GroupAvatar } from '@/components/GroupAvatar';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
+import { toast } from '@/contexts/ToastContext';
 
 // Access restricted to the group owner and designated moderators
 const GroupSettings = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const api = useApiClient();
+  const { isPremium } = usePremium();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
+  // Full-screen modals below cover the offline banner too, so they pad by the real inset.
+  const windowInsets = useWindowInsets();
+  const colors = useThemeColors();
+  const { scheme } = useAppearance();
+  const isDark = scheme === 'dark';
 
   const { getToken } = useAuth();
   const { data: group, isLoading: isLoadingGroup } = useGetGroupDetails(id);
-  const { data: currentUser, isLoading: isLoadingUser } = useQuery<User, Error>({ 
-    queryKey: ['currentUser'], 
+  const { data: currentUser, isLoading: isLoadingUser } = useQuery<User, Error>({
+    queryKey: ['currentUser'],
     queryFn: () => userApi.getCurrentUser(api),
   });
 
@@ -56,7 +67,9 @@ const GroupSettings = () => {
   const { mutate: leaveGroup } = useLeaveGroup();
 
   // --- Top-level navigation between Settings home / Edit Group / Edit Schedule ---
-  const [view, setView] = useState<'main' | 'group' | 'schedules'>('main');
+  const [view, setView] = useState<'main' | 'group'>('main');
+  // Android back from a sub-page returns to the main settings page, like the on-screen arrow.
+  useAndroidBack(view !== 'main', () => setView('main'));
 
   // --- State for Edit Modals ---
   const [isImageModalVisible, setIsImageModalVisible] = useState(false);
@@ -103,19 +116,12 @@ const GroupSettings = () => {
     return isUserOwner || isUserMod;
   }, [isUserOwner, isUserMod]);
 
-  const activeSchedules = useMemo(
-    () => (group?.schedules ?? []).filter(sch => sch.active !== false),
-    [group?.schedules]
-  );
-  const MAX_ACTIVE_SCHEDULES = 5;
-  const canAddSchedule = activeSchedules.length < MAX_ACTIVE_SCHEDULES;
-
   // --- ACCESS CONTROL GUARD ---
   useEffect(() => {
     if (!isLoadingGroup && !isLoadingUser && group && currentUser) {
       if (!canAccessSettings) {
         Alert.alert(
-          "Permission Denied", 
+          "Permission Denied",
           "Only owners and moderators can access group settings."
         );
         router.back();
@@ -123,18 +129,31 @@ const GroupSettings = () => {
     }
   }, [group, currentUser, isLoadingGroup, isLoadingUser, canAccessSettings]);
 
+  // Pastel icon-chip backgrounds adapt by scheme while keeping the same hue family
+  const chipBlue = isDark ? '#1A2A42' : '#EFF6FF';
+  const chipCyan = isDark ? '#123338' : '#ECFEFF';
+  const chipOrange = isDark ? '#3A2712' : '#FFF7ED';
+  const chipPurple = isDark ? '#241B3D' : '#F5F3FF';
+  const chipRed = isDark ? '#3B1E1E' : '#FEF2F2';
+  const chipIndigo = isDark ? '#1E2340' : '#EEF2FF';
+  const chipPink = isDark ? '#3A1B2E' : '#FDF2F8';
+  const chipGreen = isDark ? '#12301F' : '#ECFDF5';
+
   const settingsOptions = [
-    { id: 'image', label: 'Edit Group Photo', icon: 'camera', color: '#4A90E2', bg: '#EFF6FF' },
-    { id: 'name', label: 'Edit Group Name', icon: 'type', color: '#3B82F6', bg: '#EFF6FF' },
-    { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: '#ECFEFF' },
-    { id: 'members', label: 'Remove Members', icon: 'user-minus', color: '#F97316', bg: '#FFF7ED' },
-    ...(isUserOwner ? [{ id: 'transfer', label: 'Transfer Ownership', icon: 'repeat', color: '#8B5CF6', bg: '#F5F3FF' }] : []),
+    { id: 'image', label: 'Edit Group Photo', icon: 'camera', color: colors.brand, bg: chipBlue },
+    { id: 'name', label: 'Edit Group Name', icon: 'type', color: '#3B82F6', bg: chipBlue },
+    { id: 'mods', label: 'Edit Moderators', icon: 'shield', color: '#06B6D4', bg: chipCyan },
+    { id: 'members', label: 'Remove Members', icon: 'user-minus', color: '#F97316', bg: chipOrange },
+    ...(isUserOwner ? [{ id: 'transfer', label: 'Transfer Ownership', icon: 'repeat', color: '#8B5CF6', bg: chipPurple }] : []),
   ];
 
   const mainOptions = [
-    { id: 'group', label: 'Edit Group Info', icon: 'edit-2', color: '#4A90E2', bg: '#EFF6FF' },
-    { id: 'schedules', label: 'Edit Meetup Schedules', icon: 'calendar', color: '#6366F1', bg: '#EEF2FF' },
-    { id: 'terminate', label: isUserOwner ? 'Delete Group' : 'Leave Group', icon: isUserOwner ? 'trash-2' : 'log-out', color: '#EF4444', bg: '#FEF2F2', destructive: true },
+    { id: 'group', label: 'Edit Group Info', icon: 'edit-2', color: colors.brand, bg: chipBlue },
+    { id: 'invite', label: 'Invite Link & Code', icon: 'link', color: '#14B8A6', bg: chipCyan },
+    { id: 'reactions', label: 'RSVP Reactions', icon: 'smile', color: '#EC4899', bg: chipPink },
+    { id: 'stats', label: 'Stats & Attendance', icon: 'bar-chart-2', color: '#10B981', bg: chipGreen },
+    { id: 'rankings', label: 'Strength Rankings', icon: 'list', color: '#F59E0B', bg: chipOrange },
+    { id: 'terminate', label: isUserOwner ? 'Delete Group' : 'Leave Group', icon: isUserOwner ? 'trash-2' : 'log-out', color: colors.danger, bg: chipRed, destructive: true },
   ];
 
   const handleOptionPress = (optionId: string) => {
@@ -144,8 +163,17 @@ const GroupSettings = () => {
       case 'group':
         setView('group');
         break;
-      case 'schedules':
-        setView('schedules');
+      case 'reactions':
+        router.push({ pathname: '/group-rsvp-responses/[id]', params: { id } });
+        break;
+      case 'stats':
+        router.push({ pathname: '/group-stats/[id]', params: { id } });
+        break;
+      case 'invite':
+        router.push({ pathname: '/group-invite/[id]', params: { id } });
+        break;
+      case 'rankings':
+        router.push({ pathname: '/group-rankings/[id]', params: { id } });
         break;
       case 'image':
         handleOpenImageModal();
@@ -155,7 +183,7 @@ const GroupSettings = () => {
         setIsEditingName(true);
         break;
       case 'mods':
-        const currentModIds = (group?.moderators || []).map((m: any) => 
+        const currentModIds = (group?.moderators || []).map((m: any) =>
             typeof m === 'string' ? m : m._id
         );
         setSelectedModIds(currentModIds);
@@ -172,7 +200,6 @@ const GroupSettings = () => {
         else handleConfirmLeave();
         break;
       default:
-        console.log(`Option ${optionId} logic requested.`);
         break;
     }
   };
@@ -206,7 +233,13 @@ const GroupSettings = () => {
   const avatarPopScale = useRef(new Animated.Value(1)).current;
 
   const handlePickNewImage = async () => {
-    const uri = await pickImageUri(api);
+    let uri: string | null = null;
+    try {
+      uri = await pickImageUri(api);
+    } catch {
+      Alert.alert("Couldn't use that photo", "Couldn't read that photo. Try another one.");
+      return;
+    }
     if (uri) {
       setPreviewUri(uri);
       avatarPopScale.setValue(1);
@@ -323,7 +356,7 @@ const GroupSettings = () => {
 
   // --- MODERATOR LOGIC ---
   const handleToggleModSelection = (userId: string) => {
-    setSelectedModIds(prev => 
+    setSelectedModIds(prev =>
         prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
     );
   };
@@ -344,7 +377,7 @@ const GroupSettings = () => {
         queryClient.invalidateQueries({ queryKey: ['meetups'] });
         broadcastGroupUpdate(getToken, id);
         setIsEditingMods(false);
-        Alert.alert("Success", "Moderator list updated.");
+        toast.success("Moderator list updated.");
     } catch (error: any) {
         Alert.alert("Error", getErrorMessage(error, "Failed to update moderators."));
     } finally {
@@ -354,15 +387,16 @@ const GroupSettings = () => {
 
   // --- MEMBER REMOVAL LOGIC ---
   const handleRemoveMemberPress = (member: User) => {
+    if (!requireOnline('remove a member')) return;
     Alert.alert(
       "Remove Member",
       `Are you sure you want to remove ${getUserDisplayName(member)} from the group?`,
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Remove", 
-          style: "destructive", 
-          onPress: () => performMemberRemoval(member._id) 
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => performMemberRemoval(member._id)
         }
       ]
     );
@@ -389,9 +423,14 @@ const GroupSettings = () => {
 
   // --- OWNERSHIP TRANSFER LOGIC ---
   const handleTransferPress = (member: User) => {
+    if (!requireOnline('transfer ownership')) return;
     Alert.alert(
       "Transfer Ownership",
-      `Are you sure you want to make ${getUserDisplayName(member)} the new owner? You will become a moderator.`,
+      `Are you sure you want to make ${getUserDisplayName(member)} the new owner? You will become a moderator.` +
+        // Premium is tied to the owner's subscription, so it does not follow the group.
+        (isPremium
+          ? `\n\nHeads up: this group's Premium features are covered by your subscription. Once ${getUserDisplayName(member)} is the owner, they will be paused for this group unless the new owner has their own Premium subscription. Your data is kept.`
+          : ''),
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -412,7 +451,7 @@ const GroupSettings = () => {
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
       broadcastGroupUpdate(getToken, id);
       setIsTransferModalVisible(false);
-      Alert.alert("Success", "Ownership transferred.");
+      toast.success("Ownership transferred.");
     } catch (error: any) {
       Alert.alert("Error", getErrorMessage(error, "Failed to transfer ownership."));
     } finally {
@@ -423,15 +462,16 @@ const GroupSettings = () => {
   // --- TERMINATION LOGIC ---
 
   const handleConfirmDelete = () => {
+    if (!requireOnline('delete this group')) return;
     // Step 1: Standard Deletion Alert
     Alert.alert(
-      "Delete Group", 
-      `Are you sure you want to permanently delete "${group?.name}"?`, 
+      "Delete Group",
+      `Are you sure you want to permanently delete "${group?.name}"?`,
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive", 
+        {
+          text: "Delete",
+          style: "destructive",
           onPress: () => {
             // Step 2: Critical Recovery Warning
             Alert.alert(
@@ -439,9 +479,9 @@ const GroupSettings = () => {
               "Your group cannot be recovered if deleted. Are you sure?",
               [
                 { text: "Cancel", style: "cancel" },
-                { 
-                  text: "Yes, I am sure", 
-                  style: "destructive", 
+                {
+                  text: "Yes, I am sure",
+                  style: "destructive",
                   onPress: () => {
                     deleteGroup({ groupId: id! }, {
                       onSuccess: () => {
@@ -460,11 +500,12 @@ const GroupSettings = () => {
   };
 
   const handleConfirmLeave = () => {
+    if (!requireOnline('leave this group')) return;
     Alert.alert("Leave Group", "Are you sure you want to leave this group?", [
       { text: "Cancel", style: "cancel" },
-      { 
-        text: "Leave", 
-        style: "destructive", 
+      {
+        text: "Leave",
+        style: "destructive",
         onPress: () => {
           leaveGroup({ groupId: id! }, {
             onSuccess: () => {
@@ -479,7 +520,7 @@ const GroupSettings = () => {
 
   if (isLoadingGroup || isLoadingUser) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
         <LoadingAnimation />
       </View>
     );
@@ -487,21 +528,21 @@ const GroupSettings = () => {
 
   return (
     <SafeAreaView
-      style={[styles.container, { paddingTop: contentTopInset }]}
+      style={[styles.container, { backgroundColor: colors.background, paddingTop: contentTopInset }]}
       edges={['left', 'right', 'bottom']}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         {view === 'main' ? (
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-            <Feather name="x" size={28} color="#374151" />
-          </TouchableOpacity>
+          <PressableOpacity accessibilityLabel="Close" onPress={() => router.back()} style={styles.closeButton}>
+            <Feather name="x" size={28} color={colors.textSecondary} />
+          </PressableOpacity>
         ) : (
-          <TouchableOpacity onPress={() => setView('main')} style={styles.closeButton}>
-            <Feather name="arrow-left" size={26} color="#374151" />
-          </TouchableOpacity>
+          <PressableOpacity accessibilityLabel="Go back" onPress={() => setView('main')} style={styles.closeButton}>
+            <Feather name="arrow-left" size={26} color={colors.textSecondary} />
+          </PressableOpacity>
         )}
-        <Text style={styles.headerTitle}>
-          {view === 'main' ? 'Group Settings' : view === 'group' ? 'Edit Group Info' : 'Edit Meetup Schedules'}
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+          {view === 'main' ? 'Group Settings' : 'Edit Group Info'}
         </Text>
         <View style={{ width: 44 }} />
       </View>
@@ -510,9 +551,9 @@ const GroupSettings = () => {
         {view === 'main' && (
           <View style={styles.optionsContainer}>
             {mainOptions.map((option) => (
-              <TouchableOpacity
+              <PressableOpacity
                 key={option.id}
-                style={styles.optionButton}
+                style={[styles.optionButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 activeOpacity={0.7}
                 onPress={() => handleOptionPress(option.id)}
               >
@@ -520,12 +561,12 @@ const GroupSettings = () => {
                   <View style={[styles.iconContainer, { backgroundColor: option.bg }]}>
                     <Feather name={option.icon as any} size={20} color={option.color} />
                   </View>
-                  <Text style={[styles.optionLabel, option.destructive && styles.destructiveLabel]}>
+                  <Text style={[styles.optionLabel, { color: colors.textPrimary }, option.destructive && { color: colors.danger }]}>
                     {option.label}
                   </Text>
                 </View>
-                {!option.destructive && <Feather name="chevron-right" size={18} color="#D1D5DB" />}
-              </TouchableOpacity>
+                {!option.destructive && <Feather name="chevron-right" size={18} color={colors.textFaint} />}
+              </PressableOpacity>
             ))}
           </View>
         )}
@@ -533,9 +574,9 @@ const GroupSettings = () => {
         {view === 'group' && (
           <View style={styles.optionsContainer}>
             {settingsOptions.map((option) => (
-              <TouchableOpacity
+              <PressableOpacity
                 key={option.id}
-                style={styles.optionButton}
+                style={[styles.optionButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 activeOpacity={0.7}
                 onPress={() => handleOptionPress(option.id)}
               >
@@ -550,81 +591,39 @@ const GroupSettings = () => {
                     </View>
                   )}
                   <View style={{ flexShrink: 1 }}>
-                    <Text style={[styles.optionLabel, (option as any).destructive && styles.destructiveLabel]}>
+                    <Text style={[styles.optionLabel, { color: colors.textPrimary }, (option as any).destructive && { color: colors.danger }]}>
                       {option.label}
                     </Text>
                     {option.id === 'image' && (
-                      <Text style={styles.optionSubLabel}>
+                      <Text style={[styles.optionSubLabel, { color: colors.textFaint }]}>
                         {group?.image ? 'Tap to change' : 'No photo set'}
                       </Text>
                     )}
                     {option.id === 'name' && (
-                      <Text style={styles.optionSubLabel} numberOfLines={1}>
+                      <Text style={[styles.optionSubLabel, { color: colors.textFaint }]} numberOfLines={1}>
                         {group?.name || '—'}
                       </Text>
                     )}
                     {option.id === 'mods' && (
-                      <Text style={styles.optionSubLabel}>
+                      <Text style={[styles.optionSubLabel, { color: colors.textFaint }]}>
                         {(group?.moderators?.length || 0)} moderators assigned
                       </Text>
                     )}
                     {option.id === 'members' && (
-                      <Text style={styles.optionSubLabel}>
+                      <Text style={[styles.optionSubLabel, { color: colors.textFaint }]}>
                         {(group?.members?.length || 0)} total members
                       </Text>
                     )}
                   </View>
                 </View>
-                <Feather name="chevron-right" size={18} color="#D1D5DB" />
-              </TouchableOpacity>
+                <Feather name="chevron-right" size={18} color={colors.textFaint} />
+              </PressableOpacity>
             ))}
-          </View>
-        )}
-
-        {view === 'schedules' && (
-          <View style={styles.optionsContainer}>
-            {activeSchedules.map((sch) => (
-              <View key={sch._id} style={styles.optionButton}>
-                <TouchableOpacity
-                  style={styles.optionLeft}
-                  activeOpacity={0.7}
-                  onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: sch._id } })}
-                >
-                  <View style={[styles.iconContainer, { backgroundColor: '#EEF2FF' }]}>
-                    <Feather name="calendar" size={20} color="#6366F1" />
-                  </View>
-                  <View style={{ flexShrink: 1 }}>
-                    <Text style={styles.optionLabel}>{sch.name}</Text>
-                    <Text style={styles.optionSubLabel} numberOfLines={1}>{formatSchedule(sch)}</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ padding: 6 }}
-                  onPress={() => router.push({ pathname: '/group-edit-jit/[id]', params: { id: id!, scheduleId: sch._id } })}
-                >
-                  <Feather name="bell" size={18} color="#F59E0B" />
-                </TouchableOpacity>
-              </View>
-            ))}
-            {canAddSchedule && (
-              <TouchableOpacity
-                style={styles.optionButton}
-                activeOpacity={0.7}
-                onPress={() => router.push({ pathname: '/group-edit-schedule/[id]', params: { id: id!, scheduleId: 'new' } })}
-              >
-                <View style={styles.optionLeft}>
-                  <View style={[styles.iconContainer, { backgroundColor: '#EEF2FF' }]}>
-                    <Feather name="plus" size={20} color="#6366F1" />
-                  </View>
-                  <Text style={styles.optionLabel}>Add Schedule</Text>
-                </View>
-              </TouchableOpacity>
-            )}
           </View>
         )}
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
+          <Text style={[styles.footerText, { color: colors.textFaint }]}>
             Only group moderators and owners can view or modify these settings.
           </Text>
         </View>
@@ -639,10 +638,10 @@ const GroupSettings = () => {
       >
         <Pressable style={styles.modalOverlay} onPress={() => setIsImageModalVisible(false)}>
           <Animated.View style={imageModalRotateStyle}>
-            <Pressable onPress={() => {}} style={[styles.modalContent, styles.imageModalContent]}>
-              <Text style={styles.modalTitle}>Group Photo</Text>
+            <Pressable onPress={() => {}} style={[styles.modalContent, styles.imageModalContent, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Group Photo</Text>
 
-              <TouchableOpacity onPress={handlePickNewImage} disabled={isConfirmingImage} style={styles.imageModalAvatarWrap}>
+              <PressableOpacity accessibilityLabel="Take a photo" onPress={handlePickNewImage} disabled={isConfirmingImage} style={styles.imageModalAvatarWrap}>
                 <Animated.View style={{ transform: [{ scale: avatarPopScale }] }}>
                   <GroupAvatar
                     name={group?.name ?? ''}
@@ -650,29 +649,29 @@ const GroupSettings = () => {
                     size={120}
                     borderRadius={28}
                   />
-                  <View style={styles.imageModalCameraBadge}>
+                  <View style={[styles.imageModalCameraBadge, { backgroundColor: colors.brand, borderColor: colors.surface }]}>
                     <Feather name="camera" size={16} color="#fff" />
                   </View>
                 </Animated.View>
-              </TouchableOpacity>
+              </PressableOpacity>
 
               {previewUri ? (
-                <TouchableOpacity
-                  style={styles.confirmBtn}
+                <PressableOpacity
+                  style={[styles.confirmBtn, { backgroundColor: colors.brand }]}
                   onPress={handleConfirmImage}
                   disabled={isConfirmingImage}
                 >
                   {isConfirmingImage
                     ? <ActivityIndicator color="#fff" size="small" />
                     : <Text style={styles.confirmBtnText}>Confirm</Text>}
-                </TouchableOpacity>
+                </PressableOpacity>
               ) : (
-                <TouchableOpacity
-                  style={[styles.confirmBtn, styles.imageModalCancelBtn]}
+                <PressableOpacity
+                  style={[styles.confirmBtn, { backgroundColor: colors.backgroundAlt }]}
                   onPress={() => setIsImageModalVisible(false)}
                 >
-                  <Text style={styles.modalBtnTextCancel}>Cancel</Text>
-                </TouchableOpacity>
+                  <Text style={[styles.modalBtnTextCancel, { color: colors.textSecondary }]}>Cancel</Text>
+                </PressableOpacity>
               )}
             </Pressable>
           </Animated.View>
@@ -682,7 +681,7 @@ const GroupSettings = () => {
       {/* Edit Name Modal */}
       <Modal visible={isEditingName} transparent animationType="fade" onRequestClose={() => setIsEditingName(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
+            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
                 {isCelebratingName ? (
                     <View style={styles.nameCelebrationStage}>
                         <Animated.View
@@ -708,24 +707,33 @@ const GroupSettings = () => {
                                             transform: [{
                                                 translateY: letterAnimsRef.current[i]?.interpolate({ inputRange: [0, 1], outputRange: [0, -14] }) ?? 0,
                                             }],
-                                            color: letterAnimsRef.current[i]?.interpolate({ inputRange: [0, 1], outputRange: ['#111827', '#4FD1C5'] }) ?? '#111827',
+                                            color: letterAnimsRef.current[i]?.interpolate({ inputRange: [0, 1], outputRange: [colors.textPrimary, '#4FD1C5'] }) ?? colors.textPrimary,
                                         },
                                     ]}
                                 >
-                                    {char === ' ' ? ' ' : char}
+                                    {char === ' ' ? ' ' : char}
                                 </Animated.Text>
                             ))}
                         </Animated.View>
                     </View>
                 ) : (
                     <>
-                        <Text style={styles.modalTitle}>Edit Group Name</Text>
-                        <TextInput style={styles.modalInput} value={tempName} onChangeText={setTempName} placeholder="Enter group name" autoFocus maxLength={50} selectTextOnFocus />
+                        <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Edit Group Name</Text>
+                        <TextInput
+                          style={[styles.modalInput, { backgroundColor: colors.backgroundAlt, color: colors.textPrimary, borderColor: colors.border }]}
+                          value={tempName}
+                          onChangeText={setTempName}
+                          placeholder="Enter group name"
+                          placeholderTextColor={colors.placeholder}
+                          autoFocus
+                          maxLength={50}
+                          selectTextOnFocus
+                        />
                         <View style={styles.modalButtons}>
-                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setIsEditingName(false)}><Text style={styles.modalBtnTextCancel}>Cancel</Text></TouchableOpacity>
-                            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveName} disabled={isSavingName || !tempName.trim()}>
+                            <PressableOpacity style={[styles.modalBtn, { backgroundColor: colors.backgroundAlt }]} onPress={() => setIsEditingName(false)}><Text style={[styles.modalBtnTextCancel, { color: colors.textSecondary }]}>Cancel</Text></PressableOpacity>
+                            <PressableOpacity style={[styles.modalBtn, styles.modalBtnSave]} onPress={handleSaveName} disabled={isSavingName || !tempName.trim()}>
                                 {isSavingName ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.modalBtnTextSave}>Save</Text>}
-                            </TouchableOpacity>
+                            </PressableOpacity>
                         </View>
                     </>
                 )}
@@ -740,23 +748,23 @@ const GroupSettings = () => {
         animationType="slide"
         onRequestClose={() => setIsEditingMods(false)}
       >
-        <View style={[styles.fullModalContainer, { paddingTop: insets.top }]}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setIsEditingMods(false)} style={styles.headerIconButton}>
-              <Feather name="x" size={24} color="#374151" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitleLarge}>Manage Moderators</Text>
-            <TouchableOpacity onPress={handleSaveModerators} disabled={isSavingMods} style={styles.headerIconButton}>
-                {isSavingMods ? <ActivityIndicator size="small" color="#4A90E2" /> : <Text style={styles.saveBtnText}>Save</Text>}
-            </TouchableOpacity>
+        <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: windowInsets.top }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <PressableOpacity onPress={() => setIsEditingMods(false)} style={styles.headerIconButton}>
+              <Feather name="x" size={24} color={colors.textSecondary} />
+            </PressableOpacity>
+            <Text style={[styles.modalTitleLarge, { color: colors.textPrimary }]}>Manage Moderators</Text>
+            <PressableOpacity onPress={handleSaveModerators} disabled={isSavingMods} style={styles.headerIconButton}>
+                {isSavingMods ? <ActivityIndicator size="small" color={colors.brand} /> : <Text style={[styles.saveBtnText, { color: colors.brand }]}>Save</Text>}
+            </PressableOpacity>
           </View>
-          
+
           <FlatList
             data={group?.members}
             keyExtractor={(item) => item._id}
             contentContainerStyle={{ padding: 20 }}
             ListHeaderComponent={() => (
-              <Text style={styles.modalSubtitleLeft}>
+              <Text style={[styles.modalSubtitleLeft, { color: colors.textMuted }]}>
                 Only the group owner can assign moderators. Moderators can edit group settings, schedules, and manage meetups.
               </Text>
             )}
@@ -767,30 +775,30 @@ const GroupSettings = () => {
               const isSelected = selectedModIds.includes(mId);
 
               return (
-                <TouchableOpacity
-                  style={[styles.selectMemberRow, isSelected && !isOwner && styles.selectMemberRowActive]}
+                <PressableOpacity
+                  style={[styles.selectMemberRow, { backgroundColor: colors.backgroundAlt }, isSelected && !isOwner && { backgroundColor: colors.brand }]}
                   onPress={() => !isOwner && setSelectedModIds(p => p.includes(mId) ? p.filter(id => id !== mId) : [...p, mId])}
                   disabled={isOwner || !isUserOwner}
                   activeOpacity={0.8}
                 >
                   <View style={styles.memberInfo}>
-                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
+                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C/png?text=?' }} style={styles.memberAvatar} />
                     <View>
-                      <Text style={[styles.memberName, isSelected && !isOwner && styles.textWhite]}>{getUserDisplayName(item)}</Text>
-                      <Text style={[styles.memberRole, isSelected && !isOwner && styles.textWhite70]}>{isOwner ? 'Owner' : isSelected ? 'Moderator' : 'Member'}</Text>
+                      <Text style={[styles.memberName, { color: colors.textPrimary }, isSelected && !isOwner && styles.textWhite]}>{getUserDisplayName(item)}</Text>
+                      <Text style={[styles.memberRole, { color: colors.textFaint }, isSelected && !isOwner && styles.textWhite70]}>{isOwner ? 'Owner' : isSelected ? 'Moderator' : 'Member'}</Text>
                     </View>
                   </View>
 
                   {isOwner ? (
-                    <View style={styles.ownerBadgeShield}>
-                      <Feather name="shield" size={16} color="#4A90E2" />
+                    <View style={[styles.ownerBadgeShield, { backgroundColor: chipIndigo }]}>
+                      <Feather name="shield" size={16} color={colors.brand} />
                     </View>
                   ) : (
-                    <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
+                    <View style={[styles.checkbox, { borderColor: colors.border }, isSelected && styles.checkboxActive]}>
                       {isSelected && <Feather name="check" size={14} color="white" />}
                     </View>
                   )}
-                </TouchableOpacity>
+                </PressableOpacity>
               );
             }}
           />
@@ -804,12 +812,12 @@ const GroupSettings = () => {
         animationType="slide"
         onRequestClose={() => setIsEditingMembers(false)}
       >
-        <View style={[styles.fullModalContainer, { paddingTop: insets.top }]}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setIsEditingMembers(false)} style={styles.headerIconButton}>
-              <Feather name="chevron-down" size={28} color="#374151" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitleLarge}>Remove Members</Text>
+        <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: windowInsets.top }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <PressableOpacity onPress={() => setIsEditingMembers(false)} style={styles.headerIconButton}>
+              <Feather name="chevron-down" size={28} color={colors.textSecondary} />
+            </PressableOpacity>
+            <Text style={[styles.modalTitleLarge, { color: colors.textPrimary }]}>Remove Members</Text>
             <View style={{ width: 44 }} />
           </View>
           <FlatList
@@ -823,20 +831,20 @@ const GroupSettings = () => {
               const canRemove = (isUserOwner && !isMbrOwner) || (isUserMod && !isMbrOwner && !isMbrMod);
 
               return (
-                <View style={styles.selectMemberRow}>
+                <View style={[styles.selectMemberRow, { backgroundColor: colors.backgroundAlt }]}>
                   <View style={styles.memberInfo}>
-                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
+                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C/png?text=?' }} style={styles.memberAvatar} />
                     <View>
-                      <Text style={styles.memberName}>{getUserDisplayName(item)}</Text>
-                      <Text style={styles.memberRole}>{isMbrOwner ? 'Owner' : isMbrMod ? 'Moderator' : 'Member'}</Text>
+                      <Text style={[styles.memberName, { color: colors.textPrimary }]}>{getUserDisplayName(item)}</Text>
+                      <Text style={[styles.memberRole, { color: colors.textFaint }]}>{isMbrOwner ? 'Owner' : isMbrMod ? 'Moderator' : 'Member'}</Text>
                     </View>
                   </View>
-                  
+
                   {canRemove ? (
-                    <TouchableOpacity onPress={() => Alert.alert("Remove Member", `Remove ${item.firstName} from the group?`, [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: () => performMemberRemoval(mId) }])} disabled={isRemovingMemberId === mId}>
-                        {isRemovingMemberId === mId ? <ActivityIndicator size="small" color="#EF4444" /> : <Feather name="x-circle" size={24} color="#EF4444" />}
-                    </TouchableOpacity>
-                  ) : isMbrOwner ? <View style={styles.ownerBadgeShield}><Feather name="shield" size={16} color="#4A90E2" /></View> : null}
+                    <PressableOpacity onPress={() => requireOnline('remove a member') && Alert.alert("Remove Member", `Remove ${item.firstName} from the group?`, [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: () => performMemberRemoval(mId) }])} disabled={isRemovingMemberId === mId}>
+                        {isRemovingMemberId === mId ? <ActivityIndicator size="small" color={colors.danger} /> : <Feather name="x-circle" size={24} color={colors.danger} />}
+                    </PressableOpacity>
+                  ) : isMbrOwner ? <View style={[styles.ownerBadgeShield, { backgroundColor: chipIndigo }]}><Feather name="shield" size={16} color={colors.brand} /></View> : null}
                 </View>
               );
             }}
@@ -851,12 +859,12 @@ const GroupSettings = () => {
         animationType="slide"
         onRequestClose={() => setIsTransferModalVisible(false)}
       >
-        <View style={[styles.fullModalContainer, { paddingTop: insets.top }]}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setIsTransferModalVisible(false)} style={styles.headerIconButton}>
-              <Feather name="chevron-down" size={28} color="#374151" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitleLarge}>Transfer Ownership</Text>
+        <View style={[styles.fullModalContainer, { backgroundColor: colors.background, paddingTop: windowInsets.top }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <PressableOpacity onPress={() => setIsTransferModalVisible(false)} style={styles.headerIconButton}>
+              <Feather name="chevron-down" size={28} color={colors.textSecondary} />
+            </PressableOpacity>
+            <Text style={[styles.modalTitleLarge, { color: colors.textPrimary }]}>Transfer Ownership</Text>
             <View style={{ width: 44 }} />
           </View>
           <FlatList
@@ -864,38 +872,38 @@ const GroupSettings = () => {
             keyExtractor={(item) => item._id}
             contentContainerStyle={{ padding: 20 }}
             ListHeaderComponent={() => (
-              <Text style={styles.modalSubtitleLeft}>
+              <Text style={[styles.modalSubtitleLeft, { color: colors.textMuted }]}>
                 Pick a member to become the new owner. You'll become a moderator of this group.
               </Text>
             )}
             ListEmptyComponent={() => (
-              <Text style={styles.modalSubtitleLeft}>No other members to transfer ownership to.</Text>
+              <Text style={[styles.modalSubtitleLeft, { color: colors.textMuted }]}>No other members to transfer ownership to.</Text>
             )}
             renderItem={({ item }) => {
               const mId = item._id.toString();
               const isMbrMod = group?.moderators?.some((m: any) => (m?._id || m).toString() === mId);
 
               return (
-                <TouchableOpacity
-                  style={styles.selectMemberRow}
+                <PressableOpacity
+                  style={[styles.selectMemberRow, { backgroundColor: colors.backgroundAlt }]}
                   onPress={() => handleTransferPress(item)}
                   disabled={!!isTransferringId}
                   activeOpacity={0.8}
                 >
                   <View style={styles.memberInfo}>
-                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C?text=?' }} style={styles.memberAvatar} />
+                    <Image source={{ uri: item.profilePicture || 'https://placehold.co/100x100/EEE/31343C/png?text=?' }} style={styles.memberAvatar} />
                     <View>
-                      <Text style={styles.memberName}>{getUserDisplayName(item)}</Text>
-                      <Text style={styles.memberRole}>{isMbrMod ? 'Moderator' : 'Member'}</Text>
+                      <Text style={[styles.memberName, { color: colors.textPrimary }]}>{getUserDisplayName(item)}</Text>
+                      <Text style={[styles.memberRole, { color: colors.textFaint }]}>{isMbrMod ? 'Moderator' : 'Member'}</Text>
                     </View>
                   </View>
 
                   {isTransferringId === mId ? (
                     <ActivityIndicator size="small" color="#8B5CF6" />
                   ) : (
-                    <Feather name="chevron-right" size={20} color="#D1D5DB" />
+                    <Feather name="chevron-right" size={20} color={colors.textFaint} />
                   )}
-                </TouchableOpacity>
+                </PressableOpacity>
               );
             }}
           />

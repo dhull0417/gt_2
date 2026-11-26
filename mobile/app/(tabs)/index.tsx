@@ -1,4 +1,7 @@
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Modal, Animated, TextInput, Alert } from 'react-native';
+import { View, Text, FlatList, RefreshControl, Modal, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Reanimated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,20 +14,39 @@ import { broadcastMeetupUpdate } from '@/utils/groupRealtime';
 import AddMeetupWizard from '@/components/AddMeetupWizard';
 import { useFocusEffect, useRouter, useLocalSearchParams, Link } from 'expo-router';
 import MeetupDetailModal from '@/components/MeetupDetailModal';
+import MeetupConfirmSheet from '@/components/MeetupConfirmSheet';
+import { shouldPromptAfterIn } from '@/utils/confirmTabs';
 import RsvpResponseOverlay from '@/components/RsvpResponseOverlay';
 import { Feather } from '@expo/vector-icons';
 import { DateTime } from 'luxon';
-import { LoadingAnimation } from '@/components/LoadingAnimation';
-import { TAB_BAR_HEIGHT } from '@/utils/layout';
+import { SkeletonList } from '@/components/Skeleton';
+import { FadeUp, FadeUpScreen } from '@/components/ui/FadeUp';
+import { useRefreshOrToast } from '@/hooks/useRefreshOrToast';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty } from '@/utils/offlineState';
+import { NotificationBell } from '@/components/NotificationBell';
+import { ActionSheet } from '@/components/ActionSheet';
+import { haptic } from '@/utils/haptics';
+import { tabScreenBottomPadding } from '@/utils/layout';
 import { MeetupCard } from '@/components/MeetupCard';
 import { DayHeader, splitByDay } from '@/components/MeetupDayGroups';
-import { useContentTopInset } from '@/hooks/useContentTopInset';
 import { getMeetupStatus } from '@/utils/meetupStatus';
+import { meetupEndInstant } from '@/utils/meetupTime';
+import { useAppearance, useThemeColors } from '@/contexts/AppearanceContext';
+import { toast } from '@/contexts/ToastContext';
+import { muteStateFor, restoreRequest } from '@/utils/groupMute';
+import { runBackInterceptor } from '@/utils/backInterceptors';
+import { ScreenTour, TourTarget } from '@/components/tour/ScreenTour';
+import { meetupsEmptyTourSteps, meetupsEmptyTourEnabled, meetupsWelcome } from '@/utils/emptyScreenTours';
+import { TOURS } from '@/utils/screenTours';
 
 type GroupedMeetups = {
   'Upcoming': Meetup[];
   'Past Week': Meetup[];
 };
+
+const HIDDEN_GROUPS_KEY = 'GT2_HOME_HIDDEN_GROUPS';
+const HINT_DISMISSED_KEY = 'GT2_HOME_CHAT_HINT_DISMISSED';
 
 const GROUP_BORDER_COLORS = ['#C4B5FD', '#FDE68A', '#F9A8D4', '#FDBA74', '#A5B4FC', '#86EFAC'];
 
@@ -36,9 +58,13 @@ const hashGroupColor = (groupId: string): string => {
   return GROUP_BORDER_COLORS[hash];
 };
 
+const PAST_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 // How far out each recurring series shows in "Upcoming Meetups"; one-off meetups are never capped
 const TAB_CAP_DAYS: Partial<Record<NonNullable<Meetup['frequency']>, number>> = {
   daily: 7, weekly: 15, biweekly: 15, monthly: 35, ordinal: 35,
+  // Long enough that each series' next meetup is always on Home.
+  quarterly: 100, semiannual: 200, yearly: 380,
 };
 
 // Buckets by (group, frequency) so each series gets its own cap, then merges back sorted by date
@@ -77,18 +103,6 @@ const capMeetupsByFrequency = (list: Meetup[]): Meetup[] => {
 
 // --- Components ---
 
-// Fades a card in when it newly appears in a filtered list (e.g. switching RSVP tabs)
-// instead of having it pop in abruptly.
-const FadeInCard = ({ children }: { children: React.ReactNode }) => {
-  const opacity = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }).start();
-  }, []);
-
-  return <Animated.View style={{ opacity }}>{children}</Animated.View>;
-};
-
 type RsvpFilter = 'all' | 'undecided' | 'in' | 'out';
 
 const FILTER_TABS: { key: RsvpFilter; label: string }[] = [
@@ -100,19 +114,18 @@ const FILTER_TABS: { key: RsvpFilter; label: string }[] = [
 
 // Pulses to 110% scale on tap (not just a color change) before invoking onPress.
 const FilterPill = ({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) => {
-  const scale = useRef(new Animated.Value(1)).current;
+  const colors = useThemeColors();
+  const scale = useSharedValue(1);
+  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   const handlePress = () => {
-    Animated.sequence([
-      Animated.timing(scale, { toValue: 1.1, duration: 100, useNativeDriver: true }),
-      Animated.timing(scale, { toValue: 1, duration: 120, useNativeDriver: true }),
-    ]).start();
+    scale.value = withSequence(withTiming(1.1, { duration: 100 }), withTiming(1, { duration: 120 }));
     onPress();
   };
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity
+    <Reanimated.View style={pulseStyle}>
+      <PressableOpacity
         onPress={handlePress}
         activeOpacity={0.8}
         style={{
@@ -120,15 +133,15 @@ const FilterPill = ({ label, active, onPress }: { label: string; active: boolean
           paddingVertical: 8,
           borderRadius: 999,
           borderWidth: 1.5,
-          borderColor: active ? '#4A90E2' : '#E5E7EB',
-          backgroundColor: active ? '#4A90E2' : 'white',
+          borderColor: active ? colors.brand : colors.border,
+          backgroundColor: active ? colors.brand : colors.surface,
         }}
       >
-        <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.5, color: active ? 'white' : '#6B7280' }}>
+        <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 0.5, color: active ? 'white' : colors.textMuted }}>
           {label}
         </Text>
-      </TouchableOpacity>
-    </Animated.View>
+      </PressableOpacity>
+    </Reanimated.View>
   );
 };
 
@@ -140,14 +153,20 @@ const DashboardScreen = () => {
   const { getToken } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const contentTopInset = useContentTopInset();
+  // Real top inset; 0 while the offline banner (above the navigator) already covers it.
+  const contentTopInset = useSafeAreaInsets().top;
+  const { scheme } = useAppearance();
+  const colors = useThemeColors();
   const { openMeetupId } = useLocalSearchParams<{ openMeetupId?: string }>();
   const [selectedMeetup, setSelectedMeetup] = useState<Meetup | null>(null);
+  // Meetup whose Bring / Rides / Questions sheet is open (shown right after "I'm In" on a card).
+  const [confirmMeetup, setConfirmMeetup] = useState<Meetup | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
 
-  const { data: meetups, isLoading, isError, refetch } = useGetMeetups();
+  const meetupsQuery = useGetMeetups();
+  const { data: meetups, isLoading, isError, refetch, dataUpdatedAt } = meetupsQuery;
   const { data: currentUser } = useQuery<User, Error>({ queryKey: ['currentUser'], queryFn: () => userApi.getCurrentUser(api) });
-  const { mutate: rsvp, isPending: isRsvping } = useRsvp();
+  const { mutate: rsvp, isBusyFor: isRsvpBusyFor, isQueuedFor: isRsvpQueuedFor } = useRsvp();
   const { data: groups } = useGetGroups();
   const meetupCapableGroups = useMemo(() => {
     if (!currentUser) return [];
@@ -164,44 +183,32 @@ const DashboardScreen = () => {
   const [showAddChoicePicker, setShowAddChoicePicker] = useState(false);
   const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string>>(new Set());
   const [rsvpFilter, setRsvpFilter] = useState<RsvpFilter>('all');
-  const [zipCodeInput, setZipCodeInput] = useState('');
-  const [zipCardDismissed, setZipCardDismissed] = useState(false);
-  const [isSavingZip, setIsSavingZip] = useState(false);
-  const [zipCodeError, setZipCodeError] = useState('');
-  const [readyForZipModal, setReadyForZipModal] = useState(false);
-  const sawWelcomeModal = useRef(false);
 
-  // Welcome modal and zip modal both key off hasSeenWelcome and would open in the same tick,
-  // which leaves Android's welcome Dialog window stuck on screen. Delay the zip modal briefly
-  // after the transition — but only if we actually saw it, so returning users get no delay.
-  useEffect(() => {
-    if (!currentUser) return;
-    if (!currentUser.hasSeenWelcome) {
-      sawWelcomeModal.current = true;
-      setReadyForZipModal(false);
-      return;
-    }
-    if (sawWelcomeModal.current) {
-      sawWelcomeModal.current = false;
-      const timer = setTimeout(() => setReadyForZipModal(true), 400);
-      return () => clearTimeout(timer);
-    }
-    setReadyForZipModal(true);
-  }, [currentUser?.hasSeenWelcome]);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const [hintDismissed, setHintDismissed] = useState(false);
+  // The list waits for these saved settings, so the hint and hidden groups are right on the
+  // first frame instead of popping out mid fade-up and jumping the cards.
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
 
-  const showToast = (message: string) => {
-    setToastMessage(message);
-    Animated.sequence([
-      Animated.timing(toastOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.delay(2500),
-      Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-    ]).start(() => setToastMessage(null));
-  };
+  // Realtime + the 5-minute stale time already keep this fresh; only refetch on focus when it's a bit old.
+  useFocusEffect(useCallback(() => {
+    if (Date.now() - dataUpdatedAt > 30_000) refetch();
+  }, [refetch, dataUpdatedAt]));
 
-  useFocusEffect(useCallback(() => { refetch(); }, [refetch]));
+  // Remembered between launches: which groups are hidden and whether the chat hint was dismissed.
+  useEffect(() => {
+    AsyncStorage.multiGet([HIDDEN_GROUPS_KEY, HINT_DISMISSED_KEY]).then(([[, hidden], [, hint]]) => {
+      try { if (hidden) setHiddenGroupIds(new Set(JSON.parse(hidden))); } catch {}
+      if (hint === '1') setHintDismissed(true);
+    }).catch(() => {}).finally(() => setPrefsLoaded(true));
+  }, []);
+
+  // Offline, this says so and stops instead of spinning until the connection is back.
+  const { refreshing: isPullRefreshing, refresh: handlePullRefresh } = useRefreshOrToast([
+    () => refetch(),
+    () => queryClient.invalidateQueries({ queryKey: ['groups'] }),
+    () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+  ]);
 
   const uniqueGroups = useMemo(() => {
     if (!meetups) return [];
@@ -216,20 +223,27 @@ const DashboardScreen = () => {
     return groups;
   }, [meetups]);
 
+  const saveHidden = (next: Set<string>) => {
+    AsyncStorage.setItem(HIDDEN_GROUPS_KEY, JSON.stringify([...next])).catch(() => {});
+  };
+
   const toggleGroup = useCallback((groupId: string) => {
+    haptic.select();
     setHiddenGroupIds(prev => {
       const next = new Set(prev);
       if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
+      saveHidden(next);
       return next;
     });
   }, []);
 
   const toggleAll = useCallback(() => {
-    setHiddenGroupIds(prev =>
-      prev.size === 0
-        ? new Set(uniqueGroups.map(g => g._id))
-        : new Set()
-    );
+    haptic.select();
+    setHiddenGroupIds(prev => {
+      const next = prev.size === 0 ? new Set(uniqueGroups.map(g => g._id)) : new Set<string>();
+      saveHidden(next);
+      return next;
+    });
   }, [uniqueGroups]);
 
   const groupedMeetups = useMemo(() => {
@@ -240,12 +254,15 @@ const DashboardScreen = () => {
     if (!meetups) return groups;
 
     const upcomingCandidates: Meetup[] = [];
+    // The server keeps finished meetups for ~10 days before cleanup, so trim
+    // "Past Week" to meetups that actually ended within the last 7 days.
+    const pastCutoff = Date.now() - PAST_WEEK_MS;
 
     meetups.forEach(meetup => {
       if (hiddenGroupIds.has(meetup.group._id)) return;
       const { isExpired } = getMeetupStatus(meetup);
       if (isExpired) {
-        groups['Past Week'].push(meetup);
+        if (meetupEndInstant(meetup).getTime() >= pastCutoff) groups['Past Week'].push(meetup);
       } else {
         upcomingCandidates.push(meetup);
       }
@@ -303,230 +320,332 @@ const DashboardScreen = () => {
   const handleDashboardRsvp = (meetup: Meetup, status: 'in' | 'out', guestCount = 0, mute = false) => {
     if (!currentUser) return;
     rsvp({ meetupId: meetup._id, status, skipResponsePopup: mute }, {
-      onSuccess: () => {
+      onSuccess: (data: any) => {
+        const updated: Meetup | undefined = data?.meetup;
+        // Newly "In": one tabbed sheet for Stuff to bring / Rides / Questions, while any is unpicked.
+        if (status === 'in' && updated && shouldPromptAfterIn(updated, currentUser._id)) {
+          setConfirmMeetup(updated);
+        }
         if (status === 'in' && guestCount > 0) {
           meetupApi.setGuestCount(api, meetup._id, guestCount)
             .then(() => {
               queryClient.invalidateQueries({ queryKey: ['meetups'] });
               broadcastMeetupUpdate(getToken, meetup.group._id);
             })
-            .catch(() => Alert.alert('Note', 'RSVP saved, but guests could not be added. Try from the meetup details.'));
+            .catch((e: any) => Alert.alert(
+              'Note',
+              e?.response?.status === 409 && e.response.data?.message
+                ? `You're in, but your guests weren't added. ${e.response.data.message}`
+                : 'RSVP saved, but guests could not be added. Try from the meetup details.'
+            ));
         }
         if (mute) {
+          // Undo puts back whatever mute the member had before (it may have been a partial one).
+          const previousMute = muteStateFor(currentUser, meetup.group._id);
           userApi.toggleGroupMute(api, meetup.group._id, 'untilNext')
-            .then(() => Alert.alert('RSVP recorded: Out', `The ${meetup.group.name} chat has been muted until the next meetup.`))
+            .then(() => toast.show({
+              message: `Out. ${meetup.group.name} muted until the next meetup.`,
+              kind: 'success',
+              actionLabel: 'Undo',
+              onAction: () => {
+                const { muteType, kinds } = restoreRequest(previousMute);
+                userApi.toggleGroupMute(api, meetup.group._id, muteType, muteType === 'none' ? undefined : kinds)
+                  .then(() => queryClient.invalidateQueries({ queryKey: ['currentUser'] })).catch(() => {});
+              },
+            }))
             .catch(() => {});
         }
       },
     });
   };
 
-  const handleSaveZipCode = async () => {
-    const trimmed = zipCodeInput.trim();
-    if (!trimmed) {
-      setZipCodeError('Please enter a zip code.');
-      return;
+  // The "tap to see more" hint bubble reuses the warning token's hue but needs its own
+  // (lighter-weight) fill/border, so it's kept local instead of adding a one-off theme token.
+  const hintBg = scheme === 'dark' ? '#3A2E12' : '#FFFBEB';
+  const hintBorder = scheme === 'dark' ? '#5B4A1E' : '#FDE68A';
+
+  // --- List rows (virtualized) ---
+  type Row =
+    | { key: string; kind: 'day'; label: string }
+    | { key: string; kind: 'card'; meetup: Meetup; past: boolean }
+    | { key: string; kind: 'pastHeader' };
+
+  const listRows = useMemo<Row[]>(() => {
+    const rows: Row[] = [];
+    splitByDay(filteredUpcomingMeetups).forEach(day => {
+      rows.push({ key: `day-${day.key}`, kind: 'day', label: day.label });
+      day.items.forEach((meetup: Meetup) => rows.push({ key: meetup._id, kind: 'card', meetup, past: false }));
+    });
+    if (groupedMeetups['Past Week'].length > 0) {
+      rows.push({ key: 'past-header', kind: 'pastHeader' });
+      splitByDay(groupedMeetups['Past Week']).forEach(day => {
+        rows.push({ key: `past-day-${day.key}`, kind: 'day', label: day.label });
+        day.items.forEach((meetup: Meetup) => rows.push({ key: `past-${meetup._id}`, kind: 'card', meetup, past: true }));
+      });
     }
-    if (!/^\d{5}$/.test(trimmed)) {
-      setZipCodeError('Zip code must be 5 digits.');
-      return;
+    return rows;
+  }, [filteredUpcomingMeetups, groupedMeetups]);
+
+  // Header sections take cascade slots 0–3, so list rows start at 4.
+  const renderRow = ({ item, index }: { item: Row; index: number }) => (
+    <FadeUp index={index + 4}>{renderRowContent(item)}</FadeUp>
+  );
+
+  const renderRowContent = (item: Row) => {
+    if (item.kind === 'day') return <DayHeader label={item.label} />;
+    if (item.kind === 'pastHeader') {
+      return (
+        <Text style={{ fontSize: 12, fontWeight: '900', color: colors.accentCoral, marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+          Past Week
+        </Text>
+      );
     }
-    setZipCodeError('');
-    setIsSavingZip(true);
-    try {
-      const { data } = await userApi.updateProfile(api, { zipCode: trimmed });
-      if (data?.user) {
-        queryClient.setQueryData(['currentUser'], data.user);
-      } else {
-        queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-      }
-      setZipCardDismissed(true);
-    } catch {
-      setZipCodeError('Failed to save. Please try again.');
-    } finally {
-      setIsSavingZip(false);
+    const { meetup, past } = item;
+    if (past) {
+      return (
+        <MeetupCard
+          meetup={meetup}
+          onPress={() => handleOpenModal(meetup)}
+          showRsvpButtons={false}
+          onRsvp={() => {}}
+          isRsvping={false}
+          currentUser={currentUser}
+        />
+      );
     }
+    return (
+      <MeetupCard
+        meetup={meetup}
+        onPress={() => handleOpenModal(meetup)}
+        showRsvpButtons={true}
+        onRsvp={(status, guestCount, mute) => handleDashboardRsvp(meetup, status, guestCount, mute)}
+        isRsvping={isRsvpBusyFor(meetup._id)}
+        rsvpQueued={isRsvpQueuedFor(meetup._id)}
+        currentUser={currentUser}
+      />
+    );
   };
+
+  const hasHiddenAll = uniqueGroups.length > 0 && hiddenGroupIds.size >= uniqueGroups.length;
+  const noUpcomingAtAll = groupedMeetups['Upcoming'].length === 0;
+
+  const listHeader = (
+    <View>
+      <FadeUp index={0}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 }}>
+          {/* Shrinks to fit: on narrow Android phones or with a larger system font, the title pushed
+              the group filter button off the edge of the screen. */}
+          <Text
+            style={{ fontSize: 32, fontWeight: '900', color: colors.brand, letterSpacing: -1, flexShrink: 1 }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
+          >
+            Upcoming Meetups
+          </Text>
+          {uniqueGroups.length > 1 && (
+            <PressableOpacity
+              onPress={() => setFilterOpen(prev => !prev)}
+              style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, position: 'relative' }}
+            >
+              <Feather name="sliders" size={18} color={colors.brand} />
+              {hiddenGroupIds.size > 0 && (
+                <View style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentCoral }} />
+              )}
+            </PressableOpacity>
+          )}
+        </View>
+      </FadeUp>
+
+      <FadeUp index={1}>
+        <TourTarget target="filters" fill>
+        <View style={{ flexDirection: 'row', paddingHorizontal: 8, marginTop: 12, marginBottom: 10, gap: 8 }}>
+          {FILTER_TABS.map(tab => (
+            <FilterPill
+              key={tab.key}
+              label={tab.label}
+              active={rsvpFilter === tab.key}
+              onPress={() => setRsvpFilter(tab.key)}
+            />
+          ))}
+        </View>
+        </TourTarget>
+      </FadeUp>
+
+      {!hintDismissed && (
+        <FadeUp index={2}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, marginBottom: 8, gap: 6 }}>
+            <Text style={{ fontSize: 13, color: colors.textFaint, fontWeight: '500' }}>
+              Tap
+            </Text>
+            <View style={{
+              width: 36, height: 36, borderRadius: 10,
+              alignItems: 'center', justifyContent: 'center',
+              borderWidth: 1, backgroundColor: hintBg, borderColor: hintBorder,
+            }}>
+              <Feather name="calendar" size={18} color={colors.warning} />
+            </View>
+            <Text style={{ flex: 1, fontSize: 13, color: colors.textFaint, fontWeight: '500' }}>
+              in your Group Chat to see more meetups!
+            </Text>
+            <PressableOpacity
+              accessibilityLabel="Dismiss hint"
+              hitSlop={10}
+              onPress={() => { setHintDismissed(true); AsyncStorage.setItem(HINT_DISMISSED_KEY, '1').catch(() => {}); }}
+            >
+              <Feather name="x" size={16} color={colors.textFaint} />
+            </PressableOpacity>
+          </View>
+        </FadeUp>
+      )}
+
+      {filterOpen && uniqueGroups.length > 1 && (
+        <FadeUp index={3}>
+          <View style={{ paddingHorizontal: 8, paddingBottom: 4 }}>
+            <PressableOpacity
+              onPress={toggleAll}
+              activeOpacity={0.7}
+              haptic={false}
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10, borderBottomWidth: 0.5, borderBottomColor: colors.border, marginBottom: 2 }}
+            >
+              <Text style={{ flex: 1, fontSize: 15, color: colors.textPrimary, fontWeight: '700' }}>All</Text>
+              <View style={{
+                width: 20, height: 20, borderRadius: 5,
+                borderWidth: 1.5,
+                borderColor: hiddenGroupIds.size === 0 ? colors.brand : colors.borderStrong,
+                backgroundColor: hiddenGroupIds.size === 0 ? colors.brand : 'transparent',
+                justifyContent: 'center', alignItems: 'center',
+              }}>
+                {hiddenGroupIds.size === 0 && <Feather name="check" size={12} color="#fff" />}
+              </View>
+            </PressableOpacity>
+            {uniqueGroups.map(group => {
+              const isVisible = !hiddenGroupIds.has(group._id);
+              const color = hashGroupColor(group._id);
+              return (
+                <PressableOpacity
+                  key={group._id}
+                  onPress={() => toggleGroup(group._id)}
+                  activeOpacity={0.7}
+                  haptic={false}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10 }}
+                >
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
+                  <Text style={{ flex: 1, fontSize: 15, color: colors.textSecondary, fontWeight: '500' }}>{group.name}</Text>
+                  <View style={{
+                    width: 20, height: 20, borderRadius: 5,
+                    borderWidth: 1.5,
+                    borderColor: isVisible ? colors.brand : colors.borderStrong,
+                    backgroundColor: isVisible ? colors.brand : 'transparent',
+                    justifyContent: 'center', alignItems: 'center',
+                  }}>
+                    {isVisible && <Feather name="check" size={12} color="#fff" />}
+                  </View>
+                </PressableOpacity>
+              );
+            })}
+          </View>
+        </FadeUp>
+      )}
+
+      {/* Empty states: never leave the screen blank */}
+      {meetups?.length === 0 ? (
+        <FadeUp index={3}><View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
+          <Text style={{ fontSize: 16, color: colors.brand, marginBottom: 14, textAlign: 'center' }}>
+            You have no upcoming meetups.
+          </Text>
+          <TourTarget target="create-group" style={{ alignSelf: 'center' }}>
+          <PressableOpacity
+            onPress={() => router.push('/create-group')}
+            style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Create a group</Text>
+          </PressableOpacity>
+          </TourTarget>
+        </View></FadeUp>
+      ) : hasHiddenAll ? (
+        <FadeUp index={3}><View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
+          <Text style={{ fontSize: 14, color: colors.textFaint, fontWeight: '500', marginBottom: 12, textAlign: 'center' }}>
+            All your groups are hidden by the filter.
+          </Text>
+          <PressableOpacity onPress={toggleAll} style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 20 }}>
+            <Text style={{ color: '#fff', fontWeight: '700' }}>Show all groups</Text>
+          </PressableOpacity>
+        </View></FadeUp>
+      ) : noUpcomingAtAll ? (
+        <FadeUp index={3}><View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
+          <Text style={{ fontSize: 14, color: colors.textFaint, fontWeight: '500', textAlign: 'center' }}>
+            Nothing coming up. Open a group chat and tap the calendar to schedule the next one.
+          </Text>
+        </View></FadeUp>
+      ) : filteredUpcomingMeetups.length === 0 ? (
+        <FadeUp index={3}><View className="bg-white dark:bg-gray-900 p-5 my-2 rounded-2xl items-center border border-gray-100 dark:border-gray-800">
+          <Text style={{ fontSize: 14, color: colors.textFaint, fontWeight: '500' }}>
+            {rsvpFilter === 'in' ? "You're not marked In for any upcoming meetup." :
+             rsvpFilter === 'out' ? "You're not marked Out for any upcoming meetup." :
+             "Nothing undecided — you're all caught up."}
+          </Text>
+        </View></FadeUp>
+      ) : null}
+    </View>
+  );
 
   return (
     <SafeAreaView
-      className="flex-1 bg-gray-50"
+      className="flex-1 bg-gray-50 dark:bg-black"
       edges={['left', 'right']}
       style={{ paddingTop: contentTopInset }}
     >
-      <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 bg-white">
-        <View style={{ width: 26 }} />
-        <Text className="text-xl font-black text-gray-900">Meetups</Text>
-        <TouchableOpacity
+      {/* First-visit tour, only while there are no meetups at all (utils/emptyScreenTours.ts). */}
+      <ScreenTour
+        tourKey={TOURS.meetupsEmpty}
+        steps={meetupsEmptyTourSteps}
+        welcome={meetupsWelcome}
+        enabled={meetupsEmptyTourEnabled({ loaded: !isLoading && prefsLoaded && !isOfflineEmpty(meetupsQuery) && !isError, meetups })}
+        user={currentUser}
+      >
+      <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <TourTarget target="bell" style={{ alignSelf: 'center' }}><View><NotificationBell /></View></TourTarget>
+        <Text className="text-xl font-black text-gray-900 dark:text-gray-100">Meetups</Text>
+        <TourTarget target="add" style={{ alignSelf: 'center' }}>
+        <PressableOpacity
           onPress={() => setShowAddChoicePicker(true)}
           style={{ alignItems: 'center', justifyContent: 'center' }}
         >
-          <Feather name="plus-circle" size={26} color="#4A90E2" />
-        </TouchableOpacity>
+          <Feather name="plus-circle" size={26} color={colors.brand} />
+        </PressableOpacity>
+        </TourTarget>
       </View>
 
-      <ScrollView className="p-4" contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + TAB_BAR_HEIGHT }}>
-        {isLoading ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><LoadingAnimation /></View>
-        ) : isError ? (
-          <Text style={{ textAlign: 'center', color: '#ef4444', marginTop: 32 }}>
-            Failed to load meetups.
-          </Text>
-        ) : (
-          <>
-            <View className="pb-10">
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 }}>
-                <Text style={{ fontSize: 32, fontWeight: '900', color: '#4A90E2', letterSpacing: -1 }}>
-                  Upcoming Meetups
-                </Text>
-                {uniqueGroups.length > 1 && (
-                  <TouchableOpacity
-                    onPress={() => setFilterOpen(prev => !prev)}
-                    style={{ backgroundColor: 'white', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 10, position: 'relative' }}
-                  >
-                    <Feather name="sliders" size={18} color="#1D4ED8" />
-                    {hiddenGroupIds.size > 0 && (
-                      <View style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF7A6E' }} />
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              <View style={{ flexDirection: 'row', paddingHorizontal: 8, marginTop: 12, marginBottom: 10, gap: 8 }}>
-                {FILTER_TABS.map(tab => (
-                  <FilterPill
-                    key={tab.key}
-                    label={tab.label}
-                    active={rsvpFilter === tab.key}
-                    onPress={() => setRsvpFilter(tab.key)}
-                  />
-                ))}
-              </View>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, marginBottom: 8, gap: 6 }}>
-                <Text style={{ fontSize: 13, color: '#9CA3AF', fontWeight: '500' }}>
-                  Tap
-                </Text>
-                <View style={{
-                  width: 36, height: 36, borderRadius: 10,
-                  alignItems: 'center', justifyContent: 'center',
-                  borderWidth: 1, backgroundColor: '#FFFBEB', borderColor: '#FDE68A',
-                }}>
-                  <Feather name="calendar" size={18} color="#D97706" />
-                </View>
-                <Text style={{ fontSize: 13, color: '#9CA3AF', fontWeight: '500' }}>
-                  in your Group Chat to see more meetups!
-                </Text>
-              </View>
-
-              {filterOpen && uniqueGroups.length > 1 && (
-                <View style={{ paddingHorizontal: 8, paddingBottom: 4 }}>
-                  <TouchableOpacity
-                    onPress={toggleAll}
-                    activeOpacity={0.7}
-                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10, borderBottomWidth: 0.5, borderBottomColor: '#E5E7EB', marginBottom: 2 }}
-                  >
-                    <Text style={{ flex: 1, fontSize: 15, color: '#111827', fontWeight: '700' }}>All</Text>
-                    <View style={{
-                      width: 20, height: 20, borderRadius: 5,
-                      borderWidth: 1.5,
-                      borderColor: hiddenGroupIds.size === 0 ? '#4A90E2' : '#D1D5DB',
-                      backgroundColor: hiddenGroupIds.size === 0 ? '#4A90E2' : 'transparent',
-                      justifyContent: 'center', alignItems: 'center',
-                    }}>
-                      {hiddenGroupIds.size === 0 && <Feather name="check" size={12} color="#fff" />}
-                    </View>
-                  </TouchableOpacity>
-                  {uniqueGroups.map(group => {
-                    const isVisible = !hiddenGroupIds.has(group._id);
-                    const color = hashGroupColor(group._id);
-                    return (
-                      <TouchableOpacity
-                        key={group._id}
-                        onPress={() => toggleGroup(group._id)}
-                        activeOpacity={0.7}
-                        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 10 }}
-                      >
-                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
-                        <Text style={{ flex: 1, fontSize: 15, color: '#374151', fontWeight: '500' }}>{group.name}</Text>
-                        <View style={{
-                          width: 20, height: 20, borderRadius: 5,
-                          borderWidth: 1.5,
-                          borderColor: isVisible ? '#4A90E2' : '#D1D5DB',
-                          backgroundColor: isVisible ? '#4A90E2' : 'transparent',
-                          justifyContent: 'center', alignItems: 'center',
-                        }}>
-                          {isVisible && <Feather name="check" size={12} color="#fff" />}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-
-              {meetups?.length === 0 && (
-                <View className="bg-white p-5 my-2 rounded-2xl items-center border border-gray-100">
-                  <Text style={{ fontSize: 16, color: '#4A90E2' }}>
-                    You have no upcoming meetups.
-                  </Text>
-                </View>
-              )}
-
-              {groupedMeetups['Upcoming'].length > 0 && filteredUpcomingMeetups.length === 0 && (
-                <View className="bg-white p-5 my-2 rounded-2xl items-center border border-gray-100">
-                  <Text style={{ fontSize: 14, color: '#9CA3AF', fontWeight: '500' }}>
-                    {rsvpFilter === 'in' ? "You're not marked In for any upcoming meetup." :
-                     rsvpFilter === 'out' ? "You're not marked Out for any upcoming meetup." :
-                     "Nothing undecided — you're all caught up."}
-                  </Text>
-                </View>
-              )}
-
-              {splitByDay(filteredUpcomingMeetups).map(day => (
-                <View key={day.key}>
-                  <DayHeader label={day.label} />
-                  {day.items.map((meetup: Meetup) => (
-                    <FadeInCard key={meetup._id}>
-                      <MeetupCard
-                        meetup={meetup}
-                        onPress={() => handleOpenModal(meetup)}
-                        showRsvpButtons={true}
-                        onRsvp={(status, guestCount, mute) => handleDashboardRsvp(meetup, status, guestCount, mute)}
-                        isRsvping={isRsvping}
-                        currentUser={currentUser}
-                      />
-                    </FadeInCard>
-                  ))}
-                </View>
-              ))}
-
-              {groupedMeetups['Past Week'].length > 0 && (
-                <View>
-                  <Text style={{ fontSize: 12, fontWeight: '900', color: '#FF7A6E', marginTop: 24, marginBottom: 8, paddingHorizontal: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
-                    Past Week
-                  </Text>
-                  {splitByDay(groupedMeetups['Past Week']).map(day => (
-                    <View key={day.key}>
-                      <DayHeader label={day.label} />
-                      {day.items.map((meetup: Meetup) => (
-                        <MeetupCard
-                            key={meetup._id}
-                            meetup={meetup}
-                            onPress={() => handleOpenModal(meetup)}
-                            showRsvpButtons={false}
-                            onRsvp={() => {}}
-                            isRsvping={false}
-                            currentUser={currentUser}
-                        />
-                      ))}
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          </>
-        )}
-      </ScrollView>
+      {isLoading || !prefsLoaded ? (
+        <View style={{ flex: 1, padding: 16 }}><SkeletonList kind="meetup" count={3} /></View>
+      ) : isOfflineEmpty(meetupsQuery) ? (
+        <OfflineEmptyState message="Connect to the internet to load your meetups." onRetry={handlePullRefresh} />
+      ) : isError && !meetups ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+          <Text style={{ textAlign: 'center', color: colors.textMuted, fontSize: 16, marginBottom: 16 }}>Couldn't load your meetups.</Text>
+          <PressableOpacity onPress={() => refetch()} style={{ backgroundColor: colors.brand, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Try again</Text>
+          </PressableOpacity>
+        </View>
+      ) : (
+        // Mounted with the loaded list (not during the skeleton) so the cascade clock starts
+        // when real content first appears; replays on every later focus.
+        <FadeUpScreen>
+          <FlatList
+            data={listRows}
+            keyExtractor={(row) => row.key}
+            renderItem={renderRow}
+            ListHeaderComponent={listHeader}
+            ListFooterComponent={<View style={{ height: 40 }} />}
+            contentContainerStyle={{ padding: 16, flexGrow: 1, paddingBottom: tabScreenBottomPadding(insets.bottom) }}
+            refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={handlePullRefresh} tintColor={colors.brand} colors={[colors.brand]} />}
+            initialNumToRender={8}
+            windowSize={9}
+            removeClippedSubviews={false}
+          />
+        </FadeUpScreen>
+      )}
 
       {/* Fully unmounted (not just visible={false}) between opens — on Android,
           leaving this Modal permanently mounted and only toggling `visible` causes
@@ -536,88 +655,26 @@ const DashboardScreen = () => {
           visible={isModalVisible}
           animationType="slide"
           presentationStyle="pageSheet"
-          onRequestClose={handleCloseModal}
+          onRequestClose={() => { if (!runBackInterceptor()) handleCloseModal(); }}
         >
           <MeetupDetailModal meetup={selectedMeetup} onClose={handleCloseModal} />
         </Modal>
       )}
 
-      <Modal
-        visible={!!currentUser && !!currentUser.hasSeenWelcome && readyForZipModal && !currentUser.zipCode && !zipCardDismissed}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setZipCardDismissed(true)}
-      >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 28 }}>
-          <View style={{ backgroundColor: 'white', borderRadius: 24, padding: 28 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 6 }}>
-              One quick thing
-            </Text>
-            <Text style={{ fontSize: 15, color: '#6B7280', marginBottom: 20, lineHeight: 22 }}>
-              Add your zip code so we can improve your experience.
-            </Text>
-            <TextInput
-              value={zipCodeInput}
-              onChangeText={text => { setZipCodeInput(text.replace(/\D/g, '').slice(0, 5)); setZipCodeError(''); }}
-              placeholder="Zip Code"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="numeric"
-              maxLength={5}
-              style={{
-                backgroundColor: '#F9FAFB', borderWidth: 1,
-                borderColor: zipCodeError ? '#EF4444' : '#E5E7EB',
-                borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13,
-                fontSize: 16, color: '#111827', marginBottom: zipCodeError ? 6 : 16,
-              }}
-            />
-            {!!zipCodeError && (
-              <Text style={{ color: '#EF4444', fontSize: 13, marginBottom: 12 }}>{zipCodeError}</Text>
-            )}
-            <TouchableOpacity
-              onPress={handleSaveZipCode}
-              disabled={isSavingZip}
-              style={{ backgroundColor: '#4A90E2', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 }}
-            >
-              {isSavingZip
-                ? <ActivityIndicator color="white" />
-                : <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>Save</Text>
-              }
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setZipCardDismissed(true)}
-              style={{ alignItems: 'center', paddingVertical: 8 }}
-            >
-              <Text style={{ color: '#9CA3AF', fontSize: 14 }}>Skip for now</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-      {toastMessage && (
-        <Animated.View style={{
-          position: 'absolute',
-          top: 0, bottom: 0, left: 0, right: 0,
-          justifyContent: 'center',
-          alignItems: 'center',
-          opacity: toastOpacity,
-          pointerEvents: 'none',
-        }}>
-          <View style={{
-            backgroundColor: '#1F2937',
-            borderRadius: 14,
-            paddingVertical: 16,
-            paddingHorizontal: 24,
-            marginHorizontal: 32,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.22,
-            shadowRadius: 10,
-            elevation: 8,
-          }}>
-            <Text style={{ color: 'white', fontWeight: '600', fontSize: 15, textAlign: 'center' }}>
-              {toastMessage}
-            </Text>
-          </View>
-        </Animated.View>
+      {/* Unmounted when closed, for the same Android reason as above. */}
+      {confirmMeetup && currentUser && (
+        <MeetupConfirmSheet
+          visible
+          // The live copy, so a refresh (e.g. an item someone just took) reaches the open sheet.
+          meetup={meetups?.find(m => m._id === confirmMeetup._id) ?? confirmMeetup}
+          currentUserId={currentUser._id}
+          onClose={() => setConfirmMeetup(null)}
+          onUpdated={() => {
+            queryClient.invalidateQueries({ queryKey: ['meetups'] });
+            broadcastMeetupUpdate(getToken, confirmMeetup.group._id);
+          }}
+          onStale={() => queryClient.invalidateQueries({ queryKey: ['meetups'] })}
+        />
       )}
 
       {/* MeetupDetailModal renders its own instance while open (a nested RN
@@ -625,46 +682,33 @@ const DashboardScreen = () => {
           both firing off the same RSVP and showing the burst twice. */}
       {!isModalVisible && <RsvpResponseOverlay />}
 
-      {showAddChoicePicker && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setShowAddChoicePicker(false)}>
-          <TouchableOpacity
-            style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', padding: 24 }}
-            activeOpacity={1}
-            onPress={() => setShowAddChoicePicker(false)}
-          >
-            <View style={{ width: '100%', maxWidth: 340, gap: 12 }}>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                style={{ flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
-                onPress={() => { setShowAddChoicePicker(false); router.push('/create-group'); }}
-              >
-                <Feather name="users" size={22} color="#4A90E2" />
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginLeft: 14 }}>Create New Group</Text>
-              </TouchableOpacity>
-
-              {meetupCapableGroups.length > 0 && (
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  style={{ flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
-                  onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('existing'); setAddMeetupVisible(true); }}
-                >
-                  <Feather name="calendar" size={22} color="#4A90E2" />
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginLeft: 14 }}>Add Meetup to Existing Group</Text>
-                </TouchableOpacity>
-              )}
-
-              <TouchableOpacity
-                activeOpacity={0.8}
-                style={{ flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 18 }}
-                onPress={() => { setShowAddChoicePicker(false); setAddMeetupInitialMode('new'); setAddMeetupVisible(true); }}
-              >
-                <Feather name="plus-circle" size={22} color="#4A90E2" />
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginLeft: 14 }}>Create One-Time Meetup</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </Modal>
-      )}
+      <ActionSheet
+        visible={showAddChoicePicker}
+        onClose={() => setShowAddChoicePicker(false)}
+        items={[
+          {
+            key: 'new-group',
+            label: 'Create New Group',
+            icon: <Feather name="users" size={18} color="#7C3AED" />,
+            iconBg: scheme === 'dark' ? '#2A1F45' : '#F5F3FF',
+            onPress: () => router.push('/create-group'),
+          },
+          ...(meetupCapableGroups.length > 0 ? [{
+            key: 'existing-group',
+            label: 'Add Meetup to Existing Group',
+            icon: <Feather name="calendar" size={18} color="#16A34A" />,
+            iconBg: scheme === 'dark' ? '#132A1E' : '#F0FDF4',
+            onPress: () => { setAddMeetupInitialMode('existing'); setAddMeetupVisible(true); },
+          }] : []),
+          {
+            key: 'one-time',
+            label: 'Create One-Time Meetup',
+            icon: <Feather name="plus-circle" size={18} color="#0EA5E9" />,
+            iconBg: scheme === 'dark' ? '#1A2A42' : '#F0F9FF',
+            onPress: () => { setAddMeetupInitialMode('new'); setAddMeetupVisible(true); },
+          },
+        ]}
+      />
 
       <AddMeetupWizard
         visible={addMeetupVisible}
@@ -678,6 +722,7 @@ const DashboardScreen = () => {
           },
         }}
       />
+      </ScreenTour>
     </SafeAreaView>
   );
 };

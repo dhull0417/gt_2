@@ -3,13 +3,49 @@ import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import Meetup from "../models/meetup.model.js";
 import Notification from "../models/notification.model.js";
-import InviteToken from "../models/inviteToken.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import { calculateNextMeetupDate } from "../utils/date.utils.js";
-import { generateMeetupsForGroup, generateMeetupsForSchedule } from "../utils/meetupGeneration.js";
+import { DateTime } from "luxon";
+import { generateMeetupsForGroup, generateMeetupsForSchedule, reconcileScheduleMeetups } from "../utils/meetupGeneration.js";
+import { endDateProblem, parseEndDate } from "../utils/scheduleEndDate.js";
+import { promoteWaitlist } from "../utils/waitlist.js";
+import { scrubMemberFromUpcomingMeetups } from "../utils/memberCleanup.js";
+import { deleteUnfinishedTournaments } from "../utils/tournament/cleanup.js";
+import { addChatMembers, removeChatMember, clearOwnerChatTimeout } from "../utils/supabaseAdmin.js";
+import { activeTimeout, pruneExpired } from "../utils/chatTimeout.js";
+import { scheduleChanges, scheduleSnapshot, pushBody } from "../utils/changeSummary.js";
 import { notifyAndPersist } from "../utils/push.notifications.js";
+import { buildGroupStats, buildAttendanceCsv } from "../utils/groupStats.js";
+import { listPastMeetups, getPastMeetup } from "../utils/pastMeetups.js";
+import { shapeStatsForViewer } from "../utils/statsVisibility.js";
+import { parseQuestions, refreshSeriesQuestions } from "../utils/rsvpQuestions.js";
+import { refreshPriorityTiers, MAX_PRIORITY_TIERS, MAX_WINDOW_MINUTES } from "../utils/priorityRsvp.js";
+import { hasPremium, groupHasPremium } from "../utils/premium.js";
+import { onGroupCreated, onInviteRedeemed } from "../utils/email/lifecycle.js";
+import { postSystemMessage } from "../utils/systemMessage.js";
+import { isLegacyClient } from "../middleware/clientInfo.middleware.js";
+import { validateRoutineEndTimes, preserveLegacyEndTimes, validateEndTime, computeEndsAt } from "../utils/meetupEndTime.js";
+import { validateLongIntervalRoutines, keepLongIntervalRoutinesForLegacy } from "../utils/longIntervalValidation.js";
+import { minHeadcountProblem, MIN_HEADCOUNT_PREMIUM_REQUIRED, ASSIGNMENTS_PREMIUM_REQUIRED, parseBringItems, withExistingIds, parseMeetupSettings, ownRsvpWindow } from "../utils/meetupSettings.js";
+import { deleteGroupAndData } from "../utils/groupCleanup.js";
+
+const isValidId = (id) => mongoose.Types.ObjectId.isValid(String(id)) && String(new mongoose.Types.ObjectId(String(id))) === String(id);
+
+/** Offers the meetups-capacity change to anyone waiting: capacity went up (or became unlimited). */
+const promoteWaitlistsForSchedule = async (groupId, scheduleId) => {
+    const waiting = await Meetup.find({
+        group: groupId,
+        schedule: scheduleId,
+        status: 'scheduled',
+        date: { $gte: new Date() },
+        'waitlist.0': { $exists: true },
+    }).select('_id').lean();
+    for (const { _id } of waiting) {
+        try { await promoteWaitlist(_id); } catch (err) { console.error("Waitlist promotion failed:", err); }
+    }
+};
 
 // --- Helpers ---
 
@@ -30,6 +66,9 @@ const touchGroupMeetups = (groupId) =>
 
 const MAX_ACTIVE_SCHEDULES = 5;
 
+const assignmentsSignature = (items, rides) =>
+    JSON.stringify([(items || []).map((i) => [i.name, i.max ?? null]), !!rides]);
+
 /**
  * Normalizes a request body into the namedSchedule shape stored on
  * Group.schedules; used by per-schedule endpoints and the legacy wrapper.
@@ -37,9 +76,13 @@ const MAX_ACTIVE_SCHEDULES = 5;
 const normalizeScheduleInput = (input, fallbackName) => ({
     name: (input.name && String(input.name).trim()) || fallbackName || "Schedule",
     startDate: input.startDate || null,
+    endDate: input.endDate || null,
     routines: input.routines || [],
     defaultLocation: input.defaultLocation || "",
     defaultCapacity: input.defaultCapacity || 0,
+    defaultMinAttendees: Number(input.defaultMinAttendees) || 0,
+    defaultBringItems: withExistingIds(parseBringItems(input.defaultBringItems).items || []),
+    defaultRidesEnabled: !!input.defaultRidesEnabled,
     defaultDescription: input.defaultDescription || "",
     generationLeadDays: numOrNull(input.generationLeadDays, 1),
     generationLeadTime: input.generationLeadTime || "09:00 AM",
@@ -64,6 +107,31 @@ const withLegacyScheduleMirror = (groupObj) => {
         generationDeadlineDays: primary ? primary.generationDeadlineDays : null,
         generationDeadlineTime: primary ? primary.generationDeadlineTime : "09:00 AM",
     };
+};
+
+/**
+ * DM groups store a snapshot of each person's name from when the chat was created. Replace it with
+ * the people's current name and photo so a rename or new profile picture shows up right away.
+ * Works on a list of lean group objects and returns new objects.
+ */
+export const withLiveDmParticipants = async (groups) => {
+    const dms = groups.filter((g) => g.isDM && Array.isArray(g.dmParticipants) && g.dmParticipants.length);
+    if (dms.length === 0) return groups;
+    const clerkIds = [...new Set(dms.flatMap((g) => g.dmParticipants.map((p) => p.userId)).filter(Boolean))];
+    const users = await User.find({ clerkId: { $in: clerkIds } }).select('clerkId firstName lastName profilePicture').lean();
+    const byClerk = new Map(users.map((u) => [u.clerkId, u]));
+    return groups.map((g) => {
+        if (!g.isDM || !Array.isArray(g.dmParticipants)) return g;
+        return {
+            ...g,
+            dmParticipants: g.dmParticipants.map((p) => {
+                const u = byClerk.get(p.userId);
+                if (!u) return p;
+                const name = [u.firstName, u.lastName].filter(Boolean).join(' ');
+                return { ...p, name: name || p.name, profilePicture: u.profilePicture || undefined };
+            }),
+        };
+    });
 };
 
 /**
@@ -119,11 +187,18 @@ export const createGroup = asyncHandler(async (req, res) => {
   const owner = await User.findOne({ clerkId });
   if (!owner) return res.status(404).json({ error: "User not found." });
 
-  let initialMemberIds = [owner._id.toString()];
-  if (members && Array.isArray(members)) {
-      initialMemberIds = [...initialMemberIds, ...members];
-  }
-  const uniqueMemberIds = [...new Set(initialMemberIds)];
+  // Only the creator is a member at first. Anyone listed in `members` is sent an
+  // invitation they can accept or decline, rather than being added without a say.
+  // App 1.3.x and older still add the picked people straight away, as their screens promise.
+  const legacyDirectAdd = isLegacyClient(req);
+  const pickedIds = [...new Set(Array.isArray(members) ? members.map(String) : [])]
+      .filter((id) => isValidId(id) && id !== owner._id.toString())
+      .slice(0, 100);
+  const addedUsers = legacyDirectAdd && pickedIds.length > 0
+      ? await User.find({ _id: { $in: pickedIds } })
+      : [];
+  const uniqueMemberIds = [owner._id.toString(), ...addedUsers.map((u) => u._id.toString())];
+  const inviteeIds = legacyDirectAdd ? [] : pickedIds;
 
   // new clients send `schedules`; legacy clients send a single `schedule` +
   // top-level fields — wrap both into the same Group.schedules array.
@@ -143,6 +218,29 @@ export const createGroup = asyncHandler(async (req, res) => {
           generationDeadlineDays,
           generationDeadlineTime,
       }, name)];
+  }
+
+  for (const s of initialSchedules) {
+      const parsedEnd = parseEndDate(s.endDate);
+      if (parsedEnd.error) return res.status(400).json({ error: parsedEnd.error });
+      s.endDate = parsedEnd.value;
+      const endTimeError = validateRoutineEndTimes(s.routines) || validateLongIntervalRoutines(s.routines) || endDateProblem(s);
+      if (endTimeError) return res.status(400).json({ error: endTimeError });
+  }
+
+  for (const s of initialSchedules) {
+      const problem = minHeadcountProblem({
+          min: s.defaultMinAttendees,
+          capacity: s.defaultCapacity,
+          deadlineDays: s.generationDeadlineDays,
+      });
+      if (problem) return res.status(problem.status).json(problem.body);
+      if (s.defaultMinAttendees > 0 && !hasPremium(owner)) {
+          return res.status(403).json(MIN_HEADCOUNT_PREMIUM_REQUIRED);
+      }
+      if ((s.defaultBringItems.length > 0 || s.defaultRidesEnabled) && !hasPremium(owner)) {
+          return res.status(403).json(ASSIGNMENTS_PREMIUM_REQUIRED);
+      }
   }
 
   const groupData = {
@@ -165,22 +263,35 @@ export const createGroup = asyncHandler(async (req, res) => {
       { $addToSet: { groups: newGroup._id } }
   );
 
-  // --- NOTIFICATION LOGIC ---
-  const newlyAddedUserIds = uniqueMemberIds.filter(id => id.toString() !== owner._id.toString());
-  if (newlyAddedUserIds.length > 0) {
-      const newlyAddedUsers = await User.find({ _id: { $in: newlyAddedUserIds } });
-      if (newlyAddedUsers.length > 0) {
-          await notifyAndPersist(newlyAddedUsers, {
-              title: "You've been added to a group!",
-              body: `${owner.firstName} ${owner.lastName} added you to the group "${newGroup.name}".`,
-              data: { groupId: newGroup._id.toString(), type: 'group_added' },
-              type: 'group-added',
+  await addChatMembers(newGroup._id, [owner.clerkId, ...addedUsers.map((u) => u.clerkId).filter(Boolean)]);
+
+  // App 1.3.x: the people it added directly are told, as they always have been.
+  if (addedUsers.length > 0) {
+      await notifyAndPersist(addedUsers, {
+          title: "You've been added to a group!",
+          body: `${owner.firstName} ${owner.lastName} added you to the group "${newGroup.name}".`,
+          data: { groupId: newGroup._id.toString(), type: 'group_added' },
+          type: 'group-added',
+          sender: owner._id,
+          group: newGroup._id,
+      });
+  }
+
+  // --- INVITATIONS ---
+  if (inviteeIds.length > 0) {
+      const invitees = await User.find({ _id: { $in: inviteeIds } });
+      if (invitees.length > 0) {
+          await notifyAndPersist(invitees, {
+              title: "Group Invitation",
+              body: `${owner.firstName} invited you to join "${newGroup.name}".`,
+              data: { groupId: newGroup._id.toString(), type: 'group-invite' },
+              type: 'group-invite',
               sender: owner._id,
               group: newGroup._id,
           });
       }
   }
-  // --- END NOTIFICATION LOGIC ---
+  // --- END INVITATIONS ---
 
   // Initial Generation with Window Filling
   if (newGroup.schedules?.length) {
@@ -189,8 +300,20 @@ export const createGroup = asyncHandler(async (req, res) => {
     } catch (err) { console.error("Initial Gen Error:", err); }
   }
 
+  // Lifecycle emails: records the first group (the scheduled job sends "You made a group!"). Never throws.
+  await onGroupCreated(owner._id);
+
   res.status(201).json({ group: withLegacyScheduleMirror(newGroup.toObject()), message: "Created successfully." });
 });
+
+/**
+ * @desc    Sample groups were removed (2026-11-25). Older app builds still offer "look around a
+ *          sample group" and show this error in a toast. Creates nothing. Delete once no builds
+ *          older than 1.5 remain.
+ * @route   POST /api/groups/demo
+ */
+export const sampleGroupsRemoved = (req, res) =>
+    res.status(410).json({ error: "Sample groups are no longer available. Create a group or use an invite code." });
 
 /**
  * @desc    LEGACY shim: applies the edit to the group's first active schedule
@@ -225,7 +348,10 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
         target = group.schedules[group.schedules.length - 1];
     } else if (target && schedule) {
         target.startDate = schedule.startDate || target.startDate;
-        target.routines = schedule.routines || target.routines;
+        // Legacy (pre-multi-schedule) path: those builds never send end times, so keep existing ones.
+        target.routines = schedule.routines
+            ? keepLongIntervalRoutinesForLegacy(preserveLegacyEndTimes(schedule.routines, target.routines), target.routines)
+            : target.routines;
         if (defaultLocation !== undefined) target.defaultLocation = defaultLocation;
         if (defaultCapacity !== undefined) target.defaultCapacity = Number(defaultCapacity);
     }
@@ -249,17 +375,9 @@ export const updateGroupSchedule = asyncHandler(async (req, res) => {
     await group.save();
 
     if (target) {
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
-
-        await Meetup.deleteMany({
-            group: group._id,
-            schedule: target._id,
-            isOverride: false,
-            date: { $gte: today }
-        });
-
         try {
+            // Keeps meetups whose slot is unchanged (and their RSVPs); only removed slots go.
+            await reconcileScheduleMeetups(group, target);
             await generateMeetupsForGroup(group);
         } catch (err) {
             console.error("Update Gen Error:", err);
@@ -278,7 +396,8 @@ export const createSchedule = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     const { userId: clerkId } = getAuth(req);
     const {
-        name, startDate, routines, defaultLocation, defaultCapacity, defaultDescription,
+        name, startDate, endDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription,
+        defaultBringItems, defaultRidesEnabled,
         generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
         timezone, // shared across the whole group, not per-schedule — see updateSchedule
     } = req.body;
@@ -288,9 +407,32 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (!group || !user) return res.status(404).json({ error: "Resource not found." });
     if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
 
+    const minAttendees = Number(defaultMinAttendees) || 0;
+    const minProblem = minHeadcountProblem({
+        min: minAttendees,
+        capacity: Number(defaultCapacity) || 0,
+        deadlineDays: numOrNull(generationDeadlineDays, null),
+    });
+    if (minProblem) return res.status(minProblem.status).json(minProblem.body);
+    // Premium belongs to the group's owner, even when a moderator makes the edit.
+    if (minAttendees > 0 && !(await groupHasPremium(group))) {
+        return res.status(403).json(MIN_HEADCOUNT_PREMIUM_REQUIRED);
+    }
+
+    const parsedItems = parseBringItems(defaultBringItems);
+    if (parsedItems.error) return res.status(400).json({ error: parsedItems.error });
+    if ((parsedItems.items.length > 0 || defaultRidesEnabled) && !(await groupHasPremium(group))) {
+        return res.status(403).json(ASSIGNMENTS_PREMIUM_REQUIRED);
+    }
+
     if (!name || !String(name).trim()) {
         return res.status(400).json({ error: "Schedule name is required." });
     }
+    const parsedEnd = parseEndDate(endDate);
+    if (parsedEnd.error) return res.status(400).json({ error: parsedEnd.error });
+    const endTimeError = validateRoutineEndTimes(routines) || validateLongIntervalRoutines(routines)
+        || endDateProblem({ endDate: parsedEnd.value, startDate, routines });
+    if (endTimeError) return res.status(400).json({ error: endTimeError });
 
     // Guards against a double-fired create (a mistimed double-tap, or a
     // client-side retry) pushing two identical schedules: a legitimate second
@@ -319,7 +461,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
     if (timezone) group.timezone = timezone;
 
     group.schedules.push(normalizeScheduleInput(
-        { name, startDate, routines, defaultLocation, defaultCapacity, defaultDescription, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
+        { name, startDate, endDate: parsedEnd.value, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription, defaultBringItems, defaultRidesEnabled, generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime },
         name
     ));
     await group.save();
@@ -347,9 +489,12 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     const { groupId, scheduleId } = req.params;
     const { userId: clerkId } = getAuth(req);
     const {
-        name, startDate, routines, defaultLocation, defaultCapacity, defaultDescription,
+        name, startDate, endDate, routines, defaultLocation, defaultCapacity, defaultMinAttendees, defaultDescription,
+        defaultBringItems, defaultRidesEnabled,
         generationLeadDays, generationLeadTime, generationDeadlineDays, generationDeadlineTime,
         timezone, // shared across the whole group — schedules don't carry their own
+        // The organizer's answer to "Delete meetups after <end date>?" (absent = Keep).
+        removeAfterEnd,
     } = req.body;
 
     const group = await Group.findById(groupId);
@@ -360,6 +505,53 @@ export const updateSchedule = asyncHandler(async (req, res) => {
     const target = group.schedules.id(scheduleId);
     if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
 
+    // Validate the minimum headcount against the values as they'll be AFTER this
+    // edit, before anything is changed. Premium is only required when the minimum
+    // itself is being turned on or raised, so a lapsed owner can still edit
+    // everything else (and turn the minimum off).
+    const currentMin = target.defaultMinAttendees || 0;
+    const newMin = defaultMinAttendees !== undefined ? (Number(defaultMinAttendees) || 0) : currentMin;
+    const minProblem = minHeadcountProblem({
+        min: newMin,
+        capacity: defaultCapacity !== undefined ? Number(defaultCapacity) : (target.defaultCapacity || 0),
+        deadlineDays: generationDeadlineDays !== undefined
+            ? numOrNull(generationDeadlineDays, null)
+            : (target.generationDeadlineDays ?? null),
+    });
+    if (minProblem) return res.status(minProblem.status).json(minProblem.body);
+    if (newMin > currentMin && !(await groupHasPremium(group))) {
+        return res.status(403).json(MIN_HEADCOUNT_PREMIUM_REQUIRED);
+    }
+
+    // Assignments (things to bring, rides): Premium is only required when the setup
+    // is being changed to something non-empty, so a lapsed owner can still clear it.
+    let newBringItems = null;
+    if (defaultBringItems !== undefined) {
+        const parsed = parseBringItems(defaultBringItems);
+        if (parsed.error) return res.status(400).json({ error: parsed.error });
+        newBringItems = withExistingIds(parsed.items, target.defaultBringItems);
+    }
+    const newRidesEnabled = defaultRidesEnabled !== undefined ? !!defaultRidesEnabled : !!target.defaultRidesEnabled;
+    const nextItems = newBringItems ?? target.defaultBringItems;
+    const assignmentsChanged =
+        assignmentsSignature(nextItems, newRidesEnabled) !==
+        assignmentsSignature(target.defaultBringItems, target.defaultRidesEnabled);
+    if (assignmentsChanged && (nextItems.length > 0 || newRidesEnabled) && !(await groupHasPremium(group))) {
+        return res.status(403).json(ASSIGNMENTS_PREMIUM_REQUIRED);
+    }
+
+    // The end date is checked against the start as it will be after this edit.
+    const parsedEnd = endDate !== undefined ? parseEndDate(endDate) : { value: target.endDate ?? null };
+    if (parsedEnd.error) return res.status(400).json({ error: parsedEnd.error });
+    const endTimeError = validateRoutineEndTimes(routines) || validateLongIntervalRoutines(routines) || endDateProblem({
+        endDate: parsedEnd.value,
+        startDate: startDate !== undefined ? startDate : target.startDate,
+        routines: routines !== undefined ? routines : target.routines,
+    });
+    if (endTimeError) return res.status(400).json({ error: endTimeError });
+
+    const previousTimezone = group.timezone;
+    const scheduleBefore = scheduleSnapshot(target, previousTimezone);
     if (timezone) group.timezone = timezone;
 
     if (name !== undefined) {
@@ -372,8 +564,19 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         );
     }
     if (startDate !== undefined) target.startDate = startDate;
-    if (routines !== undefined) target.routines = routines;
+    // Old app builds never send endDate, so they can't clear it.
+    if (endDate !== undefined) target.endDate = parsedEnd.value;
+    // Old app builds don't send end times; keep the ones already on unchanged rows.
+    // Old app builds: never let them drop or mangle a quarterly/semiannual/yearly routine.
+    if (routines !== undefined) {
+        target.routines = isLegacyClient(req)
+            ? keepLongIntervalRoutinesForLegacy(preserveLegacyEndTimes(routines, target.routines), target.routines)
+            : routines;
+    }
     if (defaultCapacity !== undefined) target.defaultCapacity = Number(defaultCapacity);
+    if (defaultMinAttendees !== undefined) target.defaultMinAttendees = newMin;
+    if (newBringItems) target.defaultBringItems = newBringItems;
+    if (defaultRidesEnabled !== undefined) target.defaultRidesEnabled = newRidesEnabled;
     if (defaultLocation !== undefined) {
         target.defaultLocation = defaultLocation;
         if (defaultLocation) {
@@ -407,9 +610,27 @@ export const updateSchedule = asyncHandler(async (req, res) => {
 
     await group.save();
 
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    await Meetup.deleteMany({ group: group._id, schedule: target._id, isOverride: false, date: { $gte: today } });
+    // Update the series' upcoming meetups IN PLACE: slots that still belong to the series keep
+    // their RSVPs, guests, items and answers; only slots that no longer exist are removed.
+    // (A timezone change moves every slot, so that one case starts the series over.)
+    try {
+        await reconcileScheduleMeetups(group, target, {
+            resetAll: !!timezone && timezone !== previousTimezone,
+            removeAfterEnd: removeAfterEnd === true,
+        });
+    } catch (err) {
+        console.error("Update Schedule Reconcile Error:", err);
+    }
+    try {
+        // RSVP open times may have moved, so priority groups' times move with them.
+        await refreshPriorityTiers(group, target);
+    } catch (err) {
+        console.error("Update Schedule Priority Refresh Error:", err);
+    }
+    // A bigger (or removed) limit lets people off the waitlist.
+    if (defaultCapacity !== undefined) {
+        await promoteWaitlistsForSchedule(group._id, target._id);
+    }
 
     if (target.routines?.length) {
         try {
@@ -420,7 +641,59 @@ export const updateSchedule = asyncHandler(async (req, res) => {
         }
     }
 
+    // Tell the group what changed and what it is now: one notification for the whole schedule,
+    // only fields whose shown value differs (the editor resends every setting on every save).
+    try {
+        const changes = scheduleChanges(scheduleBefore, scheduleSnapshot(target, group.timezone));
+        if (changes.length > 0) {
+            const membersToNotify = await User.find({ _id: { $in: group.members } });
+            await notifyAndPersist(membersToNotify, {
+                title: `Schedule Updated: ${target.name} (${group.name})`,
+                body: pushBody(changes),
+                data: { groupId: group._id.toString(), type: 'schedule_updated' },
+                type: 'schedule-updated',
+                sender: user._id,
+                group: group._id,
+                meta: { changes, scheduleName: target.name },
+            });
+        }
+    } catch (err) {
+        console.error("Update Schedule Notify Error:", err);
+    }
+
     res.status(200).json({ message: "Schedule updated.", group: withLegacyScheduleMirror(group.toObject()) });
+});
+
+/**
+ * @desc    How many of a schedule's regular (not hand-edited) upcoming meetups fall after
+ *          a given day. The app asks before saving an end date, so it only shows the
+ *          "Delete meetups after …?" prompt when there's something to delete.
+ * @route   GET /api/groups/:groupId/schedules/:scheduleId/meetups-after?date=YYYY-MM-DD
+ */
+export const countMeetupsAfter = asyncHandler(async (req, res) => {
+    const { groupId, scheduleId } = req.params;
+    const { userId: clerkId } = getAuth(req);
+    const { date } = req.query || {};
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const target = group.schedules.id(scheduleId);
+    if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
+
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? DateTime.fromISO(date, { zone: group.timezone }) : null;
+    if (!day?.isValid) return res.status(400).json({ error: "A date (YYYY-MM-DD) is required." });
+
+    const count = await Meetup.countDocuments({
+        group: group._id,
+        schedule: target._id,
+        isOverride: false,
+        status: "scheduled",
+        date: { $gt: day.endOf("day").toJSDate() },
+    });
+    res.status(200).json({ count });
 });
 
 /**
@@ -456,6 +729,7 @@ export const deleteSchedule = asyncHandler(async (req, res) => {
 
     if (futureMeetups.length > 0) {
         await Meetup.deleteMany({ _id: { $in: futureMeetups.map(m => m._id) } });
+        await deleteUnfinishedTournaments(futureMeetups.map(m => m._id));
 
         const membersToNotify = await User.find({ _id: { $in: group.members } });
         if (membersToNotify.length > 0) {
@@ -463,7 +737,8 @@ export const deleteSchedule = asyncHandler(async (req, res) => {
                 title: "Schedule Removed",
                 body: `"${target.name}" was removed from "${group.name}" — its upcoming meetups have been deleted.`,
                 data: { groupId: group._id.toString(), type: 'schedule_removed' },
-                type: 'group-updated',
+                type: 'schedule-removed',
+                meta: { scheduleName: target.name },
                 sender: requester._id,
                 group: group._id,
             });
@@ -574,6 +849,11 @@ export const updateModerators = asyncHandler(async (req, res) => {
     const { moderatorIds } = req.body;
     const { userId: clerkId } = getAuth(req);
 
+    if (!isValidId(groupId)) return res.status(400).json({ error: "Invalid group ID." });
+    if (!Array.isArray(moderatorIds) || !moderatorIds.every(isValidId)) {
+        return res.status(400).json({ error: "moderatorIds must be a list of user IDs." });
+    }
+
     const group = await Group.findById(groupId);
     const user = await User.findOne({ clerkId });
 
@@ -597,6 +877,8 @@ export const toggleModerator = asyncHandler(async (req, res) => {
     const { userIdToToggle } = req.body;
     const { userId: clerkId } = getAuth(req);
 
+    if (!isValidId(groupId) || !isValidId(userIdToToggle)) return res.status(400).json({ error: "Invalid ID." });
+
     const group = await Group.findById(groupId);
     const user = await User.findOne({ clerkId });
 
@@ -606,6 +888,10 @@ export const toggleModerator = asyncHandler(async (req, res) => {
     }
     if (group.owner.toString() === userIdToToggle) {
         return res.status(400).json({ error: "The owner cannot be demoted." });
+    }
+
+    if (!group.members.some(id => id.toString() === userIdToToggle)) {
+        return res.status(400).json({ error: "Only group members can be moderators." });
     }
 
     const isCurrentlyMod = group.moderators.some(id => id.toString() === userIdToToggle);
@@ -655,22 +941,40 @@ export const transferOwnership = asyncHandler(async (req, res) => {
     // against a concurrent transfer (e.g. a double-tap) racing this one
     const updated = await Group.findOneAndUpdate(
         { _id: groupId, owner: requester._id },
-        { $set: { owner: newOwner._id, moderators: newModerators } },
+        // A timed-out owner could never be un-timed-out (moderators can't act on the owner, nobody on
+        // themself), so becoming owner ends any chat timeout.
+        { $set: { owner: newOwner._id, moderators: newModerators }, $pull: { chatTimeouts: { user: newOwner._id } } },
         { new: true }
     );
     if (!updated) return res.status(409).json({ error: "Ownership already changed. Please refresh and try again." });
+    await clearOwnerChatTimeout(String(group._id), newOwner.clerkId);
     await touchGroupMeetups(group._id);
 
+    // Premium belongs to the owner's subscription, so it does not follow the
+    // group: if the outgoing owner was covering it and the new owner isn't
+    // subscribed, the group's Premium features pause. Tell the new owner.
+    const premiumPaused = hasPremium(requester) && !hasPremium(newOwner);
+
+    // The transfer is already committed, so a slow push provider must not hold
+    // the response past the client's request timeout (which would show the
+    // outgoing owner an error for a transfer that succeeded). Wait for the
+    // notification, but only up to a cap; it keeps running either way.
     try {
-        await notifyAndPersist([newOwner], {
+        const notified = notifyAndPersist([newOwner], {
             title: "You're Now the Owner",
-            body: `${requester.firstName} made you the owner of "${group.name}".`,
+            body: `${requester.firstName} made you the owner of "${group.name}".` +
+                (premiumPaused ? " Its Premium features are paused until you have your own Premium subscription." : ""),
             data: { groupId: group._id.toString(), type: 'ownership-transferred' },
             type: 'ownership-transferred',
             sender: requester._id,
             group: group._id,
+            meta: premiumPaused ? { premiumPaused: true } : undefined,
         });
+        notified.catch(err => console.error(err));
+        await Promise.race([notified, new Promise(resolve => setTimeout(resolve, 3000))]);
     } catch (err) { console.error(err); }
+
+    await postSystemMessage(group._id, `${requester.firstName} made ${newOwner.firstName} the group owner`);
 
     res.status(200).json({ message: "Ownership transferred." });
 });
@@ -693,32 +997,61 @@ export const getGroups = asyncHandler(async (req, res) => {
         }
 
         const [changed, validIds] = await Promise.all([
-            Group.find({ ...filter, updatedAt: { $gte: sinceDate } }).lean(),
+            // DM chats are always re-sent: a rename or new photo changes the User, not the Group.
+            Group.find({ ...filter, $or: [{ updatedAt: { $gte: sinceDate } }, { isDM: true }] }).lean(),
             Group.find(filter).distinct('_id'),
         ]);
 
         return res.status(200).json({
-            changed: changed.map(withLegacyScheduleMirror),
+            changed: (await withLiveDmParticipants(changed)).map(withLegacyScheduleMirror),
             validIds: validIds.map((id) => id.toString()),
             syncedAt: new Date().toISOString(),
         });
     }
 
-    const groups = await Group.find(filter).lean();
+    const groups = await withLiveDmParticipants(await Group.find(filter).lean());
     res.status(200).json(groups.map(withLegacyScheduleMirror));
 });
 
 export const getGroupDetails = asyncHandler(async (req, res) => {
     const { groupId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(groupId)) return res.status(400).json({ error: "Invalid ID." });
-    
-    const group = await Group.findById(groupId)
-        .populate("members", "firstName lastName _id profilePicture")
-        .populate("moderators", "firstName lastName profilePicture _id")
+
+    // Only members can see a group's people and schedules.
+    const { userId: clerkId } = getAuth(req);
+    const viewer = await User.findOne({ clerkId }).select('_id').lean();
+    if (!viewer) return res.status(404).json({ error: "User not found." });
+    // Someone with an open invitation may look before answering: tapping the invitation opens
+    // this screen (in every app version).
+    const isMember = await Group.exists({ _id: groupId, members: viewer._id });
+    if (!isMember) {
+        const invited = await Notification.exists({ recipient: viewer._id, group: groupId, type: 'group-invite', status: 'pending' });
+        if (!invited) return res.status(403).json({ error: "You are not a member of this group." });
+    }
+
+    const found = await Group.findById(groupId)
+        .select("+chatTimeouts")
+        .populate("members", "firstName lastName _id profilePicture clerkId")
+        .populate("moderators", "firstName lastName profilePicture _id clerkId")
         .lean();
         
-    if (!group) return res.status(404).json({ error: "Group not found." });
-    res.status(200).json(withLegacyScheduleMirror(group));
+    if (!found) return res.status(404).json({ error: "Group not found." });
+    // Chat timeouts are private: each person learns only their own; owners/moderators see all
+    // active ones (to show and end them). See docs/specs/2026-11-16-chat-moderation-design.md.
+    const { chatTimeouts, ...group } = found;
+    const now = new Date();
+    const mine = activeTimeout(chatTimeouts, viewer._id, now);
+    const timeoutFields = { myChatTimeout: mine ? { until: mine.until ? new Date(mine.until).toISOString() : null } : null };
+    const viewerIsStaff = String(group.owner?._id ?? group.owner) === String(viewer._id)
+        || (group.moderators || []).some((m) => String(m?._id ?? m) === String(viewer._id));
+    if (viewerIsStaff) {
+        timeoutFields.chatTimeouts = pruneExpired(chatTimeouts, now).map((e) => ({
+            userId: String(e.user),
+            until: e.until ? new Date(e.until).toISOString() : null,
+        }));
+    }
+    const [live] = await withLiveDmParticipants([group]);
+    res.status(200).json({ ...withLegacyScheduleMirror(live), ...timeoutFields, isPremium: await groupHasPremium(group) });
 });
 
 export const addMember = asyncHandler(async (req, res) => {
@@ -741,6 +1074,7 @@ export const addMember = asyncHandler(async (req, res) => {
 
   await group.updateOne({ $addToSet: { members: userToAdd._id } });
   await userToAdd.updateOne({ $addToSet: { groups: group._id } });
+  await addChatMembers(group._id, [userToAdd.clerkId]);
 
   try {
     const today = new Date();
@@ -758,7 +1092,9 @@ export const addMember = asyncHandler(async (req, res) => {
         group: group._id,
     });
   } catch (err) { console.error(err); }
-  
+
+  await postSystemMessage(group._id, `${requester.firstName} added ${userToAdd.firstName}`);
+
   res.status(200).json({ message: "User added." });
 });
 
@@ -807,8 +1143,9 @@ export const removeMember = asyncHandler(async (req, res) => {
     }
 
     await group.updateOne({ $pull: { members: memberToRemove._id, moderators: memberToRemove._id } });
-    await memberToRemove.updateOne({ $pull: { groups: group._id } });
-    await Meetup.updateMany({ group: group._id, date: { $gte: new Date() } }, { $pull: { members: memberToRemove._id, in: memberToRemove._id, out: memberToRemove._id, undecided: memberToRemove._id, waitlist: memberToRemove._id } });
+    await memberToRemove.updateOne({ $pull: { groups: group._id, mutedGroups: group._id, mutedUntilNextMeetup: group._id, groupMutes: { group: group._id } } });
+    await scrubMemberFromUpcomingMeetups({ userId: memberToRemove._id, clerkId: memberToRemove.clerkId, groupId: group._id });
+    await removeChatMember(group._id, memberToRemove.clerkId);
 
     try {
         await notifyAndPersist([memberToRemove], {
@@ -821,13 +1158,15 @@ export const removeMember = asyncHandler(async (req, res) => {
         });
     } catch (err) { console.error(err); }
 
+    await postSystemMessage(group._id, `${requester.firstName} removed ${memberToRemove.firstName}`);
+
     res.status(200).json({ message: "Member removed." });
 });
 
 export const createOneOffMeetup = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
     const { groupId } = req.params;
-    const { date, time, timezone, capacity, name, location, description, scheduleId } = req.body;
+    const { date, time, endTime, timezone, capacity, name, location, description, scheduleId } = req.body;
 
     const group = await Group.findById(groupId);
     const requester = await User.findOne({ clerkId }).lean();
@@ -836,6 +1175,9 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
 
     const meetupDate = calculateNextMeetupDate(date, time, timezone, 'once');
     if (meetupDate < new Date()) return res.status(400).json({ error: "Cannot schedule in the past." });
+    const endTimeError = validateEndTime(time, endTime);
+    if (endTimeError) return res.status(400).json({ error: endTimeError });
+    const meetupEndTime = endTime ? String(endTime).trim() : null;
 
     // use the linked schedule's location/capacity defaults if this belongs to a
     // series; otherwise fall back to the group-level defaults.
@@ -843,6 +1185,19 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
     const fallbackLocation = linkedSchedule ? linkedSchedule.defaultLocation : group.defaultLocation;
     const fallbackCapacity = linkedSchedule ? linkedSchedule.defaultCapacity : group.defaultCapacity;
     const fallbackDescription = linkedSchedule ? linkedSchedule.defaultDescription : "";
+    const meetupCapacity = capacity !== undefined ? capacity : fallbackCapacity;
+
+    // The meetup's own RSVP rules, minimum, things to bring and rides (Premium ones need the owner's Premium).
+    const settings = await parseMeetupSettings(req.body, { meetup: null, group, capacity: meetupCapacity });
+    if (settings.status) return res.status(settings.status).json(settings.body);
+    const { bringClaims: _claims, rides: _rides, ...settingsPatch } = settings.patch;
+    const ownSettings = settings.touched
+        ? {
+            ...settingsPatch,
+            customSettings: true,
+            ...ownRsvpWindow({ ...settingsPatch, startsAt: meetupDate, timezone }),
+        }
+        : {};
 
     let newMeetup;
     try {
@@ -852,15 +1207,18 @@ export const createOneOffMeetup = asyncHandler(async (req, res) => {
             name: name || (linkedSchedule ? linkedSchedule.name : group.name),
             date: meetupDate,
             time: time,
+            endTime: meetupEndTime,
+            endsAt: computeEndsAt(meetupDate, meetupEndTime, timezone),
             timezone: timezone,
             location: location !== undefined ? location : fallbackLocation,
             description: description !== undefined ? description : fallbackDescription,
             members: group.members,
             undecided: group.members,
-            capacity: capacity !== undefined ? capacity : fallbackCapacity,
+            capacity: meetupCapacity,
             isOverride: true,
             startsAt: meetupDate,
             createdBy: requester._id,
+            ...ownSettings,
         });
     } catch (err) {
         // Linked to a series slot that already has a meetup (the unique index
@@ -898,8 +1256,10 @@ export const leaveGroup = asyncHandler(async (req, res) => {
     if (group.owner.toString() === user._id.toString()) return res.status(403).json({ error: "Owner cannot leave." });
 
     await group.updateOne({ $pull: { members: user._id, moderators: user._id } });
-    await User.updateOne({ _id: user._id }, { $pull: { groups: group._id } });
-    await Meetup.updateMany({ group: group._id, date: { $gte: new Date() } }, { $pull: { members: user._id, in: user._id, out: user._id, undecided: user._id, waitlist: user._id } });
+    await User.updateOne({ _id: user._id }, { $pull: { groups: group._id, mutedGroups: group._id, mutedUntilNextMeetup: group._id, groupMutes: { group: group._id } } });
+    await scrubMemberFromUpcomingMeetups({ userId: user._id, clerkId: user.clerkId, groupId: group._id });
+    await removeChatMember(group._id, user.clerkId);
+    await postSystemMessage(group._id, `${user.firstName} left the group`);
     res.status(200).json({ message: "You have left." });
 });
 
@@ -911,77 +1271,327 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     if (!group || !requester) return res.status(404).json({ error: "Resource not found." });
     if (group.owner.toString() !== requester._id.toString()) return res.status(403).json({ error: "Only owner can delete." });
 
-    await Meetup.deleteMany({ group: groupId });
-    await Notification.deleteMany({ group: groupId });
-    await User.updateMany({ _id: { $in: group.members } }, { $pull: { groups: groupId } });
-    await Group.findByIdAndDelete(groupId);
-    res.status(200).json({ message: "Deleted." });
-});
+    // Tell the other members first (the notification keeps the group's name, since the group itself is about to go).
+    const others = await User.find({ _id: { $in: group.members, $ne: requester._id } });
 
-export const generateInviteLink = asyncHandler(async (req, res) => {
-    const { userId: clerkId } = getAuth(req);
-    const { groupId } = req.params;
+    // Everything that belongs to the group goes with it, chat included.
+    await deleteGroupAndData(group);
 
-    const [user, group] = await Promise.all([
-        User.findOne({ clerkId }),
-        Group.findById(groupId),
-    ]);
-    if (!user || !group) return res.status(404).json({ error: "Resource not found." });
-    if (!group.members.some(m => m.toString() === user._id.toString())) {
-        return res.status(403).json({ error: "You must be a group member to generate an invite link." });
-    }
-
-    // Reuse an existing unexpired token so the same link stays stable
-    let invite = await InviteToken.findOne({ groupId, expiresAt: { $gt: new Date() } });
-    if (!invite) {
-        const token = crypto.randomBytes(16).toString('hex');
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        invite = await InviteToken.create({ token, groupId, createdBy: user._id, expiresAt });
-    }
-
-    res.status(200).json({ link: `https://invite.groupthatapp.com/join/${invite.token}` });
-});
-
-export const redeemInviteToken = asyncHandler(async (req, res) => {
-    const { userId: clerkId } = getAuth(req);
-    const { token } = req.params;
-
-    const invite = await InviteToken.findOne({ token, expiresAt: { $gt: new Date() } });
-    if (!invite) return res.status(404).json({ error: "This invite link is invalid or has expired." });
-
-    const [user, group] = await Promise.all([
-        User.findOne({ clerkId }),
-        Group.findById(invite.groupId),
-    ]);
-    if (!user || !group) return res.status(404).json({ error: "Resource not found." });
-
-    if (group.members.some(m => m.toString() === user._id.toString())) {
-        return res.status(200).json({ groupId: group._id, groupName: group.name, alreadyMember: true });
-    }
-
-    await group.updateOne({ $addToSet: { members: user._id } });
-    await user.updateOne({ $addToSet: { groups: group._id } });
-
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    await Meetup.updateMany(
-        { group: group._id, date: { $gte: today } },
-        { $addToSet: { members: user._id, undecided: user._id } }
-    );
-
-    const owner = await User.findById(group.owner);
-    if (owner && owner._id.toString() !== user._id.toString()) {
+    if (others.length > 0 && !group.isDM) {
         try {
-            await notifyAndPersist([owner], {
-                title: "New Member",
-                body: `${user.firstName} joined "${group.name}" via invite link.`,
-                data: { groupId: group._id.toString(), type: 'group-member-joined' },
-                type: 'group-member-joined',
-                sender: user._id,
-                group: group._id,
+            await notifyAndPersist(others, {
+                title: "Group Deleted",
+                body: `${requester.firstName} deleted the group "${group.name}".`,
+                data: { type: 'group-deleted' },
+                type: 'group-deleted',
+                sender: requester._id,
+                meta: { groupName: group.name },
             });
         } catch (err) { console.error(err); }
     }
+    res.status(200).json({ message: "Deleted." });
+});
 
-    res.status(200).json({ groupId: group._id, groupName: group.name, alreadyMember: false });
+// Invite links live in invite.controller.js.
+
+const TIME_RE = /^(0?[1-9]|1[0-2]):[0-5]\d (AM|PM)$/;
+const MAX_OPEN_DAYS = 365;
+const clockMinutes = (t) => {
+    const [, h, m, ap] = t.match(/^(\d+):(\d+) (AM|PM)$/);
+    return ((Number(h) % 12) + (ap === "PM" ? 12 : 0)) * 60 + Number(m);
+};
+/** Why an RSVP open time (days before + clock time) can't be used, or null. It may not be after the series' deadline. */
+const openTimeProblem = (schedule, days, time) => {
+    if (!Number.isInteger(days) || days < 0 || days > MAX_OPEN_DAYS) {
+        return `RSVPs can open between the day of and ${MAX_OPEN_DAYS} days before.`;
+    }
+    if (typeof time !== "string" || !TIME_RE.test(time)) return "Choose what time RSVPs open.";
+    const dl = schedule.generationDeadlineDays;
+    if (dl != null) {
+        const afterDeadline = days < dl || (days === dl && clockMinutes(time) > clockMinutes(schedule.generationDeadlineTime || "09:00 AM"));
+        if (afterDeadline) return "RSVPs can't open after the latest time to RSVP.";
+    }
+    return null;
+};
+
+/**
+ * @desc    Set a series' priority RSVP (Premium): who gets a head start, in what
+ *          groups, and for how long. Upcoming meetups are updated in place so
+ *          nobody's RSVP is lost.
+ * @route   PUT /api/groups/:groupId/schedules/:scheduleId/priority
+ * @body    { enabled, order: userId[], tiers: [{ size, windowMinutes }], quiet?: { enabled, start, end } }
+ */
+export const updateSchedulePriority = asyncHandler(async (req, res) => {
+    const { groupId, scheduleId } = req.params;
+    const { userId: clerkId } = getAuth(req);
+    const { enabled, order, tiers, quiet, openDays, openTime } = req.body;
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const target = group.schedules.id(scheduleId);
+    if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
+    const scheduleBefore = scheduleSnapshot(target, group.timezone);
+
+    if (!enabled) {
+        target.priorityEnabled = false;
+    } else {
+        if (!(await groupHasPremium(group))) {
+            return res.status(403).json({ error: "premium_required", message: "Priority RSVP requires GroupThat Premium." });
+        }
+        // The Priority RSVP screen also sets when RSVPs open (when Group 1 starts). Older app builds don't send it.
+        if (openDays !== undefined) {
+            const openError = openTimeProblem(target, openDays, openTime);
+            if (openError) return res.status(400).json({ error: openError });
+        }
+        if (target.generationLeadDays == null && openDays === undefined) {
+            return res.status(400).json({ error: "Set when RSVPs open for this series to use priority RSVP." });
+        }
+        if (!Array.isArray(tiers) || tiers.length < 1 || tiers.length > MAX_PRIORITY_TIERS) {
+            return res.status(400).json({ error: `Add between 1 and ${MAX_PRIORITY_TIERS} priority groups.` });
+        }
+        const cleanTiers = [];
+        for (const t of tiers) {
+            const size = Number(t?.size);
+            const windowMinutes = Number(t?.windowMinutes);
+            if (!Number.isInteger(size) || size < 1 || size > 500) {
+                return res.status(400).json({ error: "Each group needs a size of at least 1 person." });
+            }
+            if (!Number.isInteger(windowMinutes) || windowMinutes < 1 || windowMinutes > MAX_WINDOW_MINUTES) {
+                return res.status(400).json({ error: "Each group's time must be between 1 minute and 7 days." });
+            }
+            cleanTiers.push({ size, windowMinutes });
+        }
+
+        if (!Array.isArray(order)) return res.status(400).json({ error: "Invalid priority order." });
+        const memberIds = new Set(group.members.map(m => m.toString()));
+        const seen = new Set();
+        const cleanOrder = [];
+        for (const id of order.map(String)) {
+            if (!memberIds.has(id) || seen.has(id)) continue;
+            seen.add(id);
+            cleanOrder.push(id);
+        }
+
+        const q = {
+            enabled: !!quiet?.enabled,
+            start: quiet?.start || target.priorityQuiet?.start || "10:00 PM",
+            end: quiet?.end || target.priorityQuiet?.end || "08:00 AM",
+        };
+        if (q.enabled) {
+            if (!TIME_RE.test(q.start) || !TIME_RE.test(q.end)) {
+                return res.status(400).json({ error: "Quiet hours need a start and end time." });
+            }
+            if (q.start === q.end) {
+                return res.status(400).json({ error: "Quiet hours can't start and end at the same time." });
+            }
+        }
+
+        target.priorityEnabled = true;
+        target.priorityOrder = cleanOrder;
+        target.priorityTiers = cleanTiers;
+        target.priorityQuiet = q;
+        if (openDays !== undefined) {
+            target.generationLeadDays = openDays;
+            target.generationLeadTime = openTime;
+        }
+    }
+
+    await group.save();
+    await refreshPriorityTiers(group, target);
+
+    // A new open time is a series change members should hear about, same as from the series' own Save.
+    try {
+        const changes = scheduleChanges(scheduleBefore, scheduleSnapshot(target, group.timezone));
+        if (changes.length > 0) {
+            const membersToNotify = await User.find({ _id: { $in: group.members } });
+            await notifyAndPersist(membersToNotify, {
+                title: `Schedule Updated: ${target.name} (${group.name})`,
+                body: pushBody(changes),
+                data: { groupId: group._id.toString(), type: 'schedule_updated' },
+                type: 'schedule-updated',
+                sender: user._id,
+                group: group._id,
+                meta: { changes, scheduleName: target.name },
+            });
+        }
+    } catch (err) {
+        console.error("Update Schedule Priority Notify Error:", err);
+    }
+
+    res.status(200).json({ message: "Priority RSVP updated.", group: withLegacyScheduleMirror(group.toObject()) });
+});
+
+
+/**
+ * @desc    Set a series' custom RSVP questions (Premium). Upcoming meetups get the new
+ *          questions; answers to questions that still exist are kept.
+ * @route   PUT /api/groups/:groupId/schedules/:scheduleId/questions
+ * @body    { questions: [{ _id?, prompt, type: 'text'|'choice'|'yesno', options?, required? }] }
+ */
+export const updateScheduleQuestions = asyncHandler(async (req, res) => {
+    const { groupId, scheduleId } = req.params;
+    const { userId: clerkId } = getAuth(req);
+
+    const group = await Group.findById(groupId);
+    const user = await User.findOne({ clerkId });
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const target = group.schedules.id(scheduleId);
+    if (!target || target.active === false) return res.status(404).json({ error: "Schedule not found." });
+
+    const parsed = req.body.questions === undefined
+        ? { questions: target.defaultQuestions }
+        : parseQuestions(req.body.questions, target.defaultQuestions);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    if (parsed.questions.length > 0 && !(await groupHasPremium(group))) {
+        return res.status(403).json({ error: "premium_required", message: "Custom RSVP questions require GroupThat Premium." });
+    }
+
+    target.defaultQuestions = parsed.questions;
+    await group.save();
+    await refreshSeriesQuestions(group, target);
+
+    res.status(200).json({ message: "RSVP questions updated.", group: withLegacyScheduleMirror(group.toObject()) });
+});
+
+
+const MAX_RSVP_RESPONSES = 20; // per status
+
+/**
+ * @desc    Set a group's custom RSVP reactions (Premium; owner/moderators). The full
+ *          list is replaced. Ids of existing reactions are kept.
+ * @route   PUT /api/groups/:groupId/rsvp-responses
+ * @body    { responses: [{ _id?, status: 'in'|'out', text, emoji }] }
+ */
+export const updateRsvpResponses = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const group = await Group.findById(req.params.groupId);
+    const user = await User.findOne({ clerkId });
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+
+    const raw = req.body.responses;
+    if (!Array.isArray(raw)) return res.status(400).json({ error: "Invalid reactions." });
+    const known = new Set((group.rsvpResponses || []).map(r => r._id.toString()));
+    const counts = { in: 0, out: 0 };
+    const clean = [];
+    for (const r of raw) {
+        if (r?.status !== 'in' && r?.status !== 'out') return res.status(400).json({ error: "Each reaction must be for In or Out." });
+        const text = typeof r.text === 'string' ? r.text.trim() : '';
+        const emoji = typeof r.emoji === 'string' ? r.emoji.trim() : '';
+        if (!text) return res.status(400).json({ error: "Each reaction needs a catchphrase." });
+        if (text.length > 80) return res.status(400).json({ error: "Catchphrases can be at most 80 characters." });
+        if (!emoji || emoji.length > 16) return res.status(400).json({ error: "Each reaction needs an emoji." });
+        if (++counts[r.status] > MAX_RSVP_RESPONSES) return res.status(400).json({ error: `You can add at most ${MAX_RSVP_RESPONSES} reactions for each of In and Out.` });
+        const entry = { status: r.status, text, emoji };
+        if (r._id && known.has(String(r._id))) entry._id = r._id;
+        clean.push(entry);
+    }
+    if (clean.length > 0 && !(await groupHasPremium(group))) {
+        return res.status(403).json({ error: "premium_required", message: "Custom RSVP reactions require GroupThat Premium." });
+    }
+
+    group.rsvpResponses = clean;
+    await group.save();
+    // Cached meetups carry a snapshot of the group, so nudge them to re-sync.
+    await touchGroupMeetups(group._id);
+    res.status(200).json({ message: "RSVP reactions updated.", group: withLegacyScheduleMirror(group.toObject()) });
+});
+
+const STATS_PREMIUM_REQUIRED = {
+    error: "premium_required",
+    message: "Group stats and attendance history require GroupThat Premium.",
+};
+
+/**
+ * @desc    Attendance stats, awards and history for a group (Premium). Any member can view;
+ *          joke awards are shaped per viewer (utils/statsVisibility.js).
+ * @route   GET /api/groups/:groupId/stats?scheduleId=
+ */
+export const getGroupStats = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const [group, user] = await Promise.all([Group.findById(req.params.groupId), User.findOne({ clerkId })]);
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!group.members.some(m => m.equals(user._id))) return res.status(403).json({ error: "Permission denied." });
+    if (!(await groupHasPremium(group))) return res.status(403).json(STATS_PREMIUM_REQUIRED);
+
+    const full = await buildGroupStats(group, { scheduleId: req.query.scheduleId || undefined });
+    res.status(200).json(shapeStatsForViewer(full, {
+        viewerId: user._id,
+        isOrganizer: canManageGroup(user._id, group),
+        revealJokes: group.statsRevealJokes === true,
+    }));
+});
+
+/** The group and the signed-in user, or an error response already sent. Members only. */
+const loadGroupForMember = async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    if (!mongoose.isValidObjectId(req.params.groupId)) { res.status(404).json({ error: "Resource not found." }); return null; }
+    const [group, user] = await Promise.all([Group.findById(req.params.groupId), User.findOne({ clerkId })]);
+    if (!group || !user) { res.status(404).json({ error: "Resource not found." }); return null; }
+    if (!group.members.some(m => String(m) === String(user._id))) { res.status(403).json({ error: "Permission denied." }); return null; }
+    return { group, user };
+};
+
+/**
+ * @desc    A group's finished meetups, newest first. Members only; not premium-gated.
+ * @route   GET /api/groups/:groupId/past-meetups?before=<ISO>&limit=<n ≤ 50>
+ */
+export const getPastMeetups = asyncHandler(async (req, res) => {
+    const ctx = await loadGroupForMember(req, res);
+    if (!ctx) return;
+    let before;
+    if (req.query.before) {
+        before = new Date(req.query.before);
+        if (isNaN(before.getTime())) return res.status(400).json({ error: "Invalid 'before' date." });
+    }
+    res.status(200).json(await listPastMeetups(ctx.group._id, { before, limit: req.query.limit }));
+});
+
+/**
+ * @desc    Everything recorded about one past meetup (people, items, cars, tournament). Members only.
+ * @route   GET /api/groups/:groupId/past-meetups/:meetupId
+ */
+export const getPastMeetupDetail = asyncHandler(async (req, res) => {
+    const ctx = await loadGroupForMember(req, res);
+    if (!ctx) return;
+    if (!mongoose.isValidObjectId(req.params.meetupId)) return res.status(404).json({ error: "Meetup not found." });
+    const detail = await getPastMeetup(ctx.group._id, req.params.meetupId);
+    if (!detail) return res.status(404).json({ error: "Meetup not found." });
+    res.status(200).json(detail);
+});
+
+/**
+ * @desc    Stats settings: whether the joke awards are shown to every member. Owner and moderators.
+ * @route   PATCH /api/groups/:groupId/stats-settings   body { revealJokes: boolean }
+ */
+export const updateStatsSettings = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { revealJokes } = req.body || {};
+    const [group, user] = await Promise.all([Group.findById(req.params.groupId), User.findOne({ clerkId })]);
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+    if (typeof revealJokes !== "boolean") return res.status(400).json({ error: "revealJokes must be true or false." });
+
+    await Group.updateOne({ _id: group._id }, { $set: { statsRevealJokes: revealJokes } });
+    res.status(200).json({ revealJokes });
+});
+
+/**
+ * @desc    Attendance history as CSV (Premium). Owner and moderators only.
+ * @route   GET /api/groups/:groupId/stats/export?scheduleId=
+ */
+export const exportGroupAttendance = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const [group, user] = await Promise.all([Group.findById(req.params.groupId), User.findOne({ clerkId })]);
+    if (!group || !user) return res.status(404).json({ error: "Resource not found." });
+    if (!canManageGroup(user._id, group)) return res.status(403).json({ error: "Permission denied." });
+    if (!(await groupHasPremium(group))) return res.status(403).json(STATS_PREMIUM_REQUIRED);
+
+    const csv = await buildAttendanceCsv(group, { scheduleId: req.query.scheduleId || undefined });
+    res.status(200).json({ filename: `${group.name.replace(/[^\w\-]+/g, "_")}_attendance.csv`, csv });
 });

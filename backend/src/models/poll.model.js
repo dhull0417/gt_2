@@ -18,7 +18,8 @@ const pollSchema = new mongoose.Schema({
     },
   },
   status: { type: String, enum: ['active', 'expired', 'cancelled'], default: 'active' },
-  expiresAt: { type: Date, required: true },
+  // null = no end: the poll stays open until someone cancels it.
+  expiresAt: { type: Date, default: null },
 }, { timestamps: true });
 
 const Poll = mongoose.model("Poll", pollSchema);

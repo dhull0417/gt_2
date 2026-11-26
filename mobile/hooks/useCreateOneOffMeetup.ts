@@ -5,6 +5,7 @@ import { getErrorMessage } from "../utils/networkError";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { broadcastMeetupUpdate } from "../utils/groupRealtime";
+import { toast } from '@/contexts/ToastContext';
 
 interface CreateOneOffMeetupVariables {
   groupId: string;
@@ -24,7 +25,7 @@ export const useCreateOneOffMeetup = () => {
       groupApi.createOneOffMeetup(api, variables),
 
     onSuccess: (_data, variables) => {
-      Alert.alert("Success", "One-off meetup has been scheduled!");
+      toast.success("Meetup scheduled!");
       queryClient.invalidateQueries({ queryKey: ['meetups'] });
       broadcastMeetupUpdate(getToken, variables.groupId);
       router.back();

@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { OfflineEmptyState } from '@/components/OfflineEmptyState';
+import { isOfflineEmpty, requireOnline } from '@/utils/offlineState';
 import {
     View,
     Text,
-    TouchableOpacity,
     StyleSheet,
     Modal,
     ActivityIndicator,
     ScrollView,
     Alert,
 } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateTime } from 'luxon';
@@ -16,6 +18,8 @@ import { Poll, PollOption } from '@/utils/api';
 import { useGetPolls } from '@/hooks/useGetPolls';
 import { useVotePoll } from '@/hooks/useVotePoll';
 import { useCancelPoll } from '@/hooks/useCancelPoll';
+import { ToastPortal } from '@/contexts/ToastContext';
+import { useThemeColors, useAppearance } from '@/contexts/AppearanceContext';
 
 interface PollListModalProps {
     visible: boolean;
@@ -27,12 +31,22 @@ interface PollListModalProps {
     initialPollId?: string;
 }
 
+const pollTimeLabel = (expiresAt: string | null, active: boolean): string => {
+    if (!expiresAt) return active ? 'Open until closed' : 'Closed';
+    const when = DateTime.fromISO(expiresAt).toFormat('MMM d, h:mm a');
+    return active ? `Expires ${when}` : `Ended ${when}`;
+};
+
 const voterIds = (option: PollOption): string[] =>
     option.voters.map(v => (typeof v === 'string' ? v : v._id));
 
 const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, initialPollId }: PollListModalProps) => {
-    const { data: polls, isLoading } = useGetPolls(groupId);
-    const { mutateAsync: votePoll, isPending: isVoting } = useVotePoll();
+    const colors = useThemeColors();
+    const { scheme } = useAppearance();
+    const isDark = scheme === 'dark';
+    const pollsQuery = useGetPolls(groupId);
+    const { data: polls, isLoading } = pollsQuery;
+    const { vote: votePoll, isBusyFor: isVoteBusyFor, isQueuedFor: isVoteQueuedFor } = useVotePoll();
     const { mutateAsync: cancelPoll, isPending: isCancelling } = useCancelPoll();
 
     const [selectedPollId, setSelectedPollId] = useState<string | null>(null);
@@ -44,6 +58,9 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
     }, [visible, initialPollId]);
 
     const selectedPoll = polls?.find(p => p._id === selectedPollId) || null;
+    // Sending now (spinner) vs. saved offline (button stays usable; a new choice replaces the queued one).
+    const isVoting = selectedPoll ? isVoteBusyFor(selectedPoll._id) : false;
+    const voteQueued = selectedPoll ? isVoteQueuedFor(selectedPoll._id) : false;
 
     useEffect(() => {
         if (!selectedPoll) return;
@@ -71,11 +88,12 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
         try {
             await votePoll({ pollId: selectedPoll._id, optionIds: selectedOptionIds, groupId });
         } catch {
-            // Errors surfaced via the mutation's onError alert.
+            // Shown once by the global queued-action error toast (app/_layout.tsx).
         }
     };
 
     const handleCancelPoll = (poll: Poll) => {
+        if (!requireOnline('cancel this poll')) return;
         Alert.alert('Cancel Poll', `Are you sure you want to cancel "${poll.prompt}"?`, [
             { text: 'No', style: 'cancel' },
             {
@@ -93,46 +111,51 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
         <>
             <View style={styles.modalHeader}>
                 <View style={{ width: 24 }} />
-                <Text style={styles.modalHeaderTitle}>Polls</Text>
-                <TouchableOpacity onPress={onClose}>
-                    <Feather name="x" size={24} color="#374151" />
-                </TouchableOpacity>
+                <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>Polls</Text>
+                <PressableOpacity accessibilityLabel="Close" onPress={onClose} hitSlop={12}>
+                    <Feather name="x" size={24} color={colors.textSecondary} />
+                </PressableOpacity>
             </View>
 
-            {isLoading ? (
-                <ActivityIndicator color="#4A90E2" style={{ marginTop: 40 }} />
+            {isOfflineEmpty(pollsQuery) ? (
+                <OfflineEmptyState message="Connect to the internet to load the polls." />
+            ) : isLoading ? (
+                <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
             ) : !polls || polls.length === 0 ? (
-                <Text style={styles.emptyText}>No polls yet.</Text>
+                <Text style={[styles.emptyText, { color: colors.textFaint }]}>No polls yet.</Text>
             ) : (
                 <ScrollView showsVerticalScrollIndicator={false}>
                     {polls.map(poll => {
                         const hasVoted = poll.options.some(opt => voterIds(opt).includes(currentUserId));
                         const isActive = poll.status === 'active';
                         return (
-                            <TouchableOpacity key={poll._id} style={styles.pollRow} onPress={() => openPoll(poll)} activeOpacity={0.7}>
-                                <View style={[styles.pollIconChip, isActive ? styles.pollIconChipActive : styles.pollIconChipEnded]}>
-                                    <Feather name="bar-chart-2" size={18} color={isActive ? '#4A90E2' : '#9CA3AF'} />
+                            <PressableOpacity key={poll._id} style={[styles.pollRow, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => openPoll(poll)} activeOpacity={0.7}>
+                                <View style={[
+                                    styles.pollIconChip,
+                                    isActive
+                                        ? { backgroundColor: isDark ? '#1A2A42' : '#EFF6FF', borderColor: isDark ? '#2C4870' : '#BFDBFE' }
+                                        : { backgroundColor: colors.backgroundAlt, borderColor: colors.border },
+                                ]}>
+                                    <Feather name="bar-chart-2" size={18} color={isActive ? colors.brand : colors.textFaint} />
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.pollRowPrompt} numberOfLines={2}>
+                                    <Text style={[styles.pollRowPrompt, { color: colors.textPrimary }]} numberOfLines={2}>
                                         {poll.prompt}
                                     </Text>
                                     <View style={styles.pollRowMetaRow}>
-                                        {isActive && <View style={styles.activeDot} />}
-                                        <Text style={styles.pollRowMeta}>
-                                            {isActive
-                                                ? `Expires ${DateTime.fromISO(poll.expiresAt).toFormat('MMM d, h:mm a')}`
-                                                : `Ended ${DateTime.fromISO(poll.expiresAt).toFormat('MMM d, h:mm a')}`}
+                                        {isActive && <View style={[styles.activeDot, { backgroundColor: colors.brand }]} />}
+                                        <Text style={[styles.pollRowMeta, { color: colors.textFaint }]}>
+                                            {pollTimeLabel(poll.expiresAt, isActive)}
                                         </Text>
                                     </View>
                                 </View>
                                 {isActive && !hasVoted && (
-                                    <View style={styles.newBadge}>
-                                        <Text style={styles.newBadgeText}>New</Text>
+                                    <View style={[styles.newBadge, { backgroundColor: isDark ? '#1A2A42' : '#EFF6FF', borderColor: isDark ? '#2C4870' : '#BFDBFE' }]}>
+                                        <Text style={[styles.newBadgeText, { color: colors.brand }]}>New</Text>
                                     </View>
                                 )}
-                                <Feather name="chevron-right" size={18} color="#9CA3AF" />
-                            </TouchableOpacity>
+                                <Feather name="chevron-right" size={18} color={colors.textFaint} />
+                            </PressableOpacity>
                         );
                     })}
                 </ScrollView>
@@ -149,28 +172,31 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
         return (
             <>
                 <View style={styles.modalHeader}>
-                    <TouchableOpacity onPress={backToList}>
-                        <Feather name="chevron-left" size={24} color="#374151" />
-                    </TouchableOpacity>
-                    <Text style={styles.modalHeaderTitle}>{isExpired ? 'Results' : 'Vote'}</Text>
-                    <TouchableOpacity onPress={onClose}>
-                        <Feather name="x" size={24} color="#374151" />
-                    </TouchableOpacity>
+                    <PressableOpacity accessibilityLabel="Go back" onPress={backToList} hitSlop={12}>
+                        <Feather name="chevron-left" size={24} color={colors.textSecondary} />
+                    </PressableOpacity>
+                    <Text style={[styles.modalHeaderTitle, { color: colors.textPrimary }]}>{isExpired ? 'Results' : 'Vote'}</Text>
+                    <PressableOpacity accessibilityLabel="Close" onPress={onClose} hitSlop={12}>
+                        <Feather name="x" size={24} color={colors.textSecondary} />
+                    </PressableOpacity>
                 </View>
 
                 <ScrollView showsVerticalScrollIndicator={false}>
                     <View style={styles.detailStatusRow}>
-                        <View style={[styles.detailIconChip, isExpired ? styles.pollIconChipEnded : styles.pollIconChipActive]}>
-                            <Feather name={isExpired ? 'check-circle' : 'bar-chart-2'} size={16} color={isExpired ? '#9CA3AF' : '#4A90E2'} />
+                        <View style={[
+                            styles.detailIconChip,
+                            isExpired
+                                ? { backgroundColor: colors.backgroundAlt, borderColor: colors.border }
+                                : { backgroundColor: isDark ? '#1A2A42' : '#EFF6FF', borderColor: isDark ? '#2C4870' : '#BFDBFE' },
+                        ]}>
+                            <Feather name={isExpired ? 'check-circle' : 'bar-chart-2'} size={16} color={isExpired ? colors.textFaint : colors.brand} />
                         </View>
-                        <Text style={styles.detailStatusText}>
-                            {isExpired
-                                ? `Ended ${DateTime.fromISO(selectedPoll.expiresAt).toFormat('MMM d, h:mm a')}`
-                                : `Expires ${DateTime.fromISO(selectedPoll.expiresAt).toFormat('MMM d, h:mm a')}`}
+                        <Text style={[styles.detailStatusText, { color: colors.textMuted }]}>
+                            {pollTimeLabel(selectedPoll.expiresAt, !isExpired)}
                         </Text>
                     </View>
 
-                    <Text style={styles.detailPrompt}>{selectedPoll.prompt}</Text>
+                    <Text style={[styles.detailPrompt, { color: colors.textPrimary }]}>{selectedPoll.prompt}</Text>
 
                     {selectedPoll.options.map(option => {
                         const count = voterIds(option).length;
@@ -180,18 +206,26 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
 
                         if (isExpired) {
                             return (
-                                <View key={option._id} style={[styles.resultRow, isWinner && styles.resultRowWinner]}>
-                                    <View style={[styles.resultFill, { width: `${pct}%` }, isWinner && styles.resultFillWinner]} />
+                                <View key={option._id} style={[
+                                    styles.resultRow,
+                                    { borderColor: colors.border, backgroundColor: colors.backgroundAlt },
+                                    isWinner && { borderColor: colors.brand, borderWidth: 2 },
+                                ]}>
+                                    <View style={[
+                                        styles.resultFill,
+                                        { width: `${pct}%`, backgroundColor: isDark ? '#1A2A42' : '#EFF6FF' },
+                                        isWinner && { backgroundColor: isDark ? '#2C4870' : '#DBEAFE' },
+                                    ]} />
                                     <View style={styles.resultRowContent}>
                                         <View style={styles.resultTextRow}>
-                                            {isWinner && <Feather name="award" size={14} color="#4A90E2" style={{ marginRight: 6 }} />}
-                                            <Text style={[styles.resultText, isWinner && styles.resultTextWinner]} numberOfLines={2}>
+                                            {isWinner && <Feather name="award" size={14} color={colors.brand} style={{ marginRight: 6 }} />}
+                                            <Text style={[styles.resultText, { color: colors.textSecondary }, isWinner && { color: colors.brand, fontWeight: '900' }]} numberOfLines={2}>
                                                 {option.text}
                                             </Text>
                                         </View>
                                         <View style={{ alignItems: 'flex-end' }}>
-                                            <Text style={[styles.resultCount, isWinner && styles.resultTextWinner]}>{count}</Text>
-                                            <Text style={[styles.resultPct, isWinner && styles.resultPctWinner]}>{pct}%</Text>
+                                            <Text style={[styles.resultCount, { color: colors.textSecondary }, isWinner && { color: colors.brand, fontWeight: '900' }]}>{count}</Text>
+                                            <Text style={[styles.resultPct, { color: colors.textFaint }, isWinner && { color: colors.brand }]}>{pct}%</Text>
                                         </View>
                                     </View>
                                 </View>
@@ -199,9 +233,13 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                         }
 
                         return (
-                            <TouchableOpacity
+                            <PressableOpacity
                                 key={option._id}
-                                style={[styles.optionRow, isSelected && styles.optionRowSelected]}
+                                style={[
+                                    styles.optionRow,
+                                    { backgroundColor: colors.surface, borderColor: colors.border },
+                                    isSelected && { borderColor: colors.brand, backgroundColor: colors.brandSoft },
+                                ]}
                                 onPress={() => toggleOption(selectedPoll, option._id)}
                                 activeOpacity={0.7}
                             >
@@ -212,47 +250,54 @@ const PollListModal = ({ visible, onClose, groupId, currentUserId, canManage, in
                                             : (isSelected ? 'check-circle' : 'circle')
                                     }
                                     size={20}
-                                    color={isSelected ? '#4A90E2' : '#9CA3AF'}
+                                    color={isSelected ? colors.brand : colors.textFaint}
                                 />
-                                <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{option.text}</Text>
-                                <Text style={styles.optionCount}>{count}</Text>
-                            </TouchableOpacity>
+                                <Text style={[styles.optionText, { color: colors.textSecondary }, isSelected && { color: colors.textPrimary, fontWeight: '700' }]}>{option.text}</Text>
+                                <Text style={[styles.optionCount, { color: colors.textFaint }]}>{count}</Text>
+                            </PressableOpacity>
                         );
                     })}
 
                     {isExpired && (
-                        <View style={styles.totalVotesPill}>
-                            <Feather name="users" size={12} color="#6B7280" />
-                            <Text style={styles.totalVotesText}>{totalVotes} total vote{totalVotes === 1 ? '' : 's'}</Text>
+                        <View style={[styles.totalVotesPill, { backgroundColor: colors.backgroundAlt }]}>
+                            <Feather name="users" size={12} color={colors.textMuted} />
+                            <Text style={[styles.totalVotesText, { color: colors.textMuted }]}>{totalVotes} total vote{totalVotes === 1 ? '' : 's'}</Text>
                         </View>
                     )}
 
                     {(canManage || selectedPoll.creator._id === currentUserId) && !isExpired && (
-                        <TouchableOpacity onPress={() => handleCancelPoll(selectedPoll)} disabled={isCancelling} style={styles.cancelPollBtn} activeOpacity={0.7}>
-                            <Text style={styles.cancelPollText}>Cancel Poll</Text>
-                        </TouchableOpacity>
+                        <PressableOpacity onPress={() => handleCancelPoll(selectedPoll)} disabled={isCancelling} style={[styles.cancelPollBtn, { borderColor: colors.danger, backgroundColor: isDark ? '#3B1E1E' : '#FEF2F2' }]} activeOpacity={0.7}>
+                            <Text style={[styles.cancelPollText, { color: colors.danger }]}>Cancel Poll</Text>
+                        </PressableOpacity>
                     )}
                 </ScrollView>
 
                 {!isExpired && (
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={handleSubmitVote}
                         disabled={selectedOptionIds.length === 0 || isVoting}
-                        style={[styles.submitBtn, (selectedOptionIds.length === 0 || isVoting) && styles.submitBtnDisabled]}
+                        style={[styles.submitBtn, { backgroundColor: colors.brand }, (selectedOptionIds.length === 0 || isVoting) && { backgroundColor: colors.borderStrong }]}
                     >
                         {isVoting ? <ActivityIndicator color="white" /> : <Text style={styles.submitBtnText}>Submit Vote</Text>}
-                    </TouchableOpacity>
+                    </PressableOpacity>
+                )}
+                {!isExpired && voteQueued && (
+                    <Text style={{ color: colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 8 }}>
+                        Your vote sends when you're back online
+                    </Text>
                 )}
             </>
         );
     };
 
     return (
-        <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={selectedPoll ? backToList : onClose}>
             {/* pageSheet is iOS-only; Android renders fullscreen and needs safe-area insets manually */}
-            <SafeAreaView style={styles.modalContent} edges={['top', 'bottom']}>
+            <SafeAreaView style={[styles.modalContent, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
                 {selectedPoll ? renderDetail() : renderList()}
             </SafeAreaView>
+            {/* A Modal covers the app-level toast ("You're offline..."); draw it in here instead. */}
+            <ToastPortal />
         </Modal>
     );
 };

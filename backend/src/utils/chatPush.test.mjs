@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { safeEqual, messagePreview, pickRecipients } from './chatPush.js';
+
+test('safeEqual', () => {
+  assert.equal(safeEqual('abc', 'abc'), true);
+  assert.equal(safeEqual('abc', 'abd'), false);
+  assert.equal(safeEqual('abc', 'abcd'), false);
+  assert.equal(safeEqual(undefined, 'x'), false);
+});
+
+test('messagePreview falls back to Photo', () => {
+  assert.equal(messagePreview({ content: '  hi ' }), 'hi');
+  assert.equal(messagePreview({ content: '', image_url: 'u' }), '📷 Photo');
+  assert.equal(messagePreview({ content: '' }), '');
+});
+
+test('pickRecipients: skips sender/no token, honours mutes, mentions cut through', () => {
+  const g = 'g1';
+  const m = (clerkId, extra = {}) => ({ clerkId, expoPushToken: 'ExponentPushToken[x]', ...extra });
+  const members = [
+    m('sender'),
+    m('a'),
+    m('b', { mutedGroups: ['g1'] }),
+    m('c', { mutedUntilNextMeetup: ['g1'] }),
+    m('d', { mutedGroups: ['g1'] }),
+    { clerkId: 'e' },
+  ];
+  const r = pickRecipients(members, { senderClerkId: 'sender', mentions: ['d', 'e', 'sender'], groupId: g });
+  assert.deepEqual(r.normal.map((u) => u.clerkId), ['a']);
+  assert.deepEqual(r.mention.map((u) => u.clerkId), ['d']);
+});
+
+test('pickRecipients: multi-device tokens count, chat switch off blocks everything', () => {
+  const members = [
+    { clerkId: 'tab', expoPushTokens: ['ExponentPushToken[y]'] },
+    { clerkId: 'off', expoPushToken: 'ExponentPushToken[x]', notificationPrefs: { chat: false } },
+    { clerkId: 'on', expoPushToken: 'ExponentPushToken[x]', notificationPrefs: { chat: true } },
+  ];
+  const r = pickRecipients(members, { senderClerkId: 'someone', mentions: ['off'], groupId: 'g1' });
+  assert.deepEqual(r.normal.map((u) => u.clerkId), ['tab', 'on']);
+  assert.deepEqual(r.mention.map((u) => u.clerkId), []);
+});
+
+test('pickRecipients: per-kind group mutes (only a chat mute stops chat; mentions still cut through)', () => {
+  const g = '64b000000000000000000001';
+  const m = (clerkId, extra = {}) => ({ clerkId, expoPushToken: 'ExponentPushToken[x]', ...extra });
+  const mute = (mutedTypes) => ({ groupMutes: [{ group: g, until: 'indefinite', mutedTypes }] });
+  const members = [
+    m('rsvpsOnly', mute(['rsvps'])),
+    m('chatMuted', mute(['chat', 'polls'])),
+    m('chatMutedMentioned', mute(['chat'])),
+    m('mentionedButChatOff', { ...mute(['chat']), notificationPrefs: { chat: false } }),
+  ];
+  const r = pickRecipients(members, { senderClerkId: 'x', mentions: ['chatMutedMentioned', 'mentionedButChatOff'], groupId: g });
+  assert.deepEqual(r.normal.map((u) => u.clerkId), ['rsvpsOnly']);
+  assert.deepEqual(r.mention.map((u) => u.clerkId), ['chatMutedMentioned']);
+});

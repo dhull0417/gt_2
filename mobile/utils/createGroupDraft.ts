@@ -1,0 +1,189 @@
+// Pure data/logic behind the "create group" flow: draft types, defaults, validation, and the payload
+// sent to the API. No React in here.
+import { DateTime } from "luxon";
+import type { Frequency, DayTime } from "./api";
+import { DAYS_OF_WEEK, uid, getMaxAttendeesError } from "./scheduleConstants";
+import { buildRoutines, scheduleEndTimeError } from "./scheduleRoutines";
+import { getBringItemsError, getMinAttendeesError, type BringItemDraft } from "./editScheduleDraft";
+import { isLongFrequency, isLongDraftValid, emptyLongDraft, type LongDraft } from "./longInterval";
+import { scheduleIssues } from "./formIssues";
+import type { QuestionDraft } from "./questionDrafts";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface UserStub { _id: string; firstName?: string; lastName?: string; }
+
+export interface WeekdayRow {
+    id: string;
+    day: number | null;
+    time: string;
+    /** Optional end time ("08:00 PM"); null = none. */
+    endTime?: string | null;
+    showEndTimePicker?: boolean;
+    startDate: string | null;
+    showTimePicker: boolean;
+}
+
+export interface MonthlyDateEntry {
+    id: string;
+    date: number;
+    time: string;
+    /** Optional end time ("08:00 PM"); null = none. */
+    endTime?: string | null;
+    showEndTimePicker?: boolean;
+    expanded: boolean;
+    showTimePicker: boolean;
+}
+
+export interface OrdinalEntry {
+    id: string;
+    occurrence: string;
+    day: number;
+    time: string;
+    /** Optional end time ("08:00 PM"); null = none. */
+    endTime?: string | null;
+    showEndTimePicker?: boolean;
+    expanded: boolean;
+    showTimePicker: boolean;
+    showOccurrencePicker: boolean;
+    showDayOfWeekPicker: boolean;
+}
+
+export interface BuiltRoutine {
+    id: string;
+    frequency: Frequency;
+    label: string;
+    dayTimes: DayTime[];
+    rules?: any[];
+    repeatBy?: 'date' | 'weekday';
+    editing: boolean;
+    snapshot: Partial<ScheduleData>;
+}
+
+export interface ScheduleData extends LongDraft {
+    name: string;
+    location: string;
+    description: string;
+    startDate: string;
+    /** Optional, inclusive last day (ISO date); null = runs forever. */
+    endDate: string | null;
+    frequency: Frequency | null;
+    rsvpRestricted: boolean;
+    leadEnabled: boolean;
+    leadDays: number;
+    leadTime: string;
+    showLeadTimePicker: boolean;
+    deadlineEnabled: boolean;
+    deadlineDays: number;
+    deadlineTime: string;
+    showDeadlineTimePicker: boolean;
+    showStartDatePicker: boolean;
+    showFreqPicker: boolean;
+    dailySameTime: boolean | null;
+    dailySharedTime: string;
+    dailySharedEndTime?: string | null;
+    showDailySameEndTimePicker?: boolean;
+    showDailySameTimePicker: boolean;
+    dailyRows: WeekdayRow[];
+    weekdayRows: WeekdayRow[];
+    monthlyMode: "date" | "ordinal" | null;
+    monthlyDates: MonthlyDateEntry[];
+    ordinalEntries: OrdinalEntry[];
+    builtRoutines: BuiltRoutine[];
+    customBuilding: boolean;
+    customFreq: Frequency | null;
+    customShowFreqPicker: boolean;
+    maxAttendeesMode: "unlimited" | "limited";
+    maxAttendeesInput: string;
+    /** Premium minimum headcount; "" = none. Only sent when an RSVP deadline is set. */
+    minAttendeesInput: string;
+    /** Premium: things to bring. */
+    bringItems: BringItemDraft[];
+    /** Premium: carpool coordination. */
+    ridesEnabled: boolean;
+    /** Premium: Priority RSVP on/off. Turned on right after the group is created. */
+    priorityEnabled?: boolean;
+    /** Premium: RSVP questions written before it exists (saved right after it's created). */
+    questions?: QuestionDraft[];
+}
+
+
+
+// A tab with no frequency chosen is "empty" — always valid, contributes nothing
+// to the group (same as today's single-schedule Skip). Only a tab someone has
+// actually started configuring needs to be complete before Review is reachable.
+export const isScheduleTabValid = (sch: ScheduleData): boolean =>
+    scheduleIssues(sch, { requireName: true, emptyIsValid: true }).length === 0;
+
+export const defaultSchedule = (name = ""): ScheduleData => ({
+    name,
+    location: "",
+    description: "",
+    startDate: DateTime.now().toISODate()!,
+    endDate: null,
+    frequency: null,
+    rsvpRestricted: false,
+    leadEnabled: false,
+    leadDays: 5,
+    leadTime: "09:00 AM",
+    showLeadTimePicker: false,
+    deadlineEnabled: false,
+    deadlineDays: 2,
+    deadlineTime: "09:00 AM",
+    showDeadlineTimePicker: false,
+    showStartDatePicker: false,
+    showFreqPicker: false,
+    dailySameTime: null,
+    dailySharedTime: "05:00 PM",
+    dailySharedEndTime: null,
+    showDailySameTimePicker: false,
+    dailyRows: DAYS_OF_WEEK.map(dw => ({
+        id: uid(), day: dw.value, time: "05:00 PM",
+        startDate: null, showTimePicker: false,
+    })),
+    weekdayRows: [],
+    monthlyMode: null,
+    monthlyDates: [],
+    ordinalEntries: [],
+    builtRoutines: [],
+    customBuilding: false,
+    customFreq: null,
+    customShowFreqPicker: false,
+    maxAttendeesMode: "unlimited",
+    maxAttendeesInput: "",
+    minAttendeesInput: "",
+    bringItems: [],
+    ridesEnabled: false,
+    ...emptyLongDraft(),
+});
+
+// ─── Build payload ────────────────────────────────────────────────────────────
+
+// Builds everything a named schedule needs except `name` (the caller supplies
+// that, since it depends on the group name entered on an earlier screen).
+export const buildSchedulePayload = (d: ScheduleData) => {
+    if (!d.frequency) return null;
+    const routines = buildRoutines(d);
+    if (!routines.length) return null;
+
+    return {
+        // A quarterly/semiannual/yearly series starts on its own first date.
+        startDate: isLongFrequency(d.frequency) && d.longFirstDate ? d.longFirstDate : d.startDate,
+        endDate: d.endDate ?? null,
+        routines,
+        defaultLocation: d.location,
+        defaultCapacity: d.maxAttendeesMode === "limited" ? parseInt(d.maxAttendeesInput, 10) : 0,
+        defaultDescription: d.description,
+        // The minimum is checked at the RSVP deadline, so without one it's sent as off.
+        defaultMinAttendees: d.rsvpRestricted && d.deadlineEnabled && d.minAttendeesInput !== "" ? parseInt(d.minAttendeesInput, 10) : 0,
+        defaultBringItems: d.bringItems.map(i => ({
+            name: i.name.trim(),
+            max: i.max === "" ? null : parseInt(i.max, 10),
+        })),
+        defaultRidesEnabled: d.ridesEnabled,
+        generationLeadDays: d.rsvpRestricted && d.leadEnabled ? d.leadDays : null,
+        generationLeadTime: d.leadTime,
+        generationDeadlineDays: d.rsvpRestricted && d.deadlineEnabled ? d.deadlineDays : null,
+        generationDeadlineTime: d.deadlineTime,
+    };
+};

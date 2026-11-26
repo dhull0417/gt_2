@@ -5,6 +5,10 @@ import Group from "../models/group.model.js";
 import Meetup from "../models/meetup.model.js";
 import { getAuth } from "@clerk/express";
 import mongoose from "mongoose";
+import { postSystemMessage } from "../utils/systemMessage.js";
+import { addChatMembers } from "../utils/supabaseAdmin.js";
+import { notifyAndPersist } from "../utils/push.notifications.js";
+import { addMemberViaInvite } from "./invite.controller.js";
 
 // Get all notifications for the logged-in user
 export const getNotifications = asyncHandler(async (req, res) => {
@@ -12,17 +16,27 @@ export const getNotifications = asyncHandler(async (req, res) => {
     const user = await User.findOne({ clerkId }).lean();
     if (!user) return res.status(404).json({ error: "User not found." });
 
-    const notifications = await Notification.find({ recipient: user._id })
+    // Newest first, capped. `?limit=` (max 200, default 100) and `?before=<ISO date>` allow paging.
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
+    const query = { recipient: user._id };
+    if (req.query.before) {
+        const before = new Date(req.query.before);
+        if (!isNaN(before.getTime())) query.createdAt = { $lt: before };
+    }
+
+    const notifications = await Notification.find(query)
         .populate('sender', 'firstName lastName profilePicture')
-        .populate('group', 'name')
+        .populate('group', 'name image')
         .populate('meetup', 'name date time timezone location capacity')
         .populate('poll', 'prompt')
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1 })
+        .limit(limit);
 
     // Drop notifications with broken refs (deleted group/meetup/poll) to avoid
     // client crashes. Sender is optional — system notifications have none.
     const validNotifications = notifications.filter(notification => {
-        const groupRequiredTypes = ['group-invite', 'invite-accepted', 'invite-declined', 'group-added', 'group-member-joined', 'group-removed', 'group-updated', 'ownership-transferred'];
+        // 'group-removed' / 'group-deleted' are kept even if the group is gone: they have no destination to open but are still informative.
+        const groupRequiredTypes = ['group-invite', 'join-request', 'join-approved', 'invite-accepted', 'invite-declined', 'group-added', 'group-member-joined', 'group-updated', 'ownership-transferred'];
         if (groupRequiredTypes.includes(notification.type) && !notification.group) {
             return false;
         }
@@ -42,6 +56,46 @@ export const getNotifications = asyncHandler(async (req, res) => {
     res.status(200).json(validNotifications);
 });
 
+const sameId = (a, b) => a != null && b != null && a.toString() === b.toString();
+
+/**
+ * Someone asked to join through the invite link and an owner/moderator answered.
+ * Every manager got the same request; answering closes all of them.
+ */
+const answerJoinRequest = async (notification, manager, approve, res) => {
+    const group = await Group.findById(notification.group);
+    if (!group) return res.status(404).json({ error: "Group not found." });
+    const managerCanManage = sameId(group.owner, manager._id) || (group.moderators || []).some((id) => sameId(id, manager._id));
+    if (!managerCanManage) return res.status(403).json({ error: "Only owners and moderators can answer join requests." });
+
+    const requester = notification.sender ? await User.findById(notification.sender) : null;
+    const closeAll = (status) => Notification.updateMany(
+        { type: 'join-request', group: group._id, sender: notification.sender, status: 'pending' },
+        { $set: { status } }
+    );
+
+    if (!approve || !requester) {
+        await closeAll('declined');
+        return res.status(200).json({ message: approve ? "That person no longer has an account." : "Request declined." });
+    }
+
+    await closeAll('accepted');
+    if (!(group.members || []).some((m) => sameId(m, requester._id))) {
+        await addMemberViaInvite(group, requester, { noticeBody: `${requester.firstName} joined "${group.name}" (approved by ${manager.firstName}).` });
+    }
+    try {
+        await notifyAndPersist([requester], {
+            title: group.name,
+            body: `You're in! Your request to join "${group.name}" was approved.`,
+            data: { groupId: group._id.toString(), type: 'join-approved', ...(notification.meta?.meetupId ? { meetupId: notification.meta.meetupId } : {}) },
+            type: 'join-approved',
+            sender: manager._id,
+            group: group._id,
+        });
+    } catch (err) { console.error(err); }
+    return res.status(200).json({ message: "Request approved. They have been added to the group." });
+};
+
 // Accept a group invitation
 export const acceptInvite = asyncHandler(async (req, res) => {
     const { userId: clerkId } = getAuth(req);
@@ -54,16 +108,36 @@ export const acceptInvite = asyncHandler(async (req, res) => {
     if (!notification || notification.recipient.toString() !== user._id.toString()) {
         return res.status(404).json({ error: "Invitation not found or you are not the recipient." });
     }
+    if (notification.type !== 'group-invite' && notification.type !== 'join-request') {
+        return res.status(400).json({ error: "This notification is not an invitation." });
+    }
     if (notification.status !== 'pending') {
         return res.status(400).json({ error: "This invitation has already been responded to." });
     }
+    if (notification.type === 'join-request') return answerJoinRequest(notification, user, true, res);
     
     const group = await Group.findById(notification.group);
     if (!group) return res.status(404).json({ error: "Group not found." });
 
+    // Invitations only count if they came from someone who can still manage the group. An invite
+    // sent to a phone contact (meta.source 'contact') only needs the inviter to still be a member,
+    // like the invite link they would otherwise have shared.
+    const inviterId = notification.sender?.toString();
+    const inviterCanManage = inviterId && (
+        group.owner.toString() === inviterId ||
+        (group.moderators || []).some(id => id.toString() === inviterId) ||
+        (notification.meta?.source === 'contact' && (group.members || []).some(id => id.toString() === inviterId))
+    );
+    if (!inviterCanManage) {
+        notification.status = 'declined';
+        await notification.save();
+        return res.status(400).json({ error: "This invitation is no longer valid." });
+    }
+
     // Add user to group and group to user
     await group.updateOne({ $addToSet: { members: user._id } });
     await user.updateOne({ $addToSet: { groups: group._id } });
+    await addChatMembers(group._id, [user.clerkId]);
 
     // Add user to all upcoming meetups for this group
     await Meetup.updateMany(
@@ -83,6 +157,8 @@ export const acceptInvite = asyncHandler(async (req, res) => {
         status: 'read', // Mark as read since it's just an info notification
     });
 
+    await postSystemMessage(group._id, `${user.firstName} joined the group`);
+
     res.status(200).json({ message: "Invitation accepted. You have been added to the group." });
 });
 
@@ -98,9 +174,13 @@ export const declineInvite = asyncHandler(async (req, res) => {
     if (!notification || notification.recipient.toString() !== user._id.toString()) {
         return res.status(404).json({ error: "Invitation not found or you are not the recipient." });
     }
+    if (notification.type !== 'group-invite' && notification.type !== 'join-request') {
+        return res.status(400).json({ error: "This notification is not an invitation." });
+    }
     if (notification.status !== 'pending') {
         return res.status(400).json({ error: "This invitation has already been responded to." });
     }
+    if (notification.type === 'join-request') return answerJoinRequest(notification, user, false, res);
     
     const group = await Group.findById(notification.group);
     if (!group) return res.status(404).json({ error: "Group not found." });
@@ -134,4 +214,30 @@ export const markNotificationsAsRead = asyncHandler(async (req, res) => {
     );
 
     res.status(200).json({ message: "Notifications marked as read" });
+});
+
+// Delete one of my notifications (swipe-to-delete). A pending invite can't be deleted - answer it first.
+export const deleteNotification = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid ID." });
+
+    const user = await User.findOne({ clerkId }).select('_id').lean();
+    if (!user) return res.status(401).json({ error: "User not authenticated." });
+
+    const result = await Notification.deleteOne({ _id: id, recipient: user._id, status: { $ne: 'pending' } });
+    if (result.deletedCount === 0) {
+        return res.status(404).json({ error: "Notification not found, or it is still waiting for your answer." });
+    }
+    res.status(200).json({ message: "Notification deleted." });
+});
+
+// Clear every notification that isn't waiting on an answer.
+export const clearNotifications = asyncHandler(async (req, res) => {
+    const { userId: clerkId } = getAuth(req);
+    const user = await User.findOne({ clerkId }).select('_id').lean();
+    if (!user) return res.status(401).json({ error: "User not authenticated." });
+
+    const result = await Notification.deleteMany({ recipient: user._id, status: { $ne: 'pending' } });
+    res.status(200).json({ deleted: result.deletedCount });
 });

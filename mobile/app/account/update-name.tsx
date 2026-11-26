@@ -1,13 +1,16 @@
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useUpdateProfile } from '@/hooks/useUpdateProfile';
 import { User, useApiClient, userApi } from '@/utils/api';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
+import { useThemeColors } from '@/contexts/AppearanceContext';
 
 const UpdateNameScreen = () => {
     const api = useApiClient();
+    const colors = useThemeColors();
     const { data: currentUser, isLoading: isLoadingUser } = useQuery<User, Error>({
         queryKey: ['currentUser'],
         queryFn: () => userApi.getCurrentUser(api),
@@ -33,46 +36,48 @@ const UpdateNameScreen = () => {
     };
 
     if (isLoadingUser) {
-        return <View className="flex-1 justify-center items-center"><LoadingAnimation /></View>;
+        return <View className="flex-1 justify-center items-center" style={{ backgroundColor: colors.background }}><LoadingAnimation /></View>;
     }
 
     return (
-        <SafeAreaView className="flex-1 bg-gray-100">
+        <SafeAreaView className="flex-1 bg-gray-100 dark:bg-black">
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 className="flex-1"
             >
                 <ScrollView contentContainerStyle={{ flexGrow: 1 }} className="p-6">
                     <View style={{ marginBottom: 20 }}>
-                        <Text style={styles.label}>First Name</Text>
+                        <Text style={[styles.label, { color: colors.textFaint }]}>First Name</Text>
                         <TextInput
                             value={firstName}
                             onChangeText={setFirstName}
+                            autoCapitalize="words"
                             placeholder="Enter your first name"
-                            placeholderTextColor="#9CA3AF"
-                            style={styles.input}
+                            placeholderTextColor={colors.placeholder}
+                            style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textSecondary }]}
                         />
                     </View>
                     <View style={{ marginBottom: 28 }}>
-                        <Text style={styles.label}>Last Name</Text>
+                        <Text style={[styles.label, { color: colors.textFaint }]}>Last Name</Text>
                         <TextInput
                             value={lastName}
                             onChangeText={setLastName}
+                            autoCapitalize="words"
                             placeholder="Enter your last name"
-                            placeholderTextColor="#9CA3AF"
-                            style={styles.input}
+                            placeholderTextColor={colors.placeholder}
+                            style={[styles.input, { backgroundColor: colors.backgroundAlt, borderColor: colors.border, color: colors.textSecondary }]}
                         />
                     </View>
-                    <TouchableOpacity
+                    <PressableOpacity
                         onPress={handleSave}
                         disabled={isPending}
-                        style={styles.saveBtn}
+                        style={[styles.saveBtn, { backgroundColor: colors.brand }]}
                         activeOpacity={0.85}
                     >
                         {isPending
                             ? <ActivityIndicator color="white" />
                             : <Text style={styles.saveBtnText}>Save Changes</Text>}
-                    </TouchableOpacity>
+                    </PressableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
