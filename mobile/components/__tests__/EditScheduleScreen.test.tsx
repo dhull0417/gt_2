@@ -129,9 +129,9 @@ describe('Edit Schedule without Premium', () => {
   });
   afterAll(() => { mockGroupPremium = true; mockOwner = true; });
 
-  it('new schedule: Premium rows are open to set up; only Priority RSVP stays locked', async () => {
+  it('new schedule: Premium rows, including Priority RSVP, are open to set up', async () => {
     await render(<EditScheduleScreen />);
-    expect(screen.getAllByTestId('row-lock').length).toBe(1);
+    expect(screen.queryAllByTestId('row-lock')).toHaveLength(0);
     await fireEvent.press(screen.getByText('RSVP Questions'));
     expect(screen.getByText('Add question')).toBeTruthy();
     expect(screen.getByText('Set these up now. Premium is needed to save them.')).toBeTruthy();
@@ -176,12 +176,13 @@ describe('Edit Schedule without Premium', () => {
     await waitFor(() => expect(mockUpdateSchedule).toHaveBeenCalled());
   });
 
-  it('existing schedule: Priority RSVP and RSVP Questions stay locked', async () => {
+  it('existing schedule: RSVP Questions stays locked', async () => {
     const today = DateTime.now().toISODate()!;
     mockParams = { id: 'g1', scheduleId: 's1' };
     mockSchedules = [{ _id: 's1', name: 'League', active: true, defaultLocation: '', defaultCapacity: 0, startDate: today,
       routines: [{ frequency: 'weekly', dayTimes: [{ day: 2, time: '06:00 PM' }] }] }];
     await render(<EditScheduleScreen />);
-    expect(screen.getAllByTestId('row-lock').length).toBe(2);
+    expect(screen.getAllByTestId('row-lock')).toHaveLength(1);
+    expect(screen.getByLabelText('RSVP Questions: Premium')).toBeTruthy();
   });
 });

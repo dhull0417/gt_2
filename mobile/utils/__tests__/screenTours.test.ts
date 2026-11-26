@@ -1,4 +1,4 @@
-import { hasSeenTour, withTourSeen, TOURS, alwaysShows } from '../screenTours';
+import { hasSeenTour, withTourSeen, TOURS, alwaysShows, TOURS_ALWAYS_SHOW } from '../screenTours';
 import { groupDetailsTourSteps } from '../groupDetailsTour';
 import { buildDetailTiles } from '../groupDetailTiles';
 
@@ -64,5 +64,9 @@ describe('which tours replay on every visit (testing)', () => {
   it('the empty-screen tours show only the first time', () => {
     expect(alwaysShows(TOURS.meetupsEmpty)).toBe(false);
     expect(alwaysShows(TOURS.groupsEmpty)).toBe(false);
+  });
+  it('no tour is in always-show (testing) mode, so a release build shows each tour once', () => {
+    expect(TOURS_ALWAYS_SHOW).toEqual([]);
+    expect(alwaysShows(TOURS.groupDetails)).toBe(false);
   });
 });
