@@ -39,12 +39,15 @@ export async function initPurchases(clerkId: string): Promise<boolean> {
 /** Detaches the device from the current user on sign-out so the next user doesn't inherit purchases. */
 export async function resetPurchases(): Promise<void> {
   if (!configured || !configuredFor) return;
+  // Clear first so a second sign-out pass that lands while this one is awaiting doesn't log out twice.
+  configuredFor = null;
   try {
+    // logOut on an anonymous user makes the native SDK log a red ERROR even though we catch it.
+    if (await Purchases.isAnonymous()) return;
     await Purchases.logOut();
   } catch {
-    // logOut throws if the current user is already anonymous; nothing to undo.
+    // Nothing to undo.
   }
-  configuredFor = null;
 }
 
 /** Packages in the offering marked "current" in the RevenueCat dashboard. */

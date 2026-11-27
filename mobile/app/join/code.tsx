@@ -5,9 +5,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { useThemeColors } from '@/contexts/AppearanceContext';
-import { normalizeInviteCode, parseInviteUrl } from '@/utils/inviteLink';
+import { findInviteCode, parseInviteUrl } from '@/utils/inviteLink';
 
-/** Type an 8-character invite code (or paste a whole invite link) to open that invite. */
+/** Type an 8-character invite code, or paste the invite link or the whole invite message, to open that invite. */
 export default function InviteCodeScreen() {
     const colors = useThemeColors();
     const router = useRouter();
@@ -20,7 +20,7 @@ export default function InviteCodeScreen() {
             router.replace({ pathname: '/join/[token]', params: { token: link.token, s: 'link', ...(link.meetupId ? { m: link.meetupId } : {}) } });
             return;
         }
-        const code = normalizeInviteCode(value);
+        const code = findInviteCode(value);
         if (!code) { setError('Invite codes are 8 letters and numbers, like K7P2QXMR.'); return; }
         router.replace({ pathname: '/join/[token]', params: { token: code, s: 'code' } });
     };
@@ -34,7 +34,7 @@ export default function InviteCodeScreen() {
                 <View style={styles.content}>
                     <Feather name="key" size={40} color={colors.brand} style={{ marginBottom: 16 }} />
                     <Text style={[styles.title, { color: colors.textPrimary }]}>Enter invite code</Text>
-                    <Text style={[styles.subtitle, { color: colors.textMuted }]}>Ask the person who invited you for the code on their invite screen, or paste the invite link.</Text>
+                    <Text style={[styles.subtitle, { color: colors.textMuted }]}>Ask the person who invited you for the code, or paste their whole invite message.</Text>
                     <TextInput
                         value={value}
                         onChangeText={(t) => { setValue(t); setError(''); }}
@@ -46,7 +46,7 @@ export default function InviteCodeScreen() {
                         returnKeyType="go"
                         onSubmitEditing={submit}
                         style={[styles.input, { color: colors.textPrimary, borderColor: error ? colors.danger : colors.borderStrong, backgroundColor: colors.surface }]}
-                        maxLength={200}
+                        maxLength={1000}
                         accessibilityLabel="Invite code"
                     />
                     {!!error && <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>}

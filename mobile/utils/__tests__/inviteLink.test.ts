@@ -1,5 +1,5 @@
 import {
-  parseInviteUrl, parseInstallReferrer, buildShareLink, normalizeInviteCode, formatInviteCode,
+  parseInviteUrl, parseInstallReferrer, buildShareLink, normalizeInviteCode, formatInviteCode, findInviteCode,
   encodePendingInvite, decodePendingInvite,
 } from '../inviteLink';
 
@@ -100,5 +100,28 @@ describe('pending invite storage format', () => {
   it('returns null for nothing or garbage', () => {
     expect(decodePendingInvite(null)).toBeNull();
     expect(decodePendingInvite('{"token":"has space"}')).toBeNull();
+  });
+});
+
+describe('findInviteCode', () => {
+  const MSG = 'Hey Sam! Join my group "Hikers" on GroupThat!\n\nINVITE CODE:\n\nK7P2QXMR\n\n👉 https://invite.groupthatapp.com/join/abc';
+  it('reads just the code, however it was typed', () => {
+    expect(findInviteCode(' k7p2 qxmr ')).toBe('K7P2QXMR');
+    expect(findInviteCode('K7P2QX')).toBe('K7P2QX');
+  });
+  it('finds the code in a whole pasted invite message', () => {
+    expect(findInviteCode(MSG)).toBe('K7P2QXMR');
+    expect(findInviteCode(MSG.replace('K7P2QXMR', 'K7P2 QXMR'))).toBe('K7P2QXMR');
+    expect(findInviteCode('INVITE CODE:\n\nK7P2QX\n\nhttps://x')).toBe('K7P2QX');
+  });
+  it('finds the code in part of a message that lost its label', () => {
+    expect(findInviteCode('on GroupThat!\n\nK7P2QXMR\n\n👉')).toBe('K7P2QXMR');
+  });
+  it('does not take ordinary words as a code', () => {
+    expect(findInviteCode('Join me for brunch on GroupThat')).toBeNull();
+    expect(findInviteCode('Join me for "BRUNCH"')).toBeNull();
+    expect(findInviteCode('INVITE CODE: 123456')).toBeNull();
+    expect(findInviteCode('')).toBeNull();
+    expect(findInviteCode(null)).toBeNull();
   });
 });

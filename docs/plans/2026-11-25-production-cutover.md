@@ -32,53 +32,68 @@
 - Done 2026-11-25 as `5710723`. Also updated two stale `EditScheduleScreen` lock tests left by `dac6cec` (Priority RSVP preview). Full mobile suite 856/856 on the owner's machine.
 
 ### Task 2: Merge `main` into `staging` 🔒 (repo)
-- [ ] 👀 Confirm the tree is clean and `staging` = `origin/staging`.
-- [ ] 🔒 `git merge origin/main`. Resolve `backend/src/server.js` by keeping **`staging`'s side** (`git checkout --ours backend/src/server.js`), because `main`'s invite-page changes already live in `utils/invitePage.js`. `web/join.html` auto-merges and takes `main`'s App Store id `id6756112941`.
-- [ ] Run backend `npm test` and expect all pass. Run `git diff origin/main -- web/join.html` and expect no output.
-- [ ] 🔒 Commit the merge and push `staging`. 👀 The Preview deploy succeeds. On the staging URL, `/api/health` → 200 and `/join/<any>` renders.
+- [x] 👀 Confirm the tree is clean and `staging` = `origin/staging`.
+- [x] 🔒 `git merge origin/main`. Resolve `backend/src/server.js` by keeping **`staging`'s side** (`git checkout --ours backend/src/server.js`), because `main`'s invite-page changes already live in `utils/invitePage.js`. `web/join.html` auto-merges and takes `main`'s App Store id `id6756112941`.
+- [x] Run backend `npm test` and expect all pass. Run `git diff origin/main -- web/join.html` and expect no output.
+- [x] 🔒 Commit the merge and push `staging`. 👀 The Preview deploy succeeds. On the staging URL, `/api/health` → 204 and `/join/<any>` renders.
 - Note: git in the connected folder needs delete permission, or it leaves `.lock` files. Ask once before this task.
+- Done 2026-11-25: merge `776b998` (no file changes; staging already had main's fixes, including the real App Store id). Backend 649/649 on the owner's machine. Pushed; Preview deploy Ready; staging `/api/health` 204, `/go/meetups` 200, AASA 200, `/join/<bad token>` shows the "invite isn't active" page.
 
 ### Task 3: Production variables in Vercel (before the merge) 🔒 (Vercel)
-- [ ] 👀 Owner reveals Production `PUBLIC_BASE_URL` and confirms it is exactly `https://invite.groupthatapp.com`. 🔒 Fix it if not.
-- [ ] 🔒 Owner generates a random secret and adds `CHAT_WEBHOOK_SECRET` (Production + Preview, Sensitive). Claude doesn't see or type it.
-- [ ] 👀 Prices: App Store and Play monthly/annual prices vs the email default ($4.99 / $39.99). 🔒 If they differ, add `EMAIL_PRICE_TEXT` (Production + Preview) with the real prices.
-- [ ] 👀 Confirm these are absent on Production: `LIFECYCLE_EMAILS_ENABLED`, `CHAT_PUSH_MODE`, `MUTE_ALL_PUSHES_ENABLED`, `CHAT_SYSTEM_MESSAGES_ENABLED`, `PREMIUM_WAITLIST_ENFORCED`, `PUSH_CHANNELS_ENABLED`.
+- [x] 👀 Owner reveals Production `PUBLIC_BASE_URL` and confirms it is exactly `https://invite.groupthatapp.com`. 🔒 Fix it if not.
+- [x] 🔒 Owner generates a random secret and adds `CHAT_WEBHOOK_SECRET` (Production + Preview, Sensitive). Claude doesn't see or type it.
+- [x] 👀 Prices: App Store and Play monthly/annual prices vs the email default ($4.99 / $39.99). 🔒 If they differ, add `EMAIL_PRICE_TEXT` (Production + Preview) with the real prices.
+- [x] 👀 Confirm these are absent on Production: `LIFECYCLE_EMAILS_ENABLED`, `CHAT_PUSH_MODE`, `MUTE_ALL_PUSHES_ENABLED`, `CHAT_SYSTEM_MESSAGES_ENABLED`, `PREMIUM_WAITLIST_ENFORCED`, `PUSH_CHANNELS_ENABLED`.
+- Done 2026-11-25: Production `PUBLIC_BASE_URL` changed by the owner from `https://gt-2-peach.vercel.app` to `https://invite.groupthatapp.com`. `CHAT_WEBHOOK_SECRET` added on Production and Preview. Prices match the defaults, so no `EMAIL_PRICE_TEXT`. No cutover switches are set on Production.
 
 ### Task 4: Merge `staging` → `main` and deploy production 🔒 (GitHub + Vercel)
-- [ ] 🔒 Open PR `staging` → `main` (no conflicts expected after Task 2). Owner merges.
-- [ ] 👀 The Vercel Production deployment for the merge commit is Ready, and was built after the Task 3 variable changes. 🔒 Redeploy if not.
-- [ ] 👀 Check these URLs:
+- [x] 🔒 Open PR `staging` → `main` (no conflicts expected after Task 2). Owner merges.
+- [x] 👀 The Vercel Production deployment for the merge commit is Ready, and was built after the Task 3 variable changes. 🔒 Redeploy if not.
+- [x] 👀 Check these URLs:
   - `https://gt-2-peach.vercel.app/api/health` → 200
   - `https://invite.groupthatapp.com/api/health` → 200
   - `https://invite.groupthatapp.com/go/meetups` → 200 (the `/go` page)
   - the AASA at `https://invite.groupthatapp.com/.well-known/apple-app-site-association` lists `/go/*`
   - `assetlinks.json` → 200
-- [ ] 👀 The live 1.3.x app still works against production: sign in, open a group, RSVP (legacy path).
+- [x] 👀 The live 1.3.x app still works against production: sign in, open a group, RSVP (legacy path).
 - Rollback: Vercel → Deployments → promote the previous production deployment.
+- Done 2026-11-25: PR #17 merged as `c2b0fa6` after CI (backend tests, Verify PR Source Branch, Vercel) passed. On both domains, `/api/health` is 204 and `/go/meetups` and `/download` are 200. The AASA lists `/go/*` and `assetlinks.json` is served. The RevenueCat webhook and the lifecycle job answer 401 without auth; the Resend webhook answers 400 unsigned. Owner checked sign-in and RSVP on the 1.3.x store app.
 
 ### Task 5: Database steps 🔒 (database, run from `backend/` with production `MONGO_URI`)
-- [ ] 👀 `npm run migrate:status`. Expect both migrations "applied" (shared database, already run from staging). 🔒 `npm run migrate:up` only if one shows pending.
-- [ ] 🔒 `node src/scripts/syncChatMembership.js` (makes `group_members` match Mongo).
-- [ ] 👀 `node src/scripts/deleteSampleGroups.js` (dry run) and review the list. 🔒 Then the same with `--apply` (needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` set locally).
+- [x] 👀 `npm run migrate:status`. Expect both migrations "applied" (shared database, already run from staging). 🔒 `npm run migrate:up` only if one shows pending.
+- [x] 🔒 `node src/scripts/syncChatMembership.js` (makes `group_members` match Mongo).
+- [x] 👀 `node src/scripts/deleteSampleGroups.js` (dry run) and review the list. 🔒 Then the same with `--apply` (needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` set locally).
+- Done 2026-11-25: the owner confirmed Vercel's `MONGO_URI` is the same database as local (`cluster0.fggyhnm`, `gt_2`). Both migrations were already applied. `syncChatMembership` synced 260 rows. `deleteSampleGroups` dry run found 0 sample groups, so `--apply` wasn't needed.
 
 ### Task 6: RevenueCat webhook to production 🔒 (RevenueCat)
-- [ ] 🔒 Edit the existing webhook (`WEBHOOK_AUTH`): change its URL from the staging URL to `https://gt-2-peach.vercel.app/api/revenuecat/webhook`. Keep the Authorization header (same `REVENUECAT_WEBHOOK_AUTH` on all environments), "Both Production and Sandbox", all apps and all events.
-- [ ] 🔒 Send a test event. 👀 Vercel Production logs show `POST /api/revenuecat/webhook` 200.
-- [ ] 👀 Exactly one webhook is listed.
+- [x] 🔒 Edit the existing webhook (`WEBHOOK_AUTH`): change its URL from the staging URL to `https://gt-2-peach.vercel.app/api/revenuecat/webhook`. Keep the Authorization header (same `REVENUECAT_WEBHOOK_AUTH` on all environments), "Both Production and Sandbox", all apps and all events.
+- [x] 🔒 Send a test event. 👀 Vercel Production logs show `POST /api/revenuecat/webhook` 200.
+- [x] 👀 Exactly one webhook is listed.
 - Optional 🔒: add an App Store Connect API key in RevenueCat → App Store app, so the iOS products show their status and prices.
+- Done 2026-11-25: the owner moved the webhook URL to production. The test event got 200 `{"ok":true,"synced":0}`, which means auth passed and the unknown test user was ignored. One webhook is listed. The optional App Store Connect API key is still open.
 
 ### Task 7: cron-job.org 🔒
-- [ ] 🔒 Edit "GroupThat - Cancel Under Minimum": URL → `https://gt-2-peach.vercel.app/api/jobs/cancel-under-minimum` (same schedule and headers).
-- [ ] 🔒 Edit "GroupThat - Notify Meetup Reminder": URL → `https://gt-2-peach.vercel.app/api/jobs/notify-meetup-reminder`.
-- [ ] 🔒 Turn "RESEND EMAILS" back on (`/api/jobs/send-lifecycle-emails`, every 5 min). It returns 200 and sends nothing while `LIFECYCLE_EMAILS_ENABLED` is unset.
-- [ ] 👀 After one cycle, all 8 jobs show "Successful (200)" and none call the staging URL.
+- [x] 🔒 Edit "GroupThat - Cancel Under Minimum": URL → `https://gt-2-peach.vercel.app/api/jobs/cancel-under-minimum` (same schedule and headers).
+- [x] 🔒 Edit "GroupThat - Notify Meetup Reminder": URL → `https://gt-2-peach.vercel.app/api/jobs/notify-meetup-reminder`.
+- [x] 🔒 Turn "RESEND EMAILS" back on (`/api/jobs/send-lifecycle-emails`, every 5 min). It returns 200 and sends nothing while `LIFECYCLE_EMAILS_ENABLED` is unset.
+- [x] 👀 After one cycle, all 8 jobs show "Successful (200)" and none call the staging URL.
+- Done 2026-11-26: the owner repointed both jobs and turned RESEND EMAILS back on. At 5:35 all 8 jobs ran against `gt-2-peach.vercel.app` with 200, and none call staging. RESEND EMAILS returned 200 OK. With `LIFECYCLE_EMAILS_ENABLED` unset, `processDueEmails` returns `{ skipped: "lifecycle emails are disabled or not configured" }` before reading any users.
 
 ### Task 8: Chat push webhook (runbook Phase 2, step 4) 🔒 (Supabase + Vercel)
-- [ ] 🔒 Owner runs in the Supabase SQL editor, with the Task 3 secret:
+- [x] 🔒 Owner runs in the Supabase SQL editor, with the Task 3 secret:
   `insert into private.app_settings (key, value) values ('chat_webhook_url','https://gt-2-peach.vercel.app/api/chat/webhook/message'), ('chat_webhook_secret','<CHAT_WEBHOOK_SECRET>') on conflict (key) do update set value = excluded.value;`
-- [ ] 🔒 Right away: add `CHAT_PUSH_MODE=webhook` on Production + Preview, and redeploy both.
-- [ ] 👀 One message from a 1.3.x app and one from a new build. Each member gets exactly one push. `select status_code, created from net._http_response order by created desc limit 10;` shows 200s.
+- [x] 🔒 Right away: add `CHAT_PUSH_MODE=webhook` on Production + Preview, and redeploy both.
+- [x] 👀 One message from a 1.3.x app and one from a new build. Each member gets exactly one push. `select status_code, created from net._http_response order by created desc limit 10;` shows 200s.
 - Rollback: `delete from private.app_settings where key in ('chat_webhook_url','chat_webhook_secret');` then remove `CHAT_PUSH_MODE` and redeploy.
+- Done 2026-11-26:
+  - `private.app_settings` was empty before; the owner inserted both rows. `net._http_response` shows 200s.
+  - **Bug found:** the variable had been created as `CHATT_PUSH_MODE` (typo), so both backends kept sending their own `last-message` push. Every message from a store or preview app was pushed twice, from about 05:57 to 08:05.
+  - Found by comparing the group's `lastMessage.createdAt` (staging's server clock, after the webhook) with the webhook timing and the Function Invocations log.
+  - The owner renamed it to `CHAT_PUSH_MODE` and redeployed. Android → iPhone now gives one notification.
+- Side findings:
+  - Android had no push token until the in-app notification setting was turned on.
+  - The TestFlight and Play preview builds both use the preview environment, so they talk to the staging backend.
+  - The staging address only moves on a git push: a manual "Redeploy" of an older staging deployment does not take the `gt-2-git-staging-…` address.
 
 ### Task 9: Subscriptions ready in both stores 👀 / 🔒
 - [ ] 👀 App Store Connect → Subscriptions: `groupthat_premium_monthly` and `groupthat_premium_yearly` exist in one group, with prices, localizations and a review screenshot, and are "Ready to Submit" (or approved).

@@ -15,6 +15,13 @@ test('messagePreview falls back to Photo', () => {
   assert.equal(messagePreview({ content: '' }), '');
 });
 
+test('messagePreview says GIF for a GIF', () => {
+  assert.equal(messagePreview({ content: '', image_url: 'https://x/chat/g/c.gif?t=1' }), 'GIF');
+  assert.equal(messagePreview({ content: '', image_url: 'https://x/chat/g/c.GIF' }), 'GIF');
+  assert.equal(messagePreview({ content: '', image_url: 'https://x/chat/g/c.jpg?t=1' }), '📷 Photo');
+  assert.equal(messagePreview({ content: 'lol', image_url: 'https://x/chat/g/c.gif' }), 'lol');
+});
+
 test('pickRecipients: skips sender/no token, honours mutes, mentions cut through', () => {
   const g = 'g1';
   const m = (clerkId, extra = {}) => ({ clerkId, expoPushToken: 'ExponentPushToken[x]', ...extra });

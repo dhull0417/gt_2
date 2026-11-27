@@ -16,9 +16,9 @@ describe('buildInviteMessage', () => {
     const meetup = buildInviteMessage({ link: LINK, meetupName: 'Sat Hike', code: 'K7P2QX' });
     expect(meetup).toBe(`Join me for "Sat Hike" on GroupThat!\n\nINVITE CODE:\n\nK7P2QX\n\n👉 ${LINK}`);
   });
-  it('shows an 8-character code as two groups of four', () => {
+  it('sends an 8-character code without a space, so one tap selects all of it', () => {
     const msg = buildInviteMessage({ link: LINK, groupName: 'Hikers', code: 'K7P2QXMR' });
-    expect(msg).toBe(`Join my group "Hikers" on GroupThat!\n\nINVITE CODE:\n\nK7P2 QXMR\n\n👉 ${LINK}`);
+    expect(msg).toBe(`Join my group "Hikers" on GroupThat!\n\nINVITE CODE:\n\nK7P2QXMR\n\n👉 ${LINK}`);
   });
   it('leaves the code out when there is none', () => {
     expect(buildInviteMessage({ link: LINK, groupName: 'Hikers', code: null })).toBe(`Join my group "Hikers" on GroupThat 👉\n${LINK}`);

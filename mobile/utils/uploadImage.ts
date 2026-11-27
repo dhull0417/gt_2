@@ -1,6 +1,7 @@
 import { Alert, Linking, Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
+import { File } from "expo-file-system";
 import { AxiosInstance } from "axios";
 import { getSupabaseClient } from "./supabase";
 import { requestImageCrop } from "../components/ImageCropperHost";
@@ -55,6 +56,33 @@ async function processAndUpload(
     url: `${data.publicUrl}?t=${Date.now()}`,
     width: manipulated.width,
     height: manipulated.height,
+  };
+}
+
+/**
+ * Upload a chat GIF exactly as picked: no resize or JPEG re-save (that would keep only the
+ * first frame). Dimensions come from the picker, since the file isn't decoded here.
+ */
+export async function uploadChatGif(
+  localUri: string,
+  filePath: string,
+  clerkToken: string,
+  size: { width?: number; height?: number }
+): Promise<UploadedImage> {
+  const bytes = await new File(localUri).bytes();
+  const supabase = getSupabaseClient(clerkToken);
+
+  const { error } = await supabase.storage
+    .from("chat-images")
+    .upload(filePath, bytes, { contentType: "image/gif", upsert: true });
+
+  if (error) throw new Error(error.message);
+
+  const { data } = supabase.storage.from("chat-images").getPublicUrl(filePath);
+  return {
+    url: `${data.publicUrl}?t=${Date.now()}`,
+    width: size.width ?? 0,
+    height: size.height ?? 0,
   };
 }
 

@@ -9,11 +9,16 @@ export const safeEqual = (a, b) => {
   return crypto.timingSafeEqual(ba, bb);
 };
 
+// Chat GIFs are stored as chat/<groupId>/<clientId>.gif; the file name is what marks them
+// (same rule as mobile/utils/chatGif.ts). Ignores the ?t= cache-buster.
+const isGifUrl = (url) => typeof url === 'string' && /\.gif$/i.test(url.split(/[?#]/)[0]);
+
 // What the notification says for a message row coming from the database trigger.
 export const messagePreview = (record) => {
   const text = typeof record?.content === 'string' ? record.content.trim() : '';
   if (text) return text.slice(0, 500);
-  return record?.image_url ? '📷 Photo' : '';
+  if (!record?.image_url) return '';
+  return isGifUrl(record.image_url) ? 'GIF' : '📷 Photo';
 };
 
 /**
