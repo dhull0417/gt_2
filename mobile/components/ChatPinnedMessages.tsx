@@ -3,8 +3,9 @@ import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import { Feather } from '@expo/vector-icons';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import type { ChatMessage } from '@/types/chat';
+import { mediaLabel } from '@/utils/chatGif';
 
-const summary = (m: ChatMessage) => m.content?.trim() || (m.image_url ? '📷 Photo' : '');
+const summary = (m: ChatMessage) => m.content?.trim() || (m.image_url ? mediaLabel(m.image_url) : '');
 
 // Slim bar under the chat header showing the most recent pinned message. Tap to see them all.
 export function ChatPinnedBanner({ pins, onPress }: { pins: ChatMessage[]; onPress: () => void }) {

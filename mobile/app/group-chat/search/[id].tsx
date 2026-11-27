@@ -12,6 +12,7 @@ import { getSupabaseClient } from '@/utils/supabase';
 import { ChatImageViewer } from '@/components/ChatImageViewer';
 import type { ChatMessage } from '@/types/chat';
 import { requestJump } from '@/utils/chatJump';
+import { isGifUrl } from '@/utils/chatGif';
 
 const SEARCH_LIMIT = 50;
 const PHOTO_PAGE = 60;
@@ -224,7 +225,13 @@ export default function ChatSearchScreen() {
           ListFooterComponent={photos.isFetchingNextPage ? <ActivityIndicator style={{ margin: 16 }} /> : undefined}
           renderItem={({ item }) => (
             <PressableOpacity onPress={() => setViewer(item)} activeOpacity={0.8}>
-              <Image source={{ uri: item.image_url! }} style={{ width: size, height: size }} contentFit="cover" recyclingKey={item.id} />
+              {/* GIF tiles stay still so a grid of them doesn't all animate at once; the viewer plays it. */}
+              <Image source={{ uri: item.image_url! }} style={{ width: size, height: size }} contentFit="cover" recyclingKey={item.id} autoplay={!isGifUrl(item.image_url)} />
+              {isGifUrl(item.image_url) && (
+                <View style={styles.gifBadge} pointerEvents="none">
+                  <Text style={styles.gifBadgeText}>GIF</Text>
+                </View>
+              )}
             </PressableOpacity>
           )}
         />
@@ -249,4 +256,6 @@ const styles = StyleSheet.create({
   tab: { flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 48 },
   result: { paddingHorizontal: 16, paddingVertical: 12 },
+  gifBadge: { position: 'absolute', left: 6, bottom: 6, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 },
+  gifBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
 });

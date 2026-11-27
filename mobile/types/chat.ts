@@ -5,6 +5,9 @@ export interface PendingImage {
   localUri?: string;
   width?: number;
   height?: number;
+  /** A saved GIF: uploaded byte-for-byte as .gif instead of re-saved as a JPEG. Absent on photos
+   * and on sends queued by app versions before GIF support. */
+  isGif?: boolean;
 }
 
 export interface ReactionResult {

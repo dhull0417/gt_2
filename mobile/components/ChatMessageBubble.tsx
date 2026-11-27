@@ -174,7 +174,7 @@ function ChatMessageBubbleBase({
     transform: [
       { translateY: (1 - entrance.value) * 14 },
       { translateX: (1 - entrance.value) * (isOwn ? 26 : -26) },
-      { scale: 0.85 + entrance.value * 0.15 },
+      { scale: 0.925 + entrance.value * 0.075 },
     ],
   }));
 

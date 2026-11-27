@@ -582,7 +582,7 @@ const GroupChatScreen = () => {
         image,
         mentions
       );
-      const notifyText = text || '📷 Photo';
+      const notifyText = text || (image?.isGif ? 'GIF' : '📷 Photo');
       api.patch(`/api/groups/${id}/last-message`, { text: notifyText, senderName }).catch(() => {});
       // Mark read so your own message doesn't re-trigger the unread dot after you leave
       queueMutation(queryClient, 'markGroupRead', { groupId: id }).catch(() => {});

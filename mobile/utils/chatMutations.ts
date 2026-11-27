@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { getSupabaseClient } from '@/utils/supabase';
 import { waitForClerkToken } from '@/utils/authToken';
-import { uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
+import { uploadChatGif, uploadImageFromUriWithDimensions } from '@/utils/uploadImage';
 import type { ChatMessage, PendingImage, ReactionResult } from '@/types/chat';
 import { authedApi } from '@/utils/authedApi';
 import { NoTokenError, queuedRetry, queuedRetryDelay } from '@/utils/queuedMutations';
@@ -56,8 +56,23 @@ export function sendRetry(failureCount: number, error: unknown): boolean {
   return failureCount < MAX_SEND_RETRIES;
 }
 
-export function chatPhotoPath(groupId: string, clientId: string): string {
-  return `chat/${groupId}/${clientId}.jpg`;
+/** A GIF is stored as .gif; that file name is how the app and push previews recognise it. */
+export function chatPhotoPath(groupId: string, clientId: string, isGif = false): string {
+  return `chat/${groupId}/${clientId}.${isGif ? 'gif' : 'jpg'}`;
+}
+
+/** Uploads a picture that was queued with only its local file; nothing to do otherwise. The file is
+ * named after the message, so a retry overwrites the same file instead of leaving a duplicate. */
+export async function uploadQueuedImage(
+  vars: SendMessageVariables,
+  token: string,
+): Promise<{ url: string; width: number; height: number } | undefined> {
+  const img = vars.image;
+  if (!img?.localUri || img.url) return undefined;
+  if (img.isGif) {
+    return uploadChatGif(img.localUri, chatPhotoPath(vars.groupId, vars.clientId, true), token, { width: img.width, height: img.height });
+  }
+  return uploadImageFromUriWithDimensions(img.localUri, 'chat-images', chatPhotoPath(vars.groupId, vars.clientId), token);
 }
 
 /** The send_message() arguments. Goes through that database function, which is idempotent on
@@ -103,9 +118,7 @@ export function registerChatMutationDefaults(queryClient: QueryClient) {
       if (!token) throw new NoTokenError();
       // A photo picked offline is queued with just its local file; upload it now. The file is named
       // after the message, so a retry overwrites the same file instead of leaving a duplicate.
-      const uploaded = vars.image?.localUri && !vars.image.url
-        ? await uploadImageFromUriWithDimensions(vars.image.localUri, 'chat-images', chatPhotoPath(vars.groupId, vars.clientId), token)
-        : undefined;
+      const uploaded = await uploadQueuedImage(vars, token);
       const supabase = getSupabaseClient(token);
       const { data, error } = await supabase.rpc('send_message', buildSendRpcArgs(vars, uploaded));
       if (error) throw error;

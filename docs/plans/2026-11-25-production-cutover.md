@@ -80,11 +80,20 @@
 - Done 2026-11-26: the owner repointed both jobs and turned RESEND EMAILS back on. At 5:35 all 8 jobs ran against `gt-2-peach.vercel.app` with 200, and none call staging. RESEND EMAILS returned 200 OK. With `LIFECYCLE_EMAILS_ENABLED` unset, `processDueEmails` returns `{ skipped: "lifecycle emails are disabled or not configured" }` before reading any users.
 
 ### Task 8: Chat push webhook (runbook Phase 2, step 4) 🔒 (Supabase + Vercel)
-- [ ] 🔒 Owner runs in the Supabase SQL editor, with the Task 3 secret:
+- [x] 🔒 Owner runs in the Supabase SQL editor, with the Task 3 secret:
   `insert into private.app_settings (key, value) values ('chat_webhook_url','https://gt-2-peach.vercel.app/api/chat/webhook/message'), ('chat_webhook_secret','<CHAT_WEBHOOK_SECRET>') on conflict (key) do update set value = excluded.value;`
-- [ ] 🔒 Right away: add `CHAT_PUSH_MODE=webhook` on Production + Preview, and redeploy both.
-- [ ] 👀 One message from a 1.3.x app and one from a new build. Each member gets exactly one push. `select status_code, created from net._http_response order by created desc limit 10;` shows 200s.
+- [x] 🔒 Right away: add `CHAT_PUSH_MODE=webhook` on Production + Preview, and redeploy both.
+- [x] 👀 One message from a 1.3.x app and one from a new build. Each member gets exactly one push. `select status_code, created from net._http_response order by created desc limit 10;` shows 200s.
 - Rollback: `delete from private.app_settings where key in ('chat_webhook_url','chat_webhook_secret');` then remove `CHAT_PUSH_MODE` and redeploy.
+- Done 2026-11-26:
+  - `private.app_settings` was empty before; the owner inserted both rows. `net._http_response` shows 200s.
+  - **Bug found:** the variable had been created as `CHATT_PUSH_MODE` (typo), so both backends kept sending their own `last-message` push. Every message from a store or preview app was pushed twice, from about 05:57 to 08:05.
+  - Found by comparing the group's `lastMessage.createdAt` (staging's server clock, after the webhook) with the webhook timing and the Function Invocations log.
+  - The owner renamed it to `CHAT_PUSH_MODE` and redeployed. Android → iPhone now gives one notification.
+- Side findings:
+  - Android had no push token until the in-app notification setting was turned on.
+  - The TestFlight and Play preview builds both use the preview environment, so they talk to the staging backend.
+  - The staging address only moves on a git push: a manual "Redeploy" of an older staging deployment does not take the `gt-2-git-staging-…` address.
 
 ### Task 9: Subscriptions ready in both stores 👀 / 🔒
 - [ ] 👀 App Store Connect → Subscriptions: `groupthat_premium_monthly` and `groupthat_premium_yearly` exist in one group, with prices, localizations and a review screenshot, and are "Ready to Submit" (or approved).

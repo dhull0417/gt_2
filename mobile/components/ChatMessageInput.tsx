@@ -3,10 +3,12 @@ import { View, TextInput, Text, StyleSheet, Image, ScrollView, Alert, Animated, 
 import type { TextInputInstance } from 'react-native';
 import { PressableOpacity } from '@/components/ui/PressableOpacity';
 import * as ImagePicker from 'expo-image-picker';
+import { File } from 'expo-file-system';
 import { Feather } from '@expo/vector-icons';
 import { ensureCameraPermission, ensurePhotoLibraryPermission } from '@/utils/uploadImage';
 import { useApiClient } from '@/utils/api';
 import type { PendingImage } from '@/types/chat';
+import { classifyPicked, type AcceptedPick } from '@/utils/chatGif';
 import { useThemeColors } from '@/contexts/AppearanceContext';
 import {
   applyMention,
@@ -23,7 +25,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const MAX_PHOTOS = 4;
 // A photo attached to the next send. It's uploaded when the message is actually sent (inside the
 // queued send), so attaching and sending both work offline, just like text.
-interface PendingEntry { key: string; localUri: string; width?: number; height?: number }
+interface PendingEntry { key: string; localUri: string; width?: number; height?: number; isGif?: boolean }
 
 const TRAY_LAYOUT_ANIM = LayoutAnimation.create(180, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity);
 
@@ -107,7 +109,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   };
 
   // Up to MAX_PHOTOS pictures can be attached to one send.
-  const addPhotos = (assets: { uri: string; width?: number; height?: number }[]) => {
+  const addPhotos = (assets: AcceptedPick[]) => {
     if (!assets.length) return;
     const room = MAX_PHOTOS - pendingImages.length;
     const chosen = assets.slice(0, Math.max(room, 0));
@@ -118,6 +120,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
       localUri: a.uri,
       width: a.width,
       height: a.height,
+      isGif: a.isGif,
     }));
     setPendingImages((prev) => [...prev, ...entries]);
   };
@@ -128,13 +131,21 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.85,
+      // Hand back the original file: on iPhone a quality below 1, or the default "compatible"
+      // representation, re-encodes the pick and a GIF loses its animation. Photos are still
+      // resized and compressed before upload (uploadImage.ts), so they come out the same.
+      quality: 1,
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current,
       allowsEditing: false,
       allowsMultipleSelection: true,
       selectionLimit: Math.max(MAX_PHOTOS - pendingImages.length, 1),
     });
     if (result.canceled || !result.assets?.length) return;
-    addPhotos(result.assets.map((a) => ({ uri: a.uri, width: a.width, height: a.height })));
+    const { accepted, tooLarge } = classifyPicked(result.assets, (uri) => {
+      try { return new File(uri).size ?? 0; } catch { return 0; }
+    });
+    if (tooLarge > 0) Alert.alert('GIF too large', 'That GIF is too large to send (max 8 MB).');
+    addPhotos(accepted);
   };
 
   const takePhoto = async () => {
@@ -142,7 +153,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: false });
     if (result.canceled || !result.assets?.[0]) return;
     const shot = result.assets[0];
-    addPhotos([{ uri: shot.uri, width: shot.width, height: shot.height }]);
+    addPhotos([{ uri: shot.uri, width: shot.width, height: shot.height, isGif: false }]);
   };
 
   const canSend = !!text.trim() || pendingImages.length > 0;
@@ -176,7 +187,7 @@ export function ChatMessageInput({ onSend, onTyping, onCreateEvent, onCreatePoll
   // already surfaces genuine failures via Alert, so nothing else to do here.
   const handleSend = () => {
     if (!canSend) return;
-    const images: PendingImage[] = pendingImages.map((p) => ({ localUri: p.localUri, width: p.width, height: p.height }));
+    const images: PendingImage[] = pendingImages.map((p) => ({ localUri: p.localUri, width: p.width, height: p.height, ...(p.isGif ? { isGif: true } : {}) }));
     const trimmed = text.trim();
     const mentions = extractMentions(trimmed, picked);
     setText('');
