@@ -50,13 +50,13 @@ export interface BrowserInfo { browserPackages: string[]; preferredBrowserPackag
 export function pickBrowserPackage(info: BrowserInfo): string | undefined
 ```
 
-- [ ] Write failing tests in `googleSignIn.test.ts`, `describe('pickBrowserPackage')`:
+- [x] Write failing tests in `googleSignIn.test.ts`, `describe('pickBrowserPackage')`:
   - `returns Chrome when it is listed, even if another browser is preferred`: `{ browserPackages: ['org.mozilla.firefox', 'com.android.chrome'], preferredBrowserPackage: 'org.mozilla.firefox' }` → `'com.android.chrome'`.
   - `returns the preferred browser when Chrome is missing`: `{ browserPackages: ['org.mozilla.firefox'], preferredBrowserPackage: 'org.mozilla.firefox' }` → `'org.mozilla.firefox'`.
   - `returns undefined when nothing supports Custom Tabs`: `{ browserPackages: [] }` → `undefined`.
-- [ ] Run `npx jest utils/__tests__/googleSignIn.test.ts --forceExit`; expect FAIL (cannot find module `../googleSignIn`).
-- [ ] Implement `pickBrowserPackage` in `utils/googleSignIn.ts`.
-- [ ] Run again; expect PASS. Run the full suite; expect all green.
+- [x] Run `npx jest utils/__tests__/googleSignIn.test.ts --forceExit`; expect FAIL (cannot find module `../googleSignIn`).
+- [x] Implement `pickBrowserPackage` in `utils/googleSignIn.ts`.
+- [x] Run again; expect PASS. Run the full suite; expect all green.
 
 ## Task 2: the decision table
 **Files:** `mobile/utils/googleSignIn.ts`, `mobile/utils/__tests__/googleSignIn.test.ts`
@@ -100,7 +100,7 @@ export async function runGoogleSignIn(deps: GoogleSignInDeps): Promise<GoogleOut
   - Any other no-session result (`cancel`, `dismiss`, a missing `authSessionResult`, or `success` without a session) → `failed` / `NOT_FINISHED_MESSAGE`.
   - Throws → `failed` / `clerkErrorMessage(err, "Failed to sign in with Google. Please try again.")`.
 
-- [ ] Write failing tests, `describe('runGoogleSignIn')`, using `jest.fn()` deps:
+- [x] Write failing tests, `describe('runGoogleSignIn')`, using `jest.fn()` deps:
   1. `android: native session is returned and the browser is never opened`
   2. `android: native cancel returns cancelled and never opens the browser` (review focus 1)
   3. `android: native missing_requirements fails with the incomplete-account message`
@@ -111,9 +111,9 @@ export async function runGoogleSignIn(deps: GoogleSignInDeps): Promise<GoogleOut
   8. `browser cancel without a session fails with the not-finished message`
   9. `browser missing_requirements fails with the incomplete-account message`
   10. `browser throw fails with the Clerk error message` (an error `{ errors: [{ longMessage: 'Boom' }] }` → message `'Boom'`)
-- [ ] Run; expect FAIL (`runGoogleSignIn` is not a function).
-- [ ] Implement `runGoogleSignIn` and the constants.
-- [ ] Run; expect PASS. Full suite green.
+- [x] Run; expect FAIL (`runGoogleSignIn` is not a function).
+- [x] Implement `runGoogleSignIn` and the constants.
+- [x] Run; expect PASS. Full suite green.
 
 ## Task 3: wire the hook, add the native package
 **Files:** `mobile/hooks/useSocialAuth.ts`, `mobile/hooks/__tests__/useSocialAuth.test.tsx` (create), `mobile/package.json`, the lockfile, `mobile/app.json`
@@ -122,14 +122,14 @@ export async function runGoogleSignIn(deps: GoogleSignInDeps): Promise<GoogleOut
 
 **Produces:** `useSocialAuth(): { isLoading: boolean; handleSocialAuth: (strategy: 'oauth_google') => Promise<void> }` (unchanged shape).
 
-- [ ] Write failing tests in `useSocialAuth.test.tsx`. Mock `@clerk/expo` (`useSSO`), `@clerk/expo/google` (`useSignInWithGoogle`), `expo-web-browser` (`getCustomTabsSupportingBrowsersAsync`), `expo-router` (`useRouter` → `{ replace }`) and `Alert.alert`. Set `Platform.OS = 'android'`.
+- [x] Write failing tests in `useSocialAuth.test.tsx`. Mock `@clerk/expo` (`useSSO`), `@clerk/expo/google` (`useSignInWithGoogle`), `expo-web-browser` (`getCustomTabsSupportingBrowsersAsync`), `expo-router` (`useRouter` → `{ replace }`) and `Alert.alert`. Set `Platform.OS = 'android'`.
   - `calls setActive with the new session and does not alert`
   - `alerts "Google sign-in" with the message and routes to /(auth) when sign-in fails` (native throws, browser returns `{ createdSessionId: null, authSessionResult: { type: 'dismiss' } }`) (review focus 5)
   - `does nothing visible when the native sheet is cancelled`: no alert, no `replace` (review focus 5)
   - `alerts and routes to /(auth) when setActive throws`
   - `isLoading is true during sign-in and false after`
-- [ ] Run; expect FAIL (`useSignInWithGoogle` is never called).
-- [ ] Rewrite `useSocialAuth`:
+- [x] Run; expect FAIL (`useSignInWithGoogle` is never called).
+- [x] Rewrite `useSocialAuth`:
   - Build `GoogleSignInDeps`:
     - `startNative` is `startGoogleAuthenticationFlow()`.
     - `startBrowser` is `(o) => startSSOFlow({ strategy: 'oauth_google', ...o })`.
@@ -140,8 +140,8 @@ export async function runGoogleSignIn(deps: GoogleSignInDeps): Promise<GoogleOut
   - On `cancelled`, do nothing.
   - Wrap everything in try/finally for `isLoading`. If anything throws outside the helper (such as `setActive`), alert the generic message and route back.
   - Keep the Android `/sso-callback` comment.
-- [ ] Run; expect PASS. Full suite green. Run `npx tsc --noEmit`; expect clean.
-- [ ] Run `npx expo install @clerk/expo-google-signin` and expect `1.1.x` in `package.json`.
+- [x] Run; expect PASS. Full suite green. Run `npx tsc --noEmit`; expect clean.
+- [x] Run `npx expo install @clerk/expo-google-signin` and expect `1.1.x` in `package.json`.
   - Add `"@clerk/expo-google-signin"` right after `"@clerk/expo"` in `app.json` `plugins`.
   - Run `npx expo config --type prebuild > /dev/null` and expect no error.
   - Run the full suite and `tsc` again.

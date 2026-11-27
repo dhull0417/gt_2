@@ -133,7 +133,8 @@
       "expo-secure-store",
       "expo-sharing",
       "expo-status-bar",
-      "@clerk/expo"
+      "@clerk/expo",
+      "@clerk/expo-google-signin"
     ],
     "experiments": {
       "typedRoutes": true
